@@ -5,17 +5,39 @@ import { api } from '../lib/api';
 /* ---------- hooks ---------- */
 
 /** Run an API call and keep {data, loading, error}. Re-runs when deps change. */
-export function useApi(action, payload, deps = [], { skip = false } = {}) {
+export function useApi(action, payload, deps = [], { skip = false, refreshMs = 0 } = {}) {
   const [state, set] = useState({ data: null, loading: !skip, error: '' });
+  const active = useRef(false);
+  const request = useRef(0);
   const key = JSON.stringify(payload);
   const run = useCallback(async () => {
-    if (skip) return;
+    if (skip || active.current) return;
+    active.current = true;
+    const id = ++request.current;
     set((s) => ({ ...s, loading: true, error: '' }));
-    try { const data = await api(action, payload); set({ data, loading: false, error: '' }); return data; }
-    catch (e) { set({ data: null, loading: false, error: e.message }); }
+    try { const data = await api(action, payload); if (id === request.current) set({ data, loading: false, error: '' }); return data; }
+    catch (e) { if (id === request.current) set((s) => ({ ...s, loading: false, error: e.message })); }
+    finally { if (id === request.current) active.current = false; }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [action, key, skip, ...deps]);
-  useEffect(() => { run(); }, [run]);
+  useEffect(() => {
+    run();
+    return () => { request.current++; active.current = false; };
+  }, [run]);
+  useEffect(() => {
+    if (skip || !refreshMs) return;
+    const refresh = () => { if (!document.hidden) run(); };
+    const timer = window.setInterval(refresh, refreshMs);
+    document.addEventListener('visibilitychange', refresh);
+    window.addEventListener('focus', refresh);
+    window.addEventListener('online', refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refresh);
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('online', refresh);
+    };
+  }, [run, skip, refreshMs]);
   return { ...state, reload: run, setData: (d) => set((s) => ({ ...s, data: typeof d === 'function' ? d(s.data) : d })) };
 }
 
@@ -30,6 +52,21 @@ export function useAction() {
     finally { setBusy(false); }
   };
   return [busy, run];
+}
+
+/** Promise-based confirmation dialog shared by editable master-data lists. */
+export function useConfirm() {
+  const [options, setOptions] = useState(null);
+  const resolve = useRef(null);
+  useEffect(() => () => { resolve.current?.(false); resolve.current = null; }, []);
+  const finish = (answer) => {
+    resolve.current?.(answer); resolve.current = null; setOptions(null);
+  };
+  const ask = (next) => new Promise((done) => {
+    resolve.current?.(false); resolve.current = done; setOptions(next);
+  });
+  const dialog = options ? <Modal open title={options.title || 'Confirm'} size="sm" onClose={() => finish(false)} footer={<><Btn onClick={() => finish(false)}>{options.cancelLabel || 'Cancel'}</Btn><Btn kind="danger" onClick={() => finish(true)}>{options.confirmLabel || 'Delete'}</Btn></>}><p>{options.message}</p></Modal> : null;
+  return [dialog, ask];
 }
 
 export function useHotkeys(map, deps = []) {
@@ -157,36 +194,6 @@ export function Select({ value, onChange, options, placeholder = 'Select…', al
   );
 }
 
-/* ---------- confirmation popup ---------- */
-
-/**
- * const [confirmUI, ask] = useConfirm();
- * if (await ask({ title, message, confirmLabel })) { ...delete... }
- * Render {confirmUI} somewhere in the component.
- */
-export function useConfirm() {
-  const [state, setState] = useState(null);
-  const ask = (opts) => new Promise((resolve) => setState({ ...opts, resolve }));
-  const close = (answer) => { state?.resolve(answer); setState(null); };
-  const ui = (
-    <Modal open={!!state} onClose={() => close(false)} title={state?.title || 'Are you sure?'} size="sm"
-      footer={<>
-        <Btn onClick={() => close(false)}>{state?.cancelLabel || 'No'}</Btn>
-        <Btn kind="danger" onClick={() => close(true)} autoFocus>{state?.confirmLabel || 'Yes, delete'}</Btn>
-      </>}>
-      <p style={{ margin: 0 }}>{state?.message}</p>
-    </Modal>
-  );
-  return [ui, ask];
-}
-
 export function DeleteBtn({ onClick, label = 'Delete', ...p }) {
-  return (
-    <button type="button" className="del-btn" onClick={onClick} {...p}>
-      <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" />
-      </svg>
-      {label}
-    </button>
-  );
+  return <button type="button" className="del-btn" onClick={onClick} {...p}><svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" /></svg>{label}</button>;
 }

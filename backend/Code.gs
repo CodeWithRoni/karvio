@@ -15,7 +15,7 @@
  * ============================================================================
  */
 
-var APP_VERSION = '1.0.0';
+var APP_VERSION = '1.0.1';
 // Your ShopERP Database spreadsheet. Lets this script also run as a standalone project.
 var DEFAULT_SHEET_ID = '1r7WI5GNHtppUCtCu_rZUmvfum92i0HZdK298Z4uZH7w';
 var SESSION_TTL = 21600; // 6 hours (CacheService maximum)
@@ -36,7 +36,7 @@ var SCHEMA = {
   Customers:           'id,name,phones,addresses,opening_balance:n,note,active:b,created_at',
   Suppliers:           'id,name,phones,address,opening_balance:n,note,active:b,created_at',
   Purchases:           'id,invoice_no,date,supplier_id,supplier_name,subtotal:n,discount:n,total:n,paid:n,due:n,note,status,user,created_at,payments,cancel_reason',
-  PurchaseItems:       'id,purchase_id,product_id,name,unit,qty:n,cost:n,total:n,serials',
+  PurchaseItems:       'id,purchase_id,product_id,name,unit,qty:n,cost:n,total:n,serials,valuation',
   Sales:               'id,invoice_no,date,customer_id,customer_name,subtotal:n,discount:n,total:n,paid:n,credit_used:n,due:n,cost:n,profit:n,note,status,user_id,user_name,created_at,payments,cancel_reason',
   SaleItems:           'id,sale_id,product_id,name,unit,qty:n,price:n,cost:n,total:n,serials,warranty_type,warranty_days:n,warranty_expiry',
   SalesReturns:        'id,return_no,date,sale_id,invoice_no,customer_id,customer_name,type,total:n,cost:n,refund:n,refund_account_id,note,status,user,created_at,cancel_reason',
@@ -121,7 +121,20 @@ function createSheet_(ss, name) {
 function sheet_(name) {
   var ss = ss_();
   var sh = ss.getSheetByName(name);
-  return sh || createSheet_(ss, name);
+  if (!sh) return createSheet_(ss, name);
+  // Append new schema columns without overwriting existing rows or changing their order.
+  if (!_mem['__schema_' + name]) {
+    var cs = cols_(name);
+    if (sh.getMaxColumns && sh.getMaxColumns() < cs.length)
+      sh.insertColumnsAfter(sh.getMaxColumns(), cs.length - sh.getMaxColumns());
+    var headers = sh.getRange(1, 1, 1, cs.length).getValues()[0];
+    cs.forEach(function (c, i) {
+      if (!headers[i]) sh.getRange(1, i + 1).setValue(c.k).setFontWeight('bold');
+      else if (headers[i] !== c.k) fail_('Unexpected column in ' + name + ': ' + headers[i]);
+    });
+    _mem['__schema_' + name] = true;
+  }
+  return sh;
 }
 
 function cast_(v, t) {
@@ -266,7 +279,7 @@ function setupDatabase() {
     insert_('Users', { name: 'Administrator', username: 'admin', salt: salt, password_hash: hash_(salt, 'admin123'), role: 'admin', active: true, created_at: now_() });
   }
   if (!all_('Accounts').length) {
-    insert_('Accounts', { name: 'Cash', type: 'cash', number: '', opening_balance: 0, active: true, created_at: now_() });
+    insert_('Accounts', { name: 'Cash Drawer', type: 'cash', number: '', opening_balance: 0, active: true, created_at: now_() });
   }
   if (!all_('WarrantyPeriods').length) {
     insertMany_('WarrantyPeriods', [7, 30, 90, 180, 300, 900, 1500].map(function (d) { return { label: d + ' days', days: d }; }));
@@ -778,10 +791,11 @@ function purchaseCreate_(p, user) {
     return { purchase_id: pur.id, product_id: l.pr.id, name: l.pr.name, unit: l.pr.unit, qty: l.qty, cost: l.cost, total: l.total, serials: l.serials.join(',') };
   }));
   var events = [], newSerials = [];
-  lines.forEach(function (l) {
+  lines.forEach(function (l, index) {
     var pr = l.pr, oldStock = pr.stock;
     // weighted-average cost for non-serial items; latest cost otherwise
     var newCost = (oldStock > 0 && !isSerialProduct_(pr)) ? round_((oldStock * pr.cost_price + l.total) / (oldStock + l.qty), 4) : l.cost;
+    update_('PurchaseItems', rows[index].id, { valuation: { stock: oldStock, cost: pr.cost_price, after_stock: round_(oldStock + l.qty, 4), after_cost: newCost } });
     update_('Products', pr.id, { stock: round_(oldStock + l.qty, 4), cost_price: newCost });
     l.serials.forEach(function (s) {
       newSerials.push({ product_id: pr.id, serial: s, purchase_id: pur.id, sale_id: '', status: 'in_stock', cost: l.cost, created_at: now_() });
@@ -1202,6 +1216,32 @@ function reversePurchase_(p, user, reason) {
   if (!pur) fail_('Purchase not found'); if (pur.status !== 'active') fail_('Purchase is already cancelled');
   if (all_('PurchaseReturns').some(function (r) { return r.purchase_id === pur.id && r.status === 'active'; })) fail_('Cancel the return(s) of this purchase first');
   var pmap = indexBy_(all_('Products')), sidx = serialIndex_(), items = all_('PurchaseItems').filter(function (i) { return i.purchase_id === pur.id; });
+  var purchaseEvent = 0;
+  all_('ItemEvents').forEach(function (e) { if (e.ref_type === 'purchase' && e.ref_id === pur.id && e.event === 'purchase') purchaseEvent = Math.max(purchaseEvent, e._row); });
+  var activeSales = indexBy_(all_('Sales').filter(function (s) { return s.status === 'active'; }));
+  var activeReturns = indexBy_(all_('PurchaseReturns').filter(function (r) { return r.status === 'active'; }));
+  var affected = {}; items.forEach(function (i) { affected[i.product_id] = true; });
+  // Removing an earlier cost layer after a sale would also change recorded profit.
+  // Require those dependent operations to be reversed before changing that layer.
+  if (purchaseEvent && all_('ItemEvents').some(function (e) {
+    return affected[e.product_id] && e._row > purchaseEvent &&
+      ((e.event === 'sale' && activeSales[e.ref_id]) ||
+       (e.event === 'purchase_return' && activeReturns[e.ref_id]) || e.event === 'stock_adjust');
+  })) fail_('Cannot cancel: stock has already been sold, returned or adjusted. Reverse those later operations first');
+  var planned = {};
+  items.slice().reverse().forEach(function (i) {
+    var pr = planned[i.product_id] || Object.assign({}, pmap[i.product_id]);
+    if (!pr.id || pr.stock < i.qty - 1e-9) fail_('Cannot cancel: insufficient stock for ' + i.name);
+    var before = null; try { before = JSON.parse(i.valuation || 'null'); } catch (e) {}
+    var remaining = round_(pr.stock - i.qty, 4), cost = pr.cost_price;
+    if (before && Math.abs(pr.stock - before.after_stock) < 1e-9 && Math.abs(cost - before.after_cost) < 0.00005) cost = before.cost;
+    else if (!i.serials) {
+      cost = remaining > 0 ? round_((pr.stock * cost - i.qty * i.cost) / remaining, 4) : 0;
+      if (cost < -0.0001) fail_('Cannot cancel: later inventory changes must be reversed first');
+      cost = Math.max(0, cost);
+    }
+    pr.stock = remaining; pr.cost_price = cost; planned[i.product_id] = pr;
+  });
   items.forEach(function (i) {
     var pr = pmap[i.product_id];
     if (pr && pr.stock < i.qty - 1e-9) fail_('Cannot cancel: ' + i.name + ' has already been sold (only ' + pr.stock + ' in stock)');
@@ -1211,8 +1251,8 @@ function reversePurchase_(p, user, reason) {
     });
   });
   var events = [];
+  Object.keys(planned).forEach(function (id) { update_('Products', id, { stock: planned[id].stock, cost_price: planned[id].cost_price }); });
   items.forEach(function (i) {
-    var pr = pmap[i.product_id]; if (pr) update_('Products', pr.id, { stock: round_(pr.stock - i.qty, 4) });
     parseList_(i.serials).forEach(function (sn) {
       update_('SerialItems', sidx[i.product_id + '|' + sn].id, { status: 'cancelled' });
       events.push({ serial: sn, product_id: i.product_id, product_name: i.name, event: 'purchase_cancelled', ref_type: 'purchase', ref_id: pur.id, ref_no: pur.invoice_no, party: pur.supplier_name, qty: 1, amount: 0, note: 'Purchase cancelled: ' + reason });

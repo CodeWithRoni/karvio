@@ -27,7 +27,7 @@ export function printReceipt(detail, widthOverride) {
   printHtml(`
   <style>
     @page{size:${w}mm auto;margin:0}
-    body{margin:0;font:${fs}px/1.35 'Courier New',ui-monospace,monospace;color:#000;width:${paper}mm;padding:3mm ${(w - paper) / 2}mm}
+    body{margin:0;font:${fs}px/1.35 'Courier New','Hind Siliguri',ui-monospace,monospace;color:#000;width:${paper}mm;padding:3mm ${(w - paper) / 2}mm}
     .c{text-align:center}.shop{font-size:${fs + 4}px}.r{text-align:right}.sm{font-size:${fs - 2}px}.nm{padding-top:4px;font-weight:700}
     table{width:100%;border-collapse:collapse}td{vertical-align:top;padding:0}
     hr{border:0;border-top:1px dashed #000;margin:5px 0}.tot td{font-weight:700;font-size:${fs + 1}px}
@@ -110,7 +110,7 @@ export function printStatement(kind, st, from, to) {
 export function printMoneyReceipt(r) {
   const s = useStore.getState().settings;
   const w = Number(s.receipt_width || 80), paper = w === 58 ? 48 : 72;
-  printHtml(`<style>@page{size:${w}mm auto;margin:0}body{margin:0;width:${paper}mm;padding:3mm ${(w - paper) / 2}mm;font:11px/1.4 'Courier New',monospace}.c{text-align:center}hr{border:0;border-top:1px dashed #000}</style>
+  printHtml(`<style>@page{size:${w}mm auto;margin:0}body{margin:0;width:${paper}mm;padding:3mm ${(w - paper) / 2}mm;font:11px/1.4 'Courier New','Hind Siliguri',monospace}.c{text-align:center}hr{border:0;border-top:1px dashed #000}</style>
   ${shopHead(s)}<hr><div class="c"><b>MONEY RECEIPT</b></div><div>No: ${esc(r.receipt_no)}</div><div>Date: ${esc(new Date().toLocaleString())}</div>
   <div>Received from: <b>${esc(r.customer)}</b></div><div>Amount: <b>${esc(money(r.amount))}</b></div><div>Via: ${esc(r.account)}</div><hr>
   <div>Remaining balance: <b>${esc(money(r.balance))}</b></div><hr><div class="c">${esc(s.shop_footer || '')}</div>`);

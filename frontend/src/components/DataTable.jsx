@@ -11,6 +11,14 @@ export default function DataTable({ columns, rows, loading, title = 'Export', ex
   const [q, setQ] = useState('');
   const [sort, setSort] = useState(null);
   const [page, setPage] = useState(0);
+  const [exporting, setExporting] = useState(false);
+  const download = async (fn) => {
+    if (exporting) return;
+    setExporting(true);
+    try { await fn(); }
+    catch (e) { const { useStore } = await import('../lib/store'); useStore.getState().toast(`Export failed: ${e.message}`, 'err'); }
+    finally { setExporting(false); }
+  };
 
   const filtered = useMemo(() => {
     let r = rows || [];
@@ -63,9 +71,9 @@ export default function DataTable({ columns, rows, loading, title = 'Export', ex
             {toolbar}
             {exportable && (
               <div className="seg" role="group" aria-label="Export">
-                <button onClick={() => exportExcel(title, expCols, filtered, totals)} title="Download Excel">Excel</button>
-                <button onClick={() => exportPdf(title, expCols, filtered, totals)} title="Download PDF">PDF</button>
-                <button onClick={() => printTable(title, expCols, filtered, totals)} title="Print">Print</button>
+                <button disabled={exporting} onClick={() => download(() => exportExcel(title, expCols, filtered, totals))} title="Download Excel">Excel</button>
+                <button disabled={exporting} onClick={() => download(() => exportPdf(title, expCols, filtered, totals))} title="Download PDF">{exporting ? 'Preparing…' : 'PDF'}</button>
+                <button disabled={exporting} onClick={() => download(() => printTable(title, expCols, filtered, totals))} title="Print">Print</button>
               </div>
             )}
           </div>

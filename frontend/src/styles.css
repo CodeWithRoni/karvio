@@ -2,7 +2,6 @@
  * Palette borrowed from fibre-optic patch cords: single-mode yellow is the action colour,
  * OM3 aqua is information, OM4 violet marks warranty. Navy slate is the rack.
  */
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Hind+Siliguri:wght@400;500;600&display=swap');
 
 :root { --font: 'Manrope', 'Hind Siliguri', system-ui, -apple-system, 'Segoe UI', sans-serif; }
 :root, :root[data-theme='dark'] {
@@ -305,7 +304,8 @@ table { width: 100%; border-collapse: collapse; }
   .content { padding: 16px 16px 40px; }
   .g2, .g3 { grid-template-columns: 1fr; }
   .daterange input { width: 135px; }
-  .filters select, .filters input { min-width: 0; flex: 1 1 140px; }
+  .filters > .field { flex: 1 1 140px; }
+  .filters select, .filters input { min-width: 0; flex: 0 1 auto; }
   .dt-search { max-width: none; flex: 1 1 100%; }
   .dt-tools { margin-left: 0; }
   .pcb-row { grid-template-columns: 1fr 1fr; }

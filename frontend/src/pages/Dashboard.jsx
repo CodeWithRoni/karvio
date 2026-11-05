@@ -10,13 +10,13 @@ function Stat({ label, value, sub, tone }) {
 }
 
 export default function Dashboard() {
-  const { data: d, loading, error, reload } = useApi('dashboard', {});
+  const { data: d, loading, error, reload } = useApi('dashboard', {}, [], { refreshMs: 30000 });
   const can = useStore((s) => s.can);
   const [per, setPer] = useState('today');
   const [lb, setLb] = useState('month');
 
   if (loading && !d) return <Loading label="Loading dashboard" />;
-  if (error) return <ErrorBox error={error} onRetry={reload} />;
+  if (error && !d) return <ErrorBox error={error} onRetry={reload} />;
   const c = d[per];
   const max = Math.max(1, ...d.series.map((x) => x.sales));
 
@@ -28,6 +28,7 @@ export default function Dashboard() {
         {can('pos') && <Link to="/pos" className="btn btn-primary">New sale</Link>}
       </PageHead>
 
+      {error && <ErrorBox error={`Could not update the dashboard. Showing the last loaded balances. ${error}`} onRetry={reload} />}
       <div className="stats">
         <Stat label="Sales" value={money(c.sales)} sub={`${c.invoices} invoices`} />
         {!d.limited && <>

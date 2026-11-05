@@ -2,3 +2,8 @@ node_modules/
 dist/
 release/
 src-tauri/target/
+test-results/
+playwright-report/
+verification/
+.env.local
+.clasp.json
