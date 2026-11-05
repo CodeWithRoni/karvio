@@ -175,8 +175,14 @@ test('product groups contain categories across master data, products, stock filt
   await expect(page.locator('tbody tr').filter({ hasText: 'Core i5 Test' })).toContainText('PROCESSOR');
   await page.getByRole('combobox', { name: 'Product group', exact: true }).selectOption('');
   await expect(page.getByRole('combobox', { name: 'Category', exact: true })).toHaveValue('');
+  // PC builder lists only parts in stock: an unstocked product is hidden until it is purchased.
   await page.goto('/#/pc-builder');
-  await expect(page.getByLabel('Processor product').locator(':scope > option').filter({ hasText: 'Core i5 Test' })).toHaveCount(1);
+  await expect(page.getByLabel('Processor product').locator('option').filter({ hasText: 'Core i5 Test' })).toHaveCount(0);
+  const i5 = (await call(request, 'products.list')).find((x) => x.name === 'Core i5 Test');
+  const sup = await call(request, 'supplier.save', { name: `PC builder supplier ${Date.now()}` });
+  await call(request, 'purchase.create', { supplier_id: sup.id, items: [{ product_id: i5.id, qty: 2, cost: 15000, sale_price: 17500 }], payments: [] });
+  await page.reload();
+  await expect(page.getByLabel('Processor product').locator('option').filter({ hasText: 'Core i5 Test' })).toHaveCount(1);
   await page.goto('/#/stock');
   await page.getByRole('tab', { name: 'Categories, brands & warranty' }).click();
   await groups.getByRole('textbox', { name: 'Search Product groups' }).fill('PROCESSOR');

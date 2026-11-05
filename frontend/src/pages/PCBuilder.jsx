@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { money, qty as fqty } from '../lib/format';
 import { printQuotation } from '../lib/receipt';
+import { textOf, cpuInfo, boardInfo, ramInfo, boardFitsCpu, ramFits } from '../lib/compat';
 import { PageHead, Btn, Field } from '../components/ui';
 
 // Suggest parts using their product group, category or product name.
@@ -16,20 +17,38 @@ const loadSaved = () => { try { return JSON.parse(localStorage.getItem(SAVED)) |
 const newLines = () => SLOTS.map(([g]) => ({ group: g, product_id: '', name: '', qty: 1, price: '' }));
 
 export default function PCBuilder() {
-  const { products, categories } = useStore();
+  const { products, categories, brands } = useStore();
   const nav = useNavigate();
   const [lines, setLines] = useState(newLines);
   const [meta, setMeta] = useState({ customer: '', phone: '', title: 'Custom PC build', discount: '', note: '', validDays: 7 });
   const [saved, setSaved] = useState(loadSaved);
 
   const catName = useMemo(() => Object.fromEntries(categories.map((c) => [c.id, c.name.toLowerCase()])), [categories]);
-  const optionsFor = (keys) => products.filter((p) => p.active && keys.some((k) => (catName[p.category_id] || '').includes(k) || (catName[p.subcategory_id] || '').includes(k) || p.name.toLowerCase().includes(k)));
+  const brandName = useMemo(() => Object.fromEntries(brands.map((b) => [b.id, b.name])), [brands]);
+  // Quotes are only for what is in stock right now.
+  const inStock = useMemo(() => products.filter((p) => p.active && (p.service || Number(p.stock) > 0)), [products]);
+  const optionsFor = (keys) => inStock.filter((p) => keys.some((k) => (catName[p.category_id] || '').includes(k) || (catName[p.subcategory_id] || '').includes(k) || p.name.toLowerCase().includes(k)));
+  const pmap = useMemo(() => Object.fromEntries(products.map((p) => [p.id, p])), [products]);
+  const txt = (p) => textOf(p, catName, brandName);
+
+  // Compatibility: processor → motherboard (socket / AMD or Intel), motherboard (or processor) → RAM type.
+  const cpuLine = lines.find((l) => l.group === 'Processor' && l.product_id);
+  const boardLine = lines.find((l) => l.group === 'Motherboard' && l.product_id);
+  const cpu = cpuLine ? cpuInfo(txt(pmap[cpuLine.product_id] || {})) : null;
+  const board = boardLine ? boardInfo(txt(pmap[boardLine.product_id] || {})) : null;
+  const wantDdr = board?.ddr || ({ AM5: 'DDR5', AM4: 'DDR4', LGA1851: 'DDR5', LGA1200: 'DDR4' })[cpu?.socket] || null;
+  const fit = (group, p) => group === 'Motherboard' ? boardFitsCpu(boardInfo(txt(p)), cpu) : group === 'RAM' ? ramFits(ramInfo(txt(p)), wantDdr) : 'ok';
+  const hint = (group) => {
+    if (group === 'Motherboard' && cpu && (cpu.socket || cpu.vendor)) return `Showing ${cpu.socket || cpu.vendor.toUpperCase()} motherboards for the selected processor`;
+    if (group === 'RAM' && wantDdr) return `Showing ${wantDdr} memory for the selected ${board?.ddr ? 'motherboard' : 'processor'}`;
+    return '';
+  };
   const upd = (i, patch) => setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const pick = (i, id) => {
     const p = products.find((x) => x.id === id);
     upd(i, p ? { product_id: p.id, name: p.name, price: p.sale_price, warranty: p.has_warranty ? `${p.warranty_days} days` : '' } : { product_id: '', name: '', price: '', warranty: '' });
   };
-  const filled = lines.filter((l) => l.name && Number(l.qty) > 0);
+  const filled = lines.filter((l) => l.product_id && l.name && Number(l.qty) > 0);
   const sub = filled.reduce((a, l) => a + l.qty * (Number(l.price) || 0), 0);
   const total = sub - (Number(meta.discount) || 0);
 
@@ -58,17 +77,23 @@ export default function PCBuilder() {
         <div className="card">
           {lines.map((l, i) => {
             const slot = SLOTS.find((s) => s[0] === l.group);
-            const opts = slot ? optionsFor(slot[1]) : products.filter((p) => p.active);
+            const all = slot ? optionsFor(slot[1]) : inStock;
+            const opts = all.filter((p) => fit(l.group, p) === 'ok');
+            const maybe = all.filter((p) => fit(l.group, p) === 'unknown');
+            const cur = l.product_id && pmap[l.product_id];
+            const bad = cur && fit(l.group, cur) === 'no';
+            const h = hint(l.group);
             return (
               <div className="pcb-row" key={i}>
                 {slot ? <span className="g">{l.group}</span> : <input value={l.group} onChange={(e) => upd(i, { group: e.target.value })} placeholder="Part" />}
                 <div>
-                  <select value={l.product_id} onChange={(e) => pick(i, e.target.value)} aria-label={`${l.group} product`}>
-                    <option value="">{l.name && !l.product_id ? 'Custom item' : `Choose ${l.group.toLowerCase()}…`}</option>
+                  <select value={l.product_id} onChange={(e) => pick(i, e.target.value)} aria-label={`${l.group} product`} className={bad ? 'invalid' : ''}>
+                    <option value="">{all.length ? `Choose ${l.group.toLowerCase()}…` : `No ${l.group.toLowerCase()} in stock`}</option>
                     {opts.map((p) => <option key={p.id} value={p.id}>{p.name} — {money(p.sale_price, false)} ({p.service ? 'service' : `${fqty(p.stock, p.unit)} in stock`})</option>)}
-                    {slot && <optgroup label="Other products">{products.filter((p) => p.active && !opts.includes(p)).slice(0, 200).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</optgroup>}
+                    {maybe.length > 0 && <optgroup label="Compatibility not known — check the specs">{maybe.map((p) => <option key={p.id} value={p.id}>{p.name} — {money(p.sale_price, false)} ({fqty(p.stock, p.unit)} in stock)</option>)}</optgroup>}
+                    {bad && <option value={cur.id}>{cur.name} (not compatible)</option>}
                   </select>
-                  {!l.product_id && <input style={{ marginTop: 4 }} value={l.name} onChange={(e) => upd(i, { name: e.target.value })} placeholder="…or type a part not in stock" />}
+                  {bad ? <small className="pcb-warn">Not compatible with the selected {l.group === 'RAM' ? (board?.ddr ? 'motherboard' : 'processor') : 'processor'} — choose another</small> : h && <small className="pcb-hint">{h}</small>}
                 </div>
                 <input type="number" min="0" value={l.qty} onChange={(e) => upd(i, { qty: e.target.value })} aria-label="Qty" />
                 <input type="number" min="0" step="any" value={l.price} onChange={(e) => upd(i, { price: e.target.value })} placeholder="Price" aria-label="Price" />
