@@ -17,7 +17,8 @@ const Svg = ({ name, size = 13 }) => (
 
 /** Small outlined action button: tone = edit | delete | add */
 function ActBtn({ tone, icon, children, className, ...p }) {
-  return <button type="button" className={className || `act-btn act-${tone}`} {...p}><Svg name={icon} />{children}</button>;
+  // title = tooltip, so the button still explains itself when only its icon is shown
+  return <button type="button" className={className || `act-btn act-${tone}`} title={typeof children === 'string' ? children : undefined} {...p}><Svg name={icon} />{children}</button>;
 }
 
 function Panel({ title, count, hint, form, search, setSearch, children, empty }) {
@@ -68,7 +69,13 @@ export default function MasterData() {
   }, [products]);
 
   // The spinner keeps going until the list has reloaded, so the new item appears as the spinner stops.
-  const save = (p, msg, runner = runners[p.kind]) => runner(async () => { const r = await api('master.save', p); await refresh('all'); return r; }, msg);
+  // Brands and warranty periods have no server-side duplicate check in older deployments, so stop repeats here too.
+  const duplicateOf = (p) => {
+    if (p.kind === 'brand') return brands.some((b) => b.id !== p.id && String(b.name).trim().toLowerCase() === String(p.name || '').trim().toLowerCase()) && 'This brand already exists';
+    if (p.kind === 'warranty_period') return warrantyPeriods.some((w) => w.id !== p.id && Number(w.days) === Math.round(Number(p.days))) && `A ${Math.round(Number(p.days))}-day warranty period already exists`;
+    return false;
+  };
+  const save = (p, msg, runner = runners[p.kind]) => runner(async () => { const dup = duplicateOf(p); if (dup) throw new Error(dup); const r = await api('master.save', p); await refresh('all'); return r; }, msg);
   const KIND = { group: 'product group', category: 'category', brand: 'brand', warranty_period: 'warranty period' };
 
   const del = async (kind, item) => {
@@ -185,7 +192,7 @@ export default function MasterData() {
           {periods.map((w) => (
             <li className="md-row" key={w.id}>
               <span className="md-name" title={w.label}>{w.label}</span>
-              <span className="md-pill">{w.days} days</span>
+              {String(w.label).trim().toLowerCase() !== `${w.days} days` && <span className="md-pill">{w.days} days</span>}
               <div className="md-actions">
                 <ActBtn tone="edit" icon="edit" onClick={() => setEdit({ kind: 'warranty_period', item: w, field: 'label', value: w.label })} aria-label={`Rename ${w.label}`}>Rename</ActBtn>
                 <ActBtn tone="delete" icon="trash" onClick={() => del('warranty_period', w)} aria-label={`Delete ${w.label}`}>Delete</ActBtn>

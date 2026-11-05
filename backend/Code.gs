@@ -279,7 +279,7 @@ function setupDatabase() {
     insert_('Users', { name: 'Administrator', username: 'admin', salt: salt, password_hash: hash_(salt, 'admin123'), role: 'admin', active: true, created_at: now_() });
   }
   if (!all_('Accounts').length) {
-    insert_('Accounts', { name: 'Cash Drawer', type: 'cash', number: '', opening_balance: 0, active: true, created_at: now_() });
+    insert_('Accounts', { name: 'Cash', type: 'cash', number: '', opening_balance: 0, active: true, created_at: now_() });
   }
   if (!all_('WarrantyPeriods').length) {
     insertMany_('WarrantyPeriods', [7, 30, 90, 180, 300, 900, 1500].map(function (d) { return { label: d + ' days', days: d }; }));
@@ -462,6 +462,12 @@ function masterSave_(p, user) {
     if (row.days <= 0) fail_('Warranty days must be greater than 0');
     row.label = String(row.label || '').trim() || (row.days + ' days');
   } else if (!String(row.name || '').trim()) fail_('Name is required');
+  if (p.kind === 'warranty_period' && all_(m.table).some(function (w) { return w.id !== p.id && num_(w.days) === row.days; }))
+    fail_('A ' + row.days + '-day warranty period already exists');
+  if (p.kind === 'brand') {
+    row.name = String(row.name).trim();
+    if (all_(m.table).some(function (b) { return b.id !== p.id && String(b.name).trim().toLowerCase() === row.name.toLowerCase(); })) fail_('This brand already exists');
+  }
   if (p.kind === 'group' || p.kind === 'category') {
     row.name = String(row.name).trim();
     var categories = all_('Categories'), current = p.id ? indexBy_(categories)[p.id] : null;

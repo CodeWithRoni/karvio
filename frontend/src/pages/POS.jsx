@@ -186,7 +186,7 @@ export default function POS() {
 
         <div className="card">
           <div className="totals">
-            <span>Subtotal</span><b className="num">{money(subtotal, false)}</b>
+            <span>Subtotal</span><input value={money(subtotal, false)} readOnly tabIndex={-1} className="readonly-num" aria-label="Subtotal (calculated)" />
             <span>Discount</span><input ref={discRef} type="number" min="0" step="any" value={discount} onChange={(e) => setDiscount(e.target.value)} placeholder="0" aria-label="Discount" />
             <span>Total</span><span className="grand">{money(total)}</span>
           </div>

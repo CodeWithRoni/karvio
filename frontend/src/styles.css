@@ -421,3 +421,14 @@ table { width: 100%; border-collapse: collapse; }
 .prev-due b { color: var(--warn); font-size: 16px; font-variant-numeric: tabular-nums; }
 .collect { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); }
 .prev-due .total-due { border-top: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); padding-top: 4px; margin-top: 2px; }
+
+/* calculated, non-editable value shown in an input-style box (POS subtotal) */
+.totals input.readonly-num { cursor: default; color: var(--text); font-weight: 700; background: var(--rack); border-style: dashed; }
+.totals input.readonly-num:focus { border-color: var(--line); box-shadow: none; }
+
+/* master data: when a panel is narrow, action buttons show only their icon (label stays as tooltip/aria) */
+.md-panel { container-type: inline-size; }
+@container (max-width: 400px) {
+  .md-actions .act-btn { font-size: 0; gap: 0; width: 30px; padding: 0; justify-content: center; }
+  .md-actions .act-btn svg { width: 15px; height: 15px; }
+}
