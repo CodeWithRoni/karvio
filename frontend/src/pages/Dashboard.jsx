@@ -39,6 +39,14 @@ export default function Dashboard() {
           {c.net_profit !== undefined && <Stat label="Net profit" value={money(c.net_profit)} sub="Gross profit − expenses" tone={c.net_profit >= 0 ? 'up' : 'down'} />}
         </>}
         <Stat label="New dues on sales" value={money(c.due)} tone={c.due ? 'warn' : ''} />
+        {!d.limited && <>
+          <Link to="/customers" className="stat stat-link" title="Open customer dues">
+            <span>Receivable</span><b style={{ color: d.receivable > 0 ? 'var(--warn)' : undefined }}>{money(d.receivable)}</b><small>Total customer dues</small>
+          </Link>
+          {can('suppliers')
+            ? <Link to="/suppliers" className="stat stat-link" title="Open supplier balances"><span>Payable</span><b style={{ color: d.payable > 0 ? 'var(--bad)' : undefined }}>{money(d.payable)}</b><small>Total you owe suppliers</small></Link>
+            : <Stat label="Payable" value={money(d.payable)} sub="Total you owe suppliers" />}
+        </>}
       </div>
 
       {d.accounts && (
@@ -73,8 +81,6 @@ export default function Dashboard() {
           </div>
           {!d.limited && (
             <div className="kv" style={{ marginTop: 16 }}>
-              <div><span>Customers owe you</span><b>{money(d.receivable)}</b></div>
-              <div><span>You owe suppliers</span><b>{money(d.payable)}</b></div>
               {d.stock_value !== undefined && <div><span>Stock value at cost</span><b>{money(d.stock_value)}</b></div>}
               <div><span>Warranty: pending / at vendor / ready</span><b>{d.claims.pending} / {d.claims.vendor} / {d.claims.ready}</b></div>
             </div>

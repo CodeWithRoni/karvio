@@ -401,3 +401,8 @@ table { width: 100%; border-collapse: collapse; }
   .act-btn { padding: 0 7px; }
 }
 @media (max-width: 480px) { .act-btn .label, .md-actions .act-btn { font-size: 0; gap: 0; padding: 0 8px; } .md-actions .act-btn svg { width: 15px; height: 15px; } }
+
+/* clickable stat cards (Receivable / Payable) */
+.stat-link { color: inherit; text-decoration: none; cursor: pointer; transition: background .12s; }
+.stat-link:hover { background: var(--panel-2); }
+.stat-link:hover small { color: var(--aqua); }
