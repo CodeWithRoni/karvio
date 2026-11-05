@@ -3,7 +3,7 @@ import { useStore } from '../lib/store';
 import { api } from '../lib/api';
 import { money, qty as fqty, round2, isDecimalUnit } from '../lib/format';
 import { printReceipt } from '../lib/receipt';
-import { Btn, Modal, Field, Tabs, useAction, useHotkeys } from '../components/ui';
+import { Btn, Modal, Field, Tabs, useAction, useHotkeys, useConfirm } from '../components/ui';
 import { ProductSearch, PaymentSplit, defaultPay, cleanPays, QuickCustomer, CustomerPicker, SerialChooser } from '../components/widgets';
 
 const DRAFT = 'erp_pos_draft';
@@ -22,7 +22,7 @@ export default function POS() {
   const [useCredit, setUseCredit] = useState(false);
   const [tier, setTier] = useState('retail');
   const [note, setNote] = useState('');
-  const [sendSms, setSendSms] = useState(true);
+  const [sendSms, setSendSms] = useState(false); // SMS to the customer is off unless switched on for this sale
   const [serialFor, setSerialFor] = useState(null);
   const [quick, setQuick] = useState(null);
   const [done, setDone] = useState(null);
@@ -84,7 +84,12 @@ export default function POS() {
     else setPayTouched(false); // back to a cash sale: auto-fill the full amount again
   };
 
-  const reset = () => { setCart([]); setCustomerId(''); setDiscount(''); setPaysRaw(defaultPay()); setPayTouched(false); setUseCredit(false); setNote(''); searchRef.current?.focus(); };
+  const [confirmUI, ask] = useConfirm();
+  const reset = () => { setSendSms(false); setCart([]); setCustomerId(''); setDiscount(''); setPaysRaw(defaultPay()); setPayTouched(false); setUseCredit(false); setNote(''); searchRef.current?.focus(); };
+
+  const gatewayOn = settings.sms_enabled === 'true';
+  const phone = customer?.phones?.split(',')[0]?.trim() || '';
+  const smsReady = gatewayOn && !!customer && !!phone;
 
   const checkout = async (print) => {
     if (!cart.length || busy) return;
@@ -96,7 +101,7 @@ export default function POS() {
       payList = [...payList].reverse().map((p) => { const cut = Math.min(p.amount, excess); excess = round2(excess - cut); return { ...p, amount: round2(p.amount - cut) }; }).reverse().filter((p) => p.amount > 0);
     }
     const res = await run(() => api('sale.create', {
-      customer_id: customerId, discount: disc, note, send_sms: sendSms, credit_used: credit,
+      customer_id: customerId, discount: disc, note, send_sms: smsReady && sendSms, credit_used: credit,
       items: cart.map((l) => ({ product_id: l.product_id, qty: Number(l.qty), price: Number(l.price), serials: l.serials, warranty_days: l.warranty_days })),
       payments: payList
     }));
@@ -186,9 +191,6 @@ export default function POS() {
               {change > 0 && <div className="row" style={{ justifyContent: 'space-between', marginTop: 8 }}><span>Change to return</span><b className="change num">{money(change)}</b></div>}
             </div>
           )}
-          {customer && settings.sms_enabled === 'true' && (
-            <label className="check" style={{ marginTop: 8, fontWeight: 500 }}><input type="checkbox" checked={sendSms} onChange={(e) => setSendSms(e.target.checked)} /> Send SMS invoice to {customer.phones?.split(',')[0]}</label>
-          )}
         </div>
 
         <div className="card">
@@ -212,11 +214,22 @@ export default function POS() {
         </div>
 
         {problems.length > 0 && cart.length > 0 && <div className="note" style={{ borderColor: 'var(--warn)' }}>{problems[0]}</div>}
+        <div className={`sms-toggle ${smsReady && sendSms ? 'on' : ''} ${smsReady ? '' : 'off'}`}>
+          <div className="sms-text">
+            <b>SMS to customer</b>
+            <small>{!gatewayOn ? 'SMS gateway is off — turn it on in Settings → SMS gateway' : !customer ? 'Select a customer to send the invoice by SMS' : !phone ? 'This customer has no phone number' : sendSms ? `Invoice SMS will go to ${phone}` : 'No SMS will be sent for this sale'}</small>
+          </div>
+          <button type="button" role="switch" aria-checked={smsReady && sendSms} aria-label="Send SMS to customer" className="switch" disabled={!smsReady} onClick={() => setSendSms(!sendSms)}><span /></button>
+        </div>
         <div className="row">
           <Btn kind="primary" size="lg" style={{ flex: 1 }} busy={busy} disabled={!cart.length} onClick={() => checkout(true)}>Complete & print</Btn>
           <Btn size="lg" disabled={!cart.length || busy} onClick={() => checkout(false)}>Complete</Btn>
         </div>
-        {cart.length > 0 && <button className="link" onClick={() => confirm('Clear the cart?') && reset()}>Clear cart</button>}
+        <button type="button" className="btn clear-cart" disabled={!cart.length} onClick={async () => { if (await ask({ title: 'Clear the cart?', message: 'All items, the customer and payments on this screen will be removed.' })) reset(); }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" /></svg>
+          Clear cart <kbd>Ctrl+Del</kbd>
+        </button>
+        {confirmUI}
       </div>
 
       <Modal open={serialFor !== null} onClose={() => setSerialFor(null)} title={serialFor !== null && cart[serialFor] ? `Serial numbers — ${pmap[cart[serialFor].product_id]?.name}` : ''}
