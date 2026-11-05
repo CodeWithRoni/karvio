@@ -80,7 +80,7 @@ let boot = ok(A('bootstrap', {}), 'bootstrap');
 eq(boot.categories.length > 20, true, 'seeded categories (3 top + sub)');
 eq(boot.warrantyPeriods.map((w) => w.days), [7, 30, 90, 180, 300, 900, 1500], 'default warranty periods');
 const cash = boot.accounts[0];
-ok(A('account.save', { id: cash.id, name: 'Cash Drawer', type: 'cash', opening_balance: 100000 }), 'cash opening balance');
+ok(A('account.save', { id: cash.id, name: 'Cash', type: 'cash', opening_balance: 100000 }), 'cash opening balance');
 const bkash = ok(A('account.save', { name: 'bKash', type: 'mfs', number: '01711000000', opening_balance: 0 }), 'create bKash');
 const ab = ok(A('account.save', { name: 'AB Bank', type: 'bank', number: '1234567', opening_balance: 50000 }), 'create AB bank');
 
@@ -107,7 +107,7 @@ eq([pur.purchase.total, pur.purchase.paid, pur.purchase.due], [25000, 5000, 2000
 bad(A('purchase.create', { items: [{ product_id: ssd.id, qty: 1, cost: 1, serials: ['S1'] }] }), 'already exists', 'duplicate serial blocked');
 const bal = () => { const b = ok(A('bootstrap', {}), 'bootstrap'); return { acc: Object.fromEntries(b.accounts.map((a) => [a.name, a.balance])), cust: Object.fromEntries(b.customers.map((c) => [c.name, c.balance])), sup: Object.fromEntries(b.suppliers.map((c) => [c.name, c.balance])), stock: Object.fromEntries(b.products.map((p) => [p.name, p.stock])) }; };
 let s0 = bal();
-eq(s0.acc['Cash Drawer'], 95000, 'cash debited by purchase payment');
+eq(s0.acc['Cash'], 95000, 'cash debited by purchase payment');
 eq(s0.sup['Star Tech Distribution'], 20000, 'supplier payable');
 eq(s0.stock, { 'Kingston 512GB SSD': 3, 'A4Tech Mouse': 10, 'Cat6 Cable (roll)': 610 }, 'stock after purchase');
 
@@ -201,7 +201,7 @@ const mid = bal();
 ok(A('reverse', { type: 'purchase', id: p2.purchase.id, reason: 'wrong entry', password: 'admin123' }), 'cancel purchase');
 const after = bal();
 eq(after.stock['A4Tech Mouse'], mid.stock['A4Tech Mouse'] - 4, 'stock removed on purchase cancel');
-eq(after.acc['Cash Drawer'], mid.acc['Cash Drawer'] + 1000, 'cash restored on purchase cancel');
+eq(after.acc['Cash'], mid.acc['Cash'] + 1000, 'cash restored on purchase cancel');
 const snap = bal();
 const sale3 = ok(A('sale.create', { customer_id: cust.id, items: [{ product_id: mouse.id, qty: 1, price: 600 }], payments: [{ account_id: bkash.id, amount: 100 }] }), 'sale to cancel');
 ok(A('reverse', { type: 'sale', id: sale3.sale.id, reason: 'customer changed mind', password: 'admin123' }), 'cancel sale');
@@ -221,7 +221,7 @@ eq(rep.rows.length, 4, 'sales report includes cancelled for status=all');
 eq(ok(A('reports', { type: 'sales', group: 'monthly' }), 'monthly sales').rows.length, 1, 'monthly grouping');
 eq(ok(A('reports', { type: 'daily_summary' }), 'daily').rows.length, 1, 'daily counts');
 const pm = ok(A('reports', { type: 'payment_methods' }), 'payment methods');
-eq(pm.rows.map((r) => r.account).sort(), ['AB Bank', 'Cash Drawer', 'bKash'], 'per-method daily summary');
+eq(pm.rows.map((r) => r.account).sort(), ['AB Bank', 'Cash', 'bKash'], 'per-method daily summary');
 eq(ok(A('reports', { type: 'warranty', status: 'Delivered' }), 'warranty report').rows.length, 1, 'warranty report Delivered');
 eq(ok(A('reports', { type: 'product_sales' }), 'product sales').rows.length > 0, true, 'product-wise sales');
 eq(ok(A('reports', { type: 'expenses', group: 'category' }), 'expense report').totals.amount, 1500, 'expense totals');

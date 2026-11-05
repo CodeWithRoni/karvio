@@ -56,7 +56,7 @@ export default function Dashboard() {
             {d.accounts.map((a) => (
               <div className="port" data-type={a.type} key={a.id}>
                 <div className="pn">{a.name}</div>
-                <div className="pt">{a.type === 'mfs' ? 'Mobile banking' : a.type === 'cash' ? 'Cash drawer' : 'Bank'}{a.number ? ` · ${a.number}` : ''}</div>
+                <div className="pt">{a.type === 'mfs' ? 'Mobile banking' : a.type === 'cash' ? 'Cash' : 'Bank'}{a.number ? ` · ${a.number}` : ''}</div>
                 <div className={`pb ${a.balance < 0 ? 'neg' : ''}`}>{money(a.balance)}</div>
               </div>
             ))}

@@ -28,7 +28,7 @@ export default function Expenses() {
 
   return (
     <>
-      <PageHead title="Daily expenses" sub="Shop running costs are paid from an account, so the cash drawer balance stays accurate." />
+      <PageHead title="Daily expenses" sub="Shop running costs are paid from an account, so the cash balance stays accurate." />
       <div className="split" style={{ marginBottom: 16 }}>
         <form className="card form" onSubmit={save}>
           <Field label="Date"><input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>

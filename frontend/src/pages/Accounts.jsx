@@ -5,7 +5,7 @@ import { money, monthStart, today } from '../lib/format';
 import DataTable from '../components/DataTable';
 import { useApi, PageHead, Modal, Btn, Field, useAction, Select, DateRange, ErrorBox, Badge } from '../components/ui';
 
-const TYPES = [['cash', 'Cash drawer'], ['mfs', 'Mobile banking (bKash, Nagad, Rocket…)'], ['bank', 'Bank account']];
+const TYPES = [['cash', 'Cash'], ['mfs', 'Mobile banking (bKash, Nagad, Rocket…)'], ['bank', 'Bank account']];
 
 export default function Accounts() {
   const list = useApi('accounts.list', {});

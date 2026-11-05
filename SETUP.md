@@ -29,7 +29,7 @@ shop-erp/
 3. ডিফল্ট `Code.gs`-এর ভেতরের সব লেখা মুছে দিন। তারপর `backend/Code.gs` ফাইলের পুরোটা কপি করে পেস্ট করুন। **Save** (Ctrl+S) চাপুন।
 4. উপরের ফাংশন ড্রপডাউন থেকে `setupDatabase` বেছে **Run** চাপুন।
    - প্রথমবার Google অনুমতি চাইবে: **Review permissions → আপনার অ্যাকাউন্ট → Advanced → Go to (project name) → Allow**।
-   - কাজ শেষ হলে Sheet-এ ২৬টা ট্যাব তৈরি হবে (Products, Sales, Accounts …), সাথে ডিফল্ট ক্যাটাগরি, ওয়ারেন্টি পিরিয়ড আর একটা Cash Drawer অ্যাকাউন্ট।
+   - কাজ শেষ হলে Sheet-এ ২৬টা ট্যাব তৈরি হবে (Products, Sales, Accounts …), সাথে ডিফল্ট ক্যাটাগরি, ওয়ারেন্টি পিরিয়ড আর একটা Cash অ্যাকাউন্ট।
 5. টাইমজোন ঠিক করুন: Apps Script-এ **Project Settings (⚙) → Time zone → (GMT+06:00) Dhaka**।
 6. ডিপ্লয় করুন: **Deploy → New deployment → ⚙ Select type → Web app**
    - Description: `ShopERP API`
@@ -102,7 +102,7 @@ npx tauri build                   # src-tauri/target/release/bundle/ এ ইন�
 | কোথায় | কী করবেন |
 |---|---|
 | **Settings → Shop & receipts** | দোকানের নাম, ফোন, ঠিকানা, রিসিপ্ট ফুটার, প্রিন্টার সাইজ (58/80mm), খরচের ক্যাটাগরি |
-| **Cash, bank & MFS** | Cash Drawer-এর ওপেনিং ব্যালেন্স দিন। bKash, Nagad, Rocket, AB Bank, Islami Bank ইত্যাদি অ্যাকাউন্ট যোগ করুন |
+| **Cash, bank & MFS** | Cash অ্যাকাউন্টের ওপেনিং ব্যালেন্স দিন। bKash, Nagad, Rocket, AB Bank, Islami Bank ইত্যাদি অ্যাকাউন্ট যোগ করুন |
 | **Products & stock → Categories, brands & warranty** | ব্র্যান্ড যোগ করুন, প্রয়োজনে ক্যাটাগরি বা ওয়ারেন্টি পিরিয়ড বদলান |
 | **Products & stock → Add product** | Unit বেছে নিন: pcs, অথবা ক্যাবলের জন্য meter/feet। ওয়ারেন্টি থাকলে Serial-based বা Invoice-based বেছে নিন |
 | **Purchases → New purchase** | স্টক ঢোকান। Serial-based পণ্যের প্রতিটা সিরিয়াল স্ক্যান করুন |

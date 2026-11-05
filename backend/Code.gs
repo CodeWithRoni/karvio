@@ -266,7 +266,7 @@ function setupDatabase() {
     insert_('Users', { name: 'Administrator', username: 'admin', salt: salt, password_hash: hash_(salt, 'admin123'), role: 'admin', active: true, created_at: now_() });
   }
   if (!all_('Accounts').length) {
-    insert_('Accounts', { name: 'Cash Drawer', type: 'cash', number: '', opening_balance: 0, active: true, created_at: now_() });
+    insert_('Accounts', { name: 'Cash', type: 'cash', number: '', opening_balance: 0, active: true, created_at: now_() });
   }
   if (!all_('WarrantyPeriods').length) {
     insertMany_('WarrantyPeriods', [7, 30, 90, 180, 300, 900, 1500].map(function (d) { return { label: d + ' days', days: d }; }));
