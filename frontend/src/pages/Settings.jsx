@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../lib/store';
 import { api, getApiConfig, setApiConfig, testConnection } from '../lib/api';
+import { DEFAULT_API_URL } from '../config';
 import { fdatetime } from '../lib/format';
 import DataTable from '../components/DataTable';
 import { PageHead, Btn, Field, useAction, Tabs, useApi, Badge } from '../components/ui';
@@ -104,7 +105,7 @@ function ApiSettings() {
   const [cfg, setCfg] = useState(getApiConfig());
   const [busy, run] = useAction();
   const save = async () => {
-    const url = (cfg.proxyUrl || cfg.scriptUrl || '').trim();
+    const url = (cfg.proxyUrl || cfg.scriptUrl || DEFAULT_API_URL || '').trim();
     const r = await run(() => testConnection(url));
     setApiConfig(cfg);
     useStore.getState().toast(`Connected to ${r.app} v${r.version}`);
@@ -112,7 +113,7 @@ function ApiSettings() {
   return (
     <div className="card form">
       <p className="muted wide" style={{ margin: 0 }}>Stored on this device only. Change it here after redeploying the Apps Script — no rebuild needed.</p>
-      <Field label="Apps Script Web App URL" wide><input value={cfg.scriptUrl || ''} onChange={(e) => setCfg({ ...cfg, scriptUrl: e.target.value })} placeholder="https://script.google.com/macros/s/…/exec" /></Field>
+      <Field label="Apps Script Web App URL" wide hint="Leave empty to use the built-in server address."><input value={cfg.scriptUrl || ''} onChange={(e) => setCfg({ ...cfg, scriptUrl: e.target.value })} placeholder={DEFAULT_API_URL || 'https://script.google.com/macros/s/…/exec'} /></Field>
       <Field label="Custom proxy domain (optional)" wide hint="When set, requests go here instead of the script URL."><input value={cfg.proxyUrl || ''} onChange={(e) => setCfg({ ...cfg, proxyUrl: e.target.value })} placeholder="https://api.yourshop.com" /></Field>
       <div className="wide row end"><Btn kind="primary" busy={busy} onClick={save}>Test & save</Btn></div>
     </div>

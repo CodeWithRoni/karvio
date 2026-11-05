@@ -2,6 +2,8 @@
 // The URL lives in localStorage so it can be changed from Settings without rebuilding.
 // Requests are sent as text/plain — that avoids a CORS preflight, which Apps Script cannot answer.
 
+import { DEFAULT_API_URL } from '../config';
+
 const CFG_KEY = 'erp_api_config';
 const TOKEN_KEY = 'erp_token';
 
@@ -16,9 +18,9 @@ export function setApiConfig(cfg) {
 export function getToken() { return safe(() => localStorage.getItem(TOKEN_KEY), null); }
 export function setToken(t) { safe(() => (t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY))); }
 
-/** Proxy domain (optional) wins over the raw script URL. */
+/** Proxy domain (optional) wins over a saved script URL, which wins over the built-in default. */
 export function endpoint(cfg = getApiConfig()) {
-  return (cfg.proxyUrl || cfg.scriptUrl || '').trim();
+  return (cfg.proxyUrl || cfg.scriptUrl || DEFAULT_API_URL || '').trim();
 }
 
 let onAuthLost = () => {};
