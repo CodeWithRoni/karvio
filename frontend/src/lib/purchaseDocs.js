@@ -54,20 +54,20 @@ export function printPurchases(list) {
   return printHtml(`<style>@page{size:A4;margin:12mm}body{margin:0}${css}.pinv+.pinv{page-break-before:always;break-before:page}</style>${list.map(purchaseInvoiceHtml).join('')}`);
 }
 
-/** Each invoice starts on a new A4 page; long invoices continue on the next page. Bengali text renders correctly. */
-export async function pdfPurchases(list, filename) {
+/** Render each HTML block on its own A4 page(s) and download a PDF. Bengali text renders correctly. */
+export async function pdfPages(blocks, styles, filename) {
   const [{ jsPDF }, { default: html2canvas }] = await Promise.all([import('jspdf'), import('html2canvas')]);
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 32;
   const host = document.createElement('div');
   Object.assign(host.style, { position: 'absolute', left: '-10000px', top: '0', width: '760px', background: '#fff' });
-  host.innerHTML = `<style>${printFonts}${css}</style>`;
+  host.innerHTML = `<style>${printFonts}${styles}</style>`;
   document.body.appendChild(host);
   try {
     await document.fonts.load("400 12px 'Hind Siliguri'", 'বাংলা');
     let first = true;
-    for (const d of list) {
-      const el = document.createElement('div'); el.style.padding = '4px'; el.innerHTML = purchaseInvoiceHtml(d);
+    for (const html of blocks) {
+      const el = document.createElement('div'); el.style.padding = '4px'; el.innerHTML = html;
       host.appendChild(el);
       const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff', logging: false });
       el.remove();
@@ -82,6 +82,7 @@ export async function pdfPurchases(list, filename) {
     doc.save(filename);
   } finally { host.remove(); }
 }
+export const pdfPurchases = (list, filename) => pdfPages(list.map(purchaseInvoiceHtml), css, filename);
 
 /** Sheet 1: one line per invoice. Sheet 2: every product line with supplier details and serial numbers. */
 export async function excelPurchases(list, filename) {

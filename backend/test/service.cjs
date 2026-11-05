@@ -80,6 +80,16 @@ equal(A('master.import',{kind:'unit',rows:[{name:'Roll',label:'Roll',decimal:'Ye
 equal(A('bootstrap').units.find(u=>u.name==='roll').decimal,true);
 equal(A('master.import',{kind:'warranty_period',rows:[{days:730,label:'2 years'},{days:'abc'}]}).added,1);
 equal(A('master.import',{kind:'brand',rows:[{name:'Asus'},{name:'ASUS'},{name:'Dell'}]}).added,2);
+// Delete customers / suppliers only at zero balance
+const zc=A('customer.save',{name:'Zero Khata',phones:['01700000001']});
+const dc=A('customer.save',{name:'Due Khata',phones:['01700000002'],opening_balance:500});
+denied('customer.delete',{id:dc.id},/balance/i);
+equal(A('customer.statements',{ids:[zc.id,dc.id]}).map(s=>[s.party,s.closing]),[['Zero Khata',0],['Due Khata',500]]);
+A('customer.delete',{id:zc.id});
+equal(A('customers.list').some(c=>c.id===zc.id),false);
+const zs=A('supplier.save',{name:'Zero Supplier'});
+A('supplier.delete',{id:zs.id});
+equal(A('suppliers.list').some(c=>c.id===zs.id),false);
 console.log('Service item regression: '+checks+' checks passed');
 `;
 new Function('require','__dirname',harness+scenario)(require,__dirname);

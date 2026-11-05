@@ -1307,6 +1307,26 @@ function statement_(table, key, parties, sign, p) {
 }
 function customerStatement_(p) { return statement_('CustomerLedger', 'customer_id', all_('Customers'), 1, p); }
 function supplierStatement_(p) { return statement_('SupplierLedger', 'supplier_id', all_('Suppliers'), -1, p); }
+/** Statements of several customers / suppliers at once, for exporting the selected parties. */
+function partyStatements_(kind, p) {
+  var ids = Array.isArray(p.ids) ? p.ids.slice(0, 300) : [];
+  if (!ids.length) fail_('Select at least one ' + kind);
+  var parties = kind === 'customer' ? customersList_() : suppliersList_(), map = indexBy_(parties);
+  return ids.filter(function (id) { return map[id]; }).map(function (id) {
+    var st = kind === 'customer' ? customerStatement_({ customer_id: id }) : supplierStatement_({ supplier_id: id });
+    st.info = map[id]; return st;
+  });
+}
+/** A customer / supplier can be deleted only when their ledger balance is exactly 0. Old invoices keep the name. */
+function partyDelete_(kind, p, user) {
+  var table = kind === 'customer' ? 'Customers' : 'Suppliers';
+  var party = all_(table).filter(function (x) { return x.id === p.id; })[0]; if (!party) fail_((kind === 'customer' ? 'Customer' : 'Supplier') + ' not found');
+  var bal = round_((kind === 'customer' ? customerBalances_() : supplierBalances_())[party.id] || 0);
+  if (Math.abs(bal) > 0.004) fail_(party.name + ' still has a balance of ' + bal + '. Settle it to 0 before deleting');
+  remove_(table, party.id);
+  audit_(user, kind + '_delete', { name: party.name, phones: party.phones });
+  return true;
+}
 
 function expenseCreate_(p, user) {
   var amt = round_(p.amount); if (amt <= 0) fail_('Amount must be greater than 0');
@@ -1840,6 +1860,10 @@ var ROUTES = {
   'customer.save':    r_(null, function (p, u) { if (!p.id && !can_(u, 'customers') && !can_(u, 'pos')) fail_('Permission denied'); return customerSave_(p, u); }, true),
   'customer.quickAdd':r_('pos', customerQuickAdd_, true),
   'customer.statement': r_('customers', customerStatement_),
+  'customer.statements': r_('customers', function (p) { return partyStatements_('customer', p); }),
+  'customer.delete':  r_('customers', function (p, u) { return partyDelete_('customer', p, u); }, true),
+  'supplier.statements': r_('suppliers', function (p) { return partyStatements_('supplier', p); }),
+  'supplier.delete':  r_('suppliers', function (p, u) { return partyDelete_('supplier', p, u); }, true),
   'customer.payment': r_('customers', customerPayment_, true),
   'suppliers.list':   r_('suppliers', function () { return suppliersList_(); }),
   'supplier.save':    r_('suppliers', supplierSave_, true),

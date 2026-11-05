@@ -6,19 +6,20 @@ import { api } from '../lib/api';
 import { money, fdate, splitList } from '../lib/format';
 import { printStatement, printMoneyReceipt } from '../lib/receipt';
 import DataTable from './DataTable';
-import { useApi, PageHead, Modal, Btn, Field, Loading, ErrorBox, useAction, Select, DateRange, Badge, Tabs } from './ui';
+import { useApi, PageHead, Modal, Btn, Field, Loading, ErrorBox, useAction, Select, DateRange, Badge, Tabs, useConfirm } from './ui';
 import { ReverseDialog } from './widgets';
+import { excelParties, pdfParties, printParties } from '../lib/partyDocs';
 
 const CFG = {
   customer: {
     title: 'Customers & dues', sub: 'Customer directory and digital Bakir Khata — record partial payments and print statements.',
-    list: 'customers.list', save: 'customer.save', statement: 'customer.statement', payment: 'customer.payment', key: 'customer_id', path: '/customers', perm: 'customers', revType: 'cpay',
+    list: 'customers.list', save: 'customer.save', statement: 'customer.statement', statements: 'customer.statements', del: 'customer.delete', payment: 'customer.payment', key: 'customer_id', path: '/customers', perm: 'customers', revType: 'cpay',
     pos: 'Customer owes', neg: 'Advance', payLabel: 'Collect payment', dirs: [['receive', 'Collect from customer'], ['pay', 'Pay to customer (return advance)']],
     debit: 'Sales / paid out', credit: 'Received'
   },
   supplier: {
     title: 'Suppliers', sub: 'Supplier directory, accounts payable and payment history.',
-    list: 'suppliers.list', save: 'supplier.save', statement: 'supplier.statement', payment: 'supplier.payment', key: 'supplier_id', path: '/suppliers', perm: 'suppliers', revType: 'spay',
+    list: 'suppliers.list', save: 'supplier.save', statement: 'supplier.statement', statements: 'supplier.statements', del: 'supplier.delete', payment: 'supplier.payment', key: 'supplier_id', path: '/suppliers', perm: 'suppliers', revType: 'spay',
     pos: 'We owe', neg: 'Advance paid', payLabel: 'Pay supplier', dirs: [['pay', 'Pay to supplier'], ['receive', 'Receive from supplier (refund)']],
     debit: 'Paid / returned', credit: 'Purchased'
   }
@@ -42,17 +43,90 @@ export default function PartyPage({ kind }) {
         {(canManage || (kind === 'customer' && can('pos'))) && <Btn kind="primary" onClick={() => setEdit({ name: '', phones: [''], addresses: [''], address: '', opening_balance: 0, note: '' })}>Add {kind}</Btn>}
       </PageHead>
       <ErrorBox error={list.error} onRetry={list.reload} />
-      <DataTable title={c.title} loading={list.loading} rows={rows} onRowClick={canManage ? (r) => nav(`${c.path}/${r.id}`) : undefined}
-        columns={[
-          { key: 'name', label: 'Name' },
-          { key: 'phones', label: 'Phones' },
-          { key: kind === 'customer' ? 'addresses' : 'address', label: 'Address', value: (r) => (r.addresses || r.address || '').split('|').join('; '), className: 'clip' },
-          { key: 'balance', label: 'Balance', type: 'money', sum: true, render: (r) => <b style={{ color: r.balance > 0 ? 'var(--warn)' : r.balance < 0 ? 'var(--ok)' : undefined }}>{money(r.balance, false)}</b> },
-          { key: 'state', label: '', noSort: true, value: (r) => (r.balance > 0.004 ? c.pos : r.balance < -0.004 ? c.neg : ''), render: (r) => r.balance > 0.004 ? <Badge tone="warn">{c.pos}</Badge> : r.balance < -0.004 ? <Badge tone="ok">{c.neg}</Badge> : null }
-        ]} />
+      <PartyList kind={kind} rows={rows} loading={list.loading} onOpen={canManage ? (r) => nav(`${c.path}/${r.id}`) : undefined} />
       {edit && <PartyForm kind={kind} initial={edit} onClose={() => setEdit(null)} onSaved={() => { list.reload(); useStore.getState().refresh(kind === 'customer' ? 'customers' : 'suppliers'); }} />}
-      {id && canManage && <PartyDetail kind={kind} id={id} onClose={() => nav(c.path)} onEdit={(p) => setEdit({ ...p, phones: splitList(p.phones), addresses: splitList(p.addresses, '|') })} onChanged={list.reload} />}
+      {id && canManage && <PartyDetail kind={kind} id={id} onClose={() => nav(c.path)} onEdit={(p) => setEdit({ ...p, phones: splitList(p.phones), addresses: splitList(p.addresses, '|') })} onChanged={list.reload}
+        onDeleted={() => { nav(c.path); list.reload(); useStore.getState().refresh(kind === 'customer' ? 'customers' : 'suppliers'); }} />}
     </>
+  );
+}
+
+const PER = 10;
+async function exportParties(kind, ids, how) {
+  const c = CFG[kind];
+  const docs = await api(c.statements, { ids });
+  const name = docs.length === 1 ? `${kind}-${docs[0].party.replace(/[^\w\u0980-\u09ff]+/g, '-')}` : `${kind}s-${docs.length}`;
+  if (how === 'excel') return excelParties(kind, docs, `${name}.xlsx`);
+  if (how === 'pdf') return pdfParties(kind, docs, `${name}.pdf`);
+  return printParties(kind, docs);
+}
+
+/** Directory: search, 10 per page, tick parties to export their details and full ledger. */
+function PartyList({ kind, rows, loading, onOpen }) {
+  const c = CFG[kind];
+  const [q, setQ] = useState('');
+  const [page, setPage] = useState(1);
+  const [sel, setSel] = useState({});
+  const [busy, setBusy] = useState('');
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = rows.filter((r) => words.every((w) => `${r.name} ${r.phones || ''} ${r.addresses || r.address || ''}`.toLowerCase().includes(w)))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const pages = Math.max(1, Math.ceil(shown.length / PER)), cur = Math.min(page, pages);
+  const pageRows = shown.slice((cur - 1) * PER, cur * PER);
+  const ids = Object.keys(sel);
+  const allOnPage = pageRows.length > 0 && pageRows.every((r) => sel[r.id]);
+  const toggle = (r) => setSel((x) => { const n = { ...x }; if (n[r.id]) delete n[r.id]; else n[r.id] = 1; return n; });
+  const togglePage = () => setSel((x) => { const n = { ...x }; pageRows.forEach((r) => { if (allOnPage) delete n[r.id]; else n[r.id] = 1; }); return n; });
+  const out = async (how) => { setBusy(how); try { await exportParties(kind, ids, how); } catch (e) { useStore.getState().toast(e.message, 'err'); } finally { setBusy(''); } };
+  const nums = [...new Set([1, pages, cur - 2, cur - 1, cur, cur + 1, cur + 2])].filter((n) => n >= 1 && n <= pages).sort((a, b) => a - b);
+  const total = shown.reduce((a, r) => a + (Number(r.balance) || 0), 0);
+  useEffect(() => { setPage(1); }, [q, rows.length]);
+
+  return (
+    <div className="dt">
+      <div className="dt-bar">
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, phone or address" aria-label={`Search ${kind}s`} style={{ maxWidth: 340 }} />
+        <span className="spacer" />
+        <div className="pl-export">
+          <span className="muted">{ids.length ? `${ids.length} selected` : `Tick ${kind}s to export`}</span>
+          {ids.length > 0 && <button className="link" onClick={() => setSel({})}>Clear</button>}
+          <div className="seg">
+            <button disabled={!ids.length || !!busy} onClick={() => out('excel')}>{busy === 'excel' ? '…' : 'Excel'}</button>
+            <button disabled={!ids.length || !!busy} onClick={() => out('pdf')}>{busy === 'pdf' ? '…' : 'PDF'}</button>
+            <button disabled={!ids.length || !!busy} onClick={() => out('print')}>{busy === 'print' ? '…' : 'Print'}</button>
+          </div>
+        </div>
+      </div>
+      <div className="dt-scroll"><table className="pl-table">
+        <thead><tr>
+          <th style={{ width: 36 }}><input type="checkbox" checked={allOnPage} onChange={togglePage} aria-label="Select all on this page" /></th>
+          <th>Name</th><th>Phones</th><th>Address</th><th className="r">Balance</th><th />
+        </tr></thead>
+        <tbody>{pageRows.map((r) => (
+          <tr key={r.id} className={sel[r.id] ? 'picked' : ''} onClick={() => onOpen && onOpen(r)} style={{ cursor: onOpen ? 'pointer' : 'default' }}>
+            <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={!!sel[r.id]} onChange={() => toggle(r)} aria-label={`Select ${r.name}`} /></td>
+            <td><b>{r.name}</b>{!r.active && <> <Badge>inactive</Badge></>}</td>
+            <td>{splitList(r.phones || '').join(', ')}</td>
+            <td className="clip">{(r.addresses || r.address || '').split('|').filter(Boolean).join('; ')}</td>
+            <td className="r num"><b style={{ color: r.balance > 0 ? 'var(--warn)' : r.balance < 0 ? 'var(--ok)' : undefined }}>{money(r.balance, false)}</b></td>
+            <td>{r.balance > 0.004 ? <Badge tone="warn">{c.pos}</Badge> : r.balance < -0.004 ? <Badge tone="ok">{c.neg}</Badge> : null}</td>
+          </tr>
+        ))}</tbody>
+        {shown.length > 0 && <tfoot><tr><td /><td colSpan={3}><b>Total of {shown.length} {kind}{shown.length === 1 ? '' : 's'}</b></td><td className="r num"><b>{money(total, false)}</b></td><td /></tr></tfoot>}
+      </table>
+      {loading && !rows.length && <Loading />}
+      {!loading && !shown.length && <div className="empty"><b>No {kind}s found</b><div>{q ? 'Try another search.' : `Add your first ${kind}.`}</div></div>}
+      </div>
+      {pages > 1 && (
+        <div className="pager">
+          <span className="muted">Showing {(cur - 1) * PER + 1}–{Math.min(cur * PER, shown.length)} of {shown.length}</span>
+          <span className="spacer" />
+          <button disabled={cur <= 1} onClick={() => setPage(cur - 1)}>‹ Prev</button>
+          {nums.map((n, i) => <span key={n} style={{ display: 'contents' }}>{i > 0 && n - nums[i - 1] > 1 && <span className="gap">…</span>}<button className={n === cur ? 'on' : ''} onClick={() => setPage(n)} aria-current={n === cur ? 'page' : undefined}>{n}</button></span>)}
+          <button disabled={cur >= pages} onClick={() => setPage(cur + 1)}>Next ›</button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -92,7 +166,7 @@ function PartyForm({ kind, initial, onClose, onSaved }) {
   );
 }
 
-function PartyDetail({ kind, id, onClose, onEdit, onChanged }) {
+function PartyDetail({ kind, id, onClose, onEdit, onChanged, onDeleted }) {
   const c = CFG[kind];
   const { accounts, can } = useStore();
   const [range, setRange] = useState({ from: '', to: '' });
@@ -100,15 +174,30 @@ function PartyDetail({ kind, id, onClose, onEdit, onChanged }) {
   const party = useApi(c.list, {}).data?.find((x) => x.id === id);
   const [pay, setPay] = useState(false);
   const [rev, setRev] = useState(null);
+  const [confirmUI, ask] = useConfirm();
+  const [busy, run] = useAction();
+  // Full-period statement closing is the live balance; with a date filter fall back to the directory balance.
+  const liveBal = st.data && !range.from && !range.to ? st.data.closing : Number(party?.balance) || 0;
+  const zero = party && Math.abs(liveBal) < 0.005;
+  const del = async () => {
+    if (!(await ask({ title: `Delete ${kind}?`, message: <>Delete <b>“{party.name}”</b> permanently? Their balance is 0. Old invoices keep the name.</> }))) return;
+    try { await run(() => api(c.del, { id }), `${party.name} deleted`); onDeleted(); } catch { /* toast shown */ }
+  };
 
   return (
     <Modal open onClose={onClose} size="lg" title={st.data ? st.data.party : 'Ledger'}
       footer={st.data && <>
         {party && <Btn onClick={() => onEdit(party)}>Edit details</Btn>}
+        {party && <Btn kind="danger" busy={busy} disabled={!zero} onClick={del} title={zero ? `Delete this ${kind}` : `Only a ${kind} with 0 balance can be deleted`}>Delete</Btn>}
+        <div className="seg">
+          <button onClick={() => exportParties(kind, [id], 'excel')}>Excel</button>
+          <button onClick={() => exportParties(kind, [id], 'pdf')}>PDF</button>
+          <button onClick={() => printStatement(kind, st.data, range.from, range.to)}>Print</button>
+        </div>
         <span className="spacer" />
-        <Btn onClick={() => printStatement(kind, st.data, range.from, range.to)}>Print statement</Btn>
         <Btn kind="primary" onClick={() => setPay(true)}>{c.payLabel}</Btn>
       </>}>
+      {party && !zero && <div className="muted del-note">Delete is available when the balance is 0 (now {money(liveBal)}).</div>}
       {st.loading && !st.data && <Loading />}
       <ErrorBox error={st.error} onRetry={st.reload} />
       {st.data && (
@@ -132,6 +221,7 @@ function PartyDetail({ kind, id, onClose, onEdit, onChanged }) {
       )}
       {pay && <PaymentForm kind={kind} id={id} name={st.data?.party} balance={st.data?.closing} accounts={accounts} onClose={() => setPay(false)} onDone={() => { st.reload(); onChanged(); }} />}
       <ReverseDialog open={!!rev} {...(rev || {})} onClose={() => setRev(null)} onDone={() => { st.reload(); onChanged(); }} />
+      {confirmUI}
     </Modal>
   );
 }
