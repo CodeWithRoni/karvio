@@ -342,8 +342,8 @@ table { width: 100%; border-collapse: collapse; }
 .master-row .link, .master-row .del-btn { flex: none; }
 .master-row .del-btn { margin-left: 2px; }
 
-/* ---------- master data: three equal panels with scrolling lists ---------- */
-.md-grid { display: grid; grid-template-columns: 1.45fr 1fr 1fr; gap: 14px; align-items: stretch; }
+/* ---------- master data: product groups, categories, brands and warranty ---------- */
+.md-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; align-items: stretch; }
 .md-panel {
   display: flex; flex-direction: column; min-width: 0;
   height: clamp(440px, calc(100vh - 190px), 760px);
@@ -365,6 +365,7 @@ table { width: 100%; border-collapse: collapse; }
 .md-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; min-height: 40px; }
 .md-row:hover { background: var(--panel-2); }
 .md-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.md-category-group { display: block; color: var(--muted); font-size: 11px; line-height: 1.5; overflow: hidden; text-overflow: ellipsis; }
 .md-actions { display: flex; gap: 6px; flex: none; opacity: .9; }
 .md-row:hover .md-actions { opacity: 1; }
 .md-pill { flex: none; font-size: 11px; font-weight: 700; color: var(--muted); border: 1px solid var(--line); border-radius: 99px; padding: 1px 8px; }
@@ -394,7 +395,7 @@ table { width: 100%; border-collapse: collapse; }
 .act-icon { width: 28px; padding: 0; justify-content: center; }
 .md-subcount { margin-left: 8px; font-size: 11px; font-weight: 700; color: var(--muted); border: 1px solid var(--line); border-radius: 99px; padding: 0 7px; vertical-align: 1px; }
 
-@media (max-width: 1280px) { .md-grid { grid-template-columns: 1fr 1fr; } .md-grid > :first-child { grid-row: span 2; height: auto; min-height: 100%; } .md-grid > :not(:first-child) { height: clamp(320px, calc(50vh - 100px), 420px); } }
+@media (max-width: 1550px) { .md-grid { grid-template-columns: 1fr 1fr; } .md-grid > .md-panel { height: clamp(340px, calc(50vh - 80px), 460px); } }
 @media (max-width: 860px) {
   .md-grid { grid-template-columns: 1fr; }
   .md-grid > .md-panel { height: 480px !important; grid-row: auto !important; }

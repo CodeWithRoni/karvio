@@ -5,7 +5,7 @@ import { money, qty as fqty } from '../lib/format';
 import { printQuotation } from '../lib/receipt';
 import { PageHead, Btn, Field } from '../components/ui';
 
-// Each slot suggests products from the matching sub-category (by name), but any product or a free-text line works.
+// Suggest parts using their product group, category or product name.
 const SLOTS = [
   ['Processor', ['cpu', 'processor']], ['Motherboard', ['motherboard']], ['RAM', ['ram', 'memory']], ['Storage', ['ssd', 'hdd', 'storage']],
   ['Graphics card', ['gpu', 'graphics']], ['Power supply', ['power supply', 'psu']], ['Casing', ['casing', 'case']], ['CPU cooler / fans', ['cool', 'fan']],
@@ -23,7 +23,7 @@ export default function PCBuilder() {
   const [saved, setSaved] = useState(loadSaved);
 
   const catName = useMemo(() => Object.fromEntries(categories.map((c) => [c.id, c.name.toLowerCase()])), [categories]);
-  const optionsFor = (keys) => products.filter((p) => p.active && keys.some((k) => (catName[p.subcategory_id] || '').includes(k) || p.name.toLowerCase().includes(k)));
+  const optionsFor = (keys) => products.filter((p) => p.active && keys.some((k) => (catName[p.category_id] || '').includes(k) || (catName[p.subcategory_id] || '').includes(k) || p.name.toLowerCase().includes(k)));
   const upd = (i, patch) => setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const pick = (i, id) => {
     const p = products.find((x) => x.id === id);

@@ -31,12 +31,12 @@ export default function Stock() {
     if (f.qty !== '' && Number(p.stock) !== Number(f.qty)) return false;
     if (f.low && p.stock > (p.low_stock > 0 ? p.low_stock : lowDef)) return false;
     return true;
-  }).map((p) => ({ ...p, category: catMap[p.category_id] || '', subcategory: catMap[p.subcategory_id] || '', brand: brandMap[p.brand_id] || '', value: p.stock * (p.cost_price || 0) })), [products, f, catMap, brandMap, lowDef]);
+  }).map((p) => ({ ...p, group: catMap[p.category_id] || '', category: catMap[p.subcategory_id] || '', brand: brandMap[p.brand_id] || '', value: p.stock * (p.cost_price || 0) })), [products, f, catMap, brandMap, lowDef]);
 
   const cols = [
     { key: 'name', label: 'Product', render: (r) => <><b>{r.name}</b>{!r.active && <> <Badge>inactive</Badge></>}<div className="muted" style={{ fontSize: 12 }}>{[r.sku, r.barcode].filter(Boolean).join(' / ')}</div></> , value: (r) => r.name },
+    { key: 'group', label: 'Product group' },
     { key: 'category', label: 'Category' },
-    { key: 'subcategory', label: 'Sub-category' },
     { key: 'brand', label: 'Brand' },
     { key: 'stock', label: 'Stock', type: 'num', render: (r) => <b style={{ color: r.stock <= 0 ? 'var(--bad)' : r.stock <= (r.low_stock > 0 ? r.low_stock : lowDef) ? 'var(--warn)' : undefined }}>{fqty(r.stock, r.unit)}</b> },
     { key: 'unit', label: 'Unit' },
@@ -49,7 +49,7 @@ export default function Stock() {
 
   return (
     <>
-      <PageHead title="Products & stock" sub="Filter by category, brand or an exact stock quantity — 0 shows everything out of stock.">
+      <PageHead title="Products & stock" sub="Filter by product group, category, brand or an exact stock quantity — 0 shows everything out of stock.">
         {can('products') && <Tabs tabs={[['stock', 'Stock explorer'], ['master', 'Categories, brands & warranty']]} value={tab} onChange={setTab} />}
         {can('products') && <Btn kind="primary" onClick={() => setEdit({ ...blank, low_stock: '' })}>Add product</Btn>}
       </PageHead>
@@ -57,8 +57,8 @@ export default function Stock() {
       {tab === 'stock' ? (
         <>
           <div className="filters">
-            <Field label="Category"><Select value={f.cat} onChange={(v) => setF({ ...f, cat: v, sub: '' })} options={tops} placeholder="All categories" /></Field>
-            <Field label="Sub-category"><Select value={f.sub} onChange={(v) => setF({ ...f, sub: v })} options={subs} placeholder="All" /></Field>
+            <Field label="Product group"><Select value={f.cat} onChange={(v) => setF({ ...f, cat: v, sub: '' })} options={tops} placeholder="All groups" /></Field>
+            <Field label="Category"><Select value={f.sub} onChange={(v) => setF({ ...f, sub: v })} options={subs.map((c) => ({ ...c, name: f.cat ? c.name : `${catMap[c.parent_id]} / ${c.name}` }))} placeholder="All categories" /></Field>
             <Field label="Brand"><Select value={f.brand} onChange={(v) => setF({ ...f, brand: v })} options={brands} placeholder="All brands" /></Field>
             <Field label="Exact stock qty"><input type="number" step="any" value={f.qty} onChange={(e) => setF({ ...f, qty: e.target.value })} placeholder="e.g. 0" style={{ width: 120, minWidth: 0 }} /></Field>
             <label className="check" style={{ paddingBottom: 8 }}><input type="checkbox" checked={f.low} onChange={(e) => setF({ ...f, low: e.target.checked })} /> Low stock only</label>
@@ -100,8 +100,8 @@ function ProductForm({ initial, onClose }) {
         <Field label="Product name" wide><input value={f.name} onChange={s('name')} placeholder="e.g. TP-Link Archer C6 Router" autoFocus /></Field>
         <Field label="Barcode"><input value={f.barcode} onChange={s('barcode')} placeholder="Scan into this box" /></Field>
         <Field label="SKU / model"><input value={f.sku} onChange={s('sku')} /></Field>
-        <Field label="Category"><Select value={f.category_id} onChange={(v) => setF({ ...f, category_id: v, subcategory_id: '' })} options={tops} /></Field>
-        <Field label="Sub-category"><Select value={f.subcategory_id} onChange={(v) => setF({ ...f, subcategory_id: v })} options={subs} /></Field>
+        <Field label="Product group"><Select value={f.category_id} onChange={(v) => setF({ ...f, category_id: v, subcategory_id: '' })} options={tops} placeholder="Select a group" /></Field>
+        <Field label="Category"><Select value={f.subcategory_id} onChange={(v) => setF({ ...f, subcategory_id: v })} options={subs} placeholder={f.category_id ? 'Select a category' : 'Select a group first'} /></Field>
         <Field label="Brand"><Select value={f.brand_id} onChange={(v) => setF({ ...f, brand_id: v })} options={brands} /></Field>
         <Field label="Selling unit" hint="Meter / feet lets you sell cable from bulk rolls.">
           <select value={f.unit} onChange={(e) => setF({ ...f, unit: e.target.value, warranty_type: e.target.value !== 'pcs' ? 'invoice' : f.warranty_type })}>

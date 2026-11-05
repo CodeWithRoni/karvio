@@ -1,5 +1,4 @@
-// Categories → sub-categories, brands and warranty periods.
-// Three equal, fixed-height panels: header and add-form stay put, the list scrolls.
+// Product groups contain categories. Keep the existing IDs and parent links.
 import { useMemo, useState } from 'react';
 import { useStore } from '../lib/store';
 import { api } from '../lib/api';
@@ -42,23 +41,26 @@ function Panel({ title, count, hint, form, search, setSearch, children, empty })
 export default function MasterData() {
   const { categories, brands, warrantyPeriods, products, refresh } = useStore();
   // Separate busy flags: only the button that was pressed shows the spinner.
+  const [busyGroup, runGroup] = useAction();
   const [busyCat, runCat] = useAction();
   const [busyBrand, runBrand] = useAction();
   const [busyWarranty, runWarranty] = useAction();
   const [busyEdit, runEdit] = useAction();
   const [, runDel] = useAction();
-  const runners = { category: runCat, brand: runBrand, warranty_period: runWarranty };
+  const runners = { group: runGroup, category: runCat, brand: runBrand, warranty_period: runWarranty };
   const [confirmUI, ask] = useConfirm();
+  const [ng, setNg] = useState('');
   const [nc, setNc] = useState({ name: '', parent_id: '' });
   const [nb, setNb] = useState('');
   const [nw, setNw] = useState({ days: '', label: '' });
   const [qc, setQc] = useState('');
+  const [qg, setQg] = useState('');
   const [qb, setQb] = useState('');
-  const [closed, setClosed] = useState({});
   const [edit, setEdit] = useState(null); // { kind, item, field, value }
 
   const tops = categories.filter((c) => !c.parent_id);
   const subsOf = (id) => categories.filter((c) => c.parent_id === id);
+  const groupNames = Object.fromEntries(tops.map((g) => [g.id, g.name]));
   const used = useMemo(() => {
     const m = {};
     products.forEach((p) => { [p.category_id, p.subcategory_id, p.brand_id].forEach((id) => { if (id) m[id] = (m[id] || 0) + 1; }); });
@@ -67,14 +69,13 @@ export default function MasterData() {
 
   // The spinner keeps going until the list has reloaded, so the new item appears as the spinner stops.
   const save = (p, msg, runner = runners[p.kind]) => runner(async () => { const r = await api('master.save', p); await refresh('all'); return r; }, msg);
-  const KIND = { category: 'category', brand: 'brand', warranty_period: 'warranty period' };
+  const KIND = { group: 'product group', category: 'category', brand: 'brand', warranty_period: 'warranty period' };
 
   const del = async (kind, item) => {
     const name = item.name || item.label;
-    const isMain = kind === 'category' && !item.parent_id;
     const ok = await ask({
-      title: `Delete ${isMain ? 'category' : kind === 'category' ? 'sub-category' : KIND[kind]}?`,
-      message: <>Are you sure you want to delete <b>“{name}”</b>?{isMain ? ' Its sub-categories must be deleted first.' : ''}{kind !== 'warranty_period' ? ' Items used by products cannot be deleted.' : ' Products already set to this period keep their warranty days.'}</>
+      title: `Delete ${KIND[kind]}?`,
+      message: <>Are you sure you want to delete <b>“{name}”</b>?{kind === 'group' ? ' Delete its categories first.' : ''}{kind !== 'warranty_period' ? ' Items used by products cannot be deleted.' : ' Products already set to this period keep their warranty days.'}</>
     });
     if (!ok) return;
     try { await runDel(async () => { await api('master.delete', { kind, id: item.id }); await refresh('all'); }, `${name} deleted`); } catch { /* error shown as a toast */ }
@@ -86,63 +87,61 @@ export default function MasterData() {
     try { await save({ ...edit.item, kind: edit.kind, [edit.field]: v }, 'Renamed', runEdit); setEdit(null); } catch {}
   };
 
-  // category search: show a main category if it or any of its sub-categories match
   const q = qc.trim().toLowerCase();
-  const visibleTops = tops.filter((t) => !q || t.name.toLowerCase().includes(q) || subsOf(t.id).some((s) => s.name.toLowerCase().includes(q)));
+  const shownGroups = tops.filter((g) => !qg.trim() || g.name.toLowerCase().includes(qg.trim().toLowerCase())).sort((a, b) => a.name.localeCompare(b.name));
+  const childCategories = categories.filter((c) => c.parent_id);
+  const shownCategories = childCategories.filter((c) => !q || `${c.name} ${groupNames[c.parent_id] || ''}`.toLowerCase().includes(q)).sort((a, b) => (groupNames[a.parent_id] || '').localeCompare(groupNames[b.parent_id] || '') || a.name.localeCompare(b.name));
   const shownBrands = brands.filter((b) => !qb.trim() || b.name.toLowerCase().includes(qb.trim().toLowerCase())).sort((a, b) => a.name.localeCompare(b.name));
   const periods = [...warrantyPeriods].sort((a, b) => a.days - b.days);
 
   return (
     <div className="md-grid">
-      {/* ---------------- Categories ---------------- */}
-      <Panel title="Categories" count={`${tops.length} main · ${categories.length - tops.length} sub`} search={qc} setSearch={setQc}
+      <Panel title="Product groups" count={tops.length} hint="Create a group such as PROCESSOR. Its categories can be INTEL or AMD." search={qg} setSearch={setQg}
         form={
-          <form className="md-form md-form-cat" onSubmit={(e) => { e.preventDefault(); save({ kind: 'category', ...nc }, nc.parent_id ? 'Sub-category added' : 'Category added').then(() => setNc({ name: '', parent_id: nc.parent_id })).catch(() => {}); }}>
-            <select value={nc.parent_id} onChange={(e) => setNc({ ...nc, parent_id: e.target.value })} aria-label="Add as">
-              <option value="">New main category</option>
-              {tops.map((t) => <option key={t.id} value={t.id}>Sub-category of {t.name}</option>)}
-            </select>
+          <form className="md-form" onSubmit={(e) => { e.preventDefault(); save({ kind: 'group', name: ng }, 'Product group added').then(() => setNg('')).catch(() => {}); }}>
             <div className="md-form-row">
-              <input value={nc.name} onChange={(e) => setNc({ ...nc, name: e.target.value })} placeholder={nc.parent_id ? 'Sub-category name' : 'Category name'} aria-label="Name" />
-              <Btn kind="primary" busy={busyCat} type="submit" disabled={!nc.name.trim()}>Add</Btn>
+              <input value={ng} onChange={(e) => setNg(e.target.value)} placeholder="e.g. PROCESSOR" aria-label="Group name" />
+              <Btn kind="primary" busy={busyGroup} type="submit" disabled={!ng.trim()}>Add</Btn>
             </div>
           </form>
         }
-        empty={!visibleTops.length && <p className="md-empty">{q ? 'No category matches your search.' : 'No categories yet.'}</p>}>
-        {visibleTops.map((t) => {
-          const subs = subsOf(t.id).filter((s) => !q || t.name.toLowerCase().includes(q) || s.name.toLowerCase().includes(q));
-          const open = q ? true : !closed[t.id];
-          return (
-            <div className="md-group" key={t.id}>
-              <div className="md-row md-main">
-                <button type="button" className={`md-toggle ${open ? 'open' : ''}`} onClick={() => setClosed({ ...closed, [t.id]: open })} aria-expanded={open} aria-label={`${open ? 'Collapse' : 'Expand'} ${t.name}`}>
-                  <Svg name="chevron" size={14} />
-                </button>
-                <span className="md-name" title={t.name}>{t.name}<small className="md-subcount">{subsOf(t.id).length}</small></span>
-                <div className="md-actions">
-                  <ActBtn tone="add" icon="plus" title={`Add a sub-category under ${t.name}`} aria-label={`Add sub-category to ${t.name}`} className="act-btn act-add act-icon" onClick={() => { setNc({ name: '', parent_id: t.id }); setTimeout(() => document.querySelector('.md-form-cat input')?.focus(), 0); }} />
-                  <ActBtn tone="edit" icon="edit" onClick={() => setEdit({ kind: 'category', item: t, field: 'name', value: t.name })} aria-label={`Rename ${t.name}`}>Rename</ActBtn>
-                  <ActBtn tone="delete" icon="trash" onClick={() => del('category', t)} aria-label={`Delete ${t.name}`}>Delete</ActBtn>
-                </div>
-              </div>
-              {open && (
-                <ul className="md-subs">
-                  {subs.map((c) => (
-                    <li className="md-row md-sub" key={c.id}>
-                      <span className="md-name" title={c.name}>{c.name}</span>
-                      {used[c.id] > 0 && <span className="md-pill md-used" title="Products in this sub-category">{used[c.id]} products</span>}
-                      <div className="md-actions">
-                        <ActBtn tone="edit" icon="edit" onClick={() => setEdit({ kind: 'category', item: c, field: 'name', value: c.name })} aria-label={`Rename ${c.name}`}>Rename</ActBtn>
-                        <ActBtn tone="delete" icon="trash" onClick={() => del('category', c)} aria-label={`Delete ${c.name}`}>Delete</ActBtn>
-                      </div>
-                    </li>
-                  ))}
-                  {!subs.length && <li className="md-sub md-none">No sub-categories yet</li>}
-                </ul>
-              )}
+        empty={!shownGroups.length && <p className="md-empty">{qg ? 'No group matches your search.' : 'Add a product group first.'}</p>}>
+        <ul className="md-list">
+          {shownGroups.map((g) => <li className="md-row" key={g.id}>
+            <div className="md-name"><b title={g.name}>{g.name}</b><small className="md-category-group">{subsOf(g.id).length} categories</small></div>
+            <div className="md-actions">
+              <ActBtn tone="add" icon="plus" className="act-btn act-add act-icon" title={`Add a category under ${g.name}`} aria-label={`Add category to ${g.name}`} onClick={() => { setNc({ name: '', parent_id: g.id }); document.querySelector('.md-form-cat input')?.focus(); }} />
+              <ActBtn tone="edit" icon="edit" onClick={() => setEdit({ kind: 'group', item: g, field: 'name', value: g.name })} aria-label={`Rename ${g.name}`}>Rename</ActBtn>
+              <ActBtn tone="delete" icon="trash" onClick={() => del('group', g)} aria-label={`Delete ${g.name}`}>Delete</ActBtn>
             </div>
-          );
-        })}
+          </li>)}
+        </ul>
+      </Panel>
+
+      {/* ---------------- Categories ---------------- */}
+      <Panel title="Categories" count={childCategories.length} hint="Select a product group, then add its category." search={qc} setSearch={setQc}
+        form={
+          <form className="md-form md-form-cat" onSubmit={(e) => { e.preventDefault(); if (!nc.parent_id) return; save({ kind: 'category', ...nc }, 'Category added').then(() => setNc({ name: '', parent_id: nc.parent_id })).catch(() => {}); }}>
+            <select required value={nc.parent_id} onChange={(e) => setNc({ ...nc, parent_id: e.target.value })} aria-label="Category group">
+              <option value="">Select a product group</option>
+              {tops.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+            <div className="md-form-row">
+              <input value={nc.name} onChange={(e) => setNc({ ...nc, name: e.target.value })} placeholder="e.g. INTEL / AMD" aria-label="Category name" />
+              <Btn kind="primary" busy={busyCat} type="submit" disabled={!nc.name.trim() || !nc.parent_id}>Add</Btn>
+            </div>
+          </form>
+        }
+        empty={!shownCategories.length && <p className="md-empty">{q ? 'No category matches your search.' : 'No categories yet. Choose a group above to add one.'}</p>}>
+        <ul className="md-list">
+          {shownCategories.map((c) => <li className="md-row" key={c.id}>
+            <div className="md-name"><span title={c.name}>{c.name}</span><small className="md-category-group" title={groupNames[c.parent_id]}>{groupNames[c.parent_id] || 'Unknown group'}</small></div>
+            <div className="md-actions">
+              <ActBtn tone="edit" icon="edit" onClick={() => setEdit({ kind: 'category', item: c, field: 'name', value: c.name })} aria-label={`Rename ${c.name}`}>Rename</ActBtn>
+              <ActBtn tone="delete" icon="trash" onClick={() => del('category', c)} aria-label={`Delete ${c.name}`}>Delete</ActBtn>
+            </div>
+          </li>)}
+        </ul>
       </Panel>
 
       {/* ---------------- Brands ---------------- */}
@@ -197,7 +196,7 @@ export default function MasterData() {
       </Panel>
 
       <Modal open={!!edit} onClose={() => setEdit(null)} size="sm"
-        title={edit ? `Rename ${edit.kind === 'category' ? (edit.item.parent_id ? 'sub-category' : 'category') : KIND[edit.kind]}` : ''}
+        title={edit ? `Rename ${KIND[edit.kind]}` : ''}
         footer={<><Btn onClick={() => setEdit(null)}>Cancel</Btn><Btn kind="primary" busy={busyEdit} onClick={saveEdit}>Save name</Btn></>}>
         {edit && (
           <form onSubmit={saveEdit}>

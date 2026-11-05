@@ -15,7 +15,7 @@
  * ============================================================================
  */
 
-var APP_VERSION = '1.0.1';
+var APP_VERSION = '1.0.2';
 // Your ShopERP Database spreadsheet. Lets this script also run as a standalone project.
 var DEFAULT_SHEET_ID = '1r7WI5GNHtppUCtCu_rZUmvfum92i0HZdK298Z4uZH7w';
 var SESSION_TTL = 21600; // 6 hours (CacheService maximum)
@@ -449,6 +449,7 @@ function sum_(arr, f) { return arr.reduce(function (s, x) { return s + f(x); }, 
  *  5. MASTER DATA  (categories, brands, warranty periods)
  * ========================================================================== */
 var MASTER = {
+  group: { table: 'Categories', fields: ['name', 'parent_id'], usedBy: function (id) { return MASTER.category.usedBy(id); } },
   category: { table: 'Categories', fields: ['name', 'parent_id'], usedBy: function (id) { return all_('Products').some(function (p) { return p.category_id === id || p.subcategory_id === id; }) || all_('Categories').some(function (c) { return c.parent_id === id; }); } },
   brand: { table: 'Brands', fields: ['name'], usedBy: function (id) { return all_('Products').some(function (p) { return p.brand_id === id; }); } },
   warranty_period: { table: 'WarrantyPeriods', fields: ['label', 'days'], usedBy: function () { return false; } }
@@ -461,11 +462,33 @@ function masterSave_(p, user) {
     if (row.days <= 0) fail_('Warranty days must be greater than 0');
     row.label = String(row.label || '').trim() || (row.days + ' days');
   } else if (!String(row.name || '').trim()) fail_('Name is required');
+  if (p.kind === 'group' || p.kind === 'category') {
+    row.name = String(row.name).trim();
+    var categories = all_('Categories'), current = p.id ? indexBy_(categories)[p.id] : null;
+    if (p.id && !current) fail_('Product group or category not found');
+    if (p.kind === 'group') {
+      if (current && current.parent_id) fail_('This item is a category, not a product group');
+      row.parent_id = '';
+    } else {
+      var parent = indexBy_(categories)[row.parent_id];
+      if (!parent || parent.parent_id) fail_('Select a valid product group for this category');
+      if (current && !current.parent_id) fail_('Edit this item as a product group');
+      if (current && current.parent_id !== row.parent_id && all_('Products').some(function (pr) { return pr.subcategory_id === p.id; }))
+        fail_('A category used by products cannot be moved to another group');
+    }
+    if (categories.some(function (c) { return c.id !== p.id && c.parent_id === row.parent_id && c.name.trim().toLowerCase() === row.name.toLowerCase(); }))
+      fail_((p.kind === 'group' ? 'Product group' : 'Category in this group') + ' already exists');
+  }
   if (p.id) return update_(m.table, p.id, row);
   return insert_(m.table, row);
 }
 function masterDelete_(p, user) {
   var m = MASTER[p.kind]; if (!m) fail_('Unknown master type');
+  if (p.kind === 'group' || p.kind === 'category') {
+    var item = indexBy_(all_('Categories'))[p.id];
+    if (!item) fail_('Product group or category not found');
+    if ((p.kind === 'group') !== !item.parent_id) fail_('Choose the correct product group or category');
+  }
   if (m.usedBy(p.id)) fail_('This item is in use and cannot be deleted');
   remove_(m.table, p.id); return true;
 }
@@ -489,6 +512,9 @@ function productSave_(p, user) {
     if (barcode && x.barcode === barcode) fail_('Barcode already used by: ' + x.name);
     if (sku && x.sku === sku) fail_('SKU already used by: ' + x.name);
   });
+  var classifications = indexBy_(all_('Categories'));
+  if (p.category_id && (!classifications[p.category_id] || classifications[p.category_id].parent_id)) fail_('Select a valid product group');
+  if (p.subcategory_id && (!classifications[p.subcategory_id] || classifications[p.subcategory_id].parent_id !== p.category_id)) fail_('Category must belong to the selected product group');
   var row = {
     sku: sku, barcode: barcode, name: name, category_id: p.category_id || '', subcategory_id: p.subcategory_id || '', brand_id: p.brand_id || '',
     unit: unit, roll_length: unit === 'pcs' ? 0 : num_(p.roll_length), cost_price: num_(p.cost_price), sale_price: num_(p.sale_price), wholesale_price: num_(p.wholesale_price),

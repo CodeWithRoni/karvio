@@ -1,4 +1,14 @@
-# ShopERP 1.0.1
+# ShopERP 1.0.2
+
+## Product groups ও categories
+
+- চারটি আলাদা কার্ড: Product groups, Categories, Brands, Warranty periods। Product groups-এ PROCESSOR-এর মতো গ্রুপ তৈরি করুন। Categories-এ গ্রুপ বেছে INTEL বা AMD যোগ করুন।
+- গ্রুপ বাছাই ছাড়া category তৈরি করা যায় না। একই গ্রুপে একই category নাম দ্বিতীয়বার যোগ করা যায় না; আলাদা গ্রুপে একই নাম ব্যবহার করা যায়।
+- আগে রাখা main category এখন Product group হিসেবে এবং তার sub-category এখন Category হিসেবে দেখা যায়। বিদ্যমান ID, পণ্যের সম্পর্ক ও stock history বদলায় না; কোনো database reset প্রয়োজন নেই।
+- Add product, stock filter ও export-এ Product group / Category নাম ব্যবহার করা হয়। PC builder-ও group অনুযায়ী পণ্য খুঁজে পায়।
+- ব্যবহৃত group বা category মুছে ফেলা যায় না।
+
+## আগের 1.0.1 সংশোধন
 
 ## সংশোধন
 
@@ -36,7 +46,7 @@ npm run test:e2e
 npm run verify:live
 ```
 
-অফলাইন হিসাব: ১৫২টি পুরোনো + ১৮টি নতুন check। ব্রাউজারের ৬টি পরীক্ষা: মূল স্ক্রিনগুলো, dashboard refresh ও error recovery, confirmation, বাংলা PDF/Excel ও দুই মাপের receipt document, মোবাইল, বড় বাংলা PDF। Browser test-এ Microsoft Edge ব্যবহার করা হয়।
+অফলাইন পরীক্ষা: ১৫২টি পুরোনো + ১৮টি valuation + ২২টি product group/category check। ব্রাউজারের ৭টি পরীক্ষা: মূল স্ক্রিনগুলো, dashboard refresh ও error recovery, confirmation, বাংলা PDF/Excel ও দুই মাপের receipt document, মোবাইল, বড় বাংলা PDF এবং Group → Category → Product → Stock filter → PC builder। Browser test-এ Microsoft Edge ব্যবহার করা হয়।
 
 সব fixture লেনদেন local in-memory mock server-এ চলে। Google Sheet-এ পরীক্ষার ক্রয়-বিক্রয় লেখা হয় না। SMS mock দিয়ে পরীক্ষা করা হয়েছে; বাস্তব SMS delivery এবং physical thermal printer আলাদাভাবে পরীক্ষা করতে হবে।
 
