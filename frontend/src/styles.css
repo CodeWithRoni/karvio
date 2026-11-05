@@ -321,3 +321,11 @@ table { width: 100%; border-collapse: collapse; }
 .perm th { color: var(--muted); font-size: 12px; }
 .perm .badge { margin-left: 8px; }
 .filters input[type='checkbox'] { min-width: 0; }
+
+/* live clock in the dashboard header */
+.live-clock {
+  font-size: 26px; font-weight: 800; letter-spacing: .01em; font-variant-numeric: tabular-nums;
+  color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  padding: 6px 16px; white-space: nowrap; align-self: center;
+}
+@media (max-width: 860px) { .live-clock { font-size: 20px; order: 3; } }

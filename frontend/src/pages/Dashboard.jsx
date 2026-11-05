@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { money, qty, fdate } from '../lib/format';
 import { useApi, PageHead, Tabs, Loading, ErrorBox, Btn, Empty } from '../components/ui';
+import LiveClock from '../components/LiveClock';
 
 function Stat({ label, value, sub, tone }) {
   return <div className={`stat ${tone || ''}`}><span>{label}</span><b>{value}</b>{sub && <small>{sub}</small>}</div>;
@@ -21,7 +22,7 @@ export default function Dashboard() {
 
   return (
     <>
-      <PageHead title={d.limited ? `Hello, ${d.user}` : 'Dashboard'} sub={`${fdate(d.date)}${d.limited ? ' — your own sales' : ''}`}>
+      <PageHead title={d.limited ? `Hello, ${d.user}` : 'Dashboard'} sub={`${fdate(d.date)}${d.limited ? ' — your own sales' : ''}`} center={<LiveClock />}>
         <Tabs tabs={[['today', 'Today'], ['month', 'This month'], ['total', 'All time']]} value={per} onChange={setPer} />
         <Btn onClick={reload} busy={loading}>Refresh</Btn>
         {can('pos') && <Link to="/pos" className="btn btn-primary">New sale</Link>}

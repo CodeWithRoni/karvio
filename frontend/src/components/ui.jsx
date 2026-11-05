@@ -85,10 +85,11 @@ export function ErrorBox({ error, onRetry }) {
   return <div className="errbox">{error} {onRetry && <Btn size="sm" onClick={onRetry}>Try again</Btn>}</div>;
 }
 
-export function PageHead({ title, sub, children }) {
+export function PageHead({ title, sub, children, center }) {
   return (
     <header className="page-head">
       <div><h1>{title}</h1>{sub && <p>{sub}</p>}</div>
+      {center}
       <div className="page-actions">{children}</div>
     </header>
   );
