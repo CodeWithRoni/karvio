@@ -1,0 +1,36 @@
+{
+  "name": "shop-erp",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Shop Management & POS for computer / IT / networking retail — React frontend for the Google Apps Script backend",
+  "type": "module",
+  "main": "desktop/main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "desktop": "vite build && electron .",
+    "desktop:build": "vite build && electron-builder"
+  },
+  "dependencies": {
+    "jspdf": "^2.5.2",
+    "jspdf-autotable": "^3.8.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0",
+    "xlsx": "^0.18.5",
+    "zustand": "^5.0.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^5.4.11"
+  },
+  "build": {
+    "appId": "com.shoperp.app",
+    "productName": "ShopERP",
+    "files": ["dist/**/*", "desktop/**/*", "package.json"],
+    "win": { "target": "nsis" },
+    "mac": { "target": "dmg", "category": "public.app-category.business" },
+    "directories": { "output": "release" }
+  }
+}
