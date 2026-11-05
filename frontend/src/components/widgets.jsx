@@ -156,33 +156,60 @@ export function CustomerPicker({ value, onChange, onAddNew }) {
   const customers = useStore((s) => s.customers);
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
+  const [hi, setHi] = useState(0);
   const sel = customers.find((c) => c.id === value);
+
+  // Live search across name, every phone number and every address. Phone search ignores spaces/dashes.
   const list = useMemo(() => {
-    const ql = q.toLowerCase();
-    return customers.filter((c) => !ql || `${c.name} ${c.phones}`.toLowerCase().includes(ql)).slice(0, 10);
+    const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+    const digits = q.replace(/\D/g, '');
+    return customers.filter((c) => {
+      if (!words.length) return true;
+      const hay = `${c.name} ${c.phones} ${String(c.addresses || '').replace(/\|/g, ' ')}`.toLowerCase();
+      if (words.every((w) => hay.includes(w))) return true;
+      return digits.length >= 3 && String(c.phones || '').replace(/\D/g, '').includes(digits);
+    }).slice(0, 12);
   }, [q, customers]);
+
+  const pick = (c) => { onChange(c.id); setQ(''); setOpen(false); setHi(0); };
+  const onKey = (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); setHi((h) => Math.min(h + 1, list.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHi((h) => Math.max(h - 1, 0)); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (list[hi]) pick(list[hi]); else onAddNew(q); }
+    else if (e.key === 'Escape') { setOpen(false); }
+  };
+  const mark = (text) => {
+    // highlight the matching part of the text
+    const w = q.trim(); if (!w || !text) return text;
+    const i = String(text).toLowerCase().indexOf(w.toLowerCase());
+    return i < 0 ? text : <>{String(text).slice(0, i)}<mark>{String(text).slice(i, i + w.length)}</mark>{String(text).slice(i + w.length)}</>;
+  };
+
   if (sel) {
     return (
       <div className="cust-sel">
-        <div><b>{sel.name}</b><small>{sel.phones}</small></div>
-        {sel.balance > 0 && <span className="badge badge-warn">Due {money(sel.balance, false)}</span>}
-        {sel.balance < 0 && <span className="badge badge-ok">Advance {money(-sel.balance, false)}</span>}
+        <div><b>{sel.name}</b><small>{sel.phones}{sel.addresses ? ` · ${String(sel.addresses).split('|')[0]}` : ''}</small></div>
         <button className="x" onClick={() => onChange('')} aria-label="Remove customer">×</button>
       </div>
     );
   }
   return (
     <div className="psearch">
-      <input value={q} onChange={(e) => { setQ(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)}
-        placeholder="Walk-in customer — search name or phone (F4)" aria-label="Customer" id="pos-customer" />
+      <input value={q} onChange={(e) => { setQ(e.target.value); setOpen(true); setHi(0); }} onFocus={() => setOpen(true)} onClick={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)} onKeyDown={onKey}
+        placeholder="Walk-in customer — search name, phone or address (F4)" aria-label="Customer" id="pos-customer" autoComplete="off" />
       {open && (
-        <ul className="psearch-list">
-          {list.map((c) => (
-            <li key={c.id} onMouseDown={(e) => { e.preventDefault(); onChange(c.id); setQ(''); setOpen(false); }}>
-              <span className="pn">{c.name}<small>{c.phones}</small></span>
-              <span className="ps">{c.balance ? money(c.balance, false) : ''}</span>
+        <ul className="psearch-list cust-list" role="listbox">
+          {list.map((c, i) => (
+            <li key={c.id} role="option" aria-selected={i === hi} className={i === hi ? 'hi' : ''} onMouseEnter={() => setHi(i)} onMouseDown={(e) => { e.preventDefault(); pick(c); }}>
+              <span className="pn">{mark(c.name)}
+                <small>{mark(c.phones)}{c.addresses ? <> · {mark(String(c.addresses).split('|').join(', '))}</> : null}</small>
+              </span>
+              {c.balance > 0.004 && <span className="badge badge-warn">Due {money(c.balance, false)}</span>}
+              {c.balance < -0.004 && <span className="badge badge-ok">Adv {money(-c.balance, false)}</span>}
             </li>
           ))}
+          {q && !list.length && <li className="none">No customer matches “{q}”</li>}
           <li className="add" onMouseDown={(e) => { e.preventDefault(); onAddNew(q); setOpen(false); }}>+ Add new customer{q ? ` “${q}”` : ''}</li>
         </ul>
       )}

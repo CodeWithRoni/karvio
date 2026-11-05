@@ -153,7 +153,13 @@ export default function POS() {
 
       <div className="pos-right">
         <div className="card">
-          <CustomerPicker value={customerId} onChange={(id) => { setCustomerId(id); setUseCredit(false); }} onAddNew={(q) => setQuick(q)} />
+          <CustomerPicker value={customerId} onChange={(id) => { setCustomerId(id); setUseCredit(false); if (id) refresh('customers'); }} onAddNew={(q) => setQuick(q)} />
+          {customer && customer.balance > 0.004 && (
+            <div className="prev-due" role="status">
+              <div className="row"><span>Previous due</span><b>{money(customer.balance)}</b></div>
+              {total > 0 && due > 0.004 && <div className="row"><span>Total due after this sale</span><b>{money(customer.balance + due)}</b></div>}
+            </div>
+          )}
           {customer && settings.sms_enabled === 'true' && (
             <label className="check" style={{ marginTop: 8, fontWeight: 500 }}><input type="checkbox" checked={sendSms} onChange={(e) => setSendSms(e.target.checked)} /> Send SMS invoice to {customer.phones?.split(',')[0]}</label>
           )}
