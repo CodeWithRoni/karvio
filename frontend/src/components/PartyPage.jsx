@@ -105,7 +105,7 @@ function PartyList({ kind, rows, loading, onOpen }) {
         <tbody>{pageRows.map((r) => (
           <tr key={r.id} className={sel[r.id] ? 'picked' : ''} onClick={() => onOpen && onOpen(r)} style={{ cursor: onOpen ? 'pointer' : 'default' }}>
             <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={!!sel[r.id]} onChange={() => toggle(r)} aria-label={`Select ${r.name}`} /></td>
-            <td><b>{r.name}</b>{!r.active && <> <Badge>inactive</Badge></>}</td>
+            <td><b>{r.name}</b>{r.combined && <> <Badge tone="violet">Combined</Badge></>}{!r.active && <> <Badge>inactive</Badge></>}</td>
             <td>{splitList(r.phones || '').join(', ')}</td>
             <td className="clip">{(r.addresses || r.address || '').split('|').filter(Boolean).join('; ')}</td>
             <td className="r num"><b style={{ color: r.balance > 0 ? 'var(--warn)' : r.balance < 0 ? 'var(--ok)' : undefined }}>{money(r.balance, false)}</b></td>
@@ -138,6 +138,7 @@ function PartyForm({ kind, initial, onClose, onSaved }) {
   const save = async () => {
     const payload = { ...f, phones: f.phones.filter(Boolean), addresses: kind === 'customer' ? f.addresses.filter(Boolean) : undefined };
     await run(() => api(c.save, payload), f.id ? 'Saved' : `${kind === 'customer' ? 'Customer' : 'Supplier'} added`);
+    useStore.getState().refresh('customers', 'suppliers');
     onSaved(); onClose();
   };
   const listEdit = (key, label, ph) => (
@@ -160,6 +161,12 @@ function PartyForm({ kind, initial, onClose, onSaved }) {
         {kind === 'customer' ? listEdit('addresses', 'Addresses', 'House, road, area') : <Field label="Address" wide><input value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} /></Field>}
         {can(c.perm) && <Field label="Opening balance" hint={kind === 'customer' ? 'Old due carried over (negative = advance).' : 'Amount we already owed (negative = advance paid).'}><input type="number" step="any" value={f.opening_balance} onChange={(e) => setF({ ...f, opening_balance: e.target.value })} /></Field>}
         <Field label="Note" wide><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} /></Field>
+        {(can('customers') && can('suppliers')) && (
+          <div className="wide combined-box">
+            <label className="check"><input type="checkbox" checked={!!f.combined} onChange={(e) => setF({ ...f, combined: e.target.checked })} /> <b>Combined</b> — also a {kind === 'customer' ? 'supplier' : 'customer'}</label>
+            <p className="muted">Tick this for someone you both buy from and sell to (e.g. CASH SALE / CASH PURCHASE, or a dealer). They appear in Customers and Suppliers, so you can sell to them at the POS and buy from them in Purchases. Name, phone and address stay the same on both sides.</p>
+          </div>
+        )}
         {f.id && <label className="check"><input type="checkbox" checked={f.active !== false} onChange={(e) => setF({ ...f, active: e.target.checked })} /> Active</label>}
       </div>
     </Modal>
@@ -206,6 +213,7 @@ function PartyDetail({ kind, id, onClose, onEdit, onChanged, onDeleted }) {
             <div className="kv" style={{ flex: 1 }}>
               <div><span>Phones</span><b>{st.data.phones || '—'}</b></div>
               <div><span>Opening</span><b>{money(st.data.opening)}</b></div>
+              {party?.combined && <div><span>As {kind === 'customer' ? 'supplier (you owe)' : 'customer (owes you)'}</span><b>{money(party.link_balance)}</b></div>}
               <div><span>Closing balance</span><b style={{ color: st.data.closing > 0 ? 'var(--warn)' : 'var(--ok)' }}>{money(st.data.closing)} {st.data.closing > 0 ? `(${c.pos.toLowerCase()})` : st.data.closing < 0 ? `(${c.neg.toLowerCase()})` : ''}</b></div>
             </div>
             <DateRange {...range} onChange={setRange} />

@@ -34,8 +34,8 @@ var SCHEMA = {
   Units:               'id,name,label,decimal:b',
   Products:            'id,sku,barcode,name,category_id,subcategory_id,brand_id,unit,roll_length:n,cost_price:n,sale_price:n,wholesale_price:n,stock:n,low_stock:n,has_warranty:b,warranty_type,warranty_days:n,active:b,created_at,service:b,description',
   SerialItems:         'id,product_id,serial,purchase_id,sale_id,status,cost:n,created_at',
-  Customers:           'id,name,phones,addresses,opening_balance:n,note,active:b,created_at',
-  Suppliers:           'id,name,phones,address,opening_balance:n,note,active:b,created_at',
+  Customers:           'id,name,phones,addresses,opening_balance:n,note,active:b,created_at,link_id',
+  Suppliers:           'id,name,phones,address,opening_balance:n,note,active:b,created_at,link_id',
   Purchases:           'id,invoice_no,date,supplier_id,supplier_name,subtotal:n,discount:n,total:n,paid:n,due:n,note,status,user,created_at,payments,cancel_reason',
   PurchaseItems:       'id,purchase_id,product_id,name,unit,qty:n,cost:n,total:n,serials,valuation',
   Sales:               'id,invoice_no,date,customer_id,customer_name,subtotal:n,discount:n,total:n,paid:n,credit_used:n,due:n,cost:n,profit:n,note,status,user_id,user_name,created_at,payments,cancel_reason',
@@ -638,8 +638,12 @@ function stockAdjust_(p, user) {
 function joinList_(v, sep) { return (Array.isArray(v) ? v : String(v || '').split(sep)).map(function (x) { return String(x).trim(); }).filter(Boolean).join(sep); }
 
 function customersList_() {
-  var bal = customerBalances_();
-  return all_('Customers').map(function (c) { var o = Object.assign({}, c); delete o._row; o.balance = bal[c.id] || 0; return o; });
+  var bal = customerBalances_(), sb = null;
+  return all_('Customers').map(function (c) {
+    var o = Object.assign({}, c); delete o._row; o.balance = bal[c.id] || 0; o.combined = !!c.link_id;
+    if (c.link_id) { sb = sb || supplierBalances_(); o.link_balance = sb[c.link_id] || 0; }
+    return o;
+  });
 }
 function customerSave_(p, user) {
   var name = String(p.name || '').trim(); if (!name) fail_('Customer name is required');
@@ -649,11 +653,17 @@ function customerSave_(p, user) {
     need_(user, 'customers');
     row.opening_balance = num_(p.opening_balance);
     if (p.active !== undefined) row.active = p.active === true || p.active === 'true';
-    return update_('Customers', p.id, row);
+    var upd = update_('Customers', p.id, row);
+    var comb = p.combined === undefined ? undefined : (p.combined === true || p.combined === 'true');
+    if (comb && !upd.link_id) need_(user, 'suppliers');
+    if (comb !== undefined || upd.link_id) return syncCombined_('customer', upd, comb === undefined ? !!upd.link_id : comb);
+    return upd;
   }
   row.opening_balance = can_(user, 'customers') ? num_(p.opening_balance) : 0;
   row.active = true; row.created_at = now_();
-  return insert_('Customers', row);
+  var ins = insert_('Customers', row);
+  if (p.combined === true || p.combined === 'true') { need_(user, 'suppliers'); return syncCombined_('customer', ins, true); }
+  return ins;
 }
 function customerQuickAdd_(p, user) {
   if (!String(p.name || '').trim()) fail_('Customer name is required');
@@ -662,15 +672,47 @@ function customerQuickAdd_(p, user) {
   var o = Object.assign({}, c); delete o._row; o.balance = 0; return o;
 }
 function suppliersList_() {
-  var bal = supplierBalances_();
-  return all_('Suppliers').map(function (c) { var o = Object.assign({}, c); delete o._row; o.balance = bal[c.id] || 0; return o; });
+  var bal = supplierBalances_(), cb = null;
+  return all_('Suppliers').map(function (c) {
+    var o = Object.assign({}, c); delete o._row; o.balance = bal[c.id] || 0; o.combined = !!c.link_id;
+    if (c.link_id) { cb = cb || customerBalances_(); o.link_balance = cb[c.link_id] || 0; }
+    return o;
+  });
+}
+/* Combined party: one person who is both a customer and a supplier (e.g. CASH SALE / CASH PURCHASE, or a
+ * dealer you buy from and sell to). Each side keeps its own ledger; the twin record is created and kept in sync. */
+function syncCombined_(kind, rec, combined) {
+  var other = kind === 'customer' ? 'Suppliers' : 'Customers', self = kind === 'customer' ? 'Customers' : 'Suppliers';
+  var twin = rec.link_id ? all_(other).filter(function (x) { return x.id === rec.link_id; })[0] : null;
+  if (!combined) {
+    if (twin) { update_(other, twin.id, { link_id: '' }); update_(self, rec.id, { link_id: '' }); }
+    return update_(self, rec.id, {});
+  }
+  var shared = kind === 'customer'
+    ? { name: rec.name, phones: rec.phones, address: String(rec.addresses || '').split('|').filter(Boolean).join(', '), note: rec.note, active: rec.active }
+    : { name: rec.name, phones: rec.phones, addresses: rec.address || '', note: rec.note, active: rec.active };
+  if (!twin) { // reuse an unlinked record with the same name, otherwise create one
+    twin = all_(other).filter(function (x) { return !x.link_id && nameKey_(x.name) === nameKey_(rec.name); })[0];
+    if (!twin) twin = insert_(other, Object.assign({ opening_balance: 0, created_at: now_() }, shared));
+  }
+  shared.link_id = rec.id;
+  update_(other, twin.id, shared);
+  return update_(self, rec.id, { link_id: twin.id });
 }
 function supplierSave_(p, user) {
   var name = String(p.name || '').trim(); if (!name) fail_('Supplier name is required');
   var row = { name: name, phones: joinList_(p.phones, ','), address: p.address || '', opening_balance: num_(p.opening_balance), note: p.note || '' };
-  if (p.id) { if (p.active !== undefined) row.active = p.active === true || p.active === 'true'; return update_('Suppliers', p.id, row); }
+  var combined = p.combined === undefined ? undefined : (p.combined === true || p.combined === 'true');
+  if (combined) need_(user, 'customers');
+  if (p.id) {
+    if (p.active !== undefined) row.active = p.active === true || p.active === 'true';
+    var upd = update_('Suppliers', p.id, row);
+    if (combined !== undefined || upd.link_id) return syncCombined_('supplier', upd, combined === undefined ? !!upd.link_id : combined);
+    return upd;
+  }
   row.active = true; row.created_at = now_();
-  return insert_('Suppliers', row);
+  var ins = insert_('Suppliers', row);
+  return combined ? syncCombined_('supplier', ins, true) : ins;
 }
 
 /* ============================================================================
@@ -1323,6 +1365,7 @@ function partyDelete_(kind, p, user) {
   var party = all_(table).filter(function (x) { return x.id === p.id; })[0]; if (!party) fail_((kind === 'customer' ? 'Customer' : 'Supplier') + ' not found');
   var bal = round_((kind === 'customer' ? customerBalances_() : supplierBalances_())[party.id] || 0);
   if (Math.abs(bal) > 0.004) fail_(party.name + ' still has a balance of ' + bal + '. Settle it to 0 before deleting');
+  if (party.link_id) { var twinT = kind === 'customer' ? 'Suppliers' : 'Customers'; if (all_(twinT).some(function (x) { return x.id === party.link_id; })) update_(twinT, party.link_id, { link_id: '' }); }
   remove_(table, party.id);
   audit_(user, kind + '_delete', { name: party.name, phones: party.phones });
   return true;

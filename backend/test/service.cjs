@@ -90,6 +90,16 @@ equal(A('customers.list').some(c=>c.id===zc.id),false);
 const zs=A('supplier.save',{name:'Zero Supplier'});
 A('supplier.delete',{id:zs.id});
 equal(A('suppliers.list').some(c=>c.id===zs.id),false);
+// Combined customer + supplier
+const cc=A('customer.save',{name:'CASH SALE / PURCHASE',phones:['01800000000'],addresses:['Bera'],combined:true});
+const twin=A('suppliers.list').find(x=>x.id===cc.link_id);
+equal([twin.name,twin.link_id,twin.combined,twin.phones],['CASH SALE / PURCHASE',cc.id,true,'01800000000']);
+A('customer.save',{...cc,name:'CASH PARTY',phones:['01800000000'],addresses:['Bera'],combined:true});
+equal(A('suppliers.list').find(x=>x.id===cc.link_id).name,'CASH PARTY');
+const sp=A('supplier.save',{name:'Dealer X',combined:true});
+equal(A('customers.list').find(x=>x.id===sp.link_id).name,'Dealer X');
+A('supplier.save',{...sp,combined:false});
+equal([!!A('customers.list').find(x=>x.name==='Dealer X').link_id,A('suppliers.list').find(x=>x.id===sp.id).combined],[false,false]);
 console.log('Service item regression: '+checks+' checks passed');
 `;
 new Function('require','__dirname',harness+scenario)(require,__dirname);
