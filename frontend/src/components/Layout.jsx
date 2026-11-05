@@ -12,24 +12,24 @@ export const Logo = ({ size = 28 }) => (
 
 /** Navigation. `key` = Alt+key shortcut. */
 export const NAV = [
-  { group: 'Daily work' },
+  { group: 'Daily Work' },
   { to: '/', label: 'Dashboard', key: '1', end: true },
-  { to: '/pos', label: 'Point of sale', perm: 'pos', key: '2' },
-  { to: '/sales', label: 'Sales & returns', perm: 'pos', key: '3' },
-  { to: '/pc-builder', label: 'PC builder & quotes', perm: 'pos' },
-  { to: '/customers', label: 'Customers & dues', key: '4' },
-  { to: '/expenses', label: 'Daily expenses', perm: 'expenses' },
+  { to: '/pos', label: 'Point Of Sale', perm: 'pos', key: '2' },
+  { to: '/sales', label: 'Sales & Returns', perm: 'pos', key: '3' },
+  { to: '/pc-builder', label: 'PC Builder & Quotes', perm: 'pos' },
+  { to: '/customers', label: 'Customers & Dues', key: '4' },
+  { to: '/expenses', label: 'Daily Expenses', perm: 'expenses' },
   { group: 'Stock' },
-  { to: '/stock', label: 'Products & stock', key: '5' },
+  { to: '/stock', label: 'Products & Stock', key: '5' },
   { to: '/purchases', label: 'Purchases', perm: 'purchase', key: '6' },
   { to: '/suppliers', label: 'Suppliers', perm: 'suppliers' },
-  { to: '/warranty', label: 'Warranty claims', perm: 'warranty', key: '7' },
+  { to: '/warranty', label: 'Warranty Claims', perm: 'warranty', key: '7' },
   { to: '/history', label: 'Advance Search', key: '8' },
-  { group: 'Money & reports' },
-  { to: '/accounts', label: 'Cash, bank & MFS', perm: 'accounts' },
-  { to: '/reports', label: 'Reports hub', perm: 'reports', key: '9' },
+  { group: 'Money & Reports' },
+  { to: '/accounts', label: 'Cash, Bank & MFS', perm: 'accounts' },
+  { to: '/reports', label: 'Reports Hub', perm: 'reports', key: '9' },
   { group: 'Admin' },
-  { to: '/users', label: 'Users & roles', perm: 'users' },
+  { to: '/users', label: 'Users & Roles', perm: 'users' },
   { to: '/settings', label: 'Settings' }
 ];
 
