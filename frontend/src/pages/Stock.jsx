@@ -4,7 +4,8 @@ import { useStore } from '../lib/store';
 import { api } from '../lib/api';
 import { money, qty as fqty } from '../lib/format';
 import DataTable from '../components/DataTable';
-import { PageHead, Tabs, Modal, Btn, Field, Badge, Select, useAction, useConfirm, DeleteBtn } from '../components/ui';
+import MasterData from '../components/MasterData';
+import { PageHead, Tabs, Modal, Btn, Field, Badge, Select, useAction } from '../components/ui';
 
 const blank = { name: '', sku: '', barcode: '', category_id: '', subcategory_id: '', brand_id: '', unit: 'pcs', roll_length: '', cost_price: '', sale_price: '', wholesale_price: '', low_stock: '', has_warranty: false, warranty_type: 'serial', warranty_days: 0, active: true };
 
@@ -154,68 +155,5 @@ function AdjustForm({ product, onClose }) {
         <Field label="Reason" wide><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. physical count, damaged" /></Field>
       </div>
     </Modal>
-  );
-}
-
-function MasterData() {
-  const { categories, brands, warrantyPeriods, refresh } = useStore();
-  const [busy, run] = useAction();
-  const [nc, setNc] = useState({ name: '', parent_id: '' });
-  const [nb, setNb] = useState('');
-  const [nw, setNw] = useState({ days: '', label: '' });
-  const tops = categories.filter((c) => !c.parent_id);
-  const save = async (p, msg) => { await run(() => api('master.save', p), msg); await refresh('all'); };
-  const [confirmUI, ask] = useConfirm();
-  const KIND = { category: 'category', brand: 'brand', warranty_period: 'warranty period' };
-  const del = async (kind, item) => {
-    const name = item.name || item.label;
-    const ok = await ask({
-      title: `Delete ${KIND[kind]}?`,
-      message: <>Are you sure you want to delete <b>“{name}”</b>?{kind === 'category' && !item.parent_id ? ' Its sub-categories must be deleted first.' : ''} {kind !== 'warranty_period' ? 'Items used by products cannot be deleted.' : 'Products already set to this period keep their warranty days.'}</>
-    });
-    if (!ok) return;
-    try { await run(() => api('master.delete', { kind, id: item.id }), `${name} deleted`); } catch { return; } // error already shown as a toast
-    await refresh('all');
-  };
-  const rename = (kind, item, field = 'name') => { const v = prompt('New name', item[field]); if (v && v !== item[field]) save({ ...item, kind, [field]: v }, 'Renamed'); };
-
-  return (
-    <div className="grid g3">
-      <div className="card">
-        <h2>Categories</h2>
-        <form className="row" style={{ margin: '10px 0' }} onSubmit={(e) => { e.preventDefault(); save({ kind: 'category', ...nc }, 'Category added').then(() => setNc({ name: '', parent_id: nc.parent_id })); }}>
-          <input value={nc.name} onChange={(e) => setNc({ ...nc, name: e.target.value })} placeholder="Name" style={{ flex: 1 }} />
-          <Select value={nc.parent_id} onChange={(v) => setNc({ ...nc, parent_id: v })} options={tops} placeholder="Top level" style={{ width: 140 }} />
-          <Btn kind="primary" busy={busy} type="submit">Add</Btn>
-        </form>
-        {tops.map((t) => (
-          <div key={t.id} style={{ marginBottom: 10 }}>
-            <div className="row master-row"><b>{t.name}</b><span className="spacer" /><button className="link" onClick={() => rename('category', t)}>Rename</button><DeleteBtn onClick={() => del('category', t)} aria-label={`Delete ${t.name}`} /></div>
-            {categories.filter((c) => c.parent_id === t.id).map((c) => (
-              <div className="row master-row" key={c.id} style={{ paddingLeft: 14 }}><span>{c.name}</span><span className="spacer" /><button className="link" onClick={() => rename('category', c)}>Rename</button><DeleteBtn onClick={() => del('category', c)} aria-label={`Delete ${c.name}`} /></div>
-            ))}
-          </div>
-        ))}
-      </div>
-      <div className="card">
-        <h2>Brands</h2>
-        <form className="row" style={{ margin: '10px 0' }} onSubmit={(e) => { e.preventDefault(); save({ kind: 'brand', name: nb }, 'Brand added').then(() => setNb('')); }}>
-          <input value={nb} onChange={(e) => setNb(e.target.value)} placeholder="e.g. TP-Link" style={{ flex: 1 }} /><Btn kind="primary" busy={busy} type="submit">Add</Btn>
-        </form>
-        {brands.map((b) => <div className="row master-row" key={b.id}><span>{b.name}</span><span className="spacer" /><button className="link" onClick={() => rename('brand', b)}>Rename</button><DeleteBtn onClick={() => del('brand', b)} aria-label={`Delete ${b.name}`} /></div>)}
-        {!brands.length && <p className="muted">No brands yet.</p>}
-      </div>
-      <div className="card">
-        <h2>Warranty periods</h2>
-        <p className="muted">These appear as choices on products and at the POS.</p>
-        <form className="row" style={{ margin: '10px 0' }} onSubmit={(e) => { e.preventDefault(); save({ kind: 'warranty_period', ...nw }, 'Warranty period added').then(() => setNw({ days: '', label: '' })); }}>
-          <input type="number" min="1" value={nw.days} onChange={(e) => setNw({ ...nw, days: e.target.value })} placeholder="Days" style={{ width: 80 }} />
-          <input value={nw.label} onChange={(e) => setNw({ ...nw, label: e.target.value })} placeholder="Label (e.g. 3 years)" style={{ flex: 1 }} />
-          <Btn kind="primary" busy={busy} type="submit">Add</Btn>
-        </form>
-        {[...warrantyPeriods].sort((a, b) => a.days - b.days).map((w) => <div className="row master-row" key={w.id}><span>{w.label}</span><span className="muted">{w.days} days</span><span className="spacer" /><button className="link" onClick={() => rename('warranty_period', w, 'label')}>Rename</button><DeleteBtn onClick={() => del('warranty_period', w)} aria-label={`Delete ${w.label}`} /></div>)}
-      </div>
-      {confirmUI}
-    </div>
   );
 }
