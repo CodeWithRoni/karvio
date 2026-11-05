@@ -1884,6 +1884,7 @@ var ROUTES = {
 
   'sale.create':      r_('pos', saleCreate_, true),
   'sale.detail':      r_('pos', saleDetail_),
+  'sales.details':    r_('pos', function (p, u) { var ids = Array.isArray(p.ids) ? p.ids.slice(0, 200) : []; if (!ids.length) fail_('Select at least one invoice'); return ids.map(function (id) { return saleDetail_({ id: id }, u); }); }),
   'sales.list':       r_('pos', salesList_),
   'sreturn.create':   r_('sales.return', sreturnCreate_, true),
   'sreturns.list':    r_('sales.return', sreturnsList_),

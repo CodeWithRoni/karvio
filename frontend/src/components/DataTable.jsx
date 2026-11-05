@@ -1,14 +1,18 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { money, fdate, qty as fqty } from '../lib/format';
 import { exportExcel, exportPdf, printTable } from '../lib/export';
-import { Empty, Loading, Btn } from './ui';
+import { Empty, Loading } from './ui';
 
 /**
  * Dense data table with search, sort, pagination and Excel / PDF / Print export.
  * columns: [{ key, label, type: 'text'|'money'|'num'|'date', render?(row), value?(row), sum?, className? }]
+ * selectable: tick rows; Excel / PDF / Print then export only the ticked rows.
+ * docExport: { excel(rows), pdf(rows), print(rows) } — full documents (e.g. invoices) for the ticked rows.
  */
-export default function DataTable({ columns, rows, loading, title = 'Export', exportable = true, searchable = true, pageSize = 50, onRowClick, empty, totals: totalsProp, toolbar, rowClass }) {
+export default function DataTable({ columns, rows, loading, title = 'Export', exportable = true, searchable = true, pageSize = 50, onRowClick, empty, totals: totalsProp, toolbar, rowClass, selectable = exportable, docExport }) {
   const [q, setQ] = useState('');
+  const [sel, setSel] = useState(() => new Set());
+  useEffect(() => { setSel(new Set()); }, [rows]);
   const [sort, setSort] = useState(null);
   const [page, setPage] = useState(0);
   const [exporting, setExporting] = useState(false);
@@ -51,6 +55,20 @@ export default function DataTable({ columns, rows, loading, title = 'Export', ex
   const cur = Math.min(page, pages - 1);
   const slice = filtered.slice(cur * pageSize, cur * pageSize + pageSize);
   const expCols = columns.filter((c) => !c.noExport);
+  const picked = filtered.filter((r) => sel.has(r));
+  const allOnPage = slice.length > 0 && slice.every((r) => sel.has(r));
+  const toggle = (r) => setSel((s0) => { const s1 = new Set(s0); if (s1.has(r)) s1.delete(r); else s1.add(r); return s1; });
+  const togglePage = () => setSel((s0) => { const s1 = new Set(s0); slice.forEach((r) => (allOnPage ? s1.delete(r) : s1.add(r))); return s1; });
+  // Ticked rows win; with nothing ticked the whole (filtered) table is exported.
+  const outRows = picked.length ? picked : filtered;
+  const outTotals = picked.length && totals ? Object.fromEntries(Object.keys(totals).map((k) => { const c = columns.find((x) => x.key === k); return [k, picked.reduce((a, r) => a + (Number(c && c.value ? c.value(r) : r[k]) || 0), 0)]; })) : totals;
+  const run = (kind) => {
+    if (picked.length && docExport && docExport[kind]) return download(() => docExport[kind](picked));
+    if (kind === 'excel') return download(() => exportExcel(title, expCols, outRows, outTotals));
+    if (kind === 'pdf') return download(() => exportPdf(title, expCols, outRows, outTotals));
+    return download(() => printTable(title, expCols, outRows, outTotals));
+  };
+  const nums = [...new Set([0, pages - 1, cur - 2, cur - 1, cur, cur + 1, cur + 2])].filter((n) => n >= 0 && n < pages).sort((a, b) => a - b);
 
   const fmt = (c, row) => {
     if (c.render) return c.render(row);
@@ -69,11 +87,12 @@ export default function DataTable({ columns, rows, loading, title = 'Export', ex
           {searchable && <input className="dt-search" type="search" placeholder="Search this table" value={q} onChange={(e) => { setQ(e.target.value); setPage(0); }} aria-label="Search table" />}
           <div className="dt-tools">
             {toolbar}
+            {exportable && selectable && <span className="muted dt-selinfo">{picked.length ? <>{picked.length} selected <button className="link" onClick={() => setSel(new Set())}>Clear</button></> : 'Tick rows to export only those'}</span>}
             {exportable && (
               <div className="seg" role="group" aria-label="Export">
-                <button disabled={exporting} onClick={() => download(() => exportExcel(title, expCols, filtered, totals))} title="Download Excel">Excel</button>
-                <button disabled={exporting} onClick={() => download(() => exportPdf(title, expCols, filtered, totals))} title="Download PDF">{exporting ? 'Preparing…' : 'PDF'}</button>
-                <button disabled={exporting} onClick={() => download(() => printTable(title, expCols, filtered, totals))} title="Print">Print</button>
+                <button disabled={exporting} onClick={() => run('excel')} title={picked.length ? 'Excel of the selected rows' : 'Download Excel'}>Excel</button>
+                <button disabled={exporting} onClick={() => run('pdf')} title={picked.length ? 'PDF of the selected rows' : 'Download PDF'}>{exporting ? 'Preparing…' : 'PDF'}</button>
+                <button disabled={exporting} onClick={() => run('print')} title={picked.length ? 'Print the selected rows' : 'Print'}>Print</button>
               </div>
             )}
           </div>
@@ -83,6 +102,7 @@ export default function DataTable({ columns, rows, loading, title = 'Export', ex
         <table>
           <thead>
             <tr>
+              {selectable && <th style={{ width: 36 }}><input type="checkbox" className="dt-check" checked={allOnPage} onChange={togglePage} aria-label="Select all rows on this page" /></th>}
               {columns.map((c) => (
                 <th key={c.key} className={`${c.type === 'money' || c.type === 'num' ? 'r' : ''} ${c.className || ''}`}
                   aria-sort={sort?.key === c.key ? (sort.dir > 0 ? 'ascending' : 'descending') : undefined}>
@@ -97,15 +117,16 @@ export default function DataTable({ columns, rows, loading, title = 'Export', ex
           </thead>
           <tbody>
             {slice.map((row, i) => (
-              <tr key={row.id || i} onClick={onRowClick ? () => onRowClick(row) : undefined} className={`${onRowClick ? 'click' : ''} ${rowClass ? rowClass(row) : ''}`}
+              <tr key={row.id || i} onClick={onRowClick ? () => onRowClick(row) : undefined} className={`${onRowClick ? 'click' : ''} ${rowClass ? rowClass(row) : ''} ${sel.has(row) ? 'picked' : ''}`}
                 tabIndex={onRowClick ? 0 : undefined} onKeyDown={onRowClick ? (e) => e.key === 'Enter' && onRowClick(row) : undefined}>
+                {selectable && <td onClick={(e) => e.stopPropagation()}><input type="checkbox" className="dt-check" checked={sel.has(row)} onChange={() => toggle(row)} aria-label="Select row" /></td>}
                 {columns.map((c) => <td key={c.key} className={`${c.type === 'money' || c.type === 'num' ? 'r num' : ''} ${c.className || ''}`}>{fmt(c, row)}</td>)}
               </tr>
             ))}
           </tbody>
           {totals && filtered.length > 0 && (
             <tfoot>
-              <tr>{columns.map((c, i) => <td key={c.key} className={c.type === 'money' || c.type === 'num' ? 'r num' : ''}>{i === 0 ? 'Total' : totals[c.key] !== undefined ? (c.type === 'money' ? money(totals[c.key], false) : fqty(totals[c.key])) : ''}</td>)}</tr>
+              <tr>{selectable && <td />}{columns.map((c, i) => <td key={c.key} className={c.type === 'money' || c.type === 'num' ? 'r num' : ''}>{i === 0 ? 'Total' : totals[c.key] !== undefined ? (c.type === 'money' ? money(totals[c.key], false) : fqty(totals[c.key])) : ''}</td>)}</tr>
             </tfoot>
           )}
         </table>
@@ -113,10 +134,12 @@ export default function DataTable({ columns, rows, loading, title = 'Export', ex
         {!loading && !filtered.length && (empty || <Empty title={q ? 'No rows match your search' : 'No records for this view'} />)}
       </div>
       {pages > 1 && (
-        <div className="dt-pager">
-          <span>{filtered.length} rows · page {cur + 1} of {pages}</span>
-          <Btn size="sm" disabled={cur === 0} onClick={() => setPage(cur - 1)}>Previous</Btn>
-          <Btn size="sm" disabled={cur >= pages - 1} onClick={() => setPage(cur + 1)}>Next</Btn>
+        <div className="pager">
+          <span className="muted">Showing {cur * pageSize + 1}–{Math.min((cur + 1) * pageSize, filtered.length)} of {filtered.length}</span>
+          <span className="spacer" />
+          <button disabled={cur === 0} onClick={() => setPage(cur - 1)}>‹ Prev</button>
+          {nums.map((n, i) => <span key={n} style={{ display: 'contents' }}>{i > 0 && n - nums[i - 1] > 1 && <span className="gap">…</span>}<button className={n === cur ? 'on' : ''} onClick={() => setPage(n)} aria-current={n === cur ? 'page' : undefined}>{n + 1}</button></span>)}
+          <button disabled={cur >= pages - 1} onClick={() => setPage(cur + 1)}>Next ›</button>
         </div>
       )}
     </div>

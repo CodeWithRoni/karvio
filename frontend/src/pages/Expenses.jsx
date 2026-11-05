@@ -49,7 +49,7 @@ export default function Expenses() {
       </div>
       <div className="filters"><DateRange {...range} onChange={setRange} /></div>
       <ErrorBox error={list.error} onRetry={list.reload} />
-      <DataTable title="Expenses" loading={list.loading} rows={list.data || []} rowClass={(r) => (r.status === 'cancelled' ? 'dim' : '')}
+      <DataTable title="Expenses" loading={list.loading} rows={list.data || []} pageSize={10} rowClass={(r) => (r.status === 'cancelled' ? 'dim' : '')}
         totals={{ amount: (list.data || []).filter((x) => x.status === 'active').reduce((a, x) => a + x.amount, 0) }}
         columns={[
           { key: 'date', label: 'Date', type: 'date' }, { key: 'category', label: 'Category' }, { key: 'note', label: 'Note' },

@@ -5,6 +5,9 @@ import { api } from '../lib/api';
 import { money, qty as fqty, fdate, fdatetime, monthStart, today, splitList, round2, isDecimalUnit } from '../lib/format';
 import { printReceipt } from '../lib/receipt';
 import DataTable from '../components/DataTable';
+import { excelSales, pdfSales, printSales } from '../lib/salesDocs';
+// Full invoices for ticked rows (fetched in one call).
+const saleDocs = { excel: async (rows) => excelSales(await api('sales.details', { ids: rows.map((r) => r.id) }), `invoices-${rows.length}.xlsx`), pdf: async (rows) => pdfSales(await api('sales.details', { ids: rows.map((r) => r.id) }), `invoices-${rows.length}.pdf`), print: async (rows) => printSales(await api('sales.details', { ids: rows.map((r) => r.id) })) };
 import { useApi, PageHead, Tabs, DateRange, Badge, statusTone, Modal, Btn, Field, Loading, ErrorBox, useAction, Select } from '../components/ui';
 import { ReverseDialog } from '../components/widgets';
 
@@ -32,7 +35,7 @@ export default function Sales() {
       {tab === 'sales' ? (
         <>
           <ErrorBox error={sales.error} onRetry={sales.reload} />
-          <DataTable title={`Sales ${range.from} to ${range.to}`} loading={sales.loading} rows={sales.data || []} onRowClick={(r) => nav(`/sales/${r.id}`)}
+          <DataTable title={`Sales ${range.from} to ${range.to}`} loading={sales.loading} rows={sales.data || []} pageSize={10} docExport={saleDocs} onRowClick={(r) => nav(`/sales/${r.id}`)}
             rowClass={(r) => (r.status === 'cancelled' ? 'dim' : '')}
             columns={[
               { key: 'date', label: 'Date', type: 'date' },
@@ -50,7 +53,7 @@ export default function Sales() {
       ) : (
         <>
           <ErrorBox error={rets.error} onRetry={rets.reload} />
-          <DataTable title="Sales returns" loading={rets.loading} rows={rets.data || []} rowClass={(r) => (r.status === 'cancelled' ? 'dim' : '')}
+          <DataTable title="Sales returns" loading={rets.loading} rows={rets.data || []} pageSize={10} rowClass={(r) => (r.status === 'cancelled' ? 'dim' : '')}
             columns={[
               { key: 'date', label: 'Date', type: 'date' },
               { key: 'return_no', label: 'Return #' },
@@ -86,6 +89,11 @@ function SaleDetail({ id, onClose, onChanged }) {
         {can('cancel') && s.status === 'active' && <Btn kind="danger" onClick={() => setRev(true)}>Cancel invoice</Btn>}
         {can('sales.return') && s.status === 'active' && <Btn onClick={() => setRet(true)}>Return / exchange</Btn>}
         <span className="spacer" />
+        <div className="seg">
+          <button onClick={() => excelSales([data], `invoice-${s.invoice_no}.xlsx`)}>Excel</button>
+          <button onClick={() => pdfSales([data], `invoice-${s.invoice_no}.pdf`)}>PDF</button>
+          <button onClick={() => printSales([data])}>Print A4</button>
+        </div>
         <Btn onClick={() => printReceipt(data, 58)}>Print 58mm</Btn>
         <Btn kind="primary" onClick={() => printReceipt(data, 80)}>Print 80mm</Btn>
       </>}>

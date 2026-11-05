@@ -58,7 +58,7 @@ export default function Reports() {
         <div className="row" style={{ marginBottom: 12 }}>{Object.entries(r.summary).map(([k, v]) => <Badge key={k} tone={k === 'Delivered' ? 'muted' : k === 'Pending' ? 'warn' : 'info'}>{k}: {v}</Badge>)}</div>
       )}
       {r && <h2 style={{ marginBottom: 10 }}>{r.title}</h2>}
-      <DataTable title={r?.title || 'Report'} loading={rep.loading} rows={r?.rows || []} totals={r?.totals} pageSize={100}
+      <DataTable title={r?.title || 'Report'} loading={rep.loading} rows={r?.rows || []} totals={r?.totals} pageSize={10}
         rowClass={(row) => (row.status === 'cancelled' ? 'dim' : '')}
         columns={(r?.columns || []).map((c) => ({ ...c, className: c.key === 'items' || c.key === 'items_text' || c.key === 'issue' ? 'clip' : '' }))} />
       {r?.totals && type === 'sales' && g === 'invoice' && status === 'all' && <p className="muted">Totals count active invoices only; cancelled ones are shown struck through.</p>}

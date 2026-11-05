@@ -4,6 +4,8 @@ import { fdate, fdatetime } from '../lib/format';
 import { printHtml, esc } from '../lib/export';
 import { useStore } from '../lib/store';
 import DataTable from '../components/DataTable';
+import { excelClaims, pdfClaims, printClaims } from '../lib/salesDocs';
+const claimDocs = { excel: (rows) => excelClaims(rows, `warranty-claims-${rows.length}.xlsx`), pdf: (rows) => pdfClaims(rows, `warranty-claims-${rows.length}.pdf`), print: (rows) => printClaims(rows) };
 import { useApi, PageHead, Tabs, Modal, Btn, Field, Badge, statusTone, useAction, ErrorBox, Empty } from '../components/ui';
 
 const STATUSES = ['Pending', 'Sent to Vendor', 'Repaired', 'Replaced', 'Delivered', 'Rejected'];
@@ -23,7 +25,7 @@ export default function Warranty() {
         <Tabs tabs={[['open', 'Open'], ...STATUSES.map((s) => [s, s]), ['all', 'All']]} value={status} onChange={setStatus} />
       </div>
       <ErrorBox error={list.error} onRetry={list.reload} />
-      <DataTable title="Warranty claims" loading={list.loading} rows={list.data || []} onRowClick={setSel}
+      <DataTable title="Warranty claims" loading={list.loading} rows={list.data || []} pageSize={10} docExport={claimDocs} onRowClick={setSel}
         columns={[
           { key: 'claim_no', label: 'Claim #' }, { key: 'date', label: 'Received', type: 'date' },
           { key: 'product_name', label: 'Product' }, { key: 'serial', label: 'Serial' }, { key: 'invoice_no', label: 'Invoice' },
@@ -91,7 +93,9 @@ function ClaimDetail({ claim, onClose, onDone }) {
   const save = async () => { await run(() => api('claim.update', { id: claim.id, status, vendor, note }), `Claim marked ${status}`); onDone(); };
   return (
     <Modal open onClose={onClose} size="md" title={`Claim ${claim.claim_no}`}
-      footer={<><Btn onClick={() => printClaimSlip(claim)}>Print slip</Btn><span className="spacer" /><Btn onClick={onClose}>Close</Btn><Btn kind="primary" busy={busy} onClick={save} disabled={status === claim.status && !note && vendor === claim.vendor}>Update claim</Btn></>}>
+      footer={<><Btn onClick={() => printClaimSlip(claim)}>Print slip</Btn>
+        <div className="seg"><button onClick={() => excelClaims([claim], `claim-${claim.claim_no}.xlsx`)}>Excel</button><button onClick={() => pdfClaims([claim], `claim-${claim.claim_no}.pdf`)}>PDF</button><button onClick={() => printClaims([claim])}>Print A4</button></div>
+        <span className="spacer" /><Btn onClick={onClose}>Close</Btn><Btn kind="primary" busy={busy} onClick={save} disabled={status === claim.status && !note && vendor === claim.vendor}>Update claim</Btn></>}>
       <div className="kv">
         <div><span>Product</span><b>{claim.product_name}</b></div><div><span>Serial</span><b>{claim.serial || '—'}</b></div>
         <div><span>Invoice</span><b>{claim.invoice_no}</b></div><div><span>Customer</span><b>{claim.customer_name} {claim.phone}</b></div>
