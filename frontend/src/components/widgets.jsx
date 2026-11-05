@@ -197,7 +197,7 @@ export function CustomerPicker({ value, onChange, onAddNew }) {
     <div className="psearch">
       <input value={q} onChange={(e) => { setQ(e.target.value); setOpen(true); setHi(0); }} onFocus={() => setOpen(true)} onClick={() => setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 150)} onKeyDown={onKey}
-        placeholder="Walk-in customer — search name, phone or address (F4)" aria-label="Customer" id="pos-customer" autoComplete="off" />
+        placeholder="Cash / Search Customer - name/number/address (F4)" aria-label="Customer" id="pos-customer" autoComplete="off" />
       {open && (
         <ul className="psearch-list cust-list" role="listbox">
           {list.map((c, i) => (

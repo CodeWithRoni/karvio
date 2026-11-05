@@ -16,7 +16,8 @@ export default function POS() {
   const [customerId, setCustomerId] = useState(draft?.customerId || '');
   const [discount, setDiscount] = useState(draft?.discount || '');
   const [pays, setPaysRaw] = useState(defaultPay());
-  const [payTouched, setPayTouched] = useState(false);
+  // Walk-in (cash) sale: payment follows the bill total. Customer sale: starts at 0 so anything not collected becomes due.
+  const [payTouched, setPayTouched] = useState(!!draft?.customerId);
   const setPays = (v) => { setPayTouched(true); setPaysRaw(v); };
   const [useCredit, setUseCredit] = useState(false);
   const [tier, setTier] = useState('retail');
@@ -71,7 +72,13 @@ export default function POS() {
     if (isSerial(p) && l.serials.length !== Number(l.qty)) problems.push(`Pick ${l.qty} serial(s) for ${p.name}`);
     if (Number(l.qty) > p.stock) problems.push(`Only ${fqty(p.stock, p.unit)} of ${p.name} in stock`);
   });
-  if (due > 0.004 && !customer) problems.push('Walk-in sales must be fully paid — attach a customer to sell on credit');
+  if (due > 0.004 && !customer) problems.push('Cash sales must be fully paid — select a customer to sell on due');
+
+  const selectCustomer = (id) => {
+    setCustomerId(id); setUseCredit(false);
+    if (id) { setPaysRaw(defaultPay('')); setPayTouched(true); refresh('customers'); }
+    else setPayTouched(false); // back to a cash sale: auto-fill the full amount again
+  };
 
   const reset = () => { setCart([]); setCustomerId(''); setDiscount(''); setPaysRaw(defaultPay()); setPayTouched(false); setUseCredit(false); setNote(''); searchRef.current?.focus(); };
 
@@ -153,11 +160,23 @@ export default function POS() {
 
       <div className="pos-right">
         <div className="card">
-          <CustomerPicker value={customerId} onChange={(id) => { setCustomerId(id); setUseCredit(false); if (id) refresh('customers'); }} onAddNew={(q) => setQuick(q)} />
-          {customer && customer.balance > 0.004 && (
-            <div className="prev-due" role="status">
-              <div className="row"><span>Previous due</span><b>{money(customer.balance)}</b></div>
-              {total > 0 && due > 0.004 && <div className="row"><span>Total due after this sale</span><b>{money(customer.balance + due)}</b></div>}
+          <CustomerPicker value={customerId} onChange={selectCustomer} onAddNew={(q) => setQuick(q)} />
+          {customer && (
+            <div className="collect">
+              <PaymentSplit value={pays} onChange={setPays} total={round2(total - credit)} label="Collected balance" />
+              {advance > 0 && (
+                <label className="check" style={{ marginTop: 8, fontWeight: 500 }}>
+                  <input type="checkbox" checked={useCredit} onChange={(e) => setUseCredit(e.target.checked)} /> Use customer advance ({money(advance)})
+                </label>
+              )}
+              {(customer.balance > 0.004 || (total > 0 && due > 0.004)) && (
+                <div className="prev-due" role="status">
+                  {customer.balance > 0.004 && <div className="row"><span>Previous due</span><b>{money(customer.balance)}</b></div>}
+                  {total > 0 && due > 0.004 && <div className="row"><span>Due on this sale</span><b>{money(due)}</b></div>}
+                  {customer.balance > 0.004 && total > 0 && due > 0.004 && <div className="row total-due"><span>Total due</span><b>{money(customer.balance + due)}</b></div>}
+                </div>
+              )}
+              {change > 0 && <div className="row" style={{ justifyContent: 'space-between', marginTop: 8 }}><span>Change to return</span><b className="change num">{money(change)}</b></div>}
             </div>
           )}
           {customer && settings.sms_enabled === 'true' && (
@@ -174,17 +193,14 @@ export default function POS() {
         </div>
 
         <div className="card">
-          <PaymentSplit value={pays} onChange={setPays} total={round2(total - credit)} label="Received" />
-          {advance > 0 && (
-            <label className="check" style={{ marginTop: 10, fontWeight: 500 }}>
-              <input type="checkbox" checked={useCredit} onChange={(e) => setUseCredit(e.target.checked)} /> Use customer advance ({money(advance)})
-            </label>
-          )}
-          <div className="totals" style={{ marginTop: 12 }}>
-            <span>Paid</span><b className="num">{money(paid, false)}</b>
-            {due > 0.004 && <><span>Due (added to customer ledger)</span><span className="due num">{money(due)}</span></>}
-            {change > 0 && <><span>Change to return</span><span className="change num">{money(change)}</span></>}
-          </div>
+          {!customer && <>
+            <PaymentSplit value={pays} onChange={setPays} total={round2(total - credit)} label="Cash sale — received" />
+            <div className="totals" style={{ marginTop: 12 }}>
+              <span>Paid</span><b className="num">{money(paid, false)}</b>
+              {due > 0.004 && <><span>Short by</span><span className="due num">{money(due)}</span></>}
+              {change > 0 && <><span>Change to return</span><span className="change num">{money(change)}</span></>}
+            </div>
+          </>}
           <Field label="Note" wide><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional" /></Field>
         </div>
 
@@ -207,7 +223,7 @@ export default function POS() {
         )}
       </Modal>
 
-      <QuickCustomer open={quick !== null} initial={quick || ''} onClose={() => setQuick(null)} onCreated={(c) => setCustomerId(c.id)} />
+      <QuickCustomer open={quick !== null} initial={quick || ''} onClose={() => setQuick(null)} onCreated={(c) => selectCustomer(c.id)} />
 
       <Modal open={!!done} onClose={() => { setDone(null); searchRef.current?.focus(); }} title="Sale completed" size="sm"
         footer={<>
