@@ -156,3 +156,37 @@ export function Select({ value, onChange, options, placeholder = 'Select…', al
     </select>
   );
 }
+
+/* ---------- confirmation popup ---------- */
+
+/**
+ * const [confirmUI, ask] = useConfirm();
+ * if (await ask({ title, message, confirmLabel })) { ...delete... }
+ * Render {confirmUI} somewhere in the component.
+ */
+export function useConfirm() {
+  const [state, setState] = useState(null);
+  const ask = (opts) => new Promise((resolve) => setState({ ...opts, resolve }));
+  const close = (answer) => { state?.resolve(answer); setState(null); };
+  const ui = (
+    <Modal open={!!state} onClose={() => close(false)} title={state?.title || 'Are you sure?'} size="sm"
+      footer={<>
+        <Btn onClick={() => close(false)}>{state?.cancelLabel || 'No'}</Btn>
+        <Btn kind="danger" onClick={() => close(true)} autoFocus>{state?.confirmLabel || 'Yes, delete'}</Btn>
+      </>}>
+      <p style={{ margin: 0 }}>{state?.message}</p>
+    </Modal>
+  );
+  return [ui, ask];
+}
+
+export function DeleteBtn({ onClick, label = 'Delete', ...p }) {
+  return (
+    <button type="button" className="del-btn" onClick={onClick} {...p}>
+      <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" />
+      </svg>
+      {label}
+    </button>
+  );
+}
