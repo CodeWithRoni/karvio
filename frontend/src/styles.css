@@ -481,3 +481,27 @@ small.margin.bad { color: var(--bad); }
 .price-table input { width: 100%; text-align: right; }
 .price-table tr.dirty td { background: color-mix(in srgb, var(--warn) 9%, transparent); }
 .price-table td.neg { color: var(--bad); }
+
+/* New purchase: one row per product, serial box expands under the product across the full width */
+.pur-table tbody.pur-line > tr:first-child td { vertical-align: top; }
+.pur-table tbody.pur-line.open > tr:first-child td { border-bottom: 0; background: color-mix(in srgb, var(--aqua) 5%, transparent); }
+.pur-table tr.clickable { cursor: pointer; }
+.pur-table input.readonly-qty { background: var(--rack); border-style: dashed; cursor: default; }
+.pur-table .sn-row td { padding-top: 0; background: color-mix(in srgb, var(--aqua) 5%, transparent); }
+.sn-box { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--panel); }
+.sn-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font-size: 12.5px; margin-bottom: 8px; }
+.sn-total { margin-left: auto; font-weight: 700; color: var(--ok); }
+.sn-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.sn-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; border: 1px solid var(--line); border-radius: 7px; font: 600 13px/1.4 ui-monospace, 'Cascadia Mono', Consolas, monospace; background: var(--panel-2, transparent); }
+.sn-chip button { display: inline-grid; place-items: center; width: 20px; height: 20px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1; }
+.sn-chip button:hover { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.sn-input { flex: 1; min-width: 200px; border-style: dashed !important; }
+.sn-count { color: var(--ok); font-weight: 600; }
+.sn-count.bad { color: var(--bad); }
+.pur-warn { margin-top: 6px; color: var(--bad); font-size: 13px; font-weight: 600; }
+.sup-bal { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 9px; font-size: 13px; border: 1px solid var(--line); }
+.sup-bal.owe { border-color: color-mix(in srgb, var(--bad) 45%, transparent); background: color-mix(in srgb, var(--bad) 9%, transparent); }
+.sup-bal.owe b { color: var(--bad); }
+.sup-bal.adv { border-color: color-mix(in srgb, var(--ok) 45%, transparent); background: color-mix(in srgb, var(--ok) 9%, transparent); }
+.sup-bal.adv b { color: var(--ok); }
+.sup-bal.clear { color: var(--muted); }

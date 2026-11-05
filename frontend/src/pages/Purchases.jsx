@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../lib/store';
 import { api } from '../lib/api';
 import { money, qty as fqty, fdate, monthStart, today, splitList, round2, isDecimalUnit } from '../lib/format';
 import DataTable from '../components/DataTable';
 import { useApi, PageHead, Tabs, DateRange, Badge, statusTone, Modal, Btn, Field, Loading, ErrorBox, useAction, Select } from '../components/ui';
-import { ProductSearch, PaymentSplit, cleanPays, ReverseDialog } from '../components/widgets';
+import { ProductSearch, PaymentSplit, cleanPays, defaultPay, ReverseDialog } from '../components/widgets';
 
 export default function Purchases() {
   const can = useStore((s) => s.can);
@@ -53,80 +53,181 @@ export default function Purchases() {
 }
 
 function NewPurchase({ onDone }) {
-  const { suppliers, products, refresh } = useStore();
+  const { suppliers, products, refresh, toast } = useStore();
   const [supplier, setSupplier] = useState('');
   const [date, setDate] = useState(today());
   const [lines, setLines] = useState([]);
+  const [openId, setOpenId] = useState(''); // the line whose serial box is expanded
   const [discount, setDiscount] = useState('');
-  const [pays, setPays] = useState([]);
+  const [pays, setPays] = useState(() => defaultPay(''));
   const [note, setNote] = useState('');
+  const [tried, setTried] = useState(false);
+  const [needSupplier, setNeedSupplier] = useState(false);
   const [busy, run] = useAction();
+  const supplierRef = useRef();
+  const tableRef = useRef();
   const pmap = Object.fromEntries(products.map((p) => [p.id, p]));
-  const isSerial = (p) => p?.has_warranty && p.warranty_type === 'serial';
+  const isSerial = (p) => !!p && !p.service && p.has_warranty && p.warranty_type === 'serial';
+  const sup = suppliers.find((x) => x.id === supplier);
+
+  // Cash is pre-selected once accounts are loaded; the amount stays empty (= buy on credit) until typed.
+  const accCount = useStore((st) => st.accounts.length);
+  useEffect(() => { if (!pays.length) setPays(defaultPay('')); }, [accCount]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Clicking anywhere outside the open line collapses it once its serials are entered.
+  useEffect(() => {
+    const close = (e) => {
+      if (!openId) return;
+      const inside = e.target.closest?.(`[data-line="${openId}"]`);
+      const line = lines.find((l) => l.product_id === openId);
+      if (!inside && (!line || !isSerial(pmap[openId]) || line.serials.length)) setOpenId('');
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  });
 
   const add = (p) => {
-    if (lines.some((l) => l.product_id === p.id)) return;
-    setLines([...lines, { product_id: p.id, qty: 1, cost: p.cost_price || '', sale: p.sale_price || '', whole: p.wholesale_price || '', serials: '' }]);
+    if (lines.some((l) => l.product_id === p.id)) { setOpenId(p.id); return; }
+    setLines([...lines, { product_id: p.id, qty: isSerial(p) ? 0 : 1, cost: p.cost_price || '', sale: p.sale_price || '', whole: p.wholesale_price || '', serials: [] }]);
+    setOpenId(isSerial(p) ? p.id : '');
   };
-  const upd = (i, patch) => setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
-  const sub = round2(lines.reduce((a, l) => a + (Number(l.qty) || 0) * (Number(l.cost) || 0), 0));
-  const total = round2(sub - (Number(discount) || 0));
-  const paid = cleanPays(pays).reduce((a, p) => a + p.amount, 0);
+  const upd = (id, patch) => setLines((ls) => ls.map((l) => (l.product_id === id ? { ...l, ...patch } : l)));
+  const remove = (id) => { setLines((ls) => ls.filter((l) => l.product_id !== id)); if (openId === id) setOpenId(''); };
 
-  // Every line needs a unit cost; a product that has never been priced also needs its retail price.
-  const [tried, setTried] = useState(false);
-  const bad = (l) => ({ cost: !(Number(l.cost) > 0), sale: !(Number(l.sale) > 0) && !(Number(pmap[l.product_id]?.sale_price) > 0) });
-  const invalid = lines.some((l) => { const b = bad(l); return b.cost || b.sale; });
+  // Serials: one per Enter (barcode scanners send Enter after each code). Pasting a list adds them all.
+  const allSerials = new Set(lines.flatMap((l) => l.serials.map((x) => x.toLowerCase())));
+  const addSerials = (id, text) => {
+    const list = String(text).split(/[\n,;\t]+/).map((x) => x.trim()).filter(Boolean);
+    if (!list.length) return true;
+    const fresh = [], seen = new Set(allSerials);
+    for (const x of list) {
+      if (seen.has(x.toLowerCase())) { toast(`Serial ${x} is already in this purchase`, 'err'); continue; }
+      seen.add(x.toLowerCase()); fresh.push(x);
+    }
+    if (fresh.length) setLines((ls) => ls.map((l) => (l.product_id === id ? { ...l, serials: [...l.serials, ...fresh], qty: l.serials.length + fresh.length } : l)));
+    return fresh.length === list.length;
+  };
+  const dropSerial = (id, sn) => setLines((ls) => ls.map((l) => (l.product_id === id ? { ...l, serials: l.serials.filter((x) => x !== sn), qty: l.serials.length - 1 } : l)));
+
+  const sub = round2(lines.reduce((a, l) => a + (Number(l.qty) || 0) * (Number(l.cost) || 0), 0));
+  const total = round2(Math.max(sub - (Number(discount) || 0), 0));
+  const paid = round2(cleanPays(pays).reduce((a, p) => a + p.amount, 0));
+  const due = round2(Math.max(total - paid, 0));
+  const prev = Number(sup?.balance) || 0; // > 0: you owe the supplier, < 0: supplier owes you (advance)
+  const after = round2(prev + total - paid);
+
+  const bad = (l) => ({
+    cost: !(Number(l.cost) > 0),
+    sale: !(Number(l.sale) > 0) && !(Number(pmap[l.product_id]?.sale_price) > 0),
+    qty: !(Number(l.qty) > 0)
+  });
+  const firstBad = lines.find((l) => Object.values(bad(l)).some(Boolean));
+
   const save = async () => {
     setTried(true);
-    if (invalid) return useStore.getState().toast('Enter the unit cost and retail price for every item', 'err');
+    if (!supplier) { setNeedSupplier(true); supplierRef.current?.focus(); return toast('Select a supplier first', 'err'); }
+    if (firstBad) {
+      const p = pmap[firstBad.product_id], b = bad(firstBad);
+      if (isSerial(p) && b.qty) setOpenId(p.id);
+      return toast(b.qty ? (isSerial(p) ? `Scan the serial numbers for ${p.name}` : `Enter the quantity for ${p.name}`) : `Enter the unit cost and retail price for ${p.name}`, 'err');
+    }
+    if (paid > total + 0.004) return toast(`Paid (${money(paid, false)}) is more than the purchase total (${money(total, false)})`, 'err');
     await run(() => api('purchase.create', {
       supplier_id: supplier, date, discount: Number(discount) || 0, note, payments: cleanPays(pays),
-      items: lines.map((l) => ({ product_id: l.product_id, qty: Number(l.qty), cost: Number(l.cost), sale_price: l.sale === '' ? '' : Number(l.sale), wholesale_price: l.whole === '' ? '' : Number(l.whole), serials: l.serials }))
-    }), 'Purchase saved — stock updated');
+      items: lines.map((l) => ({ product_id: l.product_id, qty: Number(l.qty), cost: Number(l.cost), sale_price: l.sale === '' ? '' : Number(l.sale), wholesale_price: l.whole === '' ? '' : Number(l.whole), serials: l.serials.join('\n') }))
+    }), due > 0 ? `Purchase saved — ${money(due)} added to ${sup.name}'s payable` : 'Purchase saved — stock updated');
     await refresh('products', 'suppliers');
     onDone();
   };
+  const blockSearch = () => { setNeedSupplier(true); supplierRef.current?.focus(); };
 
   return (
     <div className="split">
       <div className="grid">
-        <ProductSearch onPick={add} noServices placeholder="Scan or search the product you received" />
-        <div className="dt"><div className="dt-scroll"><table>
-          <thead><tr><th>Product</th><th style={{ width: 100 }} className="r">Qty</th><th style={{ width: 110 }} className="r">Unit cost <span className="req">*</span></th><th style={{ width: 110 }} className="r">Retail price <span className="req">*</span></th><th style={{ width: 110 }} className="r">Wholesale</th><th className="r">Amount</th><th /></tr></thead>
-          <tbody>{lines.map((l, i) => {
-            const p = pmap[l.product_id];
-            const n = splitList(l.serials.replace(/\n/g, ',')).length;
+        {supplier
+          ? <ProductSearch onPick={add} noServices placeholder="Scan or search the product you received" />
+          : <div className="psearch">
+              <input readOnly value="" placeholder="Select a supplier first, then search products" onFocus={blockSearch} onMouseDown={blockSearch} aria-label="Search product (select a supplier first)" className={needSupplier ? 'invalid' : ''} />
+              {needSupplier && <div className="pur-warn" role="alert">Please select the supplier on the right before adding products.</div>}
+            </div>}
+        <div className="dt"><div className="dt-scroll"><table className="pur-table" ref={tableRef}>
+          <thead><tr><th>Product</th><th style={{ width: 90 }} className="r">Qty</th><th style={{ width: 110 }} className="r">Unit cost <span className="req">*</span></th><th style={{ width: 110 }} className="r">Retail price <span className="req">*</span></th><th style={{ width: 110 }} className="r">Wholesale</th><th className="r" style={{ width: 100 }}>Amount</th><th style={{ width: 34 }} /></tr></thead>
+          {lines.map((l) => {
+            const p = pmap[l.product_id], b = bad(l), serial = isSerial(p), open = serial && openId === l.product_id;
             return (
-              <tr key={l.product_id}>
-                <td><b>{p?.name}</b><div className="muted" style={{ fontSize: 12 }}>in stock {fqty(p?.stock, p?.unit)} · per {p?.unit}</div>
-                  {isSerial(p) && <><textarea value={l.serials} onChange={(e) => upd(i, { serials: e.target.value, qty: splitList(e.target.value.replace(/\n/g, ',')).length || l.qty })} placeholder="Scan one serial per line" style={{ marginTop: 6, minHeight: 60 }} />
-                    <small style={{ color: n === Number(l.qty) ? 'var(--ok)' : 'var(--warn)' }}>{n} of {l.qty} serials entered</small></>}
-                </td>
-                <td><input type="number" min="0" step={isDecimalUnit(p?.unit) ? 'any' : 1} value={l.qty} onChange={(e) => upd(i, { qty: e.target.value })} /></td>
-                <td><input type="number" min="0" step="any" value={l.cost} onChange={(e) => upd(i, { cost: e.target.value })} aria-label={`Unit cost for ${p?.name}`} aria-invalid={tried && bad(l).cost} className={tried && bad(l).cost ? 'invalid' : ''} /></td>
-                <td><input type="number" min="0" step="any" value={l.sale} onChange={(e) => upd(i, { sale: e.target.value })} aria-label={`Retail price for ${p?.name}`} aria-invalid={tried && bad(l).sale} className={tried && bad(l).sale ? 'invalid' : ''} placeholder="Retail" />
-                  {Number(l.cost) > 0 && Number(l.sale) > 0 && <small className={Number(l.sale) < Number(l.cost) ? 'margin bad' : 'margin'}>{Math.round(((l.sale - l.cost) / l.cost) * 100)}% margin</small>}</td>
-                <td><input type="number" min="0" step="any" value={l.whole} onChange={(e) => upd(i, { whole: e.target.value })} aria-label={`Wholesale price for ${p?.name}`} placeholder="—" /></td>
-                <td className="r num">{money((Number(l.qty) || 0) * (Number(l.cost) || 0), false)}</td>
-                <td><button className="x" onClick={() => setLines(lines.filter((_, j) => j !== i))}>×</button></td>
-              </tr>
+              <tbody key={l.product_id} data-line={l.product_id} className={`pur-line ${open ? 'open' : ''}`}>
+                <tr onClick={() => serial && setOpenId(l.product_id)} className={serial ? 'clickable' : ''}>
+                  <td><b>{p?.name}</b>
+                    <div className="muted" style={{ fontSize: 12 }}>in stock {fqty(p?.stock, p?.unit)} · per {p?.unit}
+                      {serial && !open && <> · <span className={l.serials.length ? 'sn-count' : 'sn-count bad'}>{l.serials.length ? `${l.serials.length} serial${l.serials.length === 1 ? '' : 's'} — click to edit` : 'serials missing'}</span></>}
+                    </div>
+                  </td>
+                  <td><input type="number" min="0" step={isDecimalUnit(p?.unit) ? 'any' : 1} value={l.qty} readOnly={serial} title={serial ? 'Counted from the serial numbers' : undefined}
+                    className={`${serial ? 'readonly-qty' : ''} ${tried && b.qty ? 'invalid' : ''}`} onChange={(e) => upd(l.product_id, { qty: e.target.value })} aria-label={`Quantity of ${p?.name}`} /></td>
+                  <td><input type="number" min="0" step="any" value={l.cost} onChange={(e) => upd(l.product_id, { cost: e.target.value })} aria-label={`Unit cost for ${p?.name}`} className={tried && b.cost ? 'invalid' : ''} /></td>
+                  <td><input type="number" min="0" step="any" value={l.sale} onChange={(e) => upd(l.product_id, { sale: e.target.value })} aria-label={`Retail price for ${p?.name}`} className={tried && b.sale ? 'invalid' : ''} placeholder="Retail" />
+                    {Number(l.cost) > 0 && Number(l.sale) > 0 && <small className={Number(l.sale) < Number(l.cost) ? 'margin bad' : 'margin'}>{Math.round(((l.sale - l.cost) / l.cost) * 100)}% margin</small>}</td>
+                  <td><input type="number" min="0" step="any" value={l.whole} onChange={(e) => upd(l.product_id, { whole: e.target.value })} aria-label={`Wholesale price for ${p?.name}`} placeholder="—" /></td>
+                  <td className="r num">{money((Number(l.qty) || 0) * (Number(l.cost) || 0), false)}</td>
+                  <td><button className="x" onClick={(e) => { e.stopPropagation(); remove(l.product_id); }} aria-label={`Remove ${p?.name}`}>×</button></td>
+                </tr>
+                {open && (
+                  <tr className="sn-row"><td colSpan={7}>
+                    <div className="sn-box">
+                      <div className="sn-head"><b>Serial numbers</b><span className="muted">Scan with the barcode scanner, or type and press Enter. Quantity is counted automatically.</span><span className="sn-total">{l.serials.length} entered</span></div>
+                      <div className="sn-chips">
+                        {l.serials.map((sn) => (
+                          <span className="sn-chip" key={sn}>{sn}<button type="button" onClick={() => dropSerial(l.product_id, sn)} aria-label={`Remove serial ${sn}`}>×</button></span>
+                        ))}
+                        <input className="sn-input" autoFocus placeholder={l.serials.length ? 'Next serial…' : 'Scan or type serial, then Enter'} aria-label={`Add serial for ${p?.name}`}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === 'Tab') {
+                              if (!e.currentTarget.value.trim()) return;
+                              e.preventDefault();
+                              if (addSerials(l.product_id, e.currentTarget.value)) e.currentTarget.value = ''; else e.currentTarget.select();
+                            } else if (e.key === 'Backspace' && !e.currentTarget.value && l.serials.length) dropSerial(l.product_id, l.serials[l.serials.length - 1]);
+                          }}
+                          onPaste={(e) => { const t = e.clipboardData.getData('text'); if (/[\n,;\t]/.test(t)) { e.preventDefault(); addSerials(l.product_id, t); } }} />
+                      </div>
+                    </div>
+                  </td></tr>
+                )}
+              </tbody>
             );
-          })}</tbody>
-        </table>{!lines.length && <div className="empty"><b>No items yet</b><div>Search above to add products. For serial-tracked items, scan every serial.</div></div>}</div></div>
+          })}
+        </table>{!lines.length && <div className="empty"><b>No items yet</b><div>{supplier ? 'Search above to add products. For serial-tracked items, scan every serial.' : 'Select the supplier first, then add products.'}</div></div>}</div></div>
       </div>
       <div className="card">
         <div className="form">
-          <Field label="Supplier" wide hint="Required when buying on credit."><Select value={supplier} onChange={setSupplier} options={suppliers} placeholder="No supplier (cash purchase)" /></Field>
+          <Field label={<>Supplier <span className="req">*</span></>} wide error={needSupplier && !supplier ? 'Select the supplier you are buying from' : undefined}>
+            <select ref={supplierRef} value={supplier} onChange={(e) => { setSupplier(e.target.value); setNeedSupplier(false); }} aria-label="Supplier" className={needSupplier && !supplier ? 'invalid' : ''}>
+              <option value="">Select a supplier…</option>
+              {suppliers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+            </select>
+          </Field>
+          {sup && prev !== 0 && (
+            <div className={`wide sup-bal ${prev > 0 ? 'owe' : 'adv'}`}>
+              <span>{prev > 0 ? 'Previous due to this supplier' : 'Advance with this supplier (they owe you)'}</span>
+              <b>{money(Math.abs(prev))}</b>
+            </div>
+          )}
+          {sup && prev === 0 && <div className="wide sup-bal clear"><span>No previous balance with this supplier</span></div>}
           <Field label="Purchase date"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
-          <Field label="Discount"><input type="number" step="any" value={discount} onChange={(e) => setDiscount(e.target.value)} /></Field>
+          <Field label="Discount"><input type="number" min="0" step="any" value={discount} onChange={(e) => setDiscount(e.target.value)} /></Field>
         </div>
         <div className="totals" style={{ margin: '14px 0' }}>
           <span>Subtotal</span><b className="num">{money(sub, false)}</b>
           <span>Total</span><span className="grand">{money(total)}</span>
         </div>
-        <PaymentSplit value={pays} onChange={setPays} total={total} label="Paid now (leave empty for full credit)" />
-        <div className="totals" style={{ marginTop: 10 }}><span>Due to supplier</span><span className="due num">{money(Math.max(total - paid, 0))}</span></div>
+        <PaymentSplit value={pays} onChange={setPays} total={total} label="Pay supplier now (leave the amount empty to buy on credit)" />
+        <div className="totals" style={{ marginTop: 10 }}>
+          <span>Paid now</span><b className="num">{money(paid, false)}</b>
+          <span>Due on this purchase</span><span className="due num">{money(due)}</span>
+          {sup && <>
+            <span>Previous balance</span><span className="num">{prev < 0 ? `-${money(-prev, false)}` : money(prev, false)}</span>
+            <span><b>{after >= 0 ? 'Total payable to supplier' : 'Advance left with supplier'}</b></span><b className="num" style={{ color: after > 0 ? 'var(--bad)' : 'var(--ok)' }}>{money(Math.abs(after))}</b>
+          </>}
+        </div>
         <Field label="Note" wide><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Supplier invoice number, etc." /></Field>
         <Btn kind="primary" size="lg" style={{ width: '100%', marginTop: 14 }} busy={busy} disabled={!lines.length} onClick={save}>Save purchase</Btn>
       </div>
