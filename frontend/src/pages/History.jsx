@@ -27,7 +27,7 @@ export default function History() {
 
   return (
     <>
-      <PageHead title="Item history explorer" sub="Scan a serial number, product barcode or invoice number to see its complete life cycle." />
+      <PageHead title="Advance Search" sub="Scan a serial number, product barcode or invoice number to see its complete life cycle." />
       <form className="row" onSubmit={go} style={{ marginBottom: 16 }}>
         <div className="psearch" style={{ flex: 1 }}><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Serial / IMEI, barcode, INV-000123 or PUR-000045" autoFocus /></div>
         <Btn kind="primary" size="lg" busy={loading} type="submit">Search</Btn>

@@ -24,7 +24,7 @@ export const NAV = [
   { to: '/purchases', label: 'Purchases', perm: 'purchase', key: '6' },
   { to: '/suppliers', label: 'Suppliers', perm: 'suppliers' },
   { to: '/warranty', label: 'Warranty claims', perm: 'warranty', key: '7' },
-  { to: '/history', label: 'Item history explorer', key: '8' },
+  { to: '/history', label: 'Advance Search', key: '8' },
   { group: 'Money & reports' },
   { to: '/accounts', label: 'Cash, bank & MFS', perm: 'accounts' },
   { to: '/reports', label: 'Reports hub', perm: 'reports', key: '9' },
