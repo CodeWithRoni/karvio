@@ -328,4 +328,3 @@ table { width: 100%; border-collapse: collapse; }
   color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
   padding: 6px 16px; white-space: nowrap; align-self: center;
 }
-@media (max-width: 860px) { .live-clock { font-size: 20px; order: 3; } }
