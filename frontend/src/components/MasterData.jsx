@@ -41,7 +41,13 @@ function Panel({ title, count, hint, form, search, setSearch, children, empty })
 
 export default function MasterData() {
   const { categories, brands, warrantyPeriods, products, refresh } = useStore();
-  const [busy, run] = useAction();
+  // Separate busy flags: only the button that was pressed shows the spinner.
+  const [busyCat, runCat] = useAction();
+  const [busyBrand, runBrand] = useAction();
+  const [busyWarranty, runWarranty] = useAction();
+  const [busyEdit, runEdit] = useAction();
+  const [, runDel] = useAction();
+  const runners = { category: runCat, brand: runBrand, warranty_period: runWarranty };
   const [confirmUI, ask] = useConfirm();
   const [nc, setNc] = useState({ name: '', parent_id: '' });
   const [nb, setNb] = useState('');
@@ -59,7 +65,8 @@ export default function MasterData() {
     return m;
   }, [products]);
 
-  const save = async (p, msg) => { await run(() => api('master.save', p), msg); await refresh('all'); };
+  // The spinner keeps going until the list has reloaded, so the new item appears as the spinner stops.
+  const save = (p, msg, runner = runners[p.kind]) => runner(async () => { const r = await api('master.save', p); await refresh('all'); return r; }, msg);
   const KIND = { category: 'category', brand: 'brand', warranty_period: 'warranty period' };
 
   const del = async (kind, item) => {
@@ -70,14 +77,13 @@ export default function MasterData() {
       message: <>Are you sure you want to delete <b>“{name}”</b>?{isMain ? ' Its sub-categories must be deleted first.' : ''}{kind !== 'warranty_period' ? ' Items used by products cannot be deleted.' : ' Products already set to this period keep their warranty days.'}</>
     });
     if (!ok) return;
-    try { await run(() => api('master.delete', { kind, id: item.id }), `${name} deleted`); } catch { return; }
-    await refresh('all');
+    try { await runDel(async () => { await api('master.delete', { kind, id: item.id }); await refresh('all'); }, `${name} deleted`); } catch { /* error shown as a toast */ }
   };
   const saveEdit = async (e) => {
     e?.preventDefault();
     const v = String(edit.value).trim();
     if (!v || v === edit.item[edit.field]) return setEdit(null);
-    try { await save({ ...edit.item, kind: edit.kind, [edit.field]: v }, 'Renamed'); setEdit(null); } catch {}
+    try { await save({ ...edit.item, kind: edit.kind, [edit.field]: v }, 'Renamed', runEdit); setEdit(null); } catch {}
   };
 
   // category search: show a main category if it or any of its sub-categories match
@@ -98,7 +104,7 @@ export default function MasterData() {
             </select>
             <div className="md-form-row">
               <input value={nc.name} onChange={(e) => setNc({ ...nc, name: e.target.value })} placeholder={nc.parent_id ? 'Sub-category name' : 'Category name'} aria-label="Name" />
-              <Btn kind="primary" busy={busy} type="submit" disabled={!nc.name.trim()}>Add</Btn>
+              <Btn kind="primary" busy={busyCat} type="submit" disabled={!nc.name.trim()}>Add</Btn>
             </div>
           </form>
         }
@@ -145,7 +151,7 @@ export default function MasterData() {
           <form className="md-form" onSubmit={(e) => { e.preventDefault(); save({ kind: 'brand', name: nb }, 'Brand added').then(() => setNb('')).catch(() => {}); }}>
             <div className="md-form-row">
               <input value={nb} onChange={(e) => setNb(e.target.value)} placeholder="Brand name, e.g. TP-Link" aria-label="Brand name" />
-              <Btn kind="primary" busy={busy} type="submit" disabled={!nb.trim()}>Add</Btn>
+              <Btn kind="primary" busy={busyBrand} type="submit" disabled={!nb.trim()}>Add</Btn>
             </div>
           </form>
         }
@@ -171,7 +177,7 @@ export default function MasterData() {
             <div className="md-form-row">
               <input type="number" min="1" value={nw.days} onChange={(e) => setNw({ ...nw, days: e.target.value })} placeholder="Days" aria-label="Days" style={{ width: 90, flex: 'none' }} />
               <input value={nw.label} onChange={(e) => setNw({ ...nw, label: e.target.value })} placeholder="Label, e.g. 3 years" aria-label="Label" />
-              <Btn kind="primary" busy={busy} type="submit" disabled={!nw.days}>Add</Btn>
+              <Btn kind="primary" busy={busyWarranty} type="submit" disabled={!nw.days}>Add</Btn>
             </div>
           </form>
         }
@@ -192,7 +198,7 @@ export default function MasterData() {
 
       <Modal open={!!edit} onClose={() => setEdit(null)} size="sm"
         title={edit ? `Rename ${edit.kind === 'category' ? (edit.item.parent_id ? 'sub-category' : 'category') : KIND[edit.kind]}` : ''}
-        footer={<><Btn onClick={() => setEdit(null)}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={saveEdit}>Save name</Btn></>}>
+        footer={<><Btn onClick={() => setEdit(null)}>Cancel</Btn><Btn kind="primary" busy={busyEdit} onClick={saveEdit}>Save name</Btn></>}>
         {edit && (
           <form onSubmit={saveEdit}>
             <Field label="New name" wide><input value={edit.value} onChange={(e) => setEdit({ ...edit, value: e.target.value })} autoFocus /></Field>
