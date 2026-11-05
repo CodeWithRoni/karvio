@@ -170,7 +170,7 @@ export default function MasterData() {
           {shownBrands.map((b) => (
             <li className="md-row" key={b.id}>
               <span className="md-name" title={b.name}>{b.name}</span>
-              {used[b.id] > 0 && <span className="md-pill md-used">{used[b.id]} products</span>}
+              {used[b.id] > 0 && <span className="md-pill md-used">{used[b.id]} product{used[b.id] === 1 ? "" : "s"}</span>}
               <div className="md-actions">
                 <ActBtn tone="edit" icon="edit" onClick={() => setEdit({ kind: 'brand', item: b, field: 'name', value: b.name })} aria-label={`Rename ${b.name}`}>Rename</ActBtn>
                 <ActBtn tone="delete" icon="trash" onClick={() => del('brand', b)} aria-label={`Delete ${b.name}`}>Delete</ActBtn>
@@ -225,7 +225,7 @@ export default function MasterData() {
               <span className="md-name" title={u.label}>{u.label}</span>
               {u.label.toLowerCase() !== u.name && <span className="md-pill">{u.name}</span>}
               {u.decimal && <span className="md-pill">decimal</span>}
-              {used[`unit:${u.name}`] > 0 && <span className="md-pill md-used">{used[`unit:${u.name}`]} products</span>}
+              {used[`unit:${u.name}`] > 0 && <span className="md-pill md-used">{used[`unit:${u.name}`]} product{used[`unit:${u.name}`] === 1 ? "" : "s"}</span>}
               <div className="md-actions">
                 <ActBtn tone="edit" icon="edit" onClick={() => setEdit({ kind: 'unit', item: u, field: 'label', value: u.label })} aria-label={`Rename ${u.label}`}>Rename</ActBtn>
                 {u.name !== 'pcs' && <ActBtn tone="delete" icon="trash" onClick={() => del('unit', u)} aria-label={`Delete ${u.label}`}>Delete</ActBtn>}

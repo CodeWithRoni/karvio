@@ -7,7 +7,7 @@ import DataTable from '../components/DataTable';
 import MasterData from '../components/MasterData';
 import { PageHead, Tabs, Modal, Btn, Field, Badge, Select, useAction } from '../components/ui';
 
-const blank = { name: '', sku: '', barcode: '', category_id: '', subcategory_id: '', brand_id: '', unit: 'pcs', roll_length: '', cost_price: '', sale_price: '', wholesale_price: '', low_stock: '', has_warranty: false, warranty_type: 'serial', warranty_days: 0, active: true, service: false };
+const blank = { name: '', sku: '', barcode: '', category_id: '', subcategory_id: '', brand_id: '', unit: 'pcs', roll_length: '', cost_price: '', sale_price: '', wholesale_price: '', low_stock: '', has_warranty: false, warranty_type: 'serial', warranty_days: 0, active: true, service: false, description: '' };
 // Auto name = Product group + Category + Brand + Model, e.g. "Networking Router TP-Link Archer C6".
 export const nameKey = (s) => String(s || '').trim().replace(/\s+/g, ' ').toLowerCase();
 
@@ -124,6 +124,12 @@ function ProductForm({ initial, onClose }) {
         <Field label={`Retail price per ${f.unit}`}><input type="number" step="any" value={f.sale_price} onChange={s('sale_price')} /></Field>
         {(isNew || can('cost')) && <Field label="Wholesale price"><input type="number" step="any" value={f.wholesale_price} onChange={s('wholesale_price')} /></Field>}
         {!f.service && <Field label="Low-stock alert at" hint="Blank uses the default from Settings."><input type="number" step="any" value={f.low_stock} onChange={s('low_stock')} /></Field>}
+
+        <div className="wide card product-desc" style={{ background: 'var(--panel-2)' }}>
+          <Field label="Short description" wide hint={`${String(f.description || '').length}/500 — e.g. Dual-band AC1200, 4 antennas, 1 year warranty.`}>
+            <textarea value={f.description || ''} maxLength={500} rows={3} onChange={s('description')} placeholder="A few words about this product (optional)" aria-label="Short description" />
+          </Field>
+        </div>
 
         <div className="wide card" style={{ background: 'var(--panel-2)' }}>
           <div className="row" style={{ gap: 28, flexWrap: 'wrap' }}>

@@ -32,7 +32,7 @@ var SCHEMA = {
   Brands:              'id,name',
   WarrantyPeriods:     'id,label,days:n',
   Units:               'id,name,label,decimal:b',
-  Products:            'id,sku,barcode,name,category_id,subcategory_id,brand_id,unit,roll_length:n,cost_price:n,sale_price:n,wholesale_price:n,stock:n,low_stock:n,has_warranty:b,warranty_type,warranty_days:n,active:b,created_at,service:b',
+  Products:            'id,sku,barcode,name,category_id,subcategory_id,brand_id,unit,roll_length:n,cost_price:n,sale_price:n,wholesale_price:n,stock:n,low_stock:n,has_warranty:b,warranty_type,warranty_days:n,active:b,created_at,service:b,description',
   SerialItems:         'id,product_id,serial,purchase_id,sale_id,status,cost:n,created_at',
   Customers:           'id,name,phones,addresses,opening_balance:n,note,active:b,created_at',
   Suppliers:           'id,name,phones,address,opening_balance:n,note,active:b,created_at',
@@ -553,7 +553,7 @@ function productSave_(p, user) {
   var row = {
     sku: sku, barcode: barcode, name: name, category_id: p.category_id || '', subcategory_id: p.subcategory_id || '', brand_id: p.brand_id || '',
     unit: unit, roll_length: isDecimalUnit_(unit) ? num_(p.roll_length) : 0, cost_price: service ? 0 : num_(p.cost_price), sale_price: num_(p.sale_price), wholesale_price: num_(p.wholesale_price),
-    low_stock: service ? 0 : num_(p.low_stock), service: service, has_warranty: hasW, warranty_type: wType, warranty_days: hasW ? Math.round(num_(p.warranty_days)) : 0,
+    low_stock: service ? 0 : num_(p.low_stock), service: service, description: String(p.description || '').trim().slice(0, 500), has_warranty: hasW, warranty_type: wType, warranty_days: hasW ? Math.round(num_(p.warranty_days)) : 0,
     active: p.active === undefined ? true : (p.active === true || p.active === 'true')
   };
   if (p.id) {

@@ -439,13 +439,10 @@ table { width: 100%; border-collapse: collapse; }
 .field-hint .link { font-size: inherit; padding: 0; }
 .psearch-list .ps.svc { color: var(--aqua); }
 
-/* Five master-data panels: 5 across on wide screens; on medium screens 2 big panels on top and 3 below. */
-.md-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-@media (max-width: 1550px) {
-  .md-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-  .md-grid > .md-panel { grid-column: span 2; }
-  .md-grid > .md-panel:nth-child(-n+2) { grid-column: span 3; }
-}
+/* Master data: 2 wide panels on top, 3 below, every panel the same compact height on any monitor. */
+.md-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.md-grid > .md-panel { grid-column: span 2; height: 440px; }
+.md-grid > .md-panel:nth-child(-n+2) { grid-column: span 3; }
 @media (max-width: 1100px) {
   .md-grid { grid-template-columns: 1fr 1fr; }
   .md-grid > .md-panel, .md-grid > .md-panel:nth-child(-n+2) { grid-column: auto; }
@@ -453,3 +450,5 @@ table { width: 100%; border-collapse: collapse; }
 }
 @media (max-width: 860px) { .md-grid { grid-template-columns: 1fr; } .md-grid > .md-panel:last-of-type { grid-column: auto; } }
 .md-check { margin-top: 8px; font-size: 13px; }
+.product-desc .field { margin: 0; }
+.product-desc textarea { min-height: 70px; resize: vertical; }
