@@ -31,7 +31,7 @@ var SCHEMA = {
   Categories:          'id,name,parent_id',
   Brands:              'id,name',
   WarrantyPeriods:     'id,label,days:n',
-  Products:            'id,sku,barcode,name,category_id,subcategory_id,brand_id,unit,roll_length:n,cost_price:n,sale_price:n,wholesale_price:n,stock:n,low_stock:n,has_warranty:b,warranty_type,warranty_days:n,active:b,created_at',
+  Products:            'id,sku,barcode,name,category_id,subcategory_id,brand_id,unit,roll_length:n,cost_price:n,sale_price:n,wholesale_price:n,stock:n,low_stock:n,has_warranty:b,warranty_type,warranty_days:n,active:b,created_at,service:b',
   SerialItems:         'id,product_id,serial,purchase_id,sale_id,status,cost:n,created_at',
   Customers:           'id,name,phones,addresses,opening_balance:n,note,active:b,created_at',
   Suppliers:           'id,name,phones,address,opening_balance:n,note,active:b,created_at',
@@ -507,14 +507,17 @@ function productsList_(user) {
   return stripCost_(list, user);
 }
 function productSave_(p, user) {
-  var name = String(p.name || '').trim(); if (!name) fail_('Product name is required');
-  var unit = ['pcs', 'meter', 'feet'].indexOf(p.unit) >= 0 ? p.unit : 'pcs';
+  var name = String(p.name || '').trim().replace(/\s+/g, ' '); if (!name) fail_('Product name is required');
+  var service = p.service === true || p.service === 'true';
+  var unit = service ? 'pcs' : (['pcs', 'meter', 'feet'].indexOf(p.unit) >= 0 ? p.unit : 'pcs');
   var hasW = p.has_warranty === true || p.has_warranty === 'true';
-  var wType = hasW ? (p.warranty_type === 'invoice' ? 'invoice' : 'serial') : '';
+  // A service has no serial numbers, so its warranty is always proven by the invoice.
+  var wType = hasW ? (service || p.warranty_type === 'invoice' ? 'invoice' : 'serial') : '';
   if (hasW && wType === 'serial' && unit !== 'pcs') fail_('Serial-based warranty is only for items sold in pcs');
   var barcode = String(p.barcode || '').trim(), sku = String(p.sku || '').trim();
   all_('Products').forEach(function (x) {
     if (x.id === p.id) return;
+    if (nameKey_(x.name) === nameKey_(name)) fail_('A product named "' + x.name + '" already exists');
     if (barcode && x.barcode === barcode) fail_('Barcode already used by: ' + x.name);
     if (sku && x.sku === sku) fail_('SKU already used by: ' + x.name);
   });
@@ -523,13 +526,15 @@ function productSave_(p, user) {
   if (p.subcategory_id && (!classifications[p.subcategory_id] || classifications[p.subcategory_id].parent_id !== p.category_id)) fail_('Category must belong to the selected product group');
   var row = {
     sku: sku, barcode: barcode, name: name, category_id: p.category_id || '', subcategory_id: p.subcategory_id || '', brand_id: p.brand_id || '',
-    unit: unit, roll_length: unit === 'pcs' ? 0 : num_(p.roll_length), cost_price: num_(p.cost_price), sale_price: num_(p.sale_price), wholesale_price: num_(p.wholesale_price),
-    low_stock: num_(p.low_stock), has_warranty: hasW, warranty_type: wType, warranty_days: hasW ? Math.round(num_(p.warranty_days)) : 0,
+    unit: unit, roll_length: unit === 'pcs' ? 0 : num_(p.roll_length), cost_price: service ? 0 : num_(p.cost_price), sale_price: num_(p.sale_price), wholesale_price: num_(p.wholesale_price),
+    low_stock: service ? 0 : num_(p.low_stock), service: service, has_warranty: hasW, warranty_type: wType, warranty_days: hasW ? Math.round(num_(p.warranty_days)) : 0,
     active: p.active === undefined ? true : (p.active === true || p.active === 'true')
   };
   if (p.id) {
     if (!can_(user, 'cost')) { delete row.cost_price; delete row.wholesale_price; }
     var cur = all_('Products').filter(function (x) { return x.id === p.id; })[0];
+    if (cur && service && !isService_(cur) && cur.stock > 0) fail_('This product still has ' + cur.stock + ' in stock. Sell, return or adjust it to 0 before turning Inventory off');
+    if (cur && service && !can_(user, 'cost')) row.cost_price = 0;
     if (cur && cur.has_warranty && cur.warranty_type === 'serial' && (!hasW || wType !== 'serial') && cur.stock > 0)
       fail_('Cannot change warranty type while serial-tracked stock exists');
     return update_('Products', p.id, row);
@@ -548,6 +553,7 @@ function serialsList_(p) {
 }
 function stockAdjust_(p, user) {
   var pr = all_('Products').filter(function (x) { return x.id === p.product_id; })[0]; if (!pr) fail_('Product not found');
+  if (isService_(pr)) fail_(pr.name + ' is a service (no inventory), so it has no stock to adjust');
   if (pr.has_warranty && pr.warranty_type === 'serial') fail_('Serial-tracked items must be adjusted through purchases / returns');
   var newStock = num_(p.new_stock); if (newStock < 0) fail_('Stock cannot be negative');
   var diff = round_(newStock - pr.stock, 4);
@@ -776,7 +782,10 @@ function bootstrap_(p, user) {
 function splitSerials_(v) {
   return (Array.isArray(v) ? v : String(v || '').split(/[\n,]+/)).map(function (s) { return String(s).trim(); }).filter(Boolean);
 }
-function isSerialProduct_(pr) { return pr.has_warranty && pr.warranty_type === 'serial'; }
+function isSerialProduct_(pr) { return !pr.service && pr.has_warranty && pr.warranty_type === 'serial'; }
+// Service items (Inventory unticked: software install, Windows setup, repair charge) have no stock and no cost.
+function isService_(pr) { return !!pr && (pr.service === true || pr.service === 'true'); }
+function nameKey_(s) { return String(s || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
 
 function purchaseCreate_(p, user) {
   var pmap = indexBy_(all_('Products')), items = p.items || [];
@@ -787,6 +796,7 @@ function purchaseCreate_(p, user) {
 
   items.forEach(function (it) {
     var pr = pmap[it.product_id]; if (!pr) fail_('Product not found');
+    if (isService_(pr)) fail_(pr.name + ' is a service (no inventory) and does not need to be purchased');
     var qty = num_(it.qty); if (qty <= 0) fail_('Invalid quantity for ' + pr.name);
     var cost = num_(it.cost); if (cost < 0) fail_('Invalid cost for ' + pr.name);
     var sers = [];
@@ -883,7 +893,7 @@ function saleCreate_(p, user) {
     need[pr.id] = (need[pr.id] || 0) + qty;
   });
   Object.keys(need).forEach(function (id) {
-    if (pmap[id].stock < need[id] - 1e-9) fail_('Insufficient stock for ' + pmap[id].name + ' (available ' + pmap[id].stock + ' ' + pmap[id].unit + ')');
+    if (!isService_(pmap[id]) && pmap[id].stock < need[id] - 1e-9) fail_('Insufficient stock for ' + pmap[id].name + ' (available ' + pmap[id].stock + ' ' + pmap[id].unit + ')');
   });
 
   items.forEach(function (it) {
@@ -898,7 +908,7 @@ function saleCreate_(p, user) {
         if (used[k]) fail_('Duplicate serial ' + s);
         used[k] = 1; cost += rec.cost;
       });
-    } else cost = pr.cost_price * qty;
+    } else cost = isService_(pr) ? 0 : pr.cost_price * qty;
     var wDays = 0, wExp = '';
     if (pr.has_warranty) {
       wDays = (it.warranty_days !== undefined && it.warranty_days !== null && it.warranty_days !== '') ? Math.round(num_(it.warranty_days)) : pr.warranty_days;
@@ -935,7 +945,7 @@ function saleCreate_(p, user) {
   }));
   var events = [];
   lines.forEach(function (l) {
-    update_('Products', l.pr.id, { stock: round_(l.pr.stock - l.qty, 4) });
+    if (!isService_(l.pr)) update_('Products', l.pr.id, { stock: round_(l.pr.stock - l.qty, 4) });
     l.serials.forEach(function (s) {
       var rec = sidx[l.pr.id + '|' + s];
       update_('SerialItems', rec.id, { status: 'sold', sale_id: sale.id });
@@ -1050,7 +1060,7 @@ function sreturnCreate_(p, user) {
   }));
   var events = [];
   lines.forEach(function (l) {
-    update_('Products', l.pr.id, { stock: round_(l.pr.stock + l.qty, 4) });
+    if (!isService_(l.pr)) update_('Products', l.pr.id, { stock: round_(l.pr.stock + l.qty, 4) });
     l.serials.forEach(function (s) {
       update_('SerialItems', sidx[l.pr.id + '|' + s].id, { status: 'in_stock', sale_id: '' });
       events.push({ serial: s, product_id: l.pr.id, product_name: l.pr.name, event: 'sale_return', ref_type: 'sreturn', ref_id: ret.id, ref_no: no, party: sale.customer_name, qty: 1, amount: l.si.price, note: 'Returned from ' + sale.invoice_no });
@@ -1231,7 +1241,7 @@ function reverseSale_(p, user, reason) {
   if (all_('WarrantyClaims').some(function (c) { return c.sale_id === s.id && c.status !== 'Delivered' && c.status !== 'Rejected'; })) fail_('This invoice has open warranty claims');
   var pmap = indexBy_(all_('Products')), sidx = serialIndex_(), events = [];
   all_('SaleItems').filter(function (i) { return i.sale_id === s.id; }).forEach(function (i) {
-    var pr = pmap[i.product_id]; if (pr) update_('Products', pr.id, { stock: round_(pr.stock + i.qty, 4) });
+    var pr = pmap[i.product_id]; if (pr && !isService_(pr)) update_('Products', pr.id, { stock: round_(pr.stock + i.qty, 4) });
     parseList_(i.serials).forEach(function (sn) {
       var rec = sidx[i.product_id + '|' + sn]; if (rec && rec.sale_id === s.id) update_('SerialItems', rec.id, { status: 'in_stock', sale_id: '' });
       events.push({ serial: sn, product_id: i.product_id, product_name: i.name, event: 'sale_cancelled', ref_type: 'sale', ref_id: s.id, ref_no: s.invoice_no, party: s.customer_name, qty: 1, amount: 0, note: 'Invoice cancelled: ' + reason });
@@ -1303,12 +1313,12 @@ function reverseSreturn_(p, user, reason) {
   var pmap = indexBy_(all_('Products')), sidx = serialIndex_(), items = all_('SalesReturnItems').filter(function (i) { return i.return_id === r.id; });
   items.forEach(function (i) {
     var pr = pmap[i.product_id];
-    if (pr.stock < i.qty - 1e-9) fail_('Cannot cancel: ' + i.name + ' returned stock has already been sold again');
+    if (!isService_(pr) && pr.stock < i.qty - 1e-9) fail_('Cannot cancel: ' + i.name + ' returned stock has already been sold again');
     parseList_(i.serials).forEach(function (sn) { var rec = sidx[i.product_id + '|' + sn]; if (!rec || rec.status !== 'in_stock') fail_('Cannot cancel: serial ' + sn + ' is no longer in stock'); });
   });
   var events = [];
   items.forEach(function (i) {
-    var pr = pmap[i.product_id]; update_('Products', pr.id, { stock: round_(pr.stock - i.qty, 4) });
+    var pr = pmap[i.product_id]; if (!isService_(pr)) update_('Products', pr.id, { stock: round_(pr.stock - i.qty, 4) });
     parseList_(i.serials).forEach(function (sn) {
       update_('SerialItems', sidx[i.product_id + '|' + sn].id, { status: 'sold', sale_id: r.sale_id });
       events.push({ serial: sn, product_id: i.product_id, product_name: i.name, event: 'return_cancelled', ref_type: 'sreturn', ref_id: r.id, ref_no: r.return_no, party: r.customer_name, qty: 1, amount: 0, note: 'Sales return cancelled: ' + reason });
@@ -1543,7 +1553,7 @@ function dashboard_(p, user) {
   out.recent = sales.slice(-8).reverse().map(function (s) { return { id: s.id, invoice_no: s.invoice_no, customer_name: s.customer_name, total: s.total, due: s.due, date: s.date }; });
 
   var thDef = num_(getSetting_('low_stock_default', '5'));
-  out.low_stock = all_('Products').filter(function (x) { return x.active && x.stock <= (x.low_stock > 0 ? x.low_stock : thDef); })
+  out.low_stock = all_('Products').filter(function (x) { return x.active && !isService_(x) && x.stock <= (x.low_stock > 0 ? x.low_stock : thDef); })
     .sort(function (a, b) { return a.stock - b.stock; }).slice(0, 40)
     .map(function (x) { return { id: x.id, name: x.name, stock: x.stock, unit: x.unit, threshold: x.low_stock > 0 ? x.low_stock : thDef }; });
   if (!full) return out;

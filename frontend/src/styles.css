@@ -432,3 +432,9 @@ table { width: 100%; border-collapse: collapse; }
   .md-actions .act-btn { font-size: 0; gap: 0; width: 30px; padding: 0; justify-content: center; }
   .md-actions .act-btn svg { width: 15px; height: 15px; }
 }
+
+/* Product form: inline validation + service items */
+.field.has-error input { border-color: var(--bad); }
+.field-hint.field-error { color: var(--bad); font-weight: 600; }
+.field-hint .link { font-size: inherit; padding: 0; }
+.psearch-list .ps.svc { color: var(--aqua); }

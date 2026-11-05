@@ -65,7 +65,7 @@ export default function PCBuilder() {
                 <div>
                   <select value={l.product_id} onChange={(e) => pick(i, e.target.value)} aria-label={`${l.group} product`}>
                     <option value="">{l.name && !l.product_id ? 'Custom item' : `Choose ${l.group.toLowerCase()}…`}</option>
-                    {opts.map((p) => <option key={p.id} value={p.id}>{p.name} — {money(p.sale_price, false)} ({fqty(p.stock, p.unit)} in stock)</option>)}
+                    {opts.map((p) => <option key={p.id} value={p.id}>{p.name} — {money(p.sale_price, false)} ({p.service ? 'service' : `${fqty(p.stock, p.unit)} in stock`})</option>)}
                     {slot && <optgroup label="Other products">{products.filter((p) => p.active && !opts.includes(p)).slice(0, 200).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</optgroup>}
                   </select>
                   {!l.product_id && <input style={{ marginTop: 4 }} value={l.name} onChange={(e) => upd(i, { name: e.target.value })} placeholder="…or type a part not in stock" />}

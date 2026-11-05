@@ -34,11 +34,11 @@ export default function POS() {
 
   const pmap = useMemo(() => Object.fromEntries(products.map((p) => [p.id, p])), [products]);
   const customer = customers.find((c) => c.id === customerId);
-  const isSerial = (p) => p.has_warranty && p.warranty_type === 'serial';
+  const isSerial = (p) => !p.service && p.has_warranty && p.warranty_type === 'serial';
   const priceFor = (p) => (tier === 'wholesale' && p.wholesale_price ? p.wholesale_price : p.sale_price);
 
   const add = (p) => {
-    if (p.stock <= 0) return toast(`${p.name} is out of stock`, 'err');
+    if (!p.service && p.stock <= 0) return toast(`${p.name} is out of stock`, 'err');
     const i = cart.findIndex((l) => l.product_id === p.id);
     if (i >= 0) {
       setCart(cart.map((l, j) => (j === i ? { ...l, qty: round2(Number(l.qty) + 1) } : l)));
@@ -70,7 +70,7 @@ export default function POS() {
     const p = pmap[l.product_id];
     if (!p) return problems.push('A cart item no longer exists');
     if (isSerial(p) && l.serials.length !== Number(l.qty)) problems.push(`Pick ${l.qty} serial(s) for ${p.name}`);
-    if (Number(l.qty) > p.stock) problems.push(`Only ${fqty(p.stock, p.unit)} of ${p.name} in stock`);
+    if (!p.service && Number(l.qty) > p.stock) problems.push(`Only ${fqty(p.stock, p.unit)} of ${p.name} in stock`);
   });
   if (due > 0.004 && !customer) problems.push('Cash sales must be fully paid — select a customer to sell on due');
 
@@ -128,7 +128,7 @@ export default function POS() {
                   <tr key={i}>
                     <td className="cn">
                       <b>{p.name}</b>
-                      <small>{fqty(p.stock, p.unit)} in stock{p.unit !== 'pcs' ? ` · sold by ${p.unit}` : ''}</small>
+                      <small>{p.service ? 'Service — no stock' : `${fqty(p.stock, p.unit)} in stock`}{p.unit !== 'pcs' ? ` · sold by ${p.unit}` : ''}</small>
                       {isSerial(p) && (l.serials.length === Number(l.qty)
                         ? <div><button className="serial-ok" onClick={() => setSerialFor(i)}>S/N: {l.serials.join(', ')}</button></div>
                         : <div><button className="serial-need" onClick={() => setSerialFor(i)}>Pick serial numbers ({l.serials.length}/{l.qty})</button></div>)}

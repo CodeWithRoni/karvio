@@ -85,7 +85,7 @@ function NewPurchase({ onDone }) {
   return (
     <div className="split">
       <div className="grid">
-        <ProductSearch onPick={add} placeholder="Scan or search the product you received" />
+        <ProductSearch onPick={add} noServices placeholder="Scan or search the product you received" />
         <div className="dt"><div className="dt-scroll"><table>
           <thead><tr><th>Product</th><th style={{ width: 100 }} className="r">Qty</th><th style={{ width: 120 }} className="r">Unit cost</th><th className="r">Amount</th><th /></tr></thead>
           <tbody>{lines.map((l, i) => {

@@ -93,12 +93,12 @@ export function Btn({ kind = 'ghost', size, busy, children, className = '', ...p
   );
 }
 
-export function Field({ label, hint, children, wide, className = '' }) {
+export function Field({ label, hint, error, children, wide, className = '' }) {
   return (
-    <label className={`field ${wide ? 'wide' : ''} ${className}`}>
+    <label className={`field ${wide ? 'wide' : ''} ${error ? 'has-error' : ''} ${className}`}>
       {label && <span className="field-label">{label}</span>}
       {children}
-      {hint && <span className="field-hint">{hint}</span>}
+      {error ? <span className="field-hint field-error" role="alert">{error}</span> : hint && <span className="field-hint">{hint}</span>}
     </label>
   );
 }

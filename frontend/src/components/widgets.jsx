@@ -8,7 +8,7 @@ import { Modal, Btn, Field, useAction } from './ui';
  * Product search box with barcode support.
  * Typing a barcode / SKU and pressing Enter adds it straight away.
  * ---------------------------------------------------------------- */
-export function ProductSearch({ onPick, inStockOnly = false, autoFocus, placeholder = 'Scan barcode or search product (F2)', inputRef }) {
+export function ProductSearch({ onPick, inStockOnly = false, noServices = false, autoFocus, placeholder = 'Scan barcode or search product (F2)', inputRef }) {
   const products = useStore((s) => s.products);
   const [q, setQ] = useState('');
   const [hi, setHi] = useState(0);
@@ -19,10 +19,10 @@ export function ProductSearch({ onPick, inStockOnly = false, autoFocus, placehol
     if (!q.trim()) return [];
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
     return products
-      .filter((p) => p.active && (!inStockOnly || p.stock > 0))
+      .filter((p) => p.active && (!noServices || !p.service) && (!inStockOnly || p.service || p.stock > 0))
       .filter((p) => { const hay = `${p.name} ${p.sku} ${p.barcode}`.toLowerCase(); return words.every((w) => hay.includes(w)); })
       .slice(0, 12);
-  }, [q, products, inStockOnly]);
+  }, [q, products, inStockOnly, noServices]);
 
   const pick = (p) => { onPick(p); setQ(''); setHi(0); ref.current?.focus(); };
   const onKey = (e) => {
@@ -31,7 +31,7 @@ export function ProductSearch({ onPick, inStockOnly = false, autoFocus, placehol
     else if (e.key === 'Enter') {
       e.preventDefault();
       const code = q.trim().toLowerCase();
-      const exact = products.find((p) => p.active && ((p.barcode && p.barcode.toLowerCase() === code) || (p.sku && p.sku.toLowerCase() === code)));
+      const exact = products.find((p) => p.active && (!noServices || !p.service) && ((p.barcode && p.barcode.toLowerCase() === code) || (p.sku && p.sku.toLowerCase() === code)));
       if (exact) pick(exact); else if (list[hi]) pick(list[hi]);
     } else if (e.key === 'Escape') setQ('');
   };
@@ -45,7 +45,7 @@ export function ProductSearch({ onPick, inStockOnly = false, autoFocus, placehol
           {list.map((p, i) => (
             <li key={p.id} role="option" aria-selected={i === hi} className={i === hi ? 'hi' : ''} onMouseDown={(e) => { e.preventDefault(); pick(p); }} onMouseEnter={() => setHi(i)}>
               <span className="pn">{p.name}<small>{[p.sku, p.barcode].filter(Boolean).join(' / ')}</small></span>
-              <span className={`ps ${p.stock <= 0 ? 'out' : ''}`}>{fqty(p.stock, p.unit)}</span>
+              {p.service ? <span className="ps svc">Service</span> : <span className={`ps ${p.stock <= 0 ? 'out' : ''}`}>{fqty(p.stock, p.unit)}</span>}
               <span className="pp">{money(p.sale_price, false)}</span>
             </li>
           ))}
