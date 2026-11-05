@@ -91,8 +91,14 @@ function ProductForm({ initial, onClose }) {
   const tops = categories.filter((c) => !c.parent_id);
   const subs = categories.filter((c) => c.parent_id && c.parent_id === f.category_id);
   const isNew = !f.id;
+  // Cost and retail price are required (a service has no cost; staff without cost access never see it).
+  const needCost = !f.service && (isNew || can('cost'));
+  const [tried, setTried] = useState(false);
+  const missing = { cost: needCost && !(Number(f.cost_price) > 0), sale: !(Number(f.sale_price) > 0) };
   const save = async () => {
     if (dup) return useStore.getState().toast(`"${dup.name}" already exists`, 'err');
+    setTried(true);
+    if (missing.cost || missing.sale) return useStore.getState().toast(`Enter the ${[missing.cost && 'cost price', missing.sale && 'retail price'].filter(Boolean).join(' and ')}`, 'err');
     await run(() => api('product.save', f), isNew ? 'Product added' : 'Product updated');
     await refresh('products'); onClose();
   };
@@ -120,8 +126,8 @@ function ProductForm({ initial, onClose }) {
           </select>
         </Field>}
         {!f.service && isDecimalUnit(f.unit) && <Field label={`Roll length (${f.unit})`} hint="For reference when buying rolls, e.g. 305 m Cat6 box."><input type="number" value={f.roll_length} onChange={s('roll_length')} /></Field>}
-        {!f.service && (isNew || can('cost')) && <Field label={`Cost price per ${f.unit}`}><input type="number" step="any" value={f.cost_price} onChange={s('cost_price')} /></Field>}
-        <Field label={`Retail price per ${f.unit}`}><input type="number" step="any" value={f.sale_price} onChange={s('sale_price')} /></Field>
+        {needCost && <Field label={<>Cost price per {f.unit} <span className="req" aria-hidden="true">*</span></>} error={tried && missing.cost ? 'Cost price is required' : undefined}><input type="number" min="0" step="any" required value={f.cost_price} onChange={s('cost_price')} aria-label="Cost price" aria-required="true" aria-invalid={tried && missing.cost} /></Field>}
+        <Field label={<>Retail price per {f.unit} <span className="req" aria-hidden="true">*</span></>} error={tried && missing.sale ? 'Retail price is required' : undefined}><input type="number" min="0" step="any" required value={f.sale_price} onChange={s('sale_price')} aria-label="Retail price" aria-required="true" aria-invalid={tried && missing.sale} /></Field>
         {(isNew || can('cost')) && <Field label="Wholesale price"><input type="number" step="any" value={f.wholesale_price} onChange={s('wholesale_price')} /></Field>}
         {!f.service && <Field label="Low-stock alert at" hint="Blank uses the default from Settings."><input type="number" step="any" value={f.low_stock} onChange={s('low_stock')} /></Field>}
 

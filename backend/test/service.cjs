@@ -61,6 +61,14 @@ A('purchase.create',{items:[{product_id:rice.id,qty:1.25,cost:100}],payments:[{a
 denied('product.save',{name:'Serial kg',unit:'kg',has_warranty:true,warranty_type:'serial',warranty_days:30},/whole numbers/i);
 denied('master.delete',{kind:'unit',id:units.find(u=>u.name==='pcs').id},/in use/i);
 A('master.delete',{kind:'unit',id:A('master.save',{kind:'unit',name:'set',label:'Set'}).id});
+// Bulk import
+const imp=A('master.import',{kind:'category',rows:[{group:'Printer',name:'Laser'},{group:'printer',name:'Inkjet'},{group:'Printer',name:'laser'},{group:'',name:'X'}]});
+equal([imp.added,imp.skipped.map(x=>x.row)],[2,[4,5]]);
+equal(A('bootstrap').categories.filter(c=>!c.parent_id&&c.name==='Printer').length,1);
+equal(A('master.import',{kind:'unit',rows:[{name:'Roll',label:'Roll',decimal:'Yes'},{name:'pcs',label:'Pieces'}]}).added,1);
+equal(A('bootstrap').units.find(u=>u.name==='roll').decimal,true);
+equal(A('master.import',{kind:'warranty_period',rows:[{days:730,label:'2 years'},{days:'abc'}]}).added,1);
+equal(A('master.import',{kind:'brand',rows:[{name:'Asus'},{name:'ASUS'},{name:'Dell'}]}).added,2);
 console.log('Service item regression: '+checks+' checks passed');
 `;
 new Function('require','__dirname',harness+scenario)(require,__dirname);

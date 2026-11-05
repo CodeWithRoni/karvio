@@ -513,6 +513,31 @@ function masterSave_(p, user) {
   if (p.id) return update_(m.table, p.id, row);
   return insert_(m.table, row);
 }
+/** Bulk import from an Excel / CSV file. rows = [{name, label, days, decimal, group}]; bad rows are skipped and reported. */
+function masterImport_(p, user) {
+  var kind = p.kind; if (!MASTER[kind]) fail_('Unknown master type');
+  var rows = Array.isArray(p.rows) ? p.rows : [];
+  if (!rows.length) fail_('The file has no rows to import');
+  if (rows.length > 2000) fail_('Import up to 2000 rows at a time');
+  var added = 0, skipped = [];
+  rows.forEach(function (r, i) {
+    try {
+      var x = { kind: kind };
+      if (kind === 'warranty_period') { x.days = r.days; x.label = r.label; }
+      else if (kind === 'unit') { x.name = r.name; x.label = r.label; x.decimal = /^(y|yes|true|1|decimal)$/i.test(String(r.decimal || '').trim()); }
+      else x.name = r.name;
+      if (kind === 'category') {
+        var gname = String(r.group || '').trim(); if (!gname) fail_('Product group is empty');
+        var g = all_('Categories').filter(function (c) { return !c.parent_id && nameKey_(c.name) === nameKey_(gname); })[0];
+        if (!g) g = masterSave_({ kind: 'group', name: gname }, user); // a new group is created on the fly
+        x.parent_id = g.id;
+      }
+      masterSave_(x, user); added++;
+    } catch (e) { skipped.push({ row: i + 2, value: String(r.name || r.label || r.days || ''), reason: e && e.message ? e.message : String(e) }); }
+  });
+  audit_(user, 'master_import', { kind: kind, added: added, skipped: skipped.length });
+  return { added: added, skipped: skipped };
+}
 function masterDelete_(p, user) {
   var m = MASTER[p.kind]; if (!m) fail_('Unknown master type');
   if (p.kind === 'group' || p.kind === 'category') {
@@ -1753,6 +1778,7 @@ var ROUTES = {
   'stock.adjust':     r_('products', stockAdjust_, true),
   'master.save':      r_('products', masterSave_, true),
   'master.delete':    r_('products', masterDelete_, true),
+  'master.import':    r_('products', masterImport_, true),
 
   'customers.list':   r_(null, function () { return customersList_(); }),
   'customer.save':    r_(null, function (p, u) { if (!p.id && !can_(u, 'customers') && !can_(u, 'pos')) fail_('Permission denied'); return customerSave_(p, u); }, true),

@@ -167,6 +167,10 @@ test('product groups contain categories across master data, products, stock filt
   await form.getByRole('combobox', { name: 'Category', exact: true }).selectOption(intel.id);
   await expect(form.getByRole('combobox', { name: 'Category', exact: true }).locator('option')).toHaveCount(3);
   await form.getByRole('button', { name: 'Add product', exact: true }).click();
+  await expect(form.getByText('Cost price is required')).toBeVisible();
+  await form.getByLabel('Cost price').fill('15000');
+  await form.getByLabel('Retail price').fill('17500');
+  await form.getByRole('button', { name: 'Add product', exact: true }).click();
   await expect(form).toHaveCount(0);
   await page.getByRole('tab', { name: 'Stock explorer' }).click();
   await page.getByRole('combobox', { name: 'Product group', exact: true }).selectOption(group.id);

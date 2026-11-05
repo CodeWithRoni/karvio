@@ -1,15 +1,19 @@
 // Product groups contain categories. Keep the existing IDs and parent links.
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../lib/store';
 import { api } from '../lib/api';
 import { Btn, Field, Modal, useAction, useConfirm } from './ui';
+import { exportExcel, exportPdf, printTable } from '../lib/export';
 
 const Icon = {
   edit: <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />,
   trash: <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" />,
   plus: <path d="M12 5v14M5 12h14" />,
   chevron: <path d="m9 6 6 6-6 6" />,
-  search: <><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></>
+  search: <><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></>,
+  download: <path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14" />,
+  upload: <path d="M12 16V5m0 0L7.5 9.5M12 5l4.5 4.5M5 20h14" />,
+  info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 7.5v.5" /></>
 };
 const Svg = ({ name, size = 13 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">{Icon[name]}</svg>
@@ -21,11 +25,83 @@ function ActBtn({ tone, icon, children, className, ...p }) {
   return <button type="button" className={className || `act-btn act-${tone}`} title={typeof children === 'string' ? children : undefined} {...p}><Svg name={icon} />{children}</button>;
 }
 
-function Panel({ title, count, hint, form, search, setSearch, children, empty }) {
+/* Export (Excel / PDF / Print), Import from Excel or CSV, and a demo file to copy the layout from. */
+export const IO = {
+  group: { file: 'product-groups', cols: [{ key: 'name', label: 'Name' }], demo: [['PROCESSOR'], ['MOTHERBOARD'], ['ROUTER']] },
+  category: { file: 'categories', cols: [{ key: 'group', label: 'Group' }, { key: 'name', label: 'Category' }], demo: [['PROCESSOR', 'INTEL'], ['PROCESSOR', 'AMD'], ['ROUTER', 'DUAL BAND']] },
+  brand: { file: 'brands', cols: [{ key: 'name', label: 'Name' }], demo: [['TP-Link'], ['Gigabyte'], ['Kingston']] },
+  warranty_period: { file: 'warranty-periods', cols: [{ key: 'days', label: 'Days', type: 'num' }, { key: 'label', label: 'Label' }], demo: [[365, '1 year'], [730, '2 years'], [1095, '3 years']] },
+  unit: { file: 'selling-units', cols: [{ key: 'name', label: 'Short name' }, { key: 'label', label: 'Full name' }, { key: 'decimal', label: 'Decimal' }], demo: [['box', 'Box', 'No'], ['set', 'Set', 'No'], ['kg', 'Kilogram', 'Yes']] }
+};
+// Accepted column titles in an import file (case, spaces and symbols are ignored).
+const ALIASES = {
+  name: ['name', 'group', 'productgroup', 'groupname', 'category', 'categoryname', 'brand', 'brandname', 'short', 'shortname', 'code', 'unit'],
+  group: ['group', 'productgroup', 'groupname', 'parent'],
+  label: ['label', 'fullname', 'title', 'unitname'],
+  days: ['days', 'warrantydays', 'day'],
+  decimal: ['decimal', 'decimalquantity', 'fraction']
+};
+function mapRows(kind, raw) {
+  return raw.map((r) => {
+    const cells = Object.fromEntries(Object.entries(r).map(([k, v]) => [String(k).toLowerCase().replace(/[^a-z]/g, ''), String(v ?? '').trim()]));
+    const pick = (field, skip = []) => { for (const a of ALIASES[field]) if (a in cells && !skip.includes(a)) return cells[a]; return ''; };
+    const out = {};
+    if (kind === 'category') { out.group = pick('group'); out.name = cells.category || cells.categoryname || cells.name || ''; }
+    else if (kind === 'warranty_period') { out.days = pick('days'); out.label = pick('label') || cells.name || ''; }
+    else if (kind === 'unit') { out.name = pick('name'); out.label = pick('label') || cells.name || ''; out.decimal = pick('decimal'); }
+    else out.name = pick('name');
+    return out;
+  }).filter((r) => Object.values(r).some((v) => v !== ''));
+}
+
+function PanelTools({ kind, title, rows, onImport, busy }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef(), file = useRef();
+  useEffect(() => {
+    if (!open) return;
+    const close = (e) => { if (!box.current?.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
+  const io = IO[kind];
+  const run = (fn) => { setOpen(false); fn(title, io.cols, rows); };
+  const demo = async () => {
+    const XLSX = await import('xlsx');
+    const ws = XLSX.utils.aoa_to_sheet([io.cols.map((c) => c.label), ...io.demo]);
+    ws['!cols'] = io.cols.map(() => ({ wch: 18 }));
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Import');
+    XLSX.writeFile(wb, `demo-import-${io.file}.xlsx`);
+  };
+  const pickFile = async (e) => {
+    const f = e.target.files?.[0]; e.target.value = '';
+    if (!f) return;
+    const XLSX = await import('xlsx');
+    const wb = XLSX.read(await f.arrayBuffer());
+    const raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '', raw: false });
+    onImport(kind, mapRows(kind, raw), f.name);
+  };
+  return (
+    <div className="md-tools" ref={box}>
+      <button type="button" className="md-tool" onClick={() => setOpen(!open)} aria-haspopup="menu" aria-expanded={open} aria-label={`Export ${title}`}><Svg name="download" size={12} />Export</button>
+      {open && (
+        <div className="md-menu" role="menu">
+          <button type="button" role="menuitem" onClick={() => run(exportExcel)}>Excel (.xlsx)</button>
+          <button type="button" role="menuitem" onClick={() => run(exportPdf)}>PDF</button>
+          <button type="button" role="menuitem" onClick={() => run(printTable)}>Print</button>
+        </div>
+      )}
+      <button type="button" className="md-tool" disabled={busy} onClick={() => file.current?.click()} aria-label={`Import ${title}`}><Svg name="upload" size={12} />{busy ? 'Importing…' : 'Import'}</button>
+      <input ref={file} type="file" hidden accept=".xlsx,.xls,.csv,.ods" onChange={pickFile} />
+      <button type="button" className="md-info" data-tip="Download demo import" aria-label={`Download demo import file for ${title}`} onClick={demo}><Svg name="info" size={15} /></button>
+    </div>
+  );
+}
+
+function Panel({ title, count, hint, form, search, setSearch, children, empty, tools }) {
   return (
     <section className="md-panel">
       <header className="md-head">
-        <div className="md-title"><h2>{title}</h2><span className="md-count">{count}</span></div>
+        <div className="md-title"><h2>{title}</h2><span className="md-spacer" />{tools}<span className="md-count">{count}</span></div>
         {hint && <p className="muted md-hint">{hint}</p>}
         {form}
         {setSearch && (
@@ -60,6 +136,19 @@ export default function MasterData() {
   const [qg, setQg] = useState('');
   const [qb, setQb] = useState('');
   const [edit, setEdit] = useState(null); // { kind, item, field, value }
+  const [importing, setImporting] = useState('');
+  const [importResult, setImportResult] = useState(null);
+  const doImport = async (kind, rows, fileName) => {
+    if (!rows.length) return useStore.getState().toast(`No usable rows found in ${fileName}. Download the demo file to see the column titles.`, 'err');
+    setImporting(kind);
+    try {
+      const r = await api('master.import', { kind, rows });
+      await refresh('all');
+      useStore.getState().toast(`${r.added} added${r.skipped.length ? `, ${r.skipped.length} skipped` : ''}`, r.added ? 'ok' : 'err');
+      if (r.skipped.length) setImportResult({ kind, fileName, ...r });
+    } catch (e) { useStore.getState().toast(e.message, 'err'); } finally { setImporting(''); }
+  };
+  const tools = (kind, title, rows) => <PanelTools kind={kind} title={title} rows={rows} onImport={doImport} busy={importing === kind} />;
 
   const tops = categories.filter((c) => !c.parent_id);
   const subsOf = (id) => categories.filter((c) => c.parent_id === id);
@@ -107,7 +196,7 @@ export default function MasterData() {
 
   return (
     <div className="md-grid">
-      <Panel title="Product groups" count={tops.length} hint="Create a group such as PROCESSOR. Its categories can be INTEL or AMD." search={qg} setSearch={setQg}
+      <Panel title="Product groups" count={tops.length} tools={tools('group', 'Product groups', tops.map((g) => ({ name: g.name })))} hint="Create a group such as PROCESSOR. Its categories can be INTEL or AMD." search={qg} setSearch={setQg}
         form={
           <form className="md-form" onSubmit={(e) => { e.preventDefault(); save({ kind: 'group', name: ng }, 'Product group added').then(() => setNg('')).catch(() => {}); }}>
             <div className="md-form-row">
@@ -119,7 +208,7 @@ export default function MasterData() {
         empty={!shownGroups.length && <p className="md-empty">{qg ? 'No group matches your search.' : 'Add a product group first.'}</p>}>
         <ul className="md-list">
           {shownGroups.map((g) => <li className="md-row" key={g.id}>
-            <div className="md-name"><b title={g.name}>{g.name}</b><small className="md-category-group">{subsOf(g.id).length} categories</small></div>
+            <div className="md-name"><b title={g.name}>{g.name}</b><small className="md-category-group">{subsOf(g.id).length} {subsOf(g.id).length === 1 ? "category" : "categories"}</small></div>
             <div className="md-actions">
               <ActBtn tone="add" icon="plus" className="act-btn act-add act-icon" title={`Add a category under ${g.name}`} aria-label={`Add category to ${g.name}`} onClick={() => { setNc({ name: '', parent_id: g.id }); document.querySelector('.md-form-cat input')?.focus(); }} />
               <ActBtn tone="edit" icon="edit" onClick={() => setEdit({ kind: 'group', item: g, field: 'name', value: g.name })} aria-label={`Rename ${g.name}`}>Rename</ActBtn>
@@ -130,7 +219,7 @@ export default function MasterData() {
       </Panel>
 
       {/* ---------------- Categories ---------------- */}
-      <Panel title="Categories" count={childCategories.length} hint="Select a product group, then add its category." search={qc} setSearch={setQc}
+      <Panel title="Categories" count={childCategories.length} tools={tools('category', 'Categories', [...childCategories].sort((a, b) => (groupNames[a.parent_id] || '').localeCompare(groupNames[b.parent_id] || '') || a.name.localeCompare(b.name)).map((c) => ({ group: groupNames[c.parent_id] || '', name: c.name })))} hint="Select a product group, then add its category." search={qc} setSearch={setQc}
         form={
           <form className="md-form md-form-cat" onSubmit={(e) => { e.preventDefault(); if (!nc.parent_id) return; save({ kind: 'category', ...nc }, 'Category added').then(() => setNc({ name: '', parent_id: nc.parent_id })).catch(() => {}); }}>
             <select required value={nc.parent_id} onChange={(e) => setNc({ ...nc, parent_id: e.target.value })} aria-label="Category group">
@@ -156,7 +245,7 @@ export default function MasterData() {
       </Panel>
 
       {/* ---------------- Brands ---------------- */}
-      <Panel title="Brands" count={brands.length} search={qb} setSearch={setQb}
+      <Panel title="Brands" count={brands.length} tools={tools('brand', 'Brands', shownBrands.map((b) => ({ name: b.name })))} search={qb} setSearch={setQb}
         form={
           <form className="md-form" onSubmit={(e) => { e.preventDefault(); save({ kind: 'brand', name: nb }, 'Brand added').then(() => setNb('')).catch(() => {}); }}>
             <div className="md-form-row">
@@ -181,7 +270,7 @@ export default function MasterData() {
       </Panel>
 
       {/* ---------------- Warranty periods ---------------- */}
-      <Panel title="Warranty periods" count={periods.length} hint="Shown as choices on products and at the POS."
+      <Panel title="Warranty periods" count={periods.length} tools={tools('warranty_period', 'Warranty periods', periods.map((w) => ({ days: w.days, label: w.label })))} hint="Shown as choices on products and at the POS."
         form={
           <form className="md-form" onSubmit={(e) => { e.preventDefault(); save({ kind: 'warranty_period', ...nw }, 'Warranty period added').then(() => setNw({ days: '', label: '' })).catch(() => {}); }}>
             <div className="md-form-row">
@@ -207,7 +296,7 @@ export default function MasterData() {
       </Panel>
 
       {/* ---------------- Selling units ---------------- */}
-      <Panel title="Selling units" count={unitList.length} hint="Choices for “Selling unit” when you add a product. Tick Decimal for units sold in parts, like 1.5 meter."
+      <Panel title="Selling units" count={unitList.length} tools={tools('unit', 'Selling units', unitList.map((u) => ({ name: u.name, label: u.label, decimal: u.decimal ? 'Yes' : 'No' })))} hint="Choices for “Selling unit” when you add a product. Tick Decimal for units sold in parts, like 1.5 meter."
         form={
           <form className="md-form" onSubmit={(e) => { e.preventDefault(); save({ kind: 'unit', ...nu }, 'Selling unit added').then(() => setNu({ name: '', label: '', decimal: false })).catch(() => {}); }}>
             <div className="md-form-row">
@@ -243,6 +332,13 @@ export default function MasterData() {
             <Field label="New name" wide><input value={edit.value} onChange={(e) => setEdit({ ...edit, value: e.target.value })} autoFocus /></Field>
           </form>
         )}
+      </Modal>
+      <Modal open={!!importResult} onClose={() => setImportResult(null)} size="sm" title="Import finished"
+        footer={<Btn kind="primary" onClick={() => setImportResult(null)}>OK</Btn>}>
+        {importResult && <>
+          <p style={{ marginTop: 0 }}><b>{importResult.added}</b> added from {importResult.fileName}. These rows were skipped:</p>
+          <ul className="md-skipped">{importResult.skipped.map((x) => <li key={x.row}><b>Row {x.row}</b>{x.value ? ` (${x.value})` : ''}: {x.reason}</li>)}</ul>
+        </>}
       </Modal>
       {confirmUI}
     </div>
