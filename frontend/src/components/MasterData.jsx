@@ -40,20 +40,22 @@ function Panel({ title, count, hint, form, search, setSearch, children, empty })
 }
 
 export default function MasterData() {
-  const { categories, brands, warrantyPeriods, products, refresh } = useStore();
+  const { categories, brands, warrantyPeriods, units, products, refresh } = useStore();
   // Separate busy flags: only the button that was pressed shows the spinner.
   const [busyGroup, runGroup] = useAction();
   const [busyCat, runCat] = useAction();
   const [busyBrand, runBrand] = useAction();
   const [busyWarranty, runWarranty] = useAction();
+  const [busyUnit, runUnit] = useAction();
   const [busyEdit, runEdit] = useAction();
   const [, runDel] = useAction();
-  const runners = { group: runGroup, category: runCat, brand: runBrand, warranty_period: runWarranty };
+  const runners = { group: runGroup, category: runCat, brand: runBrand, warranty_period: runWarranty, unit: runUnit };
   const [confirmUI, ask] = useConfirm();
   const [ng, setNg] = useState('');
   const [nc, setNc] = useState({ name: '', parent_id: '' });
   const [nb, setNb] = useState('');
   const [nw, setNw] = useState({ days: '', label: '' });
+  const [nu, setNu] = useState({ name: '', label: '', decimal: false });
   const [qc, setQc] = useState('');
   const [qg, setQg] = useState('');
   const [qb, setQb] = useState('');
@@ -64,7 +66,7 @@ export default function MasterData() {
   const groupNames = Object.fromEntries(tops.map((g) => [g.id, g.name]));
   const used = useMemo(() => {
     const m = {};
-    products.forEach((p) => { [p.category_id, p.subcategory_id, p.brand_id].forEach((id) => { if (id) m[id] = (m[id] || 0) + 1; }); });
+    products.forEach((p) => { [p.category_id, p.subcategory_id, p.brand_id, p.unit && `unit:${p.unit}`].forEach((id) => { if (id) m[id] = (m[id] || 0) + 1; }); });
     return m;
   }, [products]);
 
@@ -73,16 +75,17 @@ export default function MasterData() {
   const duplicateOf = (p) => {
     if (p.kind === 'brand') return brands.some((b) => b.id !== p.id && String(b.name).trim().toLowerCase() === String(p.name || '').trim().toLowerCase()) && 'This brand already exists';
     if (p.kind === 'warranty_period') return warrantyPeriods.some((w) => w.id !== p.id && Number(w.days) === Math.round(Number(p.days))) && `A ${Math.round(Number(p.days))}-day warranty period already exists`;
+    if (p.kind === 'unit') { const n = String(p.name || '').trim().toLowerCase(), l = String(p.label || '').trim().toLowerCase(); return units.some((u) => u.id !== p.id && (u.name === n || (l && u.label.toLowerCase() === l))) && 'This selling unit already exists'; }
     return false;
   };
   const save = (p, msg, runner = runners[p.kind]) => runner(async () => { const dup = duplicateOf(p); if (dup) throw new Error(dup); const r = await api('master.save', p); await refresh('all'); return r; }, msg);
-  const KIND = { group: 'product group', category: 'category', brand: 'brand', warranty_period: 'warranty period' };
+  const KIND = { group: 'product group', category: 'category', brand: 'brand', warranty_period: 'warranty period', unit: 'selling unit' };
 
   const del = async (kind, item) => {
     const name = item.name || item.label;
     const ok = await ask({
       title: `Delete ${KIND[kind]}?`,
-      message: <>Are you sure you want to delete <b>“{name}”</b>?{kind === 'group' ? ' Delete its categories first.' : ''}{kind !== 'warranty_period' ? ' Items used by products cannot be deleted.' : ' Products already set to this period keep their warranty days.'}</>
+      message: <>Are you sure you want to delete <b>“{name}”</b>?{kind === 'group' ? ' Delete its categories first.' : ''}{kind === 'unit' ? ' Units used by products cannot be deleted.' : kind !== 'warranty_period' ? ' Items used by products cannot be deleted.' : ' Products already set to this period keep their warranty days.'}</>
     });
     if (!ok) return;
     try { await runDel(async () => { await api('master.delete', { kind, id: item.id }); await refresh('all'); }, `${name} deleted`); } catch { /* error shown as a toast */ }
@@ -100,6 +103,7 @@ export default function MasterData() {
   const shownCategories = childCategories.filter((c) => !q || `${c.name} ${groupNames[c.parent_id] || ''}`.toLowerCase().includes(q)).sort((a, b) => (groupNames[a.parent_id] || '').localeCompare(groupNames[b.parent_id] || '') || a.name.localeCompare(b.name));
   const shownBrands = brands.filter((b) => !qb.trim() || b.name.toLowerCase().includes(qb.trim().toLowerCase())).sort((a, b) => a.name.localeCompare(b.name));
   const periods = [...warrantyPeriods].sort((a, b) => a.days - b.days);
+  const unitList = [...units].sort((a, b) => (a.name === 'pcs' ? -1 : b.name === 'pcs' ? 1 : a.label.localeCompare(b.label)));
 
   return (
     <div className="md-grid">
@@ -196,6 +200,35 @@ export default function MasterData() {
               <div className="md-actions">
                 <ActBtn tone="edit" icon="edit" onClick={() => setEdit({ kind: 'warranty_period', item: w, field: 'label', value: w.label })} aria-label={`Rename ${w.label}`}>Rename</ActBtn>
                 <ActBtn tone="delete" icon="trash" onClick={() => del('warranty_period', w)} aria-label={`Delete ${w.label}`}>Delete</ActBtn>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </Panel>
+
+      {/* ---------------- Selling units ---------------- */}
+      <Panel title="Selling units" count={unitList.length} hint="Choices for “Selling unit” when you add a product. Tick Decimal for units sold in parts, like 1.5 meter."
+        form={
+          <form className="md-form" onSubmit={(e) => { e.preventDefault(); save({ kind: 'unit', ...nu }, 'Selling unit added').then(() => setNu({ name: '', label: '', decimal: false })).catch(() => {}); }}>
+            <div className="md-form-row">
+              <input value={nu.name} onChange={(e) => setNu({ ...nu, name: e.target.value })} placeholder="Short, e.g. box" aria-label="Unit short name" maxLength={12} style={{ width: 120, flex: 'none' }} />
+              <input value={nu.label} onChange={(e) => setNu({ ...nu, label: e.target.value })} placeholder="Full name, e.g. Box" aria-label="Unit full name" />
+              <Btn kind="primary" busy={busyUnit} type="submit" disabled={!nu.name.trim()}>Add</Btn>
+            </div>
+            <label className="check md-check"><input type="checkbox" checked={nu.decimal} onChange={(e) => setNu({ ...nu, decimal: e.target.checked })} /> Decimal quantity (e.g. 1.5)</label>
+          </form>
+        }
+        empty={!unitList.length && <p className="md-empty">No selling units yet.</p>}>
+        <ul className="md-list">
+          {unitList.map((u) => (
+            <li className="md-row" key={u.id}>
+              <span className="md-name" title={u.label}>{u.label}</span>
+              {u.label.toLowerCase() !== u.name && <span className="md-pill">{u.name}</span>}
+              {u.decimal && <span className="md-pill">decimal</span>}
+              {used[`unit:${u.name}`] > 0 && <span className="md-pill md-used">{used[`unit:${u.name}`]} products</span>}
+              <div className="md-actions">
+                <ActBtn tone="edit" icon="edit" onClick={() => setEdit({ kind: 'unit', item: u, field: 'label', value: u.label })} aria-label={`Rename ${u.label}`}>Rename</ActBtn>
+                {u.name !== 'pcs' && <ActBtn tone="delete" icon="trash" onClick={() => del('unit', u)} aria-label={`Delete ${u.label}`}>Delete</ActBtn>}
               </div>
             </li>
           ))}

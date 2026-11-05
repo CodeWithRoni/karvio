@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../lib/store';
 import { api } from '../lib/api';
-import { money, qty as fqty, round2 } from '../lib/format';
+import { money, qty as fqty, round2, isDecimalUnit } from '../lib/format';
 import { printReceipt } from '../lib/receipt';
 import { Btn, Modal, Field, Tabs, useAction, useHotkeys } from '../components/ui';
 import { ProductSearch, PaymentSplit, defaultPay, cleanPays, QuickCustomer, CustomerPicker, SerialChooser } from '../components/widgets';
@@ -141,7 +141,7 @@ export default function POS() {
                         </div>
                       )}
                     </td>
-                    <td><input type="number" min="0" step={p.unit === 'pcs' ? 1 : 0.5} value={l.qty} onChange={(e) => upd(i, { qty: e.target.value, serials: isSerial(p) ? l.serials.slice(0, Number(e.target.value)) : l.serials })} aria-label="Quantity" /></td>
+                    <td><input type="number" min="0" step={isDecimalUnit(p.unit) ? 0.5 : 1} value={l.qty} onChange={(e) => upd(i, { qty: e.target.value, serials: isSerial(p) ? l.serials.slice(0, Number(e.target.value)) : l.serials })} aria-label="Quantity" /></td>
                     <td><input type="number" min="0" step="any" value={l.price} onChange={(e) => upd(i, { price: e.target.value })} aria-label="Unit price" /></td>
                     <td className="r num"><b>{money((Number(l.qty) || 0) * (Number(l.price) || 0), false)}</b></td>
                     <td><button className="x" onClick={() => del(i)} aria-label={`Remove ${p.name}`}>×</button></td>

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { api } from '../lib/api';
-import { money, qty as fqty, fdate, fdatetime, monthStart, today, splitList, round2 } from '../lib/format';
+import { money, qty as fqty, fdate, fdatetime, monthStart, today, splitList, round2, isDecimalUnit } from '../lib/format';
 import { printReceipt } from '../lib/receipt';
 import DataTable from '../components/DataTable';
 import { useApi, PageHead, Tabs, DateRange, Badge, statusTone, Modal, Btn, Field, Loading, ErrorBox, useAction, Select } from '../components/ui';
@@ -159,7 +159,7 @@ function ReturnForm({ detail, onClose, onDone }) {
           return (
             <tr key={it.id}>
               <td>{it.name}</td><td className="r num">{fqty(it.qty, it.unit)}</td><td className="r num">{fqty(left, it.unit)}</td>
-              <td><input type="number" min="0" max={left} step={it.unit === 'pcs' ? 1 : 0.5} value={lines[i].qty} disabled={left <= 0}
+              <td><input type="number" min="0" max={left} step={isDecimalUnit(it.unit) ? 0.5 : 1} value={lines[i].qty} disabled={left <= 0}
                 onChange={(e) => set(i, { qty: e.target.value, serials: lines[i].serials.slice(0, Number(e.target.value) || 0) })} /></td>
               <td>{sers.length > 0 && <div className="serial-grid">{sers.map((sn) => (
                 <button type="button" key={sn} className={lines[i].serials.includes(sn) ? 'on' : ''}

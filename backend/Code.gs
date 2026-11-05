@@ -31,6 +31,7 @@ var SCHEMA = {
   Categories:          'id,name,parent_id',
   Brands:              'id,name',
   WarrantyPeriods:     'id,label,days:n',
+  Units:               'id,name,label,decimal:b',
   Products:            'id,sku,barcode,name,category_id,subcategory_id,brand_id,unit,roll_length:n,cost_price:n,sale_price:n,wholesale_price:n,stock:n,low_stock:n,has_warranty:b,warranty_type,warranty_days:n,active:b,created_at,service:b',
   SerialItems:         'id,product_id,serial,purchase_id,sale_id,status,cost:n,created_at',
   Customers:           'id,name,phones,addresses,opening_balance:n,note,active:b,created_at',
@@ -284,9 +285,20 @@ function setupDatabase() {
   if (!all_('WarrantyPeriods').length) {
     insertMany_('WarrantyPeriods', [7, 30, 90, 180, 300, 900, 1500].map(function (d) { return { label: d + ' days', days: d }; }));
   }
+  units_();
   if (!all_('Categories').length) seedCategories_();
   return 'ShopERP database is ready. Login: admin / admin123';
 }
+
+/* Selling units. name = short code stored on products (pcs, meter, box); decimal = allow 1.5 qty. */
+var DEFAULT_UNITS = [{ name: 'pcs', label: 'Pieces', decimal: false }, { name: 'meter', label: 'Meter', decimal: true }, { name: 'feet', label: 'Feet', decimal: true }];
+function units_() {
+  var list = all_('Units');
+  if (!list.length) { insertMany_('Units', DEFAULT_UNITS); list = all_('Units'); } // older databases: create the defaults once
+  return list;
+}
+function unitOf_(code) { return units_().filter(function (u) { return u.name === code; })[0]; }
+function isDecimalUnit_(code) { var u = unitOf_(code); return u ? u.decimal : code !== 'pcs'; }
 
 function seedCategories_() {
   var tree = {
@@ -452,7 +464,8 @@ var MASTER = {
   group: { table: 'Categories', fields: ['name', 'parent_id'], usedBy: function (id) { return MASTER.category.usedBy(id); } },
   category: { table: 'Categories', fields: ['name', 'parent_id'], usedBy: function (id) { return all_('Products').some(function (p) { return p.category_id === id || p.subcategory_id === id; }) || all_('Categories').some(function (c) { return c.parent_id === id; }); } },
   brand: { table: 'Brands', fields: ['name'], usedBy: function (id) { return all_('Products').some(function (p) { return p.brand_id === id; }); } },
-  warranty_period: { table: 'WarrantyPeriods', fields: ['label', 'days'], usedBy: function () { return false; } }
+  warranty_period: { table: 'WarrantyPeriods', fields: ['label', 'days'], usedBy: function () { return false; } },
+  unit: { table: 'Units', fields: ['name', 'label', 'decimal'], usedBy: function (id) { var u = indexBy_(units_())[id]; return !u || u.name === 'pcs' || all_('Products').some(function (p) { return p.unit === u.name; }); } }
 };
 function masterSave_(p, user) {
   var m = MASTER[p.kind]; if (!m) fail_('Unknown master type');
@@ -461,6 +474,18 @@ function masterSave_(p, user) {
     row.days = Math.round(num_(row.days));
     if (row.days <= 0) fail_('Warranty days must be greater than 0');
     row.label = String(row.label || '').trim() || (row.days + ' days');
+  } else if (p.kind === 'unit') {
+    var units = units_(), curU = p.id ? indexBy_(units)[p.id] : null;
+    if (p.id && !curU) fail_('Selling unit not found');
+    row.name = String(row.name || '').trim().toLowerCase();
+    if (curU) row.name = curU.name; // the short code is stored on products, so it never changes
+    if (!row.name) fail_('Unit short name is required');
+    if (!/^[a-z][a-z0-9 .-]{0,11}$/.test(row.name)) fail_('Short name: up to 12 letters or numbers, e.g. box, set, kg');
+    row.label = String(row.label || '').trim() || row.name;
+    row.decimal = row.decimal === true || row.decimal === 'true';
+    if (curU && curU.decimal && !row.decimal && all_('Products').some(function (pr) { return pr.unit === curU.name && pr.stock % 1 !== 0; }))
+      fail_('Some products in ' + curU.name + ' have fractional stock, so decimal quantity must stay on');
+    if (units.some(function (u) { return u.id !== p.id && (u.name === row.name || u.label.trim().toLowerCase() === row.label.toLowerCase()); })) fail_('This selling unit already exists');
   } else if (!String(row.name || '').trim()) fail_('Name is required');
   if (p.kind === 'warranty_period' && all_(m.table).some(function (w) { return w.id !== p.id && num_(w.days) === row.days; }))
     fail_('A ' + row.days + '-day warranty period already exists');
@@ -509,11 +534,12 @@ function productsList_(user) {
 function productSave_(p, user) {
   var name = String(p.name || '').trim().replace(/\s+/g, ' '); if (!name) fail_('Product name is required');
   var service = p.service === true || p.service === 'true';
-  var unit = service ? 'pcs' : (['pcs', 'meter', 'feet'].indexOf(p.unit) >= 0 ? p.unit : 'pcs');
+  var unit = service || !p.unit ? 'pcs' : String(p.unit);
+  if (!unitOf_(unit)) fail_('Unknown selling unit: ' + unit);
   var hasW = p.has_warranty === true || p.has_warranty === 'true';
   // A service has no serial numbers, so its warranty is always proven by the invoice.
   var wType = hasW ? (service || p.warranty_type === 'invoice' ? 'invoice' : 'serial') : '';
-  if (hasW && wType === 'serial' && unit !== 'pcs') fail_('Serial-based warranty is only for items sold in pcs');
+  if (hasW && wType === 'serial' && isDecimalUnit_(unit)) fail_('Serial-based warranty needs a unit sold in whole numbers (like pcs)');
   var barcode = String(p.barcode || '').trim(), sku = String(p.sku || '').trim();
   all_('Products').forEach(function (x) {
     if (x.id === p.id) return;
@@ -526,7 +552,7 @@ function productSave_(p, user) {
   if (p.subcategory_id && (!classifications[p.subcategory_id] || classifications[p.subcategory_id].parent_id !== p.category_id)) fail_('Category must belong to the selected product group');
   var row = {
     sku: sku, barcode: barcode, name: name, category_id: p.category_id || '', subcategory_id: p.subcategory_id || '', brand_id: p.brand_id || '',
-    unit: unit, roll_length: unit === 'pcs' ? 0 : num_(p.roll_length), cost_price: service ? 0 : num_(p.cost_price), sale_price: num_(p.sale_price), wholesale_price: num_(p.wholesale_price),
+    unit: unit, roll_length: isDecimalUnit_(unit) ? num_(p.roll_length) : 0, cost_price: service ? 0 : num_(p.cost_price), sale_price: num_(p.sale_price), wholesale_price: num_(p.wholesale_price),
     low_stock: service ? 0 : num_(p.low_stock), service: service, has_warranty: hasW, warranty_type: wType, warranty_days: hasW ? Math.round(num_(p.warranty_days)) : 0,
     active: p.active === undefined ? true : (p.active === true || p.active === 'true')
   };
@@ -770,6 +796,7 @@ function bootstrap_(p, user) {
     accounts: accounts, categories: cats,
     brands: all_('Brands').map(function (b) { return { id: b.id, name: b.name }; }),
     warrantyPeriods: all_('WarrantyPeriods').map(function (w) { return { id: w.id, label: w.label, days: w.days }; }),
+    units: units_().map(function (u) { return { id: u.id, name: u.name, label: u.label, decimal: u.decimal }; }),
     products: productsList_(user),
     customers: customersList_().filter(function (c) { return c.active; }),
     suppliers: can_(user, 'purchase') || can_(user, 'suppliers') ? suppliersList_().filter(function (s) { return s.active; }) : [],
@@ -810,7 +837,7 @@ function purchaseCreate_(p, user) {
         if (seen[k]) fail_('Duplicate serial in list: ' + s);
         seen[k] = 1;
       });
-    } else if (pr.unit === 'pcs' && qty % 1 !== 0) fail_('Quantity for ' + pr.name + ' must be a whole number');
+    } else if (!isDecimalUnit_(pr.unit) && qty % 1 !== 0) fail_('Quantity for ' + pr.name + ' must be a whole number');
     var total = round_(qty * cost);
     lines.push({ pr: pr, qty: qty, cost: cost, total: total, serials: sers });
     subtotal += total;
@@ -889,7 +916,7 @@ function saleCreate_(p, user) {
   items.forEach(function (it) {
     var pr = pmap[it.product_id]; if (!pr || !pr.active) fail_('Product is not available');
     var qty = num_(it.qty); if (qty <= 0) fail_('Invalid quantity for ' + pr.name);
-    if (pr.unit === 'pcs' && qty % 1 !== 0) fail_('Quantity for ' + pr.name + ' must be a whole number');
+    if (!isDecimalUnit_(pr.unit) && qty % 1 !== 0) fail_('Quantity for ' + pr.name + ' must be a whole number');
     need[pr.id] = (need[pr.id] || 0) + qty;
   });
   Object.keys(need).forEach(function (id) {

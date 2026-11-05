@@ -14,6 +14,7 @@ export const useStore = create((set, get) => ({
   categories: [],
   brands: [],
   warrantyPeriods: [],
+  units: [],
   products: [],
   customers: [],
   suppliers: [],

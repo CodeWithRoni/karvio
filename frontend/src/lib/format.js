@@ -7,10 +7,16 @@ export function money(n, withCur = true) {
   const s = v.toLocaleString('en-IN', { minimumFractionDigits: v % 1 ? 2 : 0, maximumFractionDigits: 2 });
   return withCur ? `${cur()} ${s}` : s;
 }
+const SHORT = { meter: 'm', feet: 'ft' };
+/** Units such as meter / feet allow 1.5; pcs, box, set need whole numbers. */
+export function isDecimalUnit(code) {
+  const u = useStore.getState().units.find((x) => x.name === code);
+  return u ? !!u.decimal : !!code && code !== 'pcs';
+}
 export function qty(n, unit) {
   const v = Number(n) || 0;
   const s = v.toLocaleString('en-IN', { maximumFractionDigits: 3 });
-  return unit && unit !== 'pcs' ? `${s} ${unit === 'meter' ? 'm' : 'ft'}` : s;
+  return unit && unit !== 'pcs' ? `${s} ${SHORT[unit] || unit}` : s;
 }
 export function fdate(d) {
   if (!d) return '';
@@ -35,6 +41,6 @@ export function addDays(dateStr, n) {
 }
 export function monthStart() { return today().slice(0, 8) + '01'; }
 
-export const unitLabel = (u) => (u === 'meter' ? 'meter' : u === 'feet' ? 'feet' : 'pcs');
+export const unitLabel = (u) => u || 'pcs';
 export const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 export const splitList = (s, sep = ',') => String(s || '').split(sep).map((x) => x.trim()).filter(Boolean);

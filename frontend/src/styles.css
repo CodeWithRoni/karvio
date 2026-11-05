@@ -438,3 +438,18 @@ table { width: 100%; border-collapse: collapse; }
 .field-hint.field-error { color: var(--bad); font-weight: 600; }
 .field-hint .link { font-size: inherit; padding: 0; }
 .psearch-list .ps.svc { color: var(--aqua); }
+
+/* Five master-data panels: 5 across on wide screens; on medium screens 2 big panels on top and 3 below. */
+.md-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 1550px) {
+  .md-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .md-grid > .md-panel { grid-column: span 2; }
+  .md-grid > .md-panel:nth-child(-n+2) { grid-column: span 3; }
+}
+@media (max-width: 1100px) {
+  .md-grid { grid-template-columns: 1fr 1fr; }
+  .md-grid > .md-panel, .md-grid > .md-panel:nth-child(-n+2) { grid-column: auto; }
+  .md-grid > .md-panel:last-of-type { grid-column: 1 / -1; }
+}
+@media (max-width: 860px) { .md-grid { grid-template-columns: 1fr; } .md-grid > .md-panel:last-of-type { grid-column: auto; } }
+.md-check { margin-top: 8px; font-size: 13px; }

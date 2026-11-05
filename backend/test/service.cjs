@@ -42,6 +42,25 @@ A('purchase.create',{items:[{product_id:cable.id,qty:3,cost:50}],payments:[{acco
 denied('product.save',{...A('products.list').find(p=>p.id===cable.id),service:true},/in stock/i);
 // Existing products without the new column stay inventory products
 equal(!!A('products.list').find(p=>p.id===router.id).service,false);
+// Selling units
+const units=A('bootstrap').units;
+equal(units.map(u=>u.name).sort(),['feet','meter','pcs']);
+const box=A('master.save',{kind:'unit',name:' Box ',label:'Box',decimal:false});
+equal([box.name,box.label,box.decimal],['box','Box',false]);
+denied('master.save',{kind:'unit',name:'BOX'},/already exists/i);
+denied('master.save',{kind:'unit',name:'bad unit name too long'},/12 letters/i);
+const ram=A('product.save',{name:'RAM Box Pack',unit:'box',cost_price:10,sale_price:20});
+equal(ram.unit,'box');
+denied('purchase.create',{items:[{product_id:ram.id,qty:1.5,cost:10}],payments:[]},/whole number/i);
+denied('product.save',{name:'Odd unit thing',unit:'crate'},/unknown selling unit/i);
+denied('master.delete',{kind:'unit',id:box.id},/in use/i);
+equal(A('master.save',{kind:'unit',id:box.id,name:'changed',label:'Carton Box',decimal:false}).name,'box'); // code is fixed
+const kg=A('master.save',{kind:'unit',name:'kg',label:'Kilogram',decimal:true});
+const rice=A('product.save',{name:'Thermal Paste Tub',unit:'kg',cost_price:100,sale_price:150});
+A('purchase.create',{items:[{product_id:rice.id,qty:1.25,cost:100}],payments:[{account_id:cash.id,amount:125}]});
+denied('product.save',{name:'Serial kg',unit:'kg',has_warranty:true,warranty_type:'serial',warranty_days:30},/whole numbers/i);
+denied('master.delete',{kind:'unit',id:units.find(u=>u.name==='pcs').id},/in use/i);
+A('master.delete',{kind:'unit',id:A('master.save',{kind:'unit',name:'set',label:'Set'}).id});
 console.log('Service item regression: '+checks+' checks passed');
 `;
 new Function('require','__dirname',harness+scenario)(require,__dirname);

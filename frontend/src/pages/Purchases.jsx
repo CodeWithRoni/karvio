@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../lib/store';
 import { api } from '../lib/api';
-import { money, qty as fqty, fdate, monthStart, today, splitList, round2 } from '../lib/format';
+import { money, qty as fqty, fdate, monthStart, today, splitList, round2, isDecimalUnit } from '../lib/format';
 import DataTable from '../components/DataTable';
 import { useApi, PageHead, Tabs, DateRange, Badge, statusTone, Modal, Btn, Field, Loading, ErrorBox, useAction, Select } from '../components/ui';
 import { ProductSearch, PaymentSplit, cleanPays, ReverseDialog } from '../components/widgets';
@@ -97,7 +97,7 @@ function NewPurchase({ onDone }) {
                   {isSerial(p) && <><textarea value={l.serials} onChange={(e) => upd(i, { serials: e.target.value, qty: splitList(e.target.value.replace(/\n/g, ',')).length || l.qty })} placeholder="Scan one serial per line" style={{ marginTop: 6, minHeight: 60 }} />
                     <small style={{ color: n === Number(l.qty) ? 'var(--ok)' : 'var(--warn)' }}>{n} of {l.qty} serials entered</small></>}
                 </td>
-                <td><input type="number" min="0" step={p?.unit === 'pcs' ? 1 : 'any'} value={l.qty} onChange={(e) => upd(i, { qty: e.target.value })} /></td>
+                <td><input type="number" min="0" step={isDecimalUnit(p?.unit) ? 'any' : 1} value={l.qty} onChange={(e) => upd(i, { qty: e.target.value })} /></td>
                 <td><input type="number" min="0" step="any" value={l.cost} onChange={(e) => upd(i, { cost: e.target.value })} /></td>
                 <td className="r num">{money((Number(l.qty) || 0) * (Number(l.cost) || 0), false)}</td>
                 <td><button className="x" onClick={() => setLines(lines.filter((_, j) => j !== i))}>×</button></td>

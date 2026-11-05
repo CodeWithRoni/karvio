@@ -136,7 +136,7 @@ test('product groups contain categories across master data, products, stock filt
   await page.getByRole('tab', { name: 'Categories, brands & warranty' }).click();
   const groups = page.locator('.md-panel').filter({ has: page.getByRole('heading', { name: 'Product groups', exact: true }) });
   const categories = page.locator('.md-panel').filter({ has: page.getByRole('heading', { name: 'Categories', exact: true }) });
-  await expect(page.locator('.md-panel')).toHaveCount(4);
+  await expect(page.locator('.md-panel')).toHaveCount(5);
   await categories.getByRole('textbox', { name: 'Category name', exact: true }).fill('INTEL');
   await expect(categories.getByRole('button', { name: 'Add', exact: true })).toBeDisabled();
   await groups.getByRole('textbox', { name: 'Group name', exact: true }).fill('PROCESSOR');

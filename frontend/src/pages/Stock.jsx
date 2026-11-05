@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { api } from '../lib/api';
-import { money, qty as fqty } from '../lib/format';
+import { money, qty as fqty, isDecimalUnit } from '../lib/format';
 import DataTable from '../components/DataTable';
 import MasterData from '../components/MasterData';
 import { PageHead, Tabs, Modal, Btn, Field, Badge, Select, useAction } from '../components/ui';
@@ -78,7 +78,7 @@ export default function Stock() {
 }
 
 function ProductForm({ initial, onClose }) {
-  const { categories, brands, warrantyPeriods, products, refresh, can } = useStore();
+  const { categories, brands, warrantyPeriods, units, products, refresh, can } = useStore();
   const catName = (id) => categories.find((c) => c.id === id)?.name || '';
   const autoName = (x) => [catName(x.category_id), catName(x.subcategory_id), brands.find((b) => b.id === x.brand_id)?.name, String(x.sku || '').trim()].filter(Boolean).join(' ');
   const [f, setF] = useState({ ...initial, service: initial.service === true || initial.service === 'true' });
@@ -114,12 +114,12 @@ function ProductForm({ initial, onClose }) {
         <Field label="Category"><Select value={f.subcategory_id} onChange={(v) => setPart({ subcategory_id: v })} options={subs} placeholder={f.category_id ? 'Select a category' : 'Select a group first'} /></Field>
         <Field label="Brand"><Select value={f.brand_id} onChange={(v) => setPart({ brand_id: v })} options={brands} /></Field>
         <Field label="SKU / model"><input value={f.sku} onChange={(e) => setPart({ sku: e.target.value })} placeholder="e.g. Archer C6" /></Field>
-        {!f.service && <Field label="Selling unit" hint="Meter / feet lets you sell cable from bulk rolls.">
-          <select value={f.unit} onChange={(e) => setF({ ...f, unit: e.target.value, warranty_type: e.target.value !== 'pcs' ? 'invoice' : f.warranty_type })}>
-            <option value="pcs">Pieces (pcs)</option><option value="meter">Meter</option><option value="feet">Feet</option>
+        {!f.service && <Field label="Selling unit" hint={isDecimalUnit(f.unit) ? 'Sold in fractions too, e.g. 1.5 — good for cable from bulk rolls.' : 'Add more units under Categories, brands & warranty → Selling units.'}>
+          <select value={f.unit} onChange={(e) => setF({ ...f, unit: e.target.value, warranty_type: isDecimalUnit(e.target.value) ? 'invoice' : f.warranty_type })}>
+            {(units.some((u) => u.name === f.unit) || !f.unit ? units : [...units, { name: f.unit, label: f.unit }]).map((u) => <option key={u.name} value={u.name}>{u.label}{u.label.toLowerCase() !== u.name ? ` (${u.name})` : ''}</option>)}
           </select>
         </Field>}
-        {!f.service && f.unit !== 'pcs' && <Field label={`Roll length (${f.unit})`} hint="For reference when buying rolls, e.g. 305 m Cat6 box."><input type="number" value={f.roll_length} onChange={s('roll_length')} /></Field>}
+        {!f.service && isDecimalUnit(f.unit) && <Field label={`Roll length (${f.unit})`} hint="For reference when buying rolls, e.g. 305 m Cat6 box."><input type="number" value={f.roll_length} onChange={s('roll_length')} /></Field>}
         {!f.service && (isNew || can('cost')) && <Field label={`Cost price per ${f.unit}`}><input type="number" step="any" value={f.cost_price} onChange={s('cost_price')} /></Field>}
         <Field label={`Retail price per ${f.unit}`}><input type="number" step="any" value={f.sale_price} onChange={s('sale_price')} /></Field>
         {(isNew || can('cost')) && <Field label="Wholesale price"><input type="number" step="any" value={f.wholesale_price} onChange={s('wholesale_price')} /></Field>}
@@ -135,7 +135,7 @@ function ProductForm({ initial, onClose }) {
             <div className="form" style={{ marginTop: 12 }}>
               {!f.service && <Field label="Warranty tracking">
                 <select value={f.warranty_type} onChange={s('warranty_type')}>
-                  <option value="serial" disabled={f.unit !== 'pcs'}>Serial-based (log each serial / IMEI)</option>
+                  <option value="serial" disabled={isDecimalUnit(f.unit)}>Serial-based (serial / IMEI)</option>
                   <option value="invoice">Invoice-based (no serials)</option>
                 </select>
               </Field>}
