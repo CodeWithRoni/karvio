@@ -34,8 +34,7 @@ function useSettingsForm(keys) {
 }
 
 function ShopSettings() {
-  const { f, setF, bind, save, busy } = useSettingsForm(['shop_name', 'shop_phone', 'shop_address', 'shop_footer', 'currency', 'invoice_prefix', 'receipt_width', 'low_stock_default', 'expense_categories']);
-  let cats = []; try { cats = JSON.parse(f.expense_categories || '[]'); } catch {}
+  const { f, setF, bind, save, busy } = useSettingsForm(['shop_name', 'shop_phone', 'shop_address', 'shop_footer', 'currency', 'invoice_prefix', 'receipt_width', 'low_stock_default']);
   return (
     <div className="card form">
       <Field label="Shop name" wide><input {...bind('shop_name')} /></Field>
@@ -46,9 +45,7 @@ function ShopSettings() {
       <Field label="Invoice prefix" hint="Applies to new invoices."><input {...bind('invoice_prefix')} /></Field>
       <Field label="Thermal printer width"><select {...bind('receipt_width')}><option value="80">80 mm</option><option value="58">58 mm</option></select></Field>
       <Field label="Default low-stock alert"><input type="number" {...bind('low_stock_default')} /></Field>
-      <Field label="Expense categories" wide hint="One per line.">
-        <textarea value={cats.join('\n')} onChange={(e) => setF({ ...f, expense_categories: JSON.stringify(e.target.value.split('\n').map((x) => x.trim()).filter(Boolean)) })} />
-      </Field>
+
       <div className="wide row end"><Btn kind="primary" busy={busy} onClick={save}>Save settings</Btn></div>
     </div>
   );

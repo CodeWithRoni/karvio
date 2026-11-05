@@ -749,6 +749,15 @@ function settingsGet_(p, user) {
   if (!can_(user, 'settings')) SECRET_KEYS.concat(['sms_url', 'sms_body', 'sms_sender_id']).forEach(function (k) { delete m[k]; });
   return m;
 }
+/** Expense categories live in the Expenses module (staff with the expenses permission manage them). */
+function expenseCategoriesSave_(p, user) {
+  var seen = {}, list = (Array.isArray(p.categories) ? p.categories : []).map(function (c) { return String(c || '').trim().replace(/\s+/g, ' '); })
+    .filter(function (c) { var k = c.toLowerCase(); if (!c || seen[k]) return false; seen[k] = 1; return true; }).slice(0, 200);
+  if (!list.length) fail_('Keep at least one expense category');
+  setSetting_('expense_categories', JSON.stringify(list));
+  audit_(user, 'expense_categories', { count: list.length });
+  return list;
+}
 function settingsSave_(p, user) {
   var allowed = ['shop_name', 'shop_phone', 'shop_address', 'shop_footer', 'currency', 'invoice_prefix', 'receipt_width', 'low_stock_default', 'expense_categories',
     'sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template'];
@@ -934,11 +943,23 @@ function purchaseDetail_(p) {
   var pur = all_('Purchases').filter(function (x) { return x.id === p.id || x.invoice_no === p.id; })[0];
   if (!pur) fail_('Purchase not found');
   var returns = all_('PurchaseReturns').filter(function (r) { return r.purchase_id === pur.id; });
+  var prods = indexBy_(all_('Products'));
   return {
-    purchase: pur, items: all_('PurchaseItems').filter(function (i) { return i.purchase_id === pur.id; }),
+    purchase: pur,
+    items: all_('PurchaseItems').filter(function (i) { return i.purchase_id === pur.id; }).map(function (i) {
+      var o = Object.assign({}, i), pr = prods[i.product_id]; delete o._row;
+      o.description = pr ? pr.description || '' : ''; o.sku = pr ? pr.sku || '' : '';
+      return o;
+    }),
     supplier: pur.supplier_id ? all_('Suppliers').filter(function (s) { return s.id === pur.supplier_id; })[0] || null : null,
     returns: returns
   };
+}
+/** Full details of several purchases at once (for exporting / printing the selected invoices). */
+function purchasesDetails_(p) {
+  var ids = Array.isArray(p.ids) ? p.ids.slice(0, 200) : [];
+  if (!ids.length) fail_('Select at least one purchase');
+  return ids.map(function (id) { return purchaseDetail_({ id: id }); });
 }
 function purchasesList_(p) {
   var q = String(p.q || '').toLowerCase(), items = {};
@@ -949,8 +970,17 @@ function purchasesList_(p) {
     if (p.supplier_id && x.supplier_id !== p.supplier_id) return false;
     if (q && (x.invoice_no + ' ' + x.supplier_name + ' ' + (items[x.id] || []).join(' ')).toLowerCase().indexOf(q) < 0) return false;
     return true;
-  }).sort(function (a, b) { return b._row - a._row; }).slice(0, num_(p.limit) || 500);
-  return rows.map(function (x) { var o = Object.assign({}, x); delete o._row; o.items_text = (items[x.id] || []).join(', '); return o; });
+  }).sort(function (a, b) { return b._row - a._row; });
+  var clean = function (x) { var o = Object.assign({}, x); delete o._row; o.items_text = (items[x.id] || []).join(', '); return o; };
+  if (p.page) { // paged: newest first, `per` rows per page, with grand totals of everything that matches
+    var per = Math.min(Math.max(num_(p.per) || 10, 1), 100), page = Math.max(Math.round(num_(p.page)), 1);
+    var active = rows.filter(function (x) { return x.status === 'active'; });
+    return {
+      rows: rows.slice((page - 1) * per, page * per).map(clean), total: rows.length, page: page, per: per,
+      sums: { total: round_(sum_(active, function (x) { return x.total; })), paid: round_(sum_(active, function (x) { return x.paid; })), due: round_(sum_(active, function (x) { return x.due; })) }
+    };
+  }
+  return rows.slice(0, num_(p.limit) || 500).map(clean);
 }
 
 /* ============================================================================
@@ -1824,6 +1854,7 @@ var ROUTES = {
   'purchase.create':  r_('purchase', purchaseCreate_, true),
   'purchase.detail':  r_('purchase', purchaseDetail_),
   'purchases.list':   r_('purchase', purchasesList_),
+  'purchases.details': r_('purchase', purchasesDetails_),
   'preturn.create':   r_('purchase', preturnCreate_, true),
   'preturns.list':    r_('purchase', preturnsList_),
 
@@ -1834,6 +1865,7 @@ var ROUTES = {
   'sreturns.list':    r_('sales.return', sreturnsList_),
 
   'expense.create':   r_('expenses', expenseCreate_, true),
+  'expense.categories': r_('expenses', expenseCategoriesSave_, true),
   'expenses.list':    r_('expenses', expensesList_),
 
   'reverse':          r_('cancel', reverse_, true),

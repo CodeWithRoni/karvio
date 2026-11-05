@@ -3,7 +3,7 @@ import { useStore } from '../lib/store';
 import { api } from '../lib/api';
 import { money, today, monthStart } from '../lib/format';
 import DataTable from '../components/DataTable';
-import { useApi, PageHead, Btn, Field, useAction, Select, DateRange, ErrorBox, Badge, statusTone } from '../components/ui';
+import { useApi, PageHead, Btn, Field, useAction, Select, DateRange, ErrorBox, Badge, statusTone, Tabs, useConfirm } from '../components/ui';
 import { ReverseDialog } from '../components/widgets';
 
 export default function Expenses() {
@@ -16,6 +16,7 @@ export default function Expenses() {
   const balances = useApi('accounts.list', {}, [], { skip: !can('accounts') });
   const [busy, run] = useAction();
   const [rev, setRev] = useState(null);
+  const [tab, setTab] = useState('list');
 
   const save = async (e) => {
     e.preventDefault();
@@ -28,7 +29,10 @@ export default function Expenses() {
 
   return (
     <>
-      <PageHead title="Daily expenses" sub="Shop running costs are paid from an account, so the cash balance stays accurate." />
+      <PageHead title="Expenses" sub="Shop running costs are paid from an account, so the cash balance stays accurate.">
+        <Tabs tabs={[['list', 'Daily expenses'], ['cats', 'Expense categories']]} value={tab} onChange={setTab} />
+      </PageHead>
+      {tab === 'cats' ? <ExpenseCategories cats={cats} /> : <>
       <div className="split" style={{ marginBottom: 16 }}>
         <form className="card form" onSubmit={save}>
           <Field label="Date"><input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
@@ -53,7 +57,55 @@ export default function Expenses() {
           { key: 'status', label: 'Status', render: (r) => <Badge tone={statusTone(r.status)}>{r.status}</Badge> },
           ...(can('cancel') ? [{ key: 'x', label: '', noSort: true, noExport: true, render: (r) => r.status === 'active' && <Btn size="sm" kind="danger" onClick={() => setRev({ type: 'expense', id: r.id, label: 'expense' })}>Cancel</Btn> }] : [])
         ]} />
+      </>}
       <ReverseDialog open={!!rev} {...(rev || {})} onClose={() => setRev(null)} onDone={() => { list.reload(); balances.reload(); }} />
     </>
+  );
+}
+
+function ExpenseCategories({ cats }) {
+  const [name, setName] = useState('');
+  const [edit, setEdit] = useState(null); // { from, value }
+  const [busy, run] = useAction();
+  const [confirmUI, ask] = useConfirm();
+  const save = (list, msg) => run(async () => {
+    const saved = await api('expense.categories', { categories: list });
+    useStore.setState((st) => ({ settings: { ...st.settings, expense_categories: JSON.stringify(saved) } }));
+  }, msg);
+  const add = async (e) => {
+    e.preventDefault();
+    const v = name.trim(); if (!v) return;
+    if (cats.some((c) => c.toLowerCase() === v.toLowerCase())) return useStore.getState().toast(`${v} already exists`, 'err');
+    await save([...cats, v], 'Category added'); setName('');
+  };
+  const rename = async (e) => {
+    e?.preventDefault();
+    const v = edit.value.trim();
+    if (!v || v === edit.from) return setEdit(null);
+    if (cats.some((c) => c !== edit.from && c.toLowerCase() === v.toLowerCase())) return useStore.getState().toast(`${v} already exists`, 'err');
+    await save(cats.map((c) => (c === edit.from ? v : c)), 'Category renamed'); setEdit(null);
+  };
+  const remove = async (c) => {
+    if (cats.length <= 1) return useStore.getState().toast('Keep at least one category', 'err');
+    if (!(await ask({ title: 'Delete category?', message: <>Delete <b>“{c}”</b>? Expenses already recorded keep this category name.</> }))) return;
+    await save(cats.filter((x) => x !== c), `${c} deleted`);
+  };
+  return (
+    <div className="card exp-cats">
+      <form className="row" onSubmit={add} style={{ gap: 8 }}>
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New category, e.g. Shop rent" aria-label="New expense category" style={{ flex: 1 }} />
+        <Btn kind="primary" type="submit" busy={busy} disabled={!name.trim()}>Add</Btn>
+      </form>
+      <ul className="exp-cat-list">
+        {cats.map((c) => (
+          <li key={c}>
+            {edit?.from === c
+              ? <form className="row" onSubmit={rename} style={{ gap: 6, flex: 1 }}><input value={edit.value} onChange={(e) => setEdit({ ...edit, value: e.target.value })} autoFocus aria-label={`New name for ${c}`} style={{ flex: 1 }} /><Btn size="sm" kind="primary" type="submit" busy={busy}>Save</Btn><Btn size="sm" onClick={() => setEdit(null)}>Cancel</Btn></form>
+              : <><span>{c}</span><span className="spacer" /><Btn size="sm" onClick={() => setEdit({ from: c, value: c })}>Rename</Btn><Btn size="sm" kind="danger" onClick={() => remove(c)}>Delete</Btn></>}
+          </li>
+        ))}
+      </ul>
+      {confirmUI}
+    </div>
   );
 }

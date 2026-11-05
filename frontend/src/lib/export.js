@@ -4,7 +4,7 @@ import { money, fdate } from './format';
 import bengaliRegular from '@fontsource/hind-siliguri/files/hind-siliguri-bengali-400-normal.woff2?url';
 import bengaliBold from '@fontsource/hind-siliguri/files/hind-siliguri-bengali-600-normal.woff2?url';
 
-const printFonts = `@font-face{font-family:'Hind Siliguri';font-weight:400;src:url('${bengaliRegular}')}@font-face{font-family:'Hind Siliguri';font-weight:600 900;src:url('${bengaliBold}')}`;
+export const printFonts = `@font-face{font-family:'Hind Siliguri';font-weight:400;src:url('${bengaliRegular}')}@font-face{font-family:'Hind Siliguri';font-weight:600 900;src:url('${bengaliBold}')}`;
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 

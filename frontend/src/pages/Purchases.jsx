@@ -5,12 +5,15 @@ import { money, qty as fqty, fdate, monthStart, today, splitList, round2, isDeci
 import DataTable from '../components/DataTable';
 import { useApi, PageHead, Tabs, DateRange, Badge, statusTone, Modal, Btn, Field, Loading, ErrorBox, useAction, Select } from '../components/ui';
 import { ProductSearch, PaymentSplit, cleanPays, defaultPay, ReverseDialog } from '../components/widgets';
+import { excelPurchases, pdfPurchases, printPurchases } from '../lib/purchaseDocs';
 
 export default function Purchases() {
   const can = useStore((s) => s.can);
   const [tab, setTab] = useState('list');
   const [range, setRange] = useState({ from: monthStart(), to: today() });
-  const list = useApi('purchases.list', range, [], { skip: tab !== 'list' });
+  // Purchase invoices: newest 10 per page; narrow by supplier and / or dates.
+  const [lf, setLf] = useState({ supplier_id: '', from: '', to: '', page: 1 });
+  const list = useApi('purchases.list', { ...lf, per: 10 }, [lf.supplier_id, lf.from, lf.to, lf.page], { skip: tab !== 'list' });
   const rets = useApi('preturns.list', range, [], { skip: tab !== 'returns' });
   const [open, setOpen] = useState(null);
   const [rev, setRev] = useState(null);
@@ -22,19 +25,8 @@ export default function Purchases() {
       </PageHead>
       {tab === 'new' ? <NewPurchase onDone={() => setTab('list')} /> : (
         <>
-          <div className="filters"><DateRange {...range} onChange={setRange} /></div>
-          {tab === 'list' ? (
-            <>
-              <ErrorBox error={list.error} onRetry={list.reload} />
-              <DataTable title="Purchases" loading={list.loading} rows={list.data || []} onRowClick={(r) => setOpen(r.id)} rowClass={(r) => (r.status === 'cancelled' ? 'dim' : '')}
-                columns={[
-                  { key: 'date', label: 'Date', type: 'date' }, { key: 'invoice_no', label: 'Purchase #' }, { key: 'supplier_name', label: 'Supplier' },
-                  { key: 'items_text', label: 'Items', className: 'clip' }, { key: 'total', label: 'Total', type: 'money', sum: true },
-                  { key: 'paid', label: 'Paid', type: 'money', sum: true }, { key: 'due', label: 'Due', type: 'money', sum: true },
-                  { key: 'status', label: 'Status', render: (r) => <Badge tone={statusTone(r.status)}>{r.status}</Badge> }
-                ]} />
-            </>
-          ) : (
+          {tab === 'list' ? <PurchaseList list={list} f={lf} setF={setLf} onOpen={setOpen} /> : <div className="filters"><DateRange {...range} onChange={setRange} /></div>}
+          {tab === 'list' ? null : (
             <DataTable title="Purchase returns" loading={rets.loading} rows={rets.data || []} rowClass={(r) => (r.status === 'cancelled' ? 'dim' : '')}
               columns={[
                 { key: 'date', label: 'Date', type: 'date' }, { key: 'return_no', label: 'Return #' }, { key: 'invoice_no', label: 'Purchase' },
@@ -48,6 +40,84 @@ export default function Purchases() {
       )}
       {open && <PurchaseDetail id={open} onClose={() => setOpen(null)} onChanged={() => { list.reload(); rets.reload(); }} />}
       <ReverseDialog open={!!rev} {...(rev || {})} onClose={() => setRev(null)} onDone={() => rets.reload()} />
+    </>
+  );
+}
+
+function PurchaseList({ list, f, setF, onOpen }) {
+  const suppliers = useStore((st) => st.suppliers);
+  const [sel, setSel] = useState({}); // id -> invoice_no, kept across pages
+  const [busy, setBusy] = useState('');
+  const d = list.data && !Array.isArray(list.data) ? list.data : { rows: [], total: 0, page: 1, per: 10, sums: {} };
+  const pages = Math.max(1, Math.ceil(d.total / d.per));
+  const ids = Object.keys(sel);
+  const allOnPage = d.rows.length > 0 && d.rows.every((r) => sel[r.id]);
+  const toggle = (r) => setSel((x) => { const n = { ...x }; if (n[r.id]) delete n[r.id]; else n[r.id] = r.invoice_no; return n; });
+  const togglePage = () => setSel((x) => { const n = { ...x }; d.rows.forEach((r) => { if (allOnPage) delete n[r.id]; else n[r.id] = r.invoice_no; }); return n; });
+  const set = (patch) => setF({ ...f, ...patch, page: patch.page || 1 });
+  const out = async (kind) => {
+    setBusy(kind);
+    try {
+      const docs = await api('purchases.details', { ids });
+      const name = ids.length === 1 ? `purchase-${docs[0].purchase.invoice_no}` : `purchases-${ids.length}-invoices`;
+      if (kind === 'excel') await excelPurchases(docs, `${name}.xlsx`);
+      else if (kind === 'pdf') await pdfPurchases(docs, `${name}.pdf`);
+      else await printPurchases(docs);
+    } catch (e) { useStore.getState().toast(e.message, 'err'); } finally { setBusy(''); }
+  };
+  // Page buttons: 1 … 4 5 [6] 7 8 … 20
+  const nums = [...new Set([1, pages, d.page - 2, d.page - 1, d.page, d.page + 1, d.page + 2])].filter((n) => n >= 1 && n <= pages).sort((a, b) => a - b);
+
+  return (
+    <>
+      <div className="filters">
+        <Field label="Supplier"><select value={f.supplier_id} onChange={(e) => set({ supplier_id: e.target.value })} aria-label="Filter by supplier" style={{ minWidth: 220 }}>
+          <option value="">All suppliers</option>{suppliers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+        </select></Field>
+        <Field label="From"><input type="date" value={f.from} onChange={(e) => set({ from: e.target.value })} aria-label="From date" /></Field>
+        <Field label="To"><input type="date" value={f.to} onChange={(e) => set({ to: e.target.value })} aria-label="To date" /></Field>
+        {(f.supplier_id || f.from || f.to) && <button className="link" style={{ paddingBottom: 10 }} onClick={() => setF({ supplier_id: '', from: '', to: '', page: 1 })}>Clear filters</button>}
+        <span className="spacer" />
+        <div className="pl-export">
+          <span className="muted">{ids.length ? `${ids.length} selected` : 'Tick invoices to export'}</span>
+          {ids.length > 0 && <button className="link" onClick={() => setSel({})}>Clear</button>}
+          <div className="seg">
+            <button disabled={!ids.length || !!busy} onClick={() => out('excel')}>{busy === 'excel' ? '…' : 'Excel'}</button>
+            <button disabled={!ids.length || !!busy} onClick={() => out('pdf')}>{busy === 'pdf' ? '…' : 'PDF'}</button>
+            <button disabled={!ids.length || !!busy} onClick={() => out('print')}>{busy === 'print' ? '…' : 'Print'}</button>
+          </div>
+        </div>
+      </div>
+      <ErrorBox error={list.error} onRetry={list.reload} />
+      <div className="dt"><div className="dt-scroll"><table className="pl-table">
+        <thead><tr>
+          <th style={{ width: 36 }}><input type="checkbox" checked={allOnPage} onChange={togglePage} aria-label="Select all on this page" /></th>
+          <th>Date</th><th>Purchase #</th><th>Supplier</th><th>Items</th><th className="r">Total</th><th className="r">Paid</th><th className="r">Due</th><th>Status</th>
+        </tr></thead>
+        <tbody>{d.rows.map((r) => (
+          <tr key={r.id} className={`${r.status === 'cancelled' ? 'dim' : ''} ${sel[r.id] ? 'picked' : ''}`} onClick={() => onOpen(r.id)}>
+            <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={!!sel[r.id]} onChange={() => toggle(r)} aria-label={`Select ${r.invoice_no}`} /></td>
+            <td className="nowrap">{fdate(r.date)}</td><td>{r.invoice_no}</td><td>{r.supplier_name || '—'}</td><td className="clip">{r.items_text}</td>
+            <td className="r num">{money(r.total, false)}</td><td className="r num">{money(r.paid, false)}</td><td className="r num">{money(r.due, false)}</td>
+            <td><Badge tone={statusTone(r.status)}>{r.status}</Badge></td>
+          </tr>
+        ))}</tbody>
+        {d.total > 0 && <tfoot><tr><td /><td colSpan={4}><b>Total of {d.total} purchase{d.total === 1 ? '' : 's'}</b> <span className="muted">(cancelled not counted)</span></td>
+          <td className="r num"><b>{money(d.sums.total, false)}</b></td><td className="r num"><b>{money(d.sums.paid, false)}</b></td><td className="r num"><b>{money(d.sums.due, false)}</b></td><td /></tr></tfoot>}
+      </table>
+      {list.loading && !d.rows.length && <Loading />}
+      {!list.loading && !d.rows.length && <div className="empty"><b>No purchases found</b><div>{f.supplier_id || f.from || f.to ? 'Change the supplier or dates.' : 'Record your first purchase in New purchase.'}</div></div>}
+      </div>
+      {pages > 1 && (
+        <div className="pager">
+          <span className="muted">Showing {(d.page - 1) * d.per + 1}–{Math.min(d.page * d.per, d.total)} of {d.total}</span>
+          <span className="spacer" />
+          <button disabled={d.page <= 1} onClick={() => set({ page: d.page - 1 })}>‹ Prev</button>
+          {nums.map((n, i) => <span key={n} style={{ display: 'contents' }}>{i > 0 && n - nums[i - 1] > 1 && <span className="gap">…</span>}<button className={n === d.page ? 'on' : ''} onClick={() => set({ page: n })} aria-current={n === d.page ? 'page' : undefined}>{n}</button></span>)}
+          <button disabled={d.page >= pages} onClick={() => set({ page: d.page + 1 })}>Next ›</button>
+        </div>
+      )}
+      </div>
     </>
   );
 }
@@ -243,7 +313,15 @@ function PurchaseDetail({ id, onClose, onChanged }) {
   const p = data?.purchase;
   return (
     <Modal open onClose={onClose} size="lg" title={p ? `Purchase ${p.invoice_no}` : 'Purchase'}
-      footer={p && p.status === 'active' && <>{can('cancel') && <Btn kind="danger" onClick={() => setRev(true)}>Cancel purchase</Btn>}<span className="spacer" /><Btn onClick={() => setRet(true)}>Return to supplier</Btn></>}>
+      footer={p && <>
+        <div className="seg">
+          <button onClick={() => excelPurchases([data], `purchase-${p.invoice_no}.xlsx`)}>Excel</button>
+          <button onClick={() => pdfPurchases([data], `purchase-${p.invoice_no}.pdf`)}>PDF</button>
+          <button onClick={() => printPurchases([data])}>Print</button>
+        </div>
+        <span className="spacer" />
+        {p.status === 'active' && <>{can('cancel') && <Btn kind="danger" onClick={() => setRev(true)}>Cancel purchase</Btn>}<Btn onClick={() => setRet(true)}>Return to supplier</Btn></>}
+      </>}>
       {loading && <Loading />}<ErrorBox error={error} onRetry={reload} />
       {p && <>
         {p.status === 'cancelled' && <div className="errbox">Cancelled — {p.cancel_reason}</div>}
@@ -251,10 +329,14 @@ function PurchaseDetail({ id, onClose, onChanged }) {
           <div><span>Date</span><b>{fdate(p.date)}</b></div><div><span>Supplier</span><b>{p.supplier_name || '—'}</b></div>
           <div><span>Total</span><b>{money(p.total)}</b></div><div><span>Paid</span><b>{money(p.paid)}</b></div><div><span>Due</span><b>{money(p.due)}</b></div>
           <div><span>Entered by</span><b>{p.user}</b></div>
+          {data.supplier && <div><span>Supplier phone</span><b>{splitList(data.supplier.phones || '').join(', ') || '—'}</b></div>}
+          {data.supplier?.address && <div><span>Supplier address</span><b>{data.supplier.address}</b></div>}
         </div>
         <div className="dt" style={{ marginTop: 14 }}><div className="dt-scroll"><table>
-          <thead><tr><th>Item</th><th>Serials</th><th className="r">Qty</th><th className="r">Cost</th><th className="r">Amount</th></tr></thead>
-          <tbody>{data.items.map((i) => <tr key={i.id}><td>{i.name}</td><td>{i.serials}</td><td className="r num">{fqty(i.qty, i.unit)}</td><td className="r num">{money(i.cost, false)}</td><td className="r num">{money(i.total, false)}</td></tr>)}</tbody>
+          <thead><tr><th>Item</th><th>Unit</th><th>Serial numbers</th><th className="r">Qty</th><th className="r">Purchase price</th><th className="r">Amount</th></tr></thead>
+          <tbody>{data.items.map((i) => <tr key={i.id}><td><b>{i.name}</b>{i.description && <div className="muted" style={{ fontSize: 12 }}>{i.description}</div>}</td><td>{i.unit}</td>
+            <td>{splitList(String(i.serials || '').replace(/\n/g, ',')).map((x) => <span key={x} className="sn-chip ro">{x}</span>)}</td>
+            <td className="r num">{fqty(i.qty, i.unit)}</td><td className="r num">{money(i.cost, false)}</td><td className="r num">{money(i.total, false)}</td></tr>)}</tbody>
         </table></div></div>
         {data.returns.length > 0 && <p className="muted">Returns: {data.returns.map((r) => `${r.return_no} (${money(r.total, false)}, ${r.status})`).join(', ')}</p>}
       </>}

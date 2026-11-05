@@ -513,3 +513,27 @@ small.margin.bad { color: var(--bad); }
 .cost-peek { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; font-size: 13px; }
 .cost-peek b.loss { color: var(--bad); }
 @media print { .cost-col { display: none !important; } }
+
+/* Purchase invoice list: selection, export and pages */
+.pl-export { display: flex; align-items: center; gap: 10px; padding-bottom: 4px; font-size: 13px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; border-right: 1px solid var(--line); background: transparent; color: var(--text); font: inherit; font-size: 13px; font-weight: 600; padding: 7px 13px; cursor: pointer; }
+.seg button:last-child { border-right: 0; }
+.seg button:hover:not(:disabled) { background: color-mix(in srgb, var(--aqua) 14%, transparent); }
+.seg button:disabled { opacity: .45; cursor: not-allowed; }
+.pl-table tbody tr { cursor: pointer; }
+.pl-table tbody tr.picked td { background: color-mix(in srgb, var(--aqua) 9%, transparent); }
+.pl-table input[type=checkbox] { width: 16px; height: 16px; min-height: 0; margin: 0; }
+.pl-table td.nowrap { white-space: nowrap; }
+.pl-table td.clip { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pager { display: flex; align-items: center; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--line); flex-wrap: wrap; }
+.pager button { min-width: 34px; height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--text); font: inherit; font-weight: 600; cursor: pointer; }
+.pager button.on { background: var(--accent, #f2c230); color: #111; border-color: transparent; }
+.pager button:disabled { opacity: .4; cursor: not-allowed; }
+.pager .gap { color: var(--muted); padding: 0 2px; }
+.sn-chip.ro { padding: 2px 8px; margin: 0 4px 4px 0; font-size: 12px; }
+
+.exp-cats { max-width: 640px; }
+.exp-cat-list { list-style: none; margin: 14px 0 0; padding: 0; }
+.exp-cat-list li { display: flex; align-items: center; gap: 8px; padding: 8px 4px; border-bottom: 1px solid var(--line); }
+.exp-cat-list li:last-child { border-bottom: 0; }
