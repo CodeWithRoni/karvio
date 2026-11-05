@@ -91,15 +91,11 @@ function ProductForm({ initial, onClose }) {
   const tops = categories.filter((c) => !c.parent_id);
   const subs = categories.filter((c) => c.parent_id && c.parent_id === f.category_id);
   const isNew = !f.id;
-  // Cost and retail price are required (a service has no cost; staff without cost access never see it).
-  const needCost = !f.service && (isNew || can('cost'));
-  const [tried, setTried] = useState(false);
-  const missing = { cost: needCost && !(Number(f.cost_price) > 0), sale: !(Number(f.sale_price) > 0) };
   const save = async () => {
     if (dup) return useStore.getState().toast(`"${dup.name}" already exists`, 'err');
-    setTried(true);
-    if (missing.cost || missing.sale) return useStore.getState().toast(`Enter the ${[missing.cost && 'cost price', missing.sale && 'retail price'].filter(Boolean).join(' and ')}`, 'err');
-    await run(() => api('product.save', f), isNew ? 'Product added' : 'Product updated');
+    // Prices are not part of the product form: cost comes from purchases, retail / wholesale from the Price manager.
+    const { cost_price, sale_price, wholesale_price, ...data } = f;
+    await run(() => api('product.save', data), isNew ? 'Product added — set its price when you purchase it, or in Price manager' : 'Product updated');
     await refresh('products'); onClose();
   };
   const remove = async () => {
@@ -126,10 +122,8 @@ function ProductForm({ initial, onClose }) {
           </select>
         </Field>}
         {!f.service && isDecimalUnit(f.unit) && <Field label={`Roll length (${f.unit})`} hint="For reference when buying rolls, e.g. 305 m Cat6 box."><input type="number" value={f.roll_length} onChange={s('roll_length')} /></Field>}
-        {needCost && <Field label={<>Cost price per {f.unit} <span className="req" aria-hidden="true">*</span></>} error={tried && missing.cost ? 'Cost price is required' : undefined}><input type="number" min="0" step="any" required value={f.cost_price} onChange={s('cost_price')} aria-label="Cost price" aria-required="true" aria-invalid={tried && missing.cost} /></Field>}
-        <Field label={<>Retail price per {f.unit} <span className="req" aria-hidden="true">*</span></>} error={tried && missing.sale ? 'Retail price is required' : undefined}><input type="number" min="0" step="any" required value={f.sale_price} onChange={s('sale_price')} aria-label="Retail price" aria-required="true" aria-invalid={tried && missing.sale} /></Field>
-        {(isNew || can('cost')) && <Field label="Wholesale price"><input type="number" step="any" value={f.wholesale_price} onChange={s('wholesale_price')} /></Field>}
         {!f.service && <Field label="Low-stock alert at" hint="Blank uses the default from Settings."><input type="number" step="any" value={f.low_stock} onChange={s('low_stock')} /></Field>}
+        <p className="muted price-note wide">Prices: cost and retail are entered when you <b>purchase</b> this product{f.service ? ' (services: set the charge in Price manager)' : ''}, and can be changed any time in <b>Price manager</b>.</p>
 
         <div className="wide card product-desc" style={{ background: 'var(--panel-2)' }}>
           <Field label="Short description" wide hint={`${String(f.description || '').length}/500 — e.g. Dual-band AC1200, 4 antennas, 1 year warranty.`}>

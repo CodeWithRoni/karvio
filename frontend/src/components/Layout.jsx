@@ -21,6 +21,7 @@ export const NAV = [
   { to: '/expenses', label: 'Daily Expenses', perm: 'expenses' },
   { group: 'Stock' },
   { to: '/stock', label: 'Products & Stock', key: '5' },
+  { to: '/prices', label: 'Price Manager', perm: 'products' },
   { to: '/purchases', label: 'Purchases', perm: 'purchase', key: '6' },
   { to: '/suppliers', label: 'Suppliers', perm: 'suppliers' },
   { to: '/warranty', label: 'Warranty Claims', perm: 'warranty', key: '7' },

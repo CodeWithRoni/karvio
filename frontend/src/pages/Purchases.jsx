@@ -66,17 +66,23 @@ function NewPurchase({ onDone }) {
 
   const add = (p) => {
     if (lines.some((l) => l.product_id === p.id)) return;
-    setLines([...lines, { product_id: p.id, qty: 1, cost: p.cost_price || '', serials: '' }]);
+    setLines([...lines, { product_id: p.id, qty: 1, cost: p.cost_price || '', sale: p.sale_price || '', whole: p.wholesale_price || '', serials: '' }]);
   };
   const upd = (i, patch) => setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const sub = round2(lines.reduce((a, l) => a + (Number(l.qty) || 0) * (Number(l.cost) || 0), 0));
   const total = round2(sub - (Number(discount) || 0));
   const paid = cleanPays(pays).reduce((a, p) => a + p.amount, 0);
 
+  // Every line needs a unit cost; a product that has never been priced also needs its retail price.
+  const [tried, setTried] = useState(false);
+  const bad = (l) => ({ cost: !(Number(l.cost) > 0), sale: !(Number(l.sale) > 0) && !(Number(pmap[l.product_id]?.sale_price) > 0) });
+  const invalid = lines.some((l) => { const b = bad(l); return b.cost || b.sale; });
   const save = async () => {
+    setTried(true);
+    if (invalid) return useStore.getState().toast('Enter the unit cost and retail price for every item', 'err');
     await run(() => api('purchase.create', {
       supplier_id: supplier, date, discount: Number(discount) || 0, note, payments: cleanPays(pays),
-      items: lines.map((l) => ({ product_id: l.product_id, qty: Number(l.qty), cost: Number(l.cost), serials: l.serials }))
+      items: lines.map((l) => ({ product_id: l.product_id, qty: Number(l.qty), cost: Number(l.cost), sale_price: l.sale === '' ? '' : Number(l.sale), wholesale_price: l.whole === '' ? '' : Number(l.whole), serials: l.serials }))
     }), 'Purchase saved — stock updated');
     await refresh('products', 'suppliers');
     onDone();
@@ -87,7 +93,7 @@ function NewPurchase({ onDone }) {
       <div className="grid">
         <ProductSearch onPick={add} noServices placeholder="Scan or search the product you received" />
         <div className="dt"><div className="dt-scroll"><table>
-          <thead><tr><th>Product</th><th style={{ width: 100 }} className="r">Qty</th><th style={{ width: 120 }} className="r">Unit cost</th><th className="r">Amount</th><th /></tr></thead>
+          <thead><tr><th>Product</th><th style={{ width: 100 }} className="r">Qty</th><th style={{ width: 110 }} className="r">Unit cost <span className="req">*</span></th><th style={{ width: 110 }} className="r">Retail price <span className="req">*</span></th><th style={{ width: 110 }} className="r">Wholesale</th><th className="r">Amount</th><th /></tr></thead>
           <tbody>{lines.map((l, i) => {
             const p = pmap[l.product_id];
             const n = splitList(l.serials.replace(/\n/g, ',')).length;
@@ -98,7 +104,10 @@ function NewPurchase({ onDone }) {
                     <small style={{ color: n === Number(l.qty) ? 'var(--ok)' : 'var(--warn)' }}>{n} of {l.qty} serials entered</small></>}
                 </td>
                 <td><input type="number" min="0" step={isDecimalUnit(p?.unit) ? 'any' : 1} value={l.qty} onChange={(e) => upd(i, { qty: e.target.value })} /></td>
-                <td><input type="number" min="0" step="any" value={l.cost} onChange={(e) => upd(i, { cost: e.target.value })} /></td>
+                <td><input type="number" min="0" step="any" value={l.cost} onChange={(e) => upd(i, { cost: e.target.value })} aria-label={`Unit cost for ${p?.name}`} aria-invalid={tried && bad(l).cost} className={tried && bad(l).cost ? 'invalid' : ''} /></td>
+                <td><input type="number" min="0" step="any" value={l.sale} onChange={(e) => upd(i, { sale: e.target.value })} aria-label={`Retail price for ${p?.name}`} aria-invalid={tried && bad(l).sale} className={tried && bad(l).sale ? 'invalid' : ''} placeholder="Retail" />
+                  {Number(l.cost) > 0 && Number(l.sale) > 0 && <small className={Number(l.sale) < Number(l.cost) ? 'margin bad' : 'margin'}>{Math.round(((l.sale - l.cost) / l.cost) * 100)}% margin</small>}</td>
+                <td><input type="number" min="0" step="any" value={l.whole} onChange={(e) => upd(i, { whole: e.target.value })} aria-label={`Wholesale price for ${p?.name}`} placeholder="—" /></td>
                 <td className="r num">{money((Number(l.qty) || 0) * (Number(l.cost) || 0), false)}</td>
                 <td><button className="x" onClick={() => setLines(lines.filter((_, j) => j !== i))}>×</button></td>
               </tr>

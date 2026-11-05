@@ -468,3 +468,16 @@ table { width: 100%; border-collapse: collapse; }
 .md-skipped li { margin: 3px 0; }
 @container (max-width: 360px) { .md-tool { font-size: 0; gap: 0; width: 26px; padding: 0; justify-content: center; } }
 .req { color: var(--bad); font-weight: 800; }
+
+input.invalid { border-color: var(--bad) !important; }
+small.margin { display: block; margin-top: 3px; font-size: 11px; color: var(--ok); text-align: right; }
+small.margin.bad { color: var(--bad); }
+.price-note { margin: 0; font-size: 12.5px; }
+
+/* Price manager */
+.price-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-bottom: 12px; padding: 12px 14px; }
+.price-tools label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.price-tools input { width: 70px; }
+.price-table input { width: 100%; text-align: right; }
+.price-table tr.dirty td { background: color-mix(in srgb, var(--warn) 9%, transparent); }
+.price-table td.neg { color: var(--bad); }

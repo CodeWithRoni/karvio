@@ -166,10 +166,7 @@ test('product groups contain categories across master data, products, stock filt
   const intel = boot.categories.find((c) => c.parent_id === group.id && c.name === 'INTEL');
   await form.getByRole('combobox', { name: 'Category', exact: true }).selectOption(intel.id);
   await expect(form.getByRole('combobox', { name: 'Category', exact: true }).locator('option')).toHaveCount(3);
-  await form.getByRole('button', { name: 'Add product', exact: true }).click();
-  await expect(form.getByText('Cost price is required')).toBeVisible();
-  await form.getByLabel('Cost price').fill('15000');
-  await form.getByLabel('Retail price').fill('17500');
+  await expect(form.getByLabel('Cost price')).toHaveCount(0);
   await form.getByRole('button', { name: 'Add product', exact: true }).click();
   await expect(form).toHaveCount(0);
   await page.getByRole('tab', { name: 'Stock explorer' }).click();
@@ -190,4 +187,17 @@ test('product groups contain categories across master data, products, stock filt
   await expect(page.locator('.rail')).toHaveCSS('transform', 'matrix(1, 0, 0, 1, -270, 0)');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: '../verification/groups-mobile.png', fullPage: true });
+});
+
+test('price manager filters products and saves retail and wholesale prices', async ({ page, request }) => {
+  const boot = await call(request, 'bootstrap');
+  const p = boot.products.find((x) => x.active);
+  await page.goto('/#/prices');
+  await page.getByPlaceholder('Name, model or barcode').fill(p.name);
+  await page.getByLabel(`Retail price for ${p.name}`).fill('12345');
+  await page.getByLabel(`Wholesale price for ${p.name}`).fill('11000');
+  await page.getByRole('button', { name: /Save changes \(1\)/ }).click();
+  await expect(page.getByRole('button', { name: 'Save changes', exact: true })).toBeDisabled();
+  const after = (await call(request, 'products.list')).find((x) => x.id === p.id);
+  expect([after.sale_price, after.wholesale_price]).toEqual([12345, 11000]);
 });

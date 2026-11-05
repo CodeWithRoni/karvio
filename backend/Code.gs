@@ -582,16 +582,34 @@ function productSave_(p, user) {
     active: p.active === undefined ? true : (p.active === true || p.active === 'true')
   };
   if (p.id) {
-    if (!can_(user, 'cost')) { delete row.cost_price; delete row.wholesale_price; }
+    // Prices are set in the Price manager and on purchases, never from the product form.
+    delete row.cost_price; delete row.sale_price; delete row.wholesale_price;
     var cur = all_('Products').filter(function (x) { return x.id === p.id; })[0];
     if (cur && service && !isService_(cur) && cur.stock > 0) fail_('This product still has ' + cur.stock + ' in stock. Sell, return or adjust it to 0 before turning Inventory off');
-    if (cur && service && !can_(user, 'cost')) row.cost_price = 0;
+    if (cur && service) row.cost_price = 0;
     if (cur && cur.has_warranty && cur.warranty_type === 'serial' && (!hasW || wType !== 'serial') && cur.stock > 0)
       fail_('Cannot change warranty type while serial-tracked stock exists');
     return update_('Products', p.id, row);
   }
   row.stock = 0; row.created_at = now_();
   return insert_('Products', row);
+}
+/** Price manager: bulk update retail / wholesale prices. items = [{id, sale_price, wholesale_price}] */
+function priceUpdate_(p, user) {
+  var items = Array.isArray(p.items) ? p.items : [];
+  if (!items.length) fail_('No price changes to save');
+  var pmap = indexBy_(all_('Products')), changed = [];
+  items.forEach(function (it) {
+    var pr = pmap[it.id]; if (!pr) fail_('Product not found');
+    var sale = num_(it.sale_price), whole = it.wholesale_price === '' || it.wholesale_price == null ? 0 : num_(it.wholesale_price);
+    if (sale <= 0) fail_('Retail price for ' + pr.name + ' must be more than 0');
+    if (whole < 0) fail_('Wholesale price for ' + pr.name + ' cannot be negative');
+    if (sale === pr.sale_price && whole === pr.wholesale_price) return;
+    changed.push({ name: pr.name, from: [pr.sale_price, pr.wholesale_price], to: [sale, whole] });
+    update_('Products', pr.id, { sale_price: sale, wholesale_price: whole });
+  });
+  if (changed.length) audit_(user, 'price_update', { count: changed.length, items: changed.slice(0, 50) });
+  return { updated: changed.length };
 }
 function productDelete_(p, user) {
   var used = all_('SaleItems').some(function (i) { return i.product_id === p.id; }) || all_('PurchaseItems').some(function (i) { return i.product_id === p.id; });
@@ -850,7 +868,11 @@ function purchaseCreate_(p, user) {
     var pr = pmap[it.product_id]; if (!pr) fail_('Product not found');
     if (isService_(pr)) fail_(pr.name + ' is a service (no inventory) and does not need to be purchased');
     var qty = num_(it.qty); if (qty <= 0) fail_('Invalid quantity for ' + pr.name);
-    var cost = num_(it.cost); if (cost < 0) fail_('Invalid cost for ' + pr.name);
+    var cost = num_(it.cost); if (cost <= 0) fail_('Enter the unit cost for ' + pr.name);
+    var newSale = it.sale_price === '' || it.sale_price == null ? 0 : num_(it.sale_price);
+    var newWhole = it.wholesale_price === '' || it.wholesale_price == null ? null : num_(it.wholesale_price);
+    if (newSale < 0 || (newWhole !== null && newWhole < 0)) fail_('Invalid selling price for ' + pr.name);
+    if (newSale <= 0 && !(pr.sale_price > 0)) fail_('Set the retail price for ' + pr.name + ' — it has no selling price yet');
     var sers = [];
     if (isSerialProduct_(pr)) {
       if (qty % 1 !== 0) fail_('Quantity for ' + pr.name + ' must be a whole number');
@@ -864,7 +886,7 @@ function purchaseCreate_(p, user) {
       });
     } else if (!isDecimalUnit_(pr.unit) && qty % 1 !== 0) fail_('Quantity for ' + pr.name + ' must be a whole number');
     var total = round_(qty * cost);
-    lines.push({ pr: pr, qty: qty, cost: cost, total: total, serials: sers });
+    lines.push({ pr: pr, qty: qty, cost: cost, total: total, serials: sers, sale: newSale, whole: newWhole });
     subtotal += total;
   });
 
@@ -890,7 +912,10 @@ function purchaseCreate_(p, user) {
     // weighted-average cost for non-serial items; latest cost otherwise
     var newCost = (oldStock > 0 && !isSerialProduct_(pr)) ? round_((oldStock * pr.cost_price + l.total) / (oldStock + l.qty), 4) : l.cost;
     update_('PurchaseItems', rows[index].id, { valuation: { stock: oldStock, cost: pr.cost_price, after_stock: round_(oldStock + l.qty, 4), after_cost: newCost } });
-    update_('Products', pr.id, { stock: round_(oldStock + l.qty, 4), cost_price: newCost });
+    var patch = { stock: round_(oldStock + l.qty, 4), cost_price: newCost };
+    if (l.sale > 0) patch.sale_price = l.sale;
+    if (l.whole !== null) patch.wholesale_price = l.whole;
+    update_('Products', pr.id, patch);
     l.serials.forEach(function (s) {
       newSerials.push({ product_id: pr.id, serial: s, purchase_id: pur.id, sale_id: '', status: 'in_stock', cost: l.cost, created_at: now_() });
       events.push({ serial: s, product_id: pr.id, product_name: pr.name, event: 'purchase', ref_type: 'purchase', ref_id: pur.id, ref_no: inv, party: pur.supplier_name, qty: 1, amount: l.cost, note: 'Stock received' });
@@ -1779,6 +1804,7 @@ var ROUTES = {
   'master.save':      r_('products', masterSave_, true),
   'master.delete':    r_('products', masterDelete_, true),
   'master.import':    r_('products', masterImport_, true),
+  'price.update':     r_('products', priceUpdate_, true),
 
   'customers.list':   r_(null, function () { return customersList_(); }),
   'customer.save':    r_(null, function (p, u) { if (!p.id && !can_(u, 'customers') && !can_(u, 'pos')) fail_('Permission denied'); return customerSave_(p, u); }, true),
