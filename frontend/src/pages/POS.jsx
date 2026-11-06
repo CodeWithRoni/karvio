@@ -119,8 +119,12 @@ export default function POS() {
       items: cart.map((l) => ({ product_id: l.product_id, qty: Number(l.qty), price: Number(l.price), serials: l.serials, warranty_days: l.warranty_days === '' ? 0 : l.warranty_days })),
       payments: payList
     }));
-    setDone({ ...res, change });
-    if (print) printInvoice(res);
+    if (print) {
+      // Complete & print: straight to the print dialog, no summary window.
+      printInvoice(res);
+      toast(`${res.sale.invoice_no} saved${change > 0 ? ` — return change ${money(change)}` : ''}${res.sms && !res.sms.ok ? ' (SMS failed)' : ''}`, 'ok');
+      searchRef.current?.focus();
+    } else setDone({ ...res, change });
     reset();
     refresh('products', 'customers');
   };
