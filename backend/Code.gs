@@ -859,10 +859,22 @@ function sendSms_(phone, message) {
       res = UrlFetchApp.fetch(fillTpl_(getSetting_('sms_url'), vars, 'url'), { method: 'get', muteHttpExceptions: true });
     }
     text = res.getContentText().slice(0, 300);
-    if (res.getResponseCode() >= 400) status = 'failed';
+    if (res.getResponseCode() >= 400 || smsReplyFailed_(text)) status = 'failed';
   } catch (e) { status = 'failed'; text = String(e.message || e); }
   insert_('SmsLog', { ts: now_(), phone: number, message: message, status: status, response: text });
   return { ok: status === 'sent', status: status, response: text };
+}
+/**
+ * Bangladeshi gateways (MRAM, BulkSMSBD and similar panels) answer HTTP 200 even when nothing was sent,
+ * with an error code in the body: a bare number such as "1003", or JSON like {"response_code":1007}.
+ * 202 / "SMS SUBMITTED" means accepted. Anything else is treated as sent.
+ */
+function smsReplyFailed_(text) {
+  var t = String(text || '').trim();
+  if (/^\d{4}$/.test(t) && t !== '0000') return true;                 // bare error code, e.g. 1003
+  var m = t.match(/"(?:response_code|code|status_code)"\s*:\s*"?(\d+)"?/i);
+  if (m && m[1] !== '202' && m[1] !== '200' && /^1\d{3}$/.test(m[1])) return true;
+  return /\b(invalid|insufficient|not found|error|failed|unauthori[sz]ed)\b/i.test(t) && !/submitted|success/i.test(t);
 }
 function itemsSummary_(lines) {
   var s = lines.map(function (l) { return l.name + ' x' + l.qty; }).join(', ');
@@ -879,8 +891,8 @@ function sendSaleSms_(sale, lines, customer) {
   return sendSms_(phone, msg);
 }
 function smsTest_(p, user) {
-  var r = sendSms_(p.phone, 'Test SMS from ' + getSetting_('shop_name') + ' — Karvio');
-  if (!r.ok) fail_('SMS failed: ' + r.response);
+  var r = sendSms_(p.phone, 'Test SMS from ' + getSetting_('shop_name') + ' - Karvio');
+  if (!r.ok) fail_('SMS failed — gateway replied: ' + (r.response || 'nothing') + '. Check the API key, Sender ID, balance and the API URL.');
   return r;
 }
 function smsLog_() { return all_('SmsLog').slice(-100).reverse().map(function (x) { var o = Object.assign({}, x); delete o._row; return o; }); }

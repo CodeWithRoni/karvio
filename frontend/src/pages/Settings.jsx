@@ -139,6 +139,8 @@ function DashboardSettings() {
 }
 
 const PRESETS = {
+  'MRAM Technologies (sms.mram.com.bd)': { sms_method: 'GET', sms_url: 'https://sms.mram.com.bd/smsapi?api_key={api_key}&type=text&contacts={number}&senderid={sender_id}&msg={message}&label=transactional', sms_number_format: 'intl' },
+  'MRAM Technologies — Bangla SMS (unicode)': { sms_method: 'GET', sms_url: 'https://sms.mram.com.bd/smsapi?api_key={api_key}&type=unicode&contacts={number}&senderid={sender_id}&msg={message}&label=transactional', sms_number_format: 'intl' },
   'BulkSMSBD (GET)': { sms_method: 'GET', sms_url: 'https://bulksmsbd.net/api/smsapi?api_key={api_key}&type=text&number={number}&senderid={sender_id}&message={message}', sms_number_format: 'intl' },
   'Generic JSON POST': { sms_method: 'POST', sms_body_type: 'json', sms_url: 'https://api.example.com/sms/send', sms_body: '{"api_key":"{api_key}","senderid":"{sender_id}","contacts":"{number}","msg":"{message}"}', sms_number_format: 'intl' },
   'Generic form POST': { sms_method: 'POST', sms_body_type: 'form', sms_url: 'https://api.example.com/sms/send', sms_body: 'api_key={api_key}&senderid={sender_id}&number={number}&message={message}', sms_number_format: 'local' }
@@ -161,6 +163,9 @@ function SmsSettings() {
         <Field label="Method"><select {...bind('sms_method')}><option>GET</option><option>POST</option></select></Field>
         <Field label="Phone number format"><select {...bind('sms_number_format')}><option value="intl">8801XXXXXXXXX</option><option value="local">01XXXXXXXXX</option></select></Field>
         <Field label="API URL" wide hint="Placeholders: {api_key} {sender_id} {number} {message}"><input {...bind('sms_url')} /></Field>
+        {/\((APIKEY|API KEY|NUMBER|Approved Sender ID|Message Content)\)/i.test(f.sms_url || '') && (
+          <p className="wide sms-warn" role="alert">This URL still has the provider's example text like <b>(APIKEY)</b> or <b>(NUMBER)</b>. Choose the <b>MRAM Technologies</b> preset above, or write <code>{'{api_key}'}</code>, <code>{'{number}'}</code>, <code>{'{sender_id}'}</code> and <code>{'{message}'}</code> in their place — Karvio fills them in for every SMS.</p>
+        )}
         {f.sms_method === 'POST' && <>
           <Field label="Body type"><select {...bind('sms_body_type')}><option value="form">Form (x-www-form-urlencoded)</option><option value="json">JSON</option></select></Field>
           <Field label="Request body" wide><textarea {...bind('sms_body')} /></Field>
