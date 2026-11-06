@@ -18,6 +18,8 @@ export const DoorIcon = ({ open = true, size = 20 }) => (
       : <circle cx="15.5" cy="12.5" r="1" fill="currentColor" stroke="none" />}
   </svg>
 );
+// Long shop names shrink a little so the whole name fits on one line.
+const nameSize = (n) => (n.length > 22 ? 12 : n.length > 17 ? 13 : 15);
 const NAV_KEY = 'karvio_nav_hidden';
 const readHidden = () => { try { return localStorage.getItem(NAV_KEY) === '1'; } catch { return false; } };
 
@@ -53,6 +55,14 @@ export default function Layout() {
   const loc = useLocation();
   const nav = useNavigate();
   useEffect(() => setOpen(false), [loc.pathname]);
+  // Phone menu: Esc closes it, and the page behind does not scroll while it is open.
+  useEffect(() => {
+    if (!open) return undefined;
+    const esc = (e) => e.key === 'Escape' && setOpen(false);
+    window.addEventListener('keydown', esc);
+    document.body.classList.add('nav-lock');
+    return () => { window.removeEventListener('keydown', esc); document.body.classList.remove('nav-lock'); };
+  }, [open]);
 
   useEffect(() => {
     const h = (e) => {
@@ -74,8 +84,13 @@ export default function Layout() {
   return (
     <div className={`shell ${open ? 'nav-open' : ''} ${hidden ? 'nav-hidden' : ''}`} onClick={(e) => open && e.target === e.currentTarget && setOpen(false)}>
       <aside className="rail" aria-hidden={hidden ? 'true' : undefined}>
-        <div className="brand"><Logo /><div className="brand-name">{settings.shop_name || 'Karvio'}<small>Karvio · Shop management & POS</small></div>
-          <button type="button" className="door-btn" onClick={() => (open ? setOpen(false) : toggleHidden())} title="Hide the menu" aria-label="Hide the menu"><DoorIcon open /></button>
+        <div className="brand">
+          <div className="brand-top">
+            <Logo size={24} />
+            <b className="brand-name" title={settings.shop_name || 'Karvio'} style={{ fontSize: nameSize(settings.shop_name || 'Karvio') }}>{settings.shop_name || 'Karvio'}</b>
+            <button type="button" className="door-btn" onClick={() => (open ? setOpen(false) : toggleHidden())} title="Hide the menu" aria-label="Hide the menu"><DoorIcon open size={16} /></button>
+          </div>
+          <small className="brand-sub">Karvio · Shop management & POS</small>
         </div>
         <nav className="nav">
           {groups.map((g) => (
@@ -92,9 +107,9 @@ export default function Layout() {
         </div>
       </aside>
       <div className="main">
-        {hidden && <button type="button" className="door-btn door-float" onClick={toggleHidden} title="Show the menu" aria-label="Show the menu"><DoorIcon open={false} /></button>}
+        {hidden && <button type="button" className="door-btn door-float" onClick={toggleHidden} title="Show the menu" aria-label="Show the menu"><DoorIcon open={false} size={16} /></button>}
         <div className="topbar">
-          <button onClick={() => setOpen(true)} aria-label="Open menu"><DoorIcon open={false} /></button>
+          <button onClick={() => setOpen(true)} aria-label="Open menu"><DoorIcon open={false} size={18} /></button>
           <span>{settings.shop_name || 'Karvio'}</span>
         </div>
         <main className="content"><Outlet /></main>
