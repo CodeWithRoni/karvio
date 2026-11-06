@@ -57,15 +57,16 @@ export function amountInWords(v) {
   return `${words}${ps ? ` and ${w99(ps)} Paisa` : ''} Only`;
 }
 const bizCss = `
-  .bdoc{font:12.5px/1.4 'Times New Roman',Times,'Hind Siliguri',serif;color:#000;background:#fff}
+  .bdoc{font:12.5px/1.4 'Times New Roman',Times,'Hind Siliguri',serif;color:#000;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .bdoc *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .bdoc *{box-sizing:border-box}
   .bdoc .bh{text-align:center;margin-bottom:8px}.bdoc .bh h1{margin:0 0 4px;font-size:30px;font-weight:700}.bdoc .bh div{font-size:11.5px}
-  .bdoc .bbar{background:#c8c8c8;border:1px solid #9a9a9a;text-align:center;font-weight:700;font-size:14px;padding:5px}
-  .bdoc .binfo{display:grid;grid-template-columns:1.15fr 1fr;gap:20px;background:#efefef;border:1px solid #c8c8c8;border-top:0;padding:10px 12px;margin-bottom:12px}
+  .bdoc .bbar{background:#b5b5b5;border:1px solid #8f8f8f;text-align:center;font-weight:700;font-size:14px;padding:5px}
+  .bdoc .binfo{display:grid;grid-template-columns:1.15fr 1fr;gap:20px;background:#ececec;border:1px solid #b5b5b5;border-top:0;padding:10px 12px;margin-bottom:12px}
   .bdoc .binfo table{width:100%;border-collapse:collapse}.bdoc .binfo td{padding:2px 0;vertical-align:top;border:0}
   .bdoc .binfo td.k{font-weight:700;width:118px;white-space:nowrap}.bdoc .binfo td.c{width:18px}
   .bdoc .bitems{width:100%;border-collapse:collapse}.bdoc .bitems th,.bdoc .bitems td{border:1px solid #333;padding:6px 7px;vertical-align:top}
-  .bdoc .bitems th{background:#e2e2e2;font-weight:700;text-align:center}.bdoc .bitems td.r{text-align:right}.bdoc .bitems td.cn{text-align:center}
+  .bdoc .bitems th{background:#d6d6d6;font-weight:700;text-align:center}.bdoc .bitems td.r{text-align:right}.bdoc .bitems td.cn{text-align:center}
   .bdoc .bitems thead{display:table-header-group}.bdoc .bitems tr{break-inside:avoid;page-break-inside:avoid}
   .bdoc .sn{font-size:11px;margin-top:2px;word-break:break-all}
   .bdoc .bsum{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;margin-top:8px;break-inside:avoid;page-break-inside:avoid}
@@ -84,7 +85,9 @@ const SOFTWARE_LINE = 'For Software: 01913354321';
 const bizPageCss = () => {
   const now = new Date(), q = (t) => JSON.stringify(t);
   const box = 'font:10.5px "Times New Roman",Times,serif;color:#000;border-top:1px solid #777;padding-top:4px;vertical-align:top';
+  // Empty top margin boxes stop the browser printing its own date / page title at the top.
   return `@page{size:A4;margin:12mm 12mm 16mm;
+    @top-left{content:' '}@top-center{content:' '}@top-right{content:' '}
     @bottom-left{content:${q(`Print Date: ${fdate(now.toISOString())}\u00a0\u00a0\u00a0\u00a0Print Time: ${now.toLocaleTimeString('en-US')}`)};${box}}
     @bottom-center{content:${q(SOFTWARE_LINE)};${box}}
     @bottom-right{content:"Page " counter(page) " of " counter(pages);${box}}}`;
