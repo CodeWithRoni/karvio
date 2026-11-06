@@ -268,7 +268,7 @@ function setupDatabase() {
     expense_categories: JSON.stringify(['Electricity', 'Internet', 'Food', 'Transport', 'Rent', 'Salary', 'Maintenance', 'Other']),
     sms_enabled: 'false', sms_method: 'GET',
     sms_url: 'https://bulksmsbd.net/api/smsapi?api_key={api_key}&type=text&number={number}&senderid={sender_id}&message={message}',
-    sms_body: '', sms_body_type: 'form', sms_api_key: '', sms_sender_id: '', sms_number_format: 'intl',
+    sms_body: '', sms_body_type: 'form', sms_api_key: '', sms_sender_id: '', sms_number_format: 'intl', sms_headers: '',
     sms_template: 'Dear {name}, thank you for shopping at {shop}. Items: {items}. Invoice {invoice}, Total {total}, Paid {paid}, Due {due}.'
   };
   Object.keys(defaults).forEach(function (k) { if (getSetting_(k, null) === null) setSetting_(k, defaults[k]); });
@@ -810,7 +810,7 @@ function expenseCategoriesSave_(p, user) {
 }
 function settingsSave_(p, user) {
   var allowed = ['shop_name', 'shop_phone', 'shop_tel', 'shop_email', 'shop_web', 'shop_social', 'shop_address', 'shop_footer', 'currency', 'invoice_prefix', 'receipt_width', 'low_stock_default', 'expense_categories',
-    'sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template',
+    'sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_headers',
     'dashboard_hidden', 'invoice_template', 'invoice_paper', 'invoice_custom_width', 'invoice_custom_height', 'invoice_note'];
   var vals = p.values || {};
   Object.keys(vals).forEach(function (k) {
@@ -848,15 +848,26 @@ function sendSms_(phone, message) {
   if (!number) return { ok: false, status: 'skipped', response: 'No phone number' };
   var vars = { api_key: getSetting_('sms_api_key'), sender_id: getSetting_('sms_sender_id'), number: number, message: message };
   var method = getSetting_('sms_method', 'GET').toUpperCase(), res, status = 'sent', text = '';
+  // Extra request headers, one "Name: value" per line (e.g. "Authorization: Bearer {api_key}" for OneCodeSoft v3).
+  var headers = {};
+  String(getSetting_('sms_headers', '') || '').split(/\r?\n/).forEach(function (line) {
+    var i = line.indexOf(':'); if (i < 1) return;
+    var k = line.slice(0, i).trim(), v = fillTpl_(line.slice(i + 1).trim(), vars, 'raw');
+    if (k && !/^content-type$/i.test(k)) headers[k] = v;
+  });
   try {
     if (method === 'POST') {
       var type = getSetting_('sms_body_type', 'form');
       var body = fillTpl_(getSetting_('sms_body'), vars, type === 'json' ? 'json' : 'form');
+      if (type === 'json') {
+        // leave out optional fields that are empty (e.g. no Sender ID set)
+        try { var o = JSON.parse(body); Object.keys(o).forEach(function (k) { if (o[k] === '') delete o[k]; }); body = JSON.stringify(o); } catch (e) {}
+      }
       res = UrlFetchApp.fetch(fillTpl_(getSetting_('sms_url'), vars, 'url'), {
-        method: 'post', contentType: type === 'json' ? 'application/json' : 'application/x-www-form-urlencoded', payload: body, muteHttpExceptions: true
+        method: 'post', contentType: type === 'json' ? 'application/json' : 'application/x-www-form-urlencoded', payload: body, headers: headers, muteHttpExceptions: true
       });
     } else {
-      res = UrlFetchApp.fetch(fillTpl_(getSetting_('sms_url'), vars, 'url'), { method: 'get', muteHttpExceptions: true });
+      res = UrlFetchApp.fetch(fillTpl_(getSetting_('sms_url'), vars, 'url'), { method: 'get', headers: headers, muteHttpExceptions: true });
     }
     text = res.getContentText().slice(0, 300);
     if (res.getResponseCode() >= 400 || smsReplyFailed_(text)) status = 'failed';
@@ -871,6 +882,16 @@ function sendSms_(phone, message) {
  */
 function smsReplyFailed_(text) {
   var t = String(text || '').trim();
+  // JSON gateways (OneCodeSoft v3 and similar): {"status":"error"} or a recipient result failed / blocked / spam
+  if (t.charAt(0) === '{') {
+    try {
+      var j = JSON.parse(t);
+      if (String(j.status).toLowerCase() === 'error' || j.success === false) return true;
+      var rs = (j.data && j.data.results) || j.results;
+      if (Array.isArray(rs) && rs.length && rs.every(function (r) { return /^(failed|blocked|spam|error|rejected)$/i.test(String(r.status)); })) return true;
+      if (String(j.status).toLowerCase() === 'success') return false;
+    } catch (e) {}
+  }
   if (/^\d{4}$/.test(t) && t !== '0000') return true;                 // bare error code, e.g. 1003
   var m = t.match(/"(?:response_code|code|status_code)"\s*:\s*"?(\d+)"?/i);
   if (m && m[1] !== '202' && m[1] !== '200' && /^1\d{3}$/.test(m[1])) return true;

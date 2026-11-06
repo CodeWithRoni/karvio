@@ -166,6 +166,22 @@ sandbox.UrlFetchApp.fetch = (url) => { seenUrl = url; return { getResponseCode: 
 Q('sms.test', {phone:'01700000000'});
 truthy(seenUrl.indexOf('contacts=8801700000000') > 0 && seenUrl.indexOf('msg=Test%20SMS') > 0, 'number in 8801 format, message url-encoded: ' + seenUrl);
 same(Q('sms.log', {})[0].status, 'sent');
+// OneCodeSoft v3: key in an Authorization header, JSON body, JSON reply (HTTP 200 even on errors)
+const ok1 = '{"status":"success","message":"SMS request processed.","data":{"senderid":"S","total_cost":0.35,"balance":499.65,"results":[{"to":"8801700000000","status":"sent","code":null,"message_id":"x","sms_count":1}]}}';
+const errBal = '{"status":"error","message":"Insufficient balance. Required 0.70, available 0.35."}';
+const spam = '{"status":"success","message":"SMS request processed.","data":{"results":[{"to":"8801700000000","status":"spam","code":null}]}}';
+same([ok1, errBal, spam].map((t) => sandbox.smsReplyFailed_(t)), [false, true, true]);
+let req = null;
+sandbox.UrlFetchApp.fetch = (url, opt) => { req = { url, opt }; return { getResponseCode: () => 200, getContentText: () => ok1 }; };
+Q('settings.save', {values:{sms_method:'POST', sms_body_type:'json', sms_url:'https://api.example.com/v3/send-sms', sms_body:'{"number":"{number}","message":"{message}","senderid":"{sender_id}"}', sms_headers:'Authorization: Bearer {api_key}\\nAccept: application/json', sms_api_key:'KEY123', sms_sender_id:''}});
+Q('sms.test', {phone:'01700000000'});
+same(JSON.stringify(req.opt.headers), JSON.stringify({Authorization:'Bearer KEY123', Accept:'application/json'}), 'key goes in the Authorization header');
+same(JSON.parse(req.opt.payload), {number:'8801700000000', message:'Test SMS from ' + sandbox.getSetting_('shop_name') + ' - Karvio'}, 'empty senderid left out');
+same(req.opt.contentType, 'application/json');
+same(Q('sms.log', {})[0].status, 'sent');
+sandbox.UrlFetchApp.fetch = () => ({ getResponseCode: () => 200, getContentText: () => errBal });
+truthy(/Insufficient balance/.test(QF('sms.test', {phone:'01700000000'})), 'error message from the gateway is shown');
+same(Q('sms.log', {})[0].status, 'failed');
 sandbox.UrlFetchApp.fetch = realFetch;
 console.log('Dues, reminders, return costing, dashboard and price history: ' + checks + ' checks passed');
 `;

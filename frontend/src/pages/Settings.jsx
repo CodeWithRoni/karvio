@@ -139,15 +139,16 @@ function DashboardSettings() {
 }
 
 const PRESETS = {
-  'MRAM Technologies (sms.mram.com.bd)': { sms_method: 'GET', sms_url: 'https://sms.mram.com.bd/smsapi?api_key={api_key}&type=text&contacts={number}&senderid={sender_id}&msg={message}&label=transactional', sms_number_format: 'intl' },
-  'MRAM Technologies — Bangla SMS (unicode)': { sms_method: 'GET', sms_url: 'https://sms.mram.com.bd/smsapi?api_key={api_key}&type=unicode&contacts={number}&senderid={sender_id}&msg={message}&label=transactional', sms_number_format: 'intl' },
-  'BulkSMSBD (GET)': { sms_method: 'GET', sms_url: 'https://bulksmsbd.net/api/smsapi?api_key={api_key}&type=text&number={number}&senderid={sender_id}&message={message}', sms_number_format: 'intl' },
-  'Generic JSON POST': { sms_method: 'POST', sms_body_type: 'json', sms_url: 'https://api.example.com/sms/send', sms_body: '{"api_key":"{api_key}","senderid":"{sender_id}","contacts":"{number}","msg":"{message}"}', sms_number_format: 'intl' },
-  'Generic form POST': { sms_method: 'POST', sms_body_type: 'form', sms_url: 'https://api.example.com/sms/send', sms_body: 'api_key={api_key}&senderid={sender_id}&number={number}&message={message}', sms_number_format: 'local' }
+  'OneCodeSoft (Bulk SMS API v3)': { sms_method: 'POST', sms_body_type: 'json', sms_url: 'https://PASTE-BASE-URL-FROM-DASHBOARD/v3/send-sms', sms_body: '{"number":"{number}","message":"{message}","senderid":"{sender_id}"}', sms_headers: 'Authorization: Bearer {api_key}\nAccept: application/json', sms_number_format: 'intl' },
+  'MRAM Technologies (sms.mram.com.bd)': { sms_headers: '', sms_method: 'GET', sms_url: 'https://sms.mram.com.bd/smsapi?api_key={api_key}&type=text&contacts={number}&senderid={sender_id}&msg={message}&label=transactional', sms_number_format: 'intl' },
+  'MRAM Technologies — Bangla SMS (unicode)': { sms_headers: '', sms_method: 'GET', sms_url: 'https://sms.mram.com.bd/smsapi?api_key={api_key}&type=unicode&contacts={number}&senderid={sender_id}&msg={message}&label=transactional', sms_number_format: 'intl' },
+  'BulkSMSBD (GET)': { sms_headers: '', sms_method: 'GET', sms_url: 'https://bulksmsbd.net/api/smsapi?api_key={api_key}&type=text&number={number}&senderid={sender_id}&message={message}', sms_number_format: 'intl' },
+  'Generic JSON POST': { sms_headers: '', sms_method: 'POST', sms_body_type: 'json', sms_url: 'https://api.example.com/sms/send', sms_body: '{"api_key":"{api_key}","senderid":"{sender_id}","contacts":"{number}","msg":"{message}"}', sms_number_format: 'intl' },
+  'Generic form POST': { sms_headers: '', sms_method: 'POST', sms_body_type: 'form', sms_url: 'https://api.example.com/sms/send', sms_body: 'api_key={api_key}&senderid={sender_id}&number={number}&message={message}', sms_number_format: 'local' }
 };
 
 function SmsSettings() {
-  const { f, setF, bind, save, busy } = useSettingsForm(['sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template']);
+  const { f, setF, bind, save, busy } = useSettingsForm(['sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_headers']);
   const [phone, setPhone] = useState('');
   const [tbusy, run] = useAction();
   const log = useApi('sms.log', {});
@@ -166,10 +167,14 @@ function SmsSettings() {
         {/\((APIKEY|API KEY|NUMBER|Approved Sender ID|Message Content)\)/i.test(f.sms_url || '') && (
           <p className="wide sms-warn" role="alert">This URL still has the provider's example text like <b>(APIKEY)</b> or <b>(NUMBER)</b>. Choose the <b>MRAM Technologies</b> preset above, or write <code>{'{api_key}'}</code>, <code>{'{number}'}</code>, <code>{'{sender_id}'}</code> and <code>{'{message}'}</code> in their place — Karvio fills them in for every SMS.</p>
         )}
+        {/PASTE-BASE-URL|BASE_URL/i.test(f.sms_url || '') && (
+          <p className="wide sms-warn" role="alert">Replace <b>PASTE-BASE-URL-FROM-DASHBOARD</b> with the API base address from your <b>OneCodeSoft Dashboard › API</b> page, keeping <code>/v3/send-sms</code> at the end. To try without sending or paying, use <code>/v3/sandbox/send-sms</code> instead.</p>
+        )}
         {f.sms_method === 'POST' && <>
           <Field label="Body type"><select {...bind('sms_body_type')}><option value="form">Form (x-www-form-urlencoded)</option><option value="json">JSON</option></select></Field>
           <Field label="Request body" wide><textarea {...bind('sms_body')} /></Field>
         </>}
+        <Field label="Request headers (optional)" wide hint="One per line, like  Authorization: Bearer {api_key}  — only for gateways that want the key in a header."><textarea {...bind('sms_headers')} rows={2} placeholder="Authorization: Bearer {api_key}" /></Field>
         <Field label="API key"><input type="password" {...bind('sms_api_key')} autoComplete="off" /></Field>
         <Field label="Sender ID"><input {...bind('sms_sender_id')} /></Field>
         <Field label="Message template" wide hint="Placeholders: {name} {shop} {items} {invoice} {total} {paid} {due} {date}"><textarea {...bind('sms_template')} /></Field>
