@@ -320,3 +320,35 @@ test('dashboard shows the stock summary and best sellers by product and group', 
   await tp.getByRole('tab', { name: 'Groups' }).click();
   await expect(tp).toContainText('Top selling product groups');
 });
+
+test('purchase shows the last purchase price and the new average cost', async ({ page, request }) => {
+  const sup = await call(request, 'supplier.save', { name: `Avg supplier ${Date.now()}` });
+  const p = await call(request, 'product.save', { name: 'Average Test Monitor', unit: 'pcs' });
+  await call(request, 'purchase.create', { supplier_id: sup.id, items: [{ product_id: p.id, qty: 4, cost: 10000, sale_price: 12000 }], payments: [] });
+  await page.goto('/#/purchases');
+  await page.getByRole('tab', { name: /New purchase/ }).click();
+  await page.getByRole('combobox', { name: 'Supplier', exact: true }).selectOption(sup.id);
+  await page.getByRole('combobox', { name: 'Search product' }).fill('Average Test Monitor');
+  await page.keyboard.press('Enter');
+  const row = page.locator('.pur-line', { hasText: 'Average Test Monitor' });
+  await expect(row.locator('.last-buy')).toContainText('10,000');
+  await expect(row.locator('.last-buy')).toContainText(sup.name);
+  // cost starts at the last purchase price; a different price shows the change and the new average
+  await expect(row.getByLabel('Unit cost for Average Test Monitor')).toHaveValue('10000');
+  await row.getByLabel('Quantity of Average Test Monitor').fill('4');
+  await row.getByLabel('Unit cost for Average Test Monitor').fill('12000');
+  await expect(row.locator('.last-buy .chg')).toContainText('2,000');
+  await expect(row.locator('.avg-next')).toContainText('11,000');
+});
+
+test('Advance Search has its own menu card above Daily Work', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.goto('/#/');
+  const cards = page.locator('.nav-card');
+  await expect(cards.first()).toContainText('Advance Search');
+  await expect(cards.first().locator('a')).toHaveCount(1);
+  await expect(cards.nth(1)).toContainText('Daily Work');
+  await expect(page.locator('.nav-card', { hasText: 'Stock' }).getByText('Advance Search')).toHaveCount(0);
+  await page.keyboard.press('Alt+8');
+  await expect(page).toHaveURL(/#\/history/);
+});

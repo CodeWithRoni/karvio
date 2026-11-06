@@ -112,7 +112,7 @@ input[type='checkbox'] { width: auto; min-height: 0; accent-color: var(--fiber);
   background: linear-gradient(160deg, color-mix(in srgb, var(--g) 9%, var(--panel)) 0%, var(--panel) 55%); box-shadow: 0 1px 0 color-mix(in srgb, var(--g) 25%, transparent) inset;
   transition: border-color .18s, box-shadow .18s, transform .18s; }
 .nav-card:hover { border-color: color-mix(in srgb, var(--g) 45%, var(--line)); box-shadow: 0 6px 18px -10px color-mix(in srgb, var(--g) 60%, transparent); }
-.nav-card.g-daily { --g: #f2c230; } .nav-card.g-stock { --g: #12b5b0; } .nav-card.g-money { --g: #3fb950; } .nav-card.g-admin { --g: #a78bfa; }
+.nav-card.g-search { --g: #38bdf8; } .nav-card.g-daily { --g: #f2c230; } .nav-card.g-stock { --g: #12b5b0; } .nav-card.g-money { --g: #3fb950; } .nav-card.g-admin { --g: #a78bfa; }
 .nav-group { display: flex; align-items: center; gap: 7px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 700; padding: 6px 8px 5px; }
 .nav-group i { width: 7px; height: 7px; border-radius: 50%; background: var(--g); box-shadow: 0 0 8px var(--g); }
 .nav a {
@@ -679,3 +679,13 @@ small.margin.bad { color: var(--bad); }
 .cost-peek small { display: block; color: var(--muted); font-size: 11px; font-weight: 500; }
 .oos-info .kv2 { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; }
 .oos-info table { width: 100%; border-collapse: collapse; margin-top: 6px; } .oos-info td { padding: 5px 4px; border-bottom: 1px solid var(--line); }
+
+/* purchase: last purchase price + new average cost */
+.last-buy { font-size: 12px; margin: 3px 0 1px; color: var(--text); line-height: 1.35; }
+.last-buy small { display: block; color: var(--muted); font-size: 11.5px; }
+.last-buy b { color: var(--fiber); white-space: nowrap; }
+.last-buy .chg { margin-left: 6px; font-weight: 700; padding: 0 6px; border-radius: 999px; font-size: 11.5px; white-space: nowrap; }
+.last-buy .chg.up { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.last-buy .chg.down { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.avg-next { display: block; margin-top: 3px; font-size: 11.5px; line-height: 1.3; text-align: right; color: #38bdf8; white-space: nowrap; }
+.avg-next b { font-weight: 800; } .avg-next .muted { display: block; font-size: 11px; }

@@ -25,6 +25,8 @@ const readHidden = () => { try { return localStorage.getItem(NAV_KEY) === '1'; }
 
 /** Navigation. `key` = Alt+key shortcut. */
 export const NAV = [
+  { group: 'Search' },
+  { to: '/history', label: 'Advance Search', key: '8' },
   { group: 'Daily Work' },
   { to: '/', label: 'Dashboard', key: '1', end: true },
   { to: '/pos', label: 'Point Of Sale', perm: 'pos', key: '2' },
@@ -37,7 +39,6 @@ export const NAV = [
   { to: '/purchases', label: 'Purchases', perm: 'purchase', key: '6' },
   { to: '/suppliers', label: 'Suppliers', perm: 'suppliers' },
   { to: '/warranty', label: 'Warranty Claims', perm: 'warranty', key: '7' },
-  { to: '/history', label: 'Advance Search', key: '8' },
   { group: 'Money & Reports' },
   { to: '/accounts', label: 'Cash, Bank & MFS', perm: 'accounts' },
   { to: '/expenses', label: 'Expenses', perm: 'expenses' },
@@ -79,7 +80,7 @@ export default function Layout() {
   const visible = items.filter((n, i) => !n.group || (items[i + 1] && !items[i + 1].group));
   const groups = [];
   visible.forEach((n) => { if (n.group) groups.push({ title: n.group, links: [] }); else if (groups.length) groups[groups.length - 1].links.push(n); });
-  const tone = { 'Daily Work': 'g-daily', Stock: 'g-stock', 'Money & Reports': 'g-money', Admin: 'g-admin' };
+  const tone = { Search: 'g-search', 'Daily Work': 'g-daily', Stock: 'g-stock', 'Money & Reports': 'g-money', Admin: 'g-admin' };
 
   return (
     <div className={`shell ${open ? 'nav-open' : ''} ${hidden ? 'nav-hidden' : ''}`} onClick={(e) => open && e.target === e.currentTarget && setOpen(false)}>

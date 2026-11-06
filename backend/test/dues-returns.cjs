@@ -52,6 +52,33 @@ same(prod(router.id).cost_price, 2000);
 const s5 = Q('sale.create', {items:[{product_id:router.id, qty:1, price:2600, serials:['R-1']}], payments:[{account_id:cash.id, amount:2600}]});
 same(s5.sale.profit, 600, 'resold serial keeps its 2000 cost');
 
+/* ---------- purchase price differs: the product cost is averaged ---------- */
+const ssd = Q('product.save', {name:'SSD', unit:'pcs'});
+Q('purchase.create', {supplier_id:sup.id, items:[{product_id:ssd.id, qty:5, cost:400, sale_price:600}], payments:[]});
+Q('purchase.create', {supplier_id:sup.id, items:[{product_id:ssd.id, qty:5, cost:500}], payments:[]});
+same([prod(ssd.id).stock, prod(ssd.id).cost_price], [10, 450], 'non-serial: (5x400 + 5x500) / 10');
+Q('purchase.create', {supplier_id:sup.id, items:[{product_id:ssd.id, qty:10, cost:300}], payments:[]});
+same(prod(ssd.id).cost_price, 375, '(10x450 + 10x300) / 20');
+
+// serial items: average of the units in stock; every unit still sells at its own cost
+const ups = Q('product.save', {name:'UPS', unit:'pcs', has_warranty:true, warranty_type:'serial', warranty_days:365});
+Q('purchase.create', {supplier_id:sup.id, items:[{product_id:ups.id, qty:1, cost:2000, sale_price:3000, serials:['U-1']}], payments:[]});
+same(prod(ups.id).cost_price, 2000);
+const upsBuy2 = Q('purchase.create', {supplier_id:sup.id, items:[{product_id:ups.id, qty:1, cost:2400, serials:['U-2']}], payments:[]});
+same(prod(ups.id).cost_price, 2200, 'serial: (2000 + 2400) / 2');
+const upsSale = Q('sale.create', {items:[{product_id:ups.id, qty:1, price:3000, serials:['U-2']}], payments:[{account_id:cash.id, amount:3000}]});
+same(upsSale.sale.profit, 600, 'U-2 sells at its own 2400 cost');
+same(prod(ups.id).cost_price, 2000, 'only U-1 (2000) left in stock');
+const upsRet = Q('sreturn.create', {sale_id:upsSale.sale.id, items:[{sale_item_id:upsSale.items[0].id, qty:1, serials:['U-2']}], refund:{account_id:cash.id}});
+same(prod(ups.id).cost_price, 2200, 'U-2 back in stock at 2400');
+Q('reverse', {type:'sreturn', id:upsRet.return.id, reason:'test', password:'admin123'});
+same(prod(ups.id).cost_price, 2000, 'return cancelled');
+Q('sreturn.create', {sale_id:upsSale.sale.id, items:[{sale_item_id:upsSale.items[0].id, qty:1, serials:['U-2']}], refund:{account_id:cash.id}});
+const upsPr = Q('preturn.create', {purchase_id:upsBuy2.purchase.id, items:[{purchase_item_id:upsBuy2.items[0].id, qty:1, serials:['U-2']}], refund:{mode:'adjust'}});
+same([prod(ups.id).stock, prod(ups.id).cost_price], [1, 2000], 'U-2 sent back to the supplier');
+const hist0 = Q('product.history', {product_id:ups.id});
+same(hist0.last_purchase.cost, 2400, 'last purchase price = the most recent purchase invoice');
+
 /* ---------- promised payment date + collection reminders ---------- */
 const cus = Q('customer.save', {name:'Rahim', phones:'01711111111'});
 Q('purchase.create', {supplier_id:sup.id, items:[{product_id:cable.id, qty:20, cost:100}], payments:[]});

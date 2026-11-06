@@ -913,6 +913,25 @@ function splitSerials_(v) {
   return (Array.isArray(v) ? v : String(v || '').split(/[\n,]+/)).map(function (s) { return String(s).trim(); }).filter(Boolean);
 }
 function isSerialProduct_(pr) { return !pr.service && pr.has_warranty && pr.warranty_type === 'serial'; }
+/**
+ * Serial-tracked products: the product's cost is the average of the purchase costs of the units now in stock.
+ * Each unit still sells at its own cost (profit stays exact); this keeps the shown cost and stock value right
+ * when units were bought at different prices. With nothing in stock the last cost is kept.
+ */
+function syncSerialCost_(ids) {
+  var want = ids ? {} : null; (ids || []).forEach(function (id) { want[id] = 1; });
+  var acc = {};
+  all_('SerialItems').forEach(function (s) {
+    if (s.status !== 'in_stock' || (want && !want[s.product_id])) return;
+    var a = acc[s.product_id] = acc[s.product_id] || { n: 0, sum: 0 }; a.n++; a.sum += num_(s.cost);
+  });
+  all_('Products').forEach(function (pr) {
+    if (!isSerialProduct_(pr) || (want && !want[pr.id]) || !acc[pr.id]) return;
+    var avg = round_(acc[pr.id].sum / acc[pr.id].n, 4);
+    if (Math.abs(avg - num_(pr.cost_price)) > 0.00005) update_('Products', pr.id, { cost_price: avg });
+  });
+}
+function serialIds_(lines) { return lines.filter(function (l) { return l.pr && isSerialProduct_(l.pr); }).map(function (l) { return l.pr.id; }); }
 // Service items (Inventory unticked: software install, Windows setup, repair charge) have no stock and no cost.
 function isService_(pr) { return !!pr && (pr.service === true || pr.service === 'true'); }
 function nameKey_(s) { return String(s || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
@@ -970,7 +989,12 @@ function purchaseCreate_(p, user) {
   lines.forEach(function (l, index) {
     var pr = l.pr, oldStock = pr.stock;
     // weighted-average cost for non-serial items; latest cost otherwise
-    var newCost = (oldStock > 0 && !isSerialProduct_(pr)) ? round_((oldStock * pr.cost_price + l.total) / (oldStock + l.qty), 4) : l.cost;
+    // Weighted average of what is in stock and what arrives now. Serial items: average of the in-stock units' own costs.
+    var newCost = l.cost;
+    if (isSerialProduct_(pr)) {
+      var held = all_('SerialItems').filter(function (s) { return s.product_id === pr.id && s.status === 'in_stock'; });
+      newCost = round_((sum_(held, function (s) { return num_(s.cost); }) + l.cost * l.qty) / (held.length + l.qty), 4);
+    } else if (oldStock > 0) newCost = round_((oldStock * pr.cost_price + l.total) / (oldStock + l.qty), 4);
     update_('PurchaseItems', rows[index].id, { valuation: { stock: oldStock, cost: pr.cost_price, after_stock: round_(oldStock + l.qty, 4), after_cost: newCost } });
     var patch = { stock: round_(oldStock + l.qty, 4), cost_price: newCost };
     if (l.sale > 0) patch.sale_price = l.sale;
@@ -986,6 +1010,7 @@ function purchaseCreate_(p, user) {
   pays.forEach(function (x) { acctTxn_(x.account_id, 'out', x.amount, 'purchase', pur.id, 'Purchase ' + inv, user, date); });
   if (supplier) insert_('SupplierLedger', { date: date, supplier_id: supplier.id, type: 'purchase', ref_id: pur.id, ref_no: inv, debit: paid, credit: total, note: 'Purchase ' + inv, voided: false });
   evBatch_(user, events);
+  syncSerialCost_(serialIds_(lines));
   audit_(user, 'purchase_create', inv);
   return purchaseDetail_({ id: pur.id });
 }
@@ -1115,6 +1140,7 @@ function saleCreate_(p, user) {
   pays.forEach(function (x) { acctTxn_(x.account_id, 'in', x.amount, 'sale', sale.id, 'Sale ' + inv, user, date); });
   if (customer) insert_('CustomerLedger', { date: date, customer_id: customer.id, type: 'sale', ref_id: sale.id, ref_no: inv, debit: total, credit: cashPaid, note: 'Invoice ' + inv, voided: false });
   evBatch_(user, events);
+  syncSerialCost_(serialIds_(lines));
   audit_(user, 'sale_create', inv);
 
   var detail = saleDetail_({ id: sale.id }, user), sms = null;
@@ -1237,6 +1263,7 @@ function sreturnCreate_(p, user) {
   if (refund > 0) acctTxn_(accId, 'out', refund, 'sreturn', ret.id, 'Refund ' + no, user, date);
   if (sale.customer_id) insert_('CustomerLedger', { date: date, customer_id: sale.customer_id, type: 'sreturn', ref_id: ret.id, ref_no: no, debit: refund, credit: total, note: (ret.type === 'exchange' ? 'Exchange ' : 'Return ') + no + ' (' + sale.invoice_no + ')', voided: false });
   evBatch_(user, events);
+  syncSerialCost_(serialIds_(lines));
   audit_(user, 'sreturn_create', no);
   return { return: ret, items: lines.map(function (l) { return { name: l.si.name, qty: l.qty, total: l.value }; }) };
 }
@@ -1313,6 +1340,7 @@ function preturnCreate_(p, user) {
   if (received > 0) acctTxn_(accId, 'in', received, 'preturn', ret.id, 'Supplier refund ' + no, user, date);
   if (pur.supplier_id) insert_('SupplierLedger', { date: date, supplier_id: pur.supplier_id, type: 'preturn', ref_id: ret.id, ref_no: no, debit: total, credit: received, note: 'Purchase return ' + no + ' (' + pur.invoice_no + ')', voided: false });
   evBatch_(user, events);
+  syncSerialCost_(serialIds_(lines));
   audit_(user, 'preturn_create', no);
   return { return: ret };
 }
@@ -1415,6 +1443,7 @@ function reverse_(p, user) {
   var fn = { sale: reverseSale_, purchase: reversePurchase_, sreturn: reverseSreturn_, preturn: reversePreturn_, cpay: reversePayment_, spay: reversePayment_, expense: reverseExpense_ }[p.type];
   if (!fn) fail_('Unknown transaction type');
   var r = fn(p, user, reason);
+  syncSerialCost_(null);
   audit_(user, 'reverse_' + p.type, { id: p.id, reason: reason });
   return r;
 }
@@ -1791,11 +1820,11 @@ function productHistory_(p, user) {
   var actSale = indexBy_(all_('Sales').filter(function (s) { return s.status === 'active'; }));
   var si = all_('SaleItems').filter(function (i) { return i.product_id === pr.id && actSale[i.sale_id]; });
   out.last_sales = si.slice(-3).reverse().map(function (i) { var s = actSale[i.sale_id]; return { price: i.price, qty: i.qty, date: s.date, invoice_no: s.invoice_no, customer: s.customer_name }; });
-  if (can_(user, 'cost')) {
+  if (can_(user, 'cost') || can_(user, 'purchase')) {
     var actPur = indexBy_(all_('Purchases').filter(function (x) { return x.status === 'active'; }));
     var pi = all_('PurchaseItems').filter(function (i) { return i.product_id === pr.id && actPur[i.purchase_id]; });
     var last = pi[pi.length - 1];
-    out.avg_cost = pr.cost_price;
+    if (can_(user, 'cost')) out.avg_cost = pr.cost_price;
     out.last_purchase = last ? { cost: last.cost, qty: last.qty, date: actPur[last.purchase_id].date, invoice_no: actPur[last.purchase_id].invoice_no, supplier: actPur[last.purchase_id].supplier_name } : null;
   }
   return out;
@@ -2061,7 +2090,7 @@ var ROUTES = {
   'product.delete':   r_('products', productDelete_, true),
   'serials.list':     r_(null, serialsList_),
   'serials.find':     r_(null, serialFind_),
-  'product.history':  r_('pos', productHistory_),
+  'product.history':  r_(null, function (p, u) { if (!can_(u, 'pos') && !can_(u, 'purchase')) fail_('Permission denied'); return productHistory_(p, u); }),
   'sale.promise':     r_('pos', salePromise_, true),
   'stock.adjust':     r_('products', stockAdjust_, true),
   'master.save':      r_('products', masterSave_, true),

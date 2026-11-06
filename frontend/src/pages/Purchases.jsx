@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useStore } from '../lib/store';
+import { useStore, shopDay } from '../lib/store';
 import { api } from '../lib/api';
 import { money, qty as fqty, fdate, monthStart, today, splitList, round2, isDecimalUnit } from '../lib/format';
 import DataTable from '../components/DataTable';
@@ -125,7 +125,7 @@ function PurchaseList({ list, f, setF, onOpen }) {
 function NewPurchase({ onDone }) {
   const { suppliers, products, refresh, toast } = useStore();
   const [supplier, setSupplier] = useState('');
-  const [date, setDate] = useState(today());
+  const [date, setDate] = useState(() => shopDay(0)); // the shop's date (server), not this computer's clock
   const [lines, setLines] = useState([]);
   const [openId, setOpenId] = useState(''); // the line whose serial box is expanded
   const [discount, setDiscount] = useState('');
@@ -139,6 +139,17 @@ function NewPurchase({ onDone }) {
   const pmap = Object.fromEntries(products.map((p) => [p.id, p]));
   const isSerial = (p) => !!p && !p.service && p.has_warranty && p.warranty_type === 'serial';
   const sup = suppliers.find((x) => x.id === supplier);
+  const canCost = useStore((st) => st.can('cost'));
+  const [lastBuy, setLastBuy] = useState({}); // product_id -> last purchase { cost, date, supplier, invoice_no } | null
+  const loadLastBuy = (id) => {
+    if (lastBuy[id] !== undefined) return;
+    api('product.history', { product_id: id }).then((h) => {
+      const lp = h.last_purchase || null;
+      setLastBuy((m) => ({ ...m, [id]: lp }));
+      // start from the price paid last time, unless the cost was already typed
+      if (lp && lp.cost > 0) setLines((ls) => ls.map((l) => (l.product_id === id && !l.costTyped ? { ...l, cost: lp.cost } : l)));
+    }).catch(() => setLastBuy((m) => ({ ...m, [id]: null })));
+  };
 
   // Cash is pre-selected once accounts are loaded; the amount stays empty (= buy on credit) until typed.
   const accCount = useStore((st) => st.accounts.length);
@@ -159,6 +170,7 @@ function NewPurchase({ onDone }) {
   const add = (p) => {
     if (lines.some((l) => l.product_id === p.id)) { setOpenId(p.id); return; }
     setLines([...lines, { product_id: p.id, qty: isSerial(p) ? 0 : 1, cost: p.cost_price || '', sale: p.sale_price || '', whole: p.wholesale_price || '', serials: [] }]);
+    loadLastBuy(p.id);
     setOpenId(isSerial(p) ? p.id : '');
   };
   const upd = (id, patch) => setLines((ls) => ls.map((l) => (l.product_id === id ? { ...l, ...patch } : l)));
@@ -228,13 +240,32 @@ function NewPurchase({ onDone }) {
               <tbody key={l.product_id} data-line={l.product_id} className={`pur-line ${open ? 'open' : ''}`}>
                 <tr onClick={() => serial && setOpenId(l.product_id)} className={serial ? 'clickable' : ''}>
                   <td><b>{p?.name}</b>
+                    {(() => {
+                      const lp = lastBuy[l.product_id];
+                      if (lp === undefined) return <div className="last-buy muted">Last purchase: …</div>;
+                      if (!lp) return <div className="last-buy muted">First purchase of this product</div>;
+                      return <div className="last-buy" title={lp.invoice_no}>
+                        <div>Last purchase <b>{money(lp.cost)}</b>
+                          {Number(l.cost) > 0 && Math.abs(Number(l.cost) - lp.cost) > 0.004 && <span className={Number(l.cost) > lp.cost ? 'chg up' : 'chg down'} title={Number(l.cost) > lp.cost ? 'Costlier than last time' : 'Cheaper than last time'}>{Number(l.cost) > lp.cost ? '▲' : '▼'}&nbsp;{money(Math.abs(Number(l.cost) - lp.cost), false)}</span>}
+                        </div>
+                        <small>{fdate(lp.date)}{lp.supplier ? ` · ${lp.supplier}` : ''} · {fqty(lp.qty, p?.unit)}</small>
+                      </div>;
+                    })()}
                     <div className="muted" style={{ fontSize: 12 }}>in stock {fqty(p?.stock, p?.unit)} · per {p?.unit}
                       {serial && !open && <> · <span className={l.serials.length ? 'sn-count' : 'sn-count bad'}>{l.serials.length ? `${l.serials.length} serial${l.serials.length === 1 ? '' : 's'} — click to edit` : 'serials missing'}</span></>}
                     </div>
                   </td>
                   <td><input type="number" min="0" step={isDecimalUnit(p?.unit) ? 'any' : 1} value={l.qty} readOnly={serial} title={serial ? 'Counted from the serial numbers' : undefined}
                     className={`${serial ? 'readonly-qty' : ''} ${tried && b.qty ? 'invalid' : ''}`} onChange={(e) => upd(l.product_id, { qty: e.target.value })} aria-label={`Quantity of ${p?.name}`} /></td>
-                  <td><input type="number" min="0" step="any" value={l.cost} onChange={(e) => upd(l.product_id, { cost: e.target.value })} aria-label={`Unit cost for ${p?.name}`} className={tried && b.cost ? 'invalid' : ''} /></td>
+                  <td><input type="number" min="0" step="any" value={l.cost} onChange={(e) => upd(l.product_id, { cost: e.target.value, costTyped: true })} aria-label={`Unit cost for ${p?.name}`} className={tried && b.cost ? 'invalid' : ''} />
+                    {(() => {
+                      // The product cost after this purchase: weighted average of the stock on hand and this purchase.
+                      const st = Number(p?.stock) || 0, avg = Number(p?.cost_price) || 0, q = Number(l.qty) || 0, c = Number(l.cost) || 0;
+                      if (!canCost || !(c > 0) || !(q > 0) || st <= 0 || Math.abs(c - avg) < 0.005) return null;
+                      const next = (st * avg + q * c) / (st + q);
+                      return <small className="avg-next" title={`Average cost after this purchase: (${fqty(st)} × ${money(avg, false)} + ${fqty(q)} × ${money(c, false)}) ÷ ${fqty(st + q)}`}>New avg <b>{money(Math.round(next * 100) / 100, false)}</b><span className="muted">now {money(avg, false)}</span></small>;
+                    })()}
+                  </td>
                   <td><input type="number" min="0" step="any" value={l.sale} onChange={(e) => upd(l.product_id, { sale: e.target.value })} aria-label={`Retail price for ${p?.name}`} className={tried && b.sale ? 'invalid' : ''} placeholder="Retail" />
                     {Number(l.cost) > 0 && Number(l.sale) > 0 && <small className={Number(l.sale) < Number(l.cost) ? 'margin bad' : 'margin'}>{Math.round(((l.sale - l.cost) / l.cost) * 100)}% margin</small>}</td>
                   <td><input type="number" min="0" step="any" value={l.whole} onChange={(e) => upd(l.product_id, { whole: e.target.value })} aria-label={`Wholesale price for ${p?.name}`} placeholder="—" /></td>
