@@ -6,7 +6,7 @@
     "name": "Karvio",
     "email": "CodeWithRoni@users.noreply.github.com"
   },
-  "description": "Karvio â€” shop management & POS for computer, IT and networking retail",
+  "description": "Karvio — shop management & POS for computer, IT and networking retail",
   "type": "module",
   "main": "desktop/main.cjs",
   "scripts": {
