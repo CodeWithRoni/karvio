@@ -7,6 +7,7 @@ import DataTable from '../components/DataTable';
 import { PageHead, Btn, Field, useAction, Tabs, useApi, Badge } from '../components/ui';
 import { DASH_CARDS, hiddenCards } from '../lib/dashboardCards';
 import { PAPERS, TEMPLATES, printInvoice } from '../lib/receipt';
+import { PRESETS, matchPreset } from '../lib/smsPresets';
 
 export default function Settings() {
   const can = useStore((s) => s.can);
@@ -138,15 +139,6 @@ function DashboardSettings() {
   );
 }
 
-const PRESETS = {
-  'OneCodeSoft (Bulk SMS API v3)': { sms_method: 'POST', sms_body_type: 'json', sms_url: 'https://PASTE-BASE-URL-FROM-DASHBOARD/v3/send-sms', sms_body: '{"number":"{number}","message":"{message}","senderid":"{sender_id}"}', sms_headers: 'Authorization: Bearer {api_key}\nAccept: application/json', sms_number_format: 'intl' },
-  'MRAM Technologies (sms.mram.com.bd)': { sms_headers: '', sms_method: 'GET', sms_url: 'https://sms.mram.com.bd/smsapi?api_key={api_key}&type=text&contacts={number}&senderid={sender_id}&msg={message}&label=transactional', sms_number_format: 'intl' },
-  'MRAM Technologies — Bangla SMS (unicode)': { sms_headers: '', sms_method: 'GET', sms_url: 'https://sms.mram.com.bd/smsapi?api_key={api_key}&type=unicode&contacts={number}&senderid={sender_id}&msg={message}&label=transactional', sms_number_format: 'intl' },
-  'BulkSMSBD (GET)': { sms_headers: '', sms_method: 'GET', sms_url: 'https://bulksmsbd.net/api/smsapi?api_key={api_key}&type=text&number={number}&senderid={sender_id}&message={message}', sms_number_format: 'intl' },
-  'Generic JSON POST': { sms_headers: '', sms_method: 'POST', sms_body_type: 'json', sms_url: 'https://api.example.com/sms/send', sms_body: '{"api_key":"{api_key}","senderid":"{sender_id}","contacts":"{number}","msg":"{message}"}', sms_number_format: 'intl' },
-  'Generic form POST': { sms_headers: '', sms_method: 'POST', sms_body_type: 'form', sms_url: 'https://api.example.com/sms/send', sms_body: 'api_key={api_key}&senderid={sender_id}&number={number}&message={message}', sms_number_format: 'local' }
-};
-
 function SmsSettings() {
   const { f, setF, bind, save, busy } = useSettingsForm(['sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_headers']);
   const [phone, setPhone] = useState('');
@@ -159,7 +151,11 @@ function SmsSettings() {
         <label className="check wide"><input type="checkbox" checked={f.sms_enabled === 'true'} onChange={(e) => setF({ ...f, sms_enabled: String(e.target.checked) })} /> Send an SMS after every sale that has a named customer</label>
         <p className="muted wide" style={{ margin: 0 }}>Walk-in sales never trigger an SMS. The API key is stored in your Google Sheet and never sent to the browser of non-admin users.</p>
         <Field label="Start from a preset" wide>
-          <select value="" onChange={(e) => e.target.value && setF({ ...f, ...PRESETS[e.target.value] })}><option value="">Choose a provider template…</option>{Object.keys(PRESETS).map((k) => <option key={k}>{k}</option>)}</select>
+          <select value={matchPreset(f)} aria-label="SMS provider preset" onChange={(e) => PRESETS[e.target.value] && setF({ ...f, ...PRESETS[e.target.value] })}>
+            <option value="" disabled>Choose a provider template…</option>
+            {Object.keys(PRESETS).map((k) => <option key={k} value={k}>{k}</option>)}
+            <option value="custom" disabled>Custom settings (my own)</option>
+          </select>
         </Field>
         <Field label="Method"><select {...bind('sms_method')}><option>GET</option><option>POST</option></select></Field>
         <Field label="Phone number format"><select {...bind('sms_number_format')}><option value="intl">8801XXXXXXXXX</option><option value="local">01XXXXXXXXX</option></select></Field>

@@ -352,3 +352,29 @@ test('Advance Search has its own menu card above Daily Work', async ({ page }) =
   await page.keyboard.press('Alt+8');
   await expect(page).toHaveURL(/#\/history/);
 });
+
+test('SMS preset box keeps showing the chosen provider, also after saving and reloading', async ({ page, request }) => {
+  const box = () => page.getByLabel('SMS provider preset');
+  const url = page.getByLabel('API URL');
+  await page.goto('/#/settings');
+  await page.getByRole('tab', { name: 'SMS gateway' }).click();
+  await box().selectOption('OneCodeSoft (Bulk SMS API v3)');
+  await expect(box()).toHaveValue('OneCodeSoft (Bulk SMS API v3)');
+  await expect(url).toHaveValue(/PASTE-BASE-URL/);
+  // the user pastes their own base address: still OneCodeSoft
+  await url.fill('https://app.example-ocs.com/api/v3/send-sms');
+  await expect(box()).toHaveValue('OneCodeSoft (Bulk SMS API v3)');
+  await page.getByRole('button', { name: 'Save SMS settings' }).click();
+  await expect(page.getByText('Settings saved').first()).toBeVisible();
+  await page.reload();
+  await page.getByRole('tab', { name: 'SMS gateway' }).click();
+  await expect(box()).toHaveValue('OneCodeSoft (Bulk SMS API v3)');
+  // switching to another provider follows it
+  await box().selectOption('MRAM Technologies — Bangla SMS (unicode)');
+  await expect(box()).toHaveValue('MRAM Technologies — Bangla SMS (unicode)');
+  await expect(url).toHaveValue(/type=unicode/);
+  // a hand-made address shows as custom, never the empty placeholder
+  await url.fill('https://my-own-gateway.bd/send?key={api_key}');
+  await expect(box()).toHaveValue('custom');
+  await expect(box().locator('option:checked')).toHaveText('Custom settings (my own)');
+});
