@@ -5,15 +5,19 @@ import { DEFAULT_API_URL } from '../config';
 import { fdatetime } from '../lib/format';
 import DataTable from '../components/DataTable';
 import { PageHead, Btn, Field, useAction, Tabs, useApi, Badge } from '../components/ui';
+import { DASH_CARDS, hiddenCards } from '../lib/dashboardCards';
+import { PAPERS, TEMPLATES, printInvoice } from '../lib/receipt';
 
 export default function Settings() {
   const can = useStore((s) => s.can);
   const [tab, setTab] = useState(can('settings') ? 'shop' : 'api');
-  const tabs = [...(can('settings') ? [['shop', 'Shop & receipts'], ['sms', 'SMS gateway']] : []), ['api', 'API connection'], ['me', 'My password']];
+  const tabs = [...(can('settings') ? [['shop', 'Shop'], ['invoice', 'Invoice'], ['dashboard', 'Dashboard'], ['sms', 'SMS gateway']] : []), ['api', 'API connection'], ['me', 'My password']];
   return (
     <>
       <PageHead title="Settings"><Tabs tabs={tabs} value={tab} onChange={setTab} /></PageHead>
       {tab === 'shop' && <ShopSettings />}
+      {tab === 'invoice' && <InvoiceSettings />}
+      {tab === 'dashboard' && <DashboardSettings />}
       {tab === 'sms' && <SmsSettings />}
       {tab === 'api' && <ApiSettings />}
       {tab === 'me' && <MyPassword />}
@@ -34,19 +38,95 @@ function useSettingsForm(keys) {
 }
 
 function ShopSettings() {
-  const { f, setF, bind, save, busy } = useSettingsForm(['shop_name', 'shop_phone', 'shop_address', 'shop_footer', 'currency', 'invoice_prefix', 'receipt_width', 'low_stock_default']);
+  const { f, setF, bind, save, busy } = useSettingsForm(['shop_name', 'shop_phone', 'shop_address', 'currency', 'invoice_prefix', 'low_stock_default']);
   return (
     <div className="card form">
       <Field label="Shop name" wide><input {...bind('shop_name')} /></Field>
       <Field label="Phone"><input {...bind('shop_phone')} /></Field>
       <Field label="Currency label"><input {...bind('currency')} placeholder="Tk" /></Field>
       <Field label="Address" wide><input {...bind('shop_address')} /></Field>
-      <Field label="Receipt footer" wide><input {...bind('shop_footer')} /></Field>
       <Field label="Invoice prefix" hint="Applies to new invoices."><input {...bind('invoice_prefix')} /></Field>
-      <Field label="Thermal printer width"><select {...bind('receipt_width')}><option value="80">80 mm</option><option value="58">58 mm</option></select></Field>
       <Field label="Default low-stock alert"><input type="number" {...bind('low_stock_default')} /></Field>
 
       <div className="wide row end"><Btn kind="primary" busy={busy} onClick={save}>Save settings</Btn></div>
+    </div>
+  );
+}
+
+/* ---------------- Invoice: template, paper size and footer note ---------------- */
+const SAMPLE = {
+  sale: { invoice_no: 'INV-000123', date: new Date().toISOString(), created_at: new Date().toISOString(), customer_name: 'Mehedi Hasan', user_name: 'Admin', subtotal: 7700, discount: 200, total: 7500, paid: 7000, due: 500, status: 'active', payments: [{ account_name: 'Cash', amount: 5000 }, { account_name: 'bKash', amount: 2000 }] },
+  items: [
+    { name: 'ROUTER DUAL BAND TP LINK C54', unit: 'pcs', qty: 1, price: 2200, total: 2200, serials: 'RT22C54A0012', warranty_days: 365, warranty_expiry: new Date(Date.now() + 365 * 864e5).toISOString(), warranty_type: 'serial' },
+    { name: 'Kingston 512GB NVMe SSD', unit: 'pcs', qty: 1, price: 4800, total: 4800, warranty_days: 1095, warranty_expiry: new Date(Date.now() + 1095 * 864e5).toISOString(), warranty_type: 'invoice' },
+    { name: 'Cat6 Cable', unit: 'meter', qty: 10, price: 70, total: 700 }
+  ],
+  customer: { phones: '01303393871', addresses: 'BERA BAZAR, PABNA', balance: 500 }
+};
+
+function InvoiceSettings() {
+  const { f, setF, bind, save, busy } = useSettingsForm(['invoice_template', 'invoice_paper', 'invoice_custom_width', 'invoice_note', 'shop_footer', 'receipt_width']);
+  const settings = useStore((s) => s.settings);
+  const paper = f.invoice_paper || String(f.receipt_width || 80);
+  const tpl = f.invoice_template || 'classic';
+  const saveAll = () => { if (paper === '58' || paper === '80') f.receipt_width = paper; return save(); };
+  // Try the unsaved choices: print the sample with them, then restore the saved settings.
+  const sample = () => {
+    const saved = useStore.getState().settings;
+    useStore.setState({ settings: { ...saved, ...f, invoice_paper: paper } });
+    try { printInvoice(SAMPLE); } finally { setTimeout(() => useStore.setState({ settings: saved }), 1500); }
+  };
+  return (
+    <div className="card form">
+      <div className="wide">
+        <span className="field-label">Invoice template</span>
+        <div className="tpl-pick" role="radiogroup" aria-label="Invoice template">
+          {TEMPLATES.map(([k, label]) => (
+            <button type="button" key={k} role="radio" aria-checked={tpl === k} className={`tpl-card ${tpl === k ? 'on' : ''}`} onClick={() => setF({ ...f, invoice_template: k })}>
+              <span className={`tpl-thumb t-${k}`}><i /><i /><i /><i /></span>
+              <b>{label}</b>
+              <small>{k === 'classic' ? 'Dark header, boxed tables' : k === 'modern' ? 'Colour banner, teal accents' : 'Clean lines, no shading'}</small>
+            </button>
+          ))}
+        </div>
+      </div>
+      <Field label="Paper size" hint="Used by Complete & print in the POS.">
+        <select value={paper} onChange={(e) => setF({ ...f, invoice_paper: e.target.value })}>{PAPERS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+      </Field>
+      {paper === 'custom' && <Field label="Custom width (mm)" hint="40 – 216 mm. Height grows with the invoice."><input type="number" min="40" max="216" {...bind('invoice_custom_width')} placeholder="e.g. 90" /></Field>}
+      <Field label="Thank-you line" wide hint="Centered under the totals."><input {...bind('shop_footer')} placeholder="Thank you for your business!" /></Field>
+      <Field label="Footer note" wide hint="Printed at the very bottom, left side, after “Note:”. Leave empty to hide.">
+        <textarea {...bind('invoice_note')} rows={3} placeholder="e.g. Goods once sold are not refundable. Warranty does not cover burn or physical damage." />
+      </Field>
+      {f.invoice_note && <p className="wide muted" style={{ margin: 0 }}>Preview: <b>Note:</b> {f.invoice_note}</p>}
+      <div className="wide row end">
+        <Btn onClick={sample}>Print a sample</Btn>
+        <Btn kind="primary" busy={busy} onClick={saveAll}>Save invoice settings</Btn>
+      </div>
+      {settings.invoice_paper !== paper && <p className="wide muted" style={{ margin: 0 }}>Not saved yet — the POS still prints on {PAPERS.find((x) => x[0] === (settings.invoice_paper || String(settings.receipt_width || 80)))?.[1]}.</p>}
+    </div>
+  );
+}
+
+/* ---------------- Dashboard: which cards to show ---------------- */
+function DashboardSettings() {
+  const settings = useStore((s) => s.settings);
+  const [hidden, setHidden] = useState(() => hiddenCards(settings));
+  const [busy, run] = useAction();
+  const toggle = (k) => setHidden((h) => (h.includes(k) ? h.filter((x) => x !== k) : [...h, k]));
+  const save = async () => { const s = await run(() => api('settings.save', { values: { dashboard_hidden: JSON.stringify(hidden) } }), 'Dashboard updated'); useStore.setState({ settings: s }); };
+  return (
+    <div className="card">
+      <p className="muted" style={{ marginTop: 0 }}>Tick the cards to show on the Dashboard. Unticked cards are hidden for everyone.</p>
+      <div className="dash-pick">
+        {DASH_CARDS.map(([k, label]) => (
+          <label key={k} className={`check dash-opt ${hidden.includes(k) ? '' : 'on'}`}><input type="checkbox" checked={!hidden.includes(k)} onChange={() => toggle(k)} /> {label}</label>
+        ))}
+      </div>
+      <div className="row end" style={{ marginTop: 14, gap: 8 }}>
+        <Btn onClick={() => setHidden([])}>Show all</Btn>
+        <Btn kind="primary" busy={busy} onClick={save}>Save dashboard</Btn>
+      </div>
     </div>
   );
 }

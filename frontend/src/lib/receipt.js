@@ -9,12 +9,27 @@ function shopHead(s) {
     ${s.shop_phone ? `<div>${esc(s.shop_phone)}</div>` : ''}</div>`;
 }
 
+/** Paper sizes for invoices (Settings → Invoice). Thermal widths in mm, or a full page. */
+export const PAPERS = [['80', '80 mm thermal'], ['58', '58 mm thermal'], ['a4', 'A4 page'], ['a5', 'A5 page'], ['custom', 'Custom width (mm)']];
+export const TEMPLATES = [['classic', 'Classic'], ['modern', 'Modern'], ['minimal', 'Minimal']];
+
+/** Print an invoice the way Settings says: template, paper size and footer note. `paperOverride` = '58' | '80' | 'a4' … */
+export function printInvoice(detail, paperOverride) {
+  const s = useStore.getState().settings;
+  const paper = paperOverride || s.invoice_paper || String(s.receipt_width || 80);
+  if (paper === 'a4' || paper === 'a5') return import('./salesDocs').then((m) => m.printSales([detail], paper));
+  const w = paper === 'custom' ? Math.min(Math.max(Number(s.invoice_custom_width) || 80, 40), 216) : Number(paper) || 80;
+  return printReceipt(detail, w);
+}
+
 /** detail = response of sale.detail / sale.create  ({sale, items, customer}) */
 export function printReceipt(detail, widthOverride) {
   const s = useStore.getState().settings;
   const w = Number(widthOverride || s.receipt_width || 80);
-  const paper = w === 58 ? 48 : 72; // printable width in mm
-  const fs = w === 58 ? 10 : 11.5;
+  const paper = w <= 60 ? w - 10 : w - 8; // printable width in mm
+  const fs = w <= 60 ? 10 : w >= 100 ? 12.5 : 11.5;
+  const tpl = s.invoice_template || 'classic';
+  const note = String(s.invoice_note || '').trim();
   const { sale, items, customer } = detail;
   const pays = Array.isArray(sale.payments) ? sale.payments : safeJson(sale.payments, []);
   const lines = items.map((i) => {
@@ -24,16 +39,21 @@ export function printReceipt(detail, widthOverride) {
       ${sers.length ? `<tr><td colspan="3" class="sm">S/N: ${esc(sers.join(', '))}</td></tr>` : ''}
       ${i.warranty_expiry ? `<tr><td colspan="3" class="sm">Warranty: ${esc(i.warranty_days)} days (till ${esc(fdate(i.warranty_expiry))})${i.warranty_type === 'invoice' ? ' — keep this receipt' : ''}</td></tr>` : ''}`;
   }).join('');
+  const font = tpl === 'minimal' ? "system-ui,'Hind Siliguri',sans-serif" : "'Courier New','Hind Siliguri',ui-monospace,monospace";
   printHtml(`
   <style>
     @page{size:${w}mm auto;margin:0}
-    body{margin:0;font:${fs}px/1.35 'Courier New','Hind Siliguri',ui-monospace,monospace;color:#000;width:${paper}mm;padding:3mm ${(w - paper) / 2}mm}
+    body{margin:0;font:${fs}px/1.35 ${font};color:#000;width:${paper}mm;padding:3mm ${(w - paper) / 2}mm}
     .c{text-align:center}.shop{font-size:${fs + 4}px}.r{text-align:right}.sm{font-size:${fs - 2}px}.nm{padding-top:4px;font-weight:700}
     table{width:100%;border-collapse:collapse}td{vertical-align:top;padding:0}
-    hr{border:0;border-top:1px dashed #000;margin:5px 0}.tot td{font-weight:700;font-size:${fs + 1}px}
+    hr{border:0;border-top:1px ${tpl === 'minimal' ? 'solid' : 'dashed'} #000;margin:5px 0}.tot td{font-weight:700;font-size:${fs + 1}px}
+    .t-modern .head{background:#000;color:#fff;padding:5px 4px;border-radius:4px}.t-modern .tot td{border-top:1.5px solid #000;padding-top:2px}
+    .t-modern .ttl{display:block;margin:4px 0;text-align:center;font-weight:800;letter-spacing:.2em}
+    .note{margin-top:6px;text-align:left;white-space:pre-wrap;font-size:${fs - 1}px}
   </style>
-  ${shopHead(s)}
-  <hr>
+  <div class="t-${esc(tpl)}">
+  <div class="head">${shopHead(s)}</div>
+  ${tpl === 'modern' ? '<span class="ttl">INVOICE</span>' : '<hr>'}
   <div>Invoice: <b>${esc(sale.invoice_no)}</b></div>
   <div>Date: ${esc(fdatetime(sale.created_at || sale.date))}</div>
   <div>Customer: ${esc(sale.customer_name)}${customer && customer.phones ? ' (' + esc(splitList(customer.phones)[0]) + ')' : ''}</div>
@@ -53,7 +73,9 @@ export function printReceipt(detail, widthOverride) {
   </table>
   <hr>
   <div class="c">${esc(s.shop_footer || 'Thank you!')}</div>
-  <div class="c sm">Goods sold are subject to warranty terms.</div>`);
+  <div class="c sm">Goods sold are subject to warranty terms.</div>
+  ${note ? `<div class="note"><b>Note:</b> ${esc(note)}</div>` : ''}
+  </div>`);
 }
 
 function safeJson(s, d) { try { return JSON.parse(s); } catch { return d; } }

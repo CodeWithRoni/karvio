@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../lib/store';
 import { api } from '../lib/api';
 import { money, qty as fqty, round2, isDecimalUnit } from '../lib/format';
-import { printReceipt } from '../lib/receipt';
+import { printReceipt, printInvoice } from '../lib/receipt';
 import { Btn, Modal, Field, Tabs, useAction, useHotkeys, useConfirm } from '../components/ui';
 import { ProductSearch, PaymentSplit, defaultPay, cleanPays, QuickCustomer, CustomerPicker, SerialChooser } from '../components/widgets';
 
@@ -106,7 +106,7 @@ export default function POS() {
       payments: payList
     }));
     setDone({ ...res, change });
-    if (print) printReceipt(res);
+    if (print) printInvoice(res);
     reset();
     refresh('products', 'customers');
   };
@@ -247,6 +247,7 @@ export default function POS() {
 
       <Modal open={!!done} onClose={() => { setDone(null); searchRef.current?.focus(); }} title="Sale completed" size="sm"
         footer={<>
+          <Btn kind="primary" onClick={() => printInvoice(done)}>Print invoice</Btn>
           <Btn onClick={() => printReceipt(done, 58)}>Print 58mm</Btn>
           <Btn onClick={() => printReceipt(done, 80)}>Print 80mm</Btn>
           <Btn kind="primary" onClick={() => { setDone(null); searchRef.current?.focus(); }}>Next sale</Btn>

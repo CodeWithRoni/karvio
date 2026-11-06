@@ -580,3 +580,20 @@ small.margin.bad { color: var(--bad); }
 .pcb-warn { display: block; margin-top: 4px; font-size: 11.5px; color: var(--bad); font-weight: 600; }
 
 .auth-logo { display: block; height: 52px; width: auto; max-width: 100%; background: #fff; border-radius: 12px; padding: 6px 12px; margin-bottom: 6px; }
+
+/* Settings → Invoice templates and Dashboard cards */
+.tpl-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; margin-top: 6px; }
+.tpl-card { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; text-align: left; padding: 12px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--text); font: inherit; cursor: pointer; }
+.tpl-card.on { border-color: var(--accent, #f2c230); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #f2c230) 22%, transparent); }
+.tpl-card small { color: var(--muted); font-size: 12px; }
+.tpl-thumb { display: flex; flex-direction: column; gap: 5px; width: 100%; height: 92px; padding: 8px; border-radius: 8px; background: #fff; margin-bottom: 6px; }
+.tpl-thumb i { display: block; height: 10px; border-radius: 2px; background: #cfd6df; }
+.tpl-thumb i:first-child { height: 20px; }
+.tpl-thumb.t-classic i:first-child { background: #fff; border-bottom: 3px solid #0d1b2a; }
+.tpl-thumb.t-classic i:nth-child(2) { background: #0d1b2a; }
+.tpl-thumb.t-modern i:first-child { background: #0d1b2a; border-right: 26px solid #f2c230; }
+.tpl-thumb.t-modern i:nth-child(2) { background: #12b5b0; }
+.tpl-thumb.t-minimal i { background: #fff; border-bottom: 1.5px solid #111; border-radius: 0; }
+.dash-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; }
+.dash-opt { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dash-opt.on { border-color: color-mix(in srgb, var(--ok) 50%, transparent); background: color-mix(in srgb, var(--ok) 7%, transparent); }

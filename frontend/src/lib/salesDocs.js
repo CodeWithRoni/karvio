@@ -22,7 +22,18 @@ const css = `
 const head = (title, right) => { const s = useStore.getState().settings; return `<div class="top"><div><h1>${esc(s.shop_name || 'Karvio')}</h1><div>${esc(s.shop_address || '')}</div><div>${esc(s.shop_phone || '')}</div></div><div><h2>${title}</h2><div style="text-align:right">${right}</div></div></div>`; };
 const pays = (x) => { try { return Array.isArray(x.payments) ? x.payments : JSON.parse(x.payments || '[]'); } catch { return []; } };
 const sers = (v) => splitList(String(v || '').replace(/\n/g, ','));
-const wrap = (blocks) => `<style>@page{size:A4;margin:12mm}body{margin:0}${css}.sdoc+.sdoc{page-break-before:always;break-before:page}</style>${blocks.join('')}`;
+// Invoice templates (Settings → Invoice). They restyle the same content.
+const tplCss = `
+  .sdoc.tpl-modern .top{border:0;background:#0d1b2a;color:#fff;padding:14px 16px;border-radius:10px}.sdoc.tpl-modern .top .sm{color:#cbd5e1}.sdoc.tpl-modern .top h2{color:#f2c230}
+  .sdoc.tpl-modern th{background:#12b5b0;color:#fff}.sdoc.tpl-modern .tot .g td{border-top-color:#12b5b0;color:#0d1b2a}
+  .sdoc.tpl-modern .box{border-color:#12b5b0;background:#f4fbfb}
+  .sdoc.tpl-minimal .top{border-bottom:1px solid #111}.sdoc.tpl-minimal th{background:#fff;color:#111;border-bottom:2px solid #111}
+  .sdoc.tpl-minimal th,.sdoc.tpl-minimal td{border-left:0;border-right:0}.sdoc.tpl-minimal .box{border:0;padding:0}.sdoc.tpl-minimal .tot .g td{border-top:1px solid #111}
+  .sdoc .note-line{margin-top:14px;text-align:left;white-space:pre-wrap;font-size:11.5px}
+`;
+const pageCss = (paper) => paper === 'a5' ? '@page{size:A5;margin:8mm}.sdoc{font-size:10.5px}.sdoc h1{font-size:16px}.sdoc h2{font-size:16px}' : '@page{size:A4;margin:12mm}';
+const wrap = (blocks, paper = 'a4') => `<style>${pageCss(paper)}body{margin:0}${css}${tplCss}.sdoc+.sdoc{page-break-before:always;break-before:page}</style>${blocks.join('')}`;
+const noteHtml = () => { const n = String(useStore.getState().settings.invoice_note || '').trim(); return n ? `<div class="note-line"><b>Note:</b> ${esc(n)}</div>` : ''; };
 
 /* ---------------- Sales invoices ---------------- */
 export function saleInvoiceHtml(d) {
@@ -33,7 +44,8 @@ export function saleInvoiceHtml(d) {
       <td>${esc(i.unit || 'pcs')}</td><td class="r">${esc(qty(i.qty))}</td><td class="r">${esc(money(i.price, false))}</td><td class="r">${esc(money(i.total, false))}</td></tr>`;
   }).join('');
   const pl = pays(s);
-  return `<div class="sdoc">${head('INVOICE', `<b>${esc(s.invoice_no)}</b><br>${esc(fdatetime(s.created_at || s.date))}<br><span class="sm">Served by ${esc(s.user_name || '')}</span>`)}
+  const tpl = useStore.getState().settings.invoice_template || 'classic';
+  return `<div class="sdoc tpl-${esc(tpl)}">${head('INVOICE', `<b>${esc(s.invoice_no)}</b><br>${esc(fdatetime(s.created_at || s.date))}<br><span class="sm">Served by ${esc(s.user_name || '')}</span>`)}
     ${s.status === 'cancelled' ? `<div class="cx">CANCELLED — ${esc(s.cancel_reason || '')}</div>` : ''}
     <div class="meta">
       <div class="box"><b class="t">Customer</b><b>${esc(s.customer_name || 'Walk-in')}</b>${c.phones ? `<div>Phone: ${esc(splitList(c.phones).join(', '))}</div>` : ''}${c.addresses ? `<div>${esc(String(c.addresses).split('|').join('; '))}</div>` : ''}</div>
@@ -49,10 +61,10 @@ export function saleInvoiceHtml(d) {
       ${d.customer && d.customer.balance !== undefined ? `<tr><td>Total balance due</td><td class="r">${esc(money(d.customer.balance, false))}</td></tr>` : ''}
     </table>
     ${d.returns && d.returns.length ? `<p class="sm">Returns: ${esc(d.returns.map((r) => `${r.return_no} (${money(r.total, false)}, ${r.status})`).join(', '))}</p>` : ''}
-    <div class="foot"><span>Printed ${esc(new Date().toLocaleString())}</span><span>Customer signature: ____________________</span></div></div>`;
+    <div class="foot"><span>Printed ${esc(new Date().toLocaleString())}</span><span>Customer signature: ____________________</span></div>${noteHtml()}</div>`;
 }
-export const printSales = (list) => printHtml(wrap(list.map(saleInvoiceHtml)));
-export const pdfSales = (list, filename) => pdfPages(list.map(saleInvoiceHtml), css, filename);
+export const printSales = (list, paper) => printHtml(wrap(list.map(saleInvoiceHtml), paper));
+export const pdfSales = (list, filename) => pdfPages(list.map(saleInvoiceHtml), css + tplCss, filename);
 export async function excelSales(list, filename) {
   const XLSX = await import('xlsx');
   const a = [['Invoice #', 'Date', 'Status', 'Customer', 'Phone', 'Address', 'Subtotal', 'Discount', 'Total', 'Paid', 'Due', 'Payment', 'Served by', 'Note']];

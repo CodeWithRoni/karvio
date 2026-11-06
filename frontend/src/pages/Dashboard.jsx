@@ -4,6 +4,7 @@ import { useStore } from '../lib/store';
 import { money, qty, fdate } from '../lib/format';
 import { useApi, PageHead, Tabs, Loading, ErrorBox, Btn, Empty } from '../components/ui';
 import LiveClock from '../components/LiveClock';
+import { useCardOn } from '../lib/dashboardCards';
 
 function Stat({ label, value, sub, tone }) {
   return <div className={`stat ${tone || ''}`}><span>{label}</span><b>{value}</b>{sub && <small>{sub}</small>}</div>;
@@ -12,6 +13,7 @@ function Stat({ label, value, sub, tone }) {
 export default function Dashboard() {
   const { data: d, loading, error, reload } = useApi('dashboard', {}, [], { refreshMs: 30000 });
   const can = useStore((s) => s.can);
+  const on = useCardOn();
   const [per, setPer] = useState('today');
   const [lb, setLb] = useState('month');
 
@@ -30,27 +32,27 @@ export default function Dashboard() {
 
       {error && <ErrorBox error={`Could not update the dashboard. Showing the last loaded balances. ${error}`} onRetry={reload} />}
       <div className="stats">
-        <Stat label="Sales" value={money(c.sales)} sub={`${c.invoices} invoices`} />
+        {on('sales') && <Stat label="Sales" value={money(c.sales)} sub={`${c.invoices} invoices`} />}
         {!d.limited && <>
-          <Stat label="Sales returns" value={money(c.sales_returns)} tone={c.sales_returns ? 'warn' : ''} />
-          <Stat label="Purchases" value={money(c.purchases)} />
-          <Stat label="Purchase returns" value={money(c.purchase_returns)} />
-          <Stat label="Expenses" value={money(c.expenses)} />
-          {c.gross_profit !== undefined && <Stat label="Gross profit" value={money(c.gross_profit)} sub="Sales − cost − returns" tone={c.gross_profit >= 0 ? 'up' : 'down'} />}
-          {c.net_profit !== undefined && <Stat label="Net profit" value={money(c.net_profit)} sub="Gross profit − expenses" tone={c.net_profit >= 0 ? 'up' : 'down'} />}
+          {on('sales_returns') && <Stat label="Sales returns" value={money(c.sales_returns)} tone={c.sales_returns ? 'warn' : ''} />}
+          {on('purchases') && <Stat label="Purchases" value={money(c.purchases)} />}
+          {on('purchase_returns') && <Stat label="Purchase returns" value={money(c.purchase_returns)} />}
+          {on('expenses') && <Stat label="Expenses" value={money(c.expenses)} />}
+          {on('gross_profit') && c.gross_profit !== undefined && <Stat label="Gross profit" value={money(c.gross_profit)} sub="Sales − cost − returns" tone={c.gross_profit >= 0 ? 'up' : 'down'} />}
+          {on('net_profit') && c.net_profit !== undefined && <Stat label="Net profit" value={money(c.net_profit)} sub="Gross profit − expenses" tone={c.net_profit >= 0 ? 'up' : 'down'} />}
         </>}
-        <Stat label="New dues on sales" value={money(c.due)} tone={c.due ? 'warn' : ''} />
+        {on('new_dues') && <Stat label="New dues on sales" value={money(c.due)} tone={c.due ? 'warn' : ''} />}
         {!d.limited && <>
-          <Link to="/customers" className="stat stat-link" title="Open customer dues">
+          {on('receivable') && <Link to="/customers" className="stat stat-link" title="Open customer dues">
             <span>Receivable</span><b style={{ color: d.receivable > 0 ? 'var(--warn)' : undefined }}>{money(d.receivable)}</b><small>Total customer dues</small>
-          </Link>
-          {can('suppliers')
+          </Link>}
+          {!on('payable') ? null : can('suppliers')
             ? <Link to="/suppliers" className="stat stat-link" title="Open supplier balances"><span>Payable</span><b style={{ color: d.payable > 0 ? 'var(--bad)' : undefined }}>{money(d.payable)}</b><small>Total you owe suppliers</small></Link>
             : <Stat label="Payable" value={money(d.payable)} sub="Total you owe suppliers" />}
         </>}
       </div>
 
-      {d.accounts && (
+      {on('balances') && d.accounts && (
         <section style={{ marginTop: 18 }}>
           <div className="card-head"><h2>Live balances</h2>{can('accounts') && <Link to="/accounts" className="link">Manage accounts</Link>}</div>
           <div className="patch">
@@ -69,8 +71,8 @@ export default function Dashboard() {
         </section>
       )}
 
-      <div className="split" style={{ marginTop: 18 }}>
-        <div className="card">
+      {(on('chart') || on('leaderboard')) && <div className={on('chart') && on('leaderboard') ? 'split' : ''} style={{ marginTop: 18 }}>
+        {on('chart') && <div className="card">
           <div className="card-head"><h2>Last 14 days</h2><span className="muted">Hover a bar for the amount</span></div>
           <div className="bars">
             {d.series.map((x, i) => (
@@ -86,9 +88,9 @@ export default function Dashboard() {
               <div><span>Warranty: pending / at vendor / ready</span><b>{d.claims.pending} / {d.claims.vendor} / {d.claims.ready}</b></div>
             </div>
           )}
-        </div>
+        </div>}
 
-        {d.leaderboard ? (
+        {!on('leaderboard') ? null : d.leaderboard ? (
           <div className="card">
             <div className="card-head"><h2>Staff leaderboard</h2><Tabs tabs={[['today', 'Today'], ['month', 'Month'], ['total', 'All']]} value={lb} onChange={setLb} /></div>
             {d.leaderboard[lb].length ? (
@@ -111,9 +113,9 @@ export default function Dashboard() {
             {d.recent.length ? d.recent.map((s) => <div key={s.id} className="row" style={{ padding: '6px 0' }}><Link to={`/sales/${s.id}`}>{s.invoice_no}</Link><span className="muted">{s.customer_name}</span><span className="spacer" /><b className="num">{money(s.total, false)}</b></div>) : <Empty title="No sales yet today" />}
           </div>
         )}
-      </div>
+      </div>}
 
-      <div className="card" style={{ marginTop: 14 }}>
+      {on('low_stock') && <div className="card" style={{ marginTop: 14 }}>
         <div className="card-head"><h2>Low stock</h2><Link to="/stock?low=1" className="link">Open stock explorer</Link></div>
         {d.low_stock.length ? (
           <div className="dt-scroll"><table className="lb"><tbody>
@@ -122,7 +124,7 @@ export default function Dashboard() {
             ))}
           </tbody></table></div>
         ) : <Empty title="Stock levels look healthy" />}
-      </div>
+      </div>}
     </>
   );
 }

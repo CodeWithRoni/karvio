@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { api } from '../lib/api';
 import { money, qty as fqty, fdate, fdatetime, monthStart, today, splitList, round2, isDecimalUnit } from '../lib/format';
-import { printReceipt } from '../lib/receipt';
+import { printReceipt, printInvoice } from '../lib/receipt';
 import DataTable from '../components/DataTable';
 import { excelSales, pdfSales, printSales } from '../lib/salesDocs';
 // Full invoices for ticked rows (fetched in one call).
@@ -94,6 +94,7 @@ function SaleDetail({ id, onClose, onChanged }) {
           <button onClick={() => pdfSales([data], `invoice-${s.invoice_no}.pdf`)}>PDF</button>
           <button onClick={() => printSales([data])}>Print A4</button>
         </div>
+        <Btn onClick={() => printInvoice(data)}>Print (default)</Btn>
         <Btn onClick={() => printReceipt(data, 58)}>Print 58mm</Btn>
         <Btn kind="primary" onClick={() => printReceipt(data, 80)}>Print 80mm</Btn>
       </>}>
