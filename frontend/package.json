@@ -1,9 +1,12 @@
 {
-  "name": "shop-erp",
+  "name": "karvio",
   "private": true,
   "version": "1.0.2",
-  "author": "ShopERP",
-  "description": "Shop Management & POS for computer / IT / networking retail — React frontend for the Google Apps Script backend",
+  "author": {
+    "name": "Karvio",
+    "email": "CodeWithRoni@users.noreply.github.com"
+  },
+  "description": "Karvio — shop management & POS for computer, IT and networking retail",
   "type": "module",
   "main": "desktop/main.cjs",
   "scripts": {
@@ -11,17 +14,20 @@
     "build": "vite build",
     "preview": "vite preview",
     "desktop": "vite build && electron .",
-    "desktop:build": "npm run icons && vite build && electron-builder --publish never",
-    "desktop:build:win": "npm run icons && vite build && electron-builder --win nsis --x64 --publish never",
-    "desktop:build:mac": "npm run icons && vite build && electron-builder --mac dmg --publish never",
+    "desktop:build": "vite build && electron-builder --publish never",
+    "desktop:build:win": "vite build && electron-builder --win nsis --x64 --publish never",
+    "desktop:build:mac": "vite build && electron-builder --mac dmg --publish never",
     "tauri": "tauri",
-    "tauri:build": "npm run icons && tauri build",
-    "icons": "tauri icon public/app-icon.svg",
+    "tauri:build": "tauri build",
     "test": "node ../backend/test/simulate.js && node ../backend/test/valuation.js && node ../backend/test/categories.cjs",
     "test:e2e": "playwright test",
-    "verify:live": "node ../backend/test/live.cjs"
+    "verify:live": "node ../backend/test/live.cjs",
+    "desktop:build:linux": "vite build && electron-builder --linux deb --x64 --publish never",
+    "android:prepare": "vite build && npx cap add android && node scripts/native-icons.mjs android && npx cap sync android",
+    "ios:prepare": "vite build && npx cap add ios && node scripts/native-icons.mjs ios && npx cap sync ios"
   },
   "dependencies": {
+    "@capacitor/core": "^8.6.0",
     "@fontsource/hind-siliguri": "^5.3.0",
     "@fontsource/manrope": "^5.3.0",
     "html2canvas": "^1.4.1",
@@ -34,6 +40,9 @@
     "zustand": "^5.0.1"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/cli": "^8.6.0",
+    "@capacitor/ios": "^8.6.0",
     "@playwright/test": "^1.64.1",
     "@tauri-apps/cli": "^2.12.4",
     "@vitejs/plugin-react": "^4.3.4",
@@ -42,26 +51,89 @@
     "vite": "^5.4.11"
   },
   "build": {
-    "appId": "com.shoperp.app",
-    "productName": "ShopERP",
+    "appId": "com.karvio.erp",
+    "productName": "Karvio",
+    "copyright": "Karvio",
+    "artifactName": "Karvio-${version}-${os}-${arch}.${ext}",
     "files": [
       "dist/**/*",
       "desktop/**/*",
+      "branding/linux/256x256.png",
       "package.json"
     ],
+    "directories": {
+      "output": "release",
+      "buildResources": "branding"
+    },
     "win": {
-      "target": "nsis",
-      "icon": "src-tauri/icons/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "branding/windows/icon.ico",
       "signExecutable": false
     },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Karvio",
+      "installerIcon": "branding/windows/icon.ico",
+      "uninstallerIcon": "branding/windows/icon.ico"
+    },
     "mac": {
-      "target": "dmg",
-      "icon": "src-tauri/icons/icon.icns",
-      "category": "public.app-category.business"
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "branding/macos/icon.icns",
+      "category": "public.app-category.business",
+      "identity": null
     },
-    "directories": {
-      "output": "release"
+    "dmg": {
+      "title": "Karvio ${version}"
     },
-    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }
-  }
+    "linux": {
+      "target": [
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "branding/linux",
+      "category": "Office",
+      "executableName": "karvio",
+      "synopsis": "Shop management & POS",
+      "maintainer": "Karvio <CodeWithRoni@users.noreply.github.com>",
+      "desktop": {
+        "entry": {
+          "Name": "Karvio",
+          "Comment": "Shop management & POS"
+        }
+      },
+      "syncDesktopName": true
+    },
+    "deb": {
+      "packageName": "karvio"
+    },
+    "publish": null
+  },
+  "homepage": "https://codewithroni.github.io/shop-erp/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CodeWithRoni/shop-erp.git"
+  },
+  "desktopName": "karvio.desktop"
 }

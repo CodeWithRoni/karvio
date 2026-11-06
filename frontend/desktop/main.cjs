@@ -4,7 +4,7 @@ const path = require('path');
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 1440, height: 900, minWidth: 1024, minHeight: 640, backgroundColor: '#0d1b2a', title: 'ShopERP',
+    width: 1440, height: 900, minWidth: 1024, minHeight: 640, backgroundColor: '#0d1b2a', title: 'Karvio', icon: path.join(__dirname, '..', 'branding', 'linux', '256x256.png'),
     webPreferences: { contextIsolation: true, sandbox: true }
   });
   Menu.setApplicationMenu(null);

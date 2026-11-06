@@ -1,4 +1,4 @@
-# ShopERP
+# Karvio
 
 Shop management & POS for a computer, IT accessories and networking retail/wholesale business.
 

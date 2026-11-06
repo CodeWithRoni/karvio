@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useStore } from '../lib/store';
 import { getApiConfig, setApiConfig, testConnection, endpoint } from '../lib/api';
 import { Btn, Field } from '../components/ui';
-import { Logo } from '../components/Layout';
 
 export default function Login() {
   const login = useStore((s) => s.login);
@@ -31,7 +30,7 @@ export default function Login() {
   return (
     <div className="auth">
       <div className="auth-card">
-        <Logo size={40} />
+        <img className="auth-logo" src={`${import.meta.env.BASE_URL}karvio-logo.png`} alt="Karvio" />
         {showApi ? (
           <>
             <h1>Connect your shop</h1>

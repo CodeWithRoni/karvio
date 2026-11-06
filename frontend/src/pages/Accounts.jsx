@@ -59,7 +59,7 @@ function AccountForm({ initial, onClose, onDone }) {
         <Field label="Account name" wide><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="e.g. bKash Merchant, Islami Bank" autoFocus /></Field>
         <Field label="Type" wide><select value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>{TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
         <Field label="Account / wallet number" wide><input value={f.number} onChange={(e) => setF({ ...f, number: e.target.value })} /></Field>
-        <Field label="Opening balance" wide hint="The balance on the day you start using ShopERP."><input type="number" step="any" value={f.opening_balance} onChange={(e) => setF({ ...f, opening_balance: e.target.value })} /></Field>
+        <Field label="Opening balance" wide hint="The balance on the day you start using Karvio."><input type="number" step="any" value={f.opening_balance} onChange={(e) => setF({ ...f, opening_balance: e.target.value })} /></Field>
         {f.id && <label className="check"><input type="checkbox" checked={f.active} onChange={(e) => setF({ ...f, active: e.target.checked })} /> Active</label>}
       </div>
     </Modal>

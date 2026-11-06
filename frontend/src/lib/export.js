@@ -45,7 +45,7 @@ export async function exportPdf(title, columns, rows, totals) {
   const autoTable = auto.default;
   const s = useStore.getState().settings;
   const doc = new jsPDF({ orientation: columns.length > 7 ? 'landscape' : 'portrait', unit: 'pt', format: 'a4' });
-  doc.setFontSize(14); doc.text(s.shop_name || 'ShopERP', 40, 40);
+  doc.setFontSize(14); doc.text(s.shop_name || 'Karvio', 40, 40);
   doc.setFontSize(10); doc.text(title, 40, 58);
   doc.setFontSize(8); doc.text(`Generated ${new Date().toLocaleString()}`, 40, 72);
   const body = rows.map((r) => columns.map((c) => cell(c, r)));
@@ -78,7 +78,7 @@ async function exportBengaliPdf(title, columns, rows, totals) {
     const createPage = () => {
       root.querySelector('.pdf-content')?.remove();
       const content = document.createElement('div'); content.className = 'pdf-content';
-      content.innerHTML = `<h1>${esc(useStore.getState().settings.shop_name || 'ShopERP')}</h1><h2>${esc(title)}</h2><p>${esc(new Date().toLocaleString())}</p><table><thead><tr>${columns.map((c) => `<th>${esc(c.label)}</th>`).join('')}</tr></thead><tbody></tbody></table>`;
+      content.innerHTML = `<h1>${esc(useStore.getState().settings.shop_name || 'Karvio')}</h1><h2>${esc(title)}</h2><p>${esc(new Date().toLocaleString())}</p><table><thead><tr>${columns.map((c) => `<th>${esc(c.label)}</th>`).join('')}</tr></thead><tbody></tbody></table>`;
       root.appendChild(content);
       return content.querySelector('tbody');
     };
@@ -124,7 +124,7 @@ export function printTable(title, columns, rows, totals, subtitle = '') {
       th{background:#eef1f6} .r{text-align:right} tfoot td{font-weight:700;background:#f4f6fa}
       @page{size:A4 ${columns.length > 7 ? 'landscape' : 'portrait'};margin:12mm}
     </style>
-    <h1>${esc(s.shop_name || 'ShopERP')}</h1>
+    <h1>${esc(s.shop_name || 'Karvio')}</h1>
     <h2>${esc(title)}${subtitle ? ' — ' + esc(subtitle) : ''} · Printed ${esc(new Date().toLocaleString())}</h2>
     <table><thead><tr>${head}</tr></thead><tbody>${body || `<tr><td colspan="${columns.length}">No data</td></tr>`}</tbody>${foot}</table>`);
 }

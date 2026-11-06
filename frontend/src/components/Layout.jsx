@@ -3,11 +3,9 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { Btn } from './ui';
 
+// Karvio app mark (files in public/, so they work on GitHub Pages, desktop and mobile builds).
 export const Logo = ({ size = 28 }) => (
-  <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden>
-    <rect width="32" height="32" rx="7" fill="var(--panel-2)" stroke="var(--line)" />
-    <path d="M7 21l5-10 4 7 3-5 6 9" fill="none" stroke="var(--fiber)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
+  <img src={`${import.meta.env.BASE_URL}karvio-mark.png`} width={size} height={size} alt="" aria-hidden="true" style={{ borderRadius: size * 0.22, flex: 'none' }} />
 );
 
 /** Navigation. `key` = Alt+key shortcut. */
@@ -58,7 +56,7 @@ export default function Layout() {
   return (
     <div className={`shell ${open ? 'nav-open' : ''}`} onClick={(e) => open && e.target === e.currentTarget && setOpen(false)}>
       <aside className="rail">
-        <div className="brand"><Logo /><div>{settings.shop_name || 'ShopERP'}<small>Shop management & POS</small></div></div>
+        <div className="brand"><Logo /><div>{settings.shop_name || 'Karvio'}<small>Karvio · Shop management & POS</small></div></div>
         <nav className="nav">
           {visible.map((n, i) => n.group
             ? <div className="nav-group" key={'g' + i}>{n.group}</div>
@@ -73,7 +71,7 @@ export default function Layout() {
       <div className="main">
         <div className="topbar">
           <button onClick={() => setOpen(true)} aria-label="Open menu">☰</button>
-          <span>{settings.shop_name || 'ShopERP'}</span>
+          <span>{settings.shop_name || 'Karvio'}</span>
         </div>
         <main className="content"><Outlet /></main>
       </div>

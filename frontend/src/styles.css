@@ -1,4 +1,4 @@
-/* ShopERP — design tokens
+/* Karvio — design tokens
  * Palette borrowed from fibre-optic patch cords: single-mode yellow is the action colour,
  * OM3 aqua is information, OM4 violet marks warranty. Navy slate is the rack.
  */
@@ -578,3 +578,5 @@ small.margin.bad { color: var(--bad); }
 
 .pcb-hint { display: block; margin-top: 4px; font-size: 11.5px; color: var(--aqua); }
 .pcb-warn { display: block; margin-top: 4px; font-size: 11.5px; color: var(--bad); font-weight: 600; }
+
+.auth-logo { display: block; height: 52px; width: auto; max-width: 100%; background: #fff; border-radius: 12px; padding: 6px 12px; margin-bottom: 6px; }

@@ -1,0 +1,135 @@
+# Builds Karvio installers for every platform and attaches them to a GitHub Release.
+# Run it from GitHub → Actions → "Build Karvio apps" → Run workflow, or push a tag like v1.0.3.
+#   Windows .exe (NSIS installer) · macOS .dmg (Intel + Apple Silicon) · Linux .deb
+#   Android .apk (debug-signed, installs directly) · iOS .ipa (unsigned — sign it before installing)
+name: Build Karvio apps
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: frontend
+
+jobs:
+  desktop:
+    name: Desktop (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Windows, os: windows-latest, args: '--win nsis --x64' }
+          - { name: macOS, os: macos-latest, args: '--mac dmg --x64 --arm64' }
+          - { name: Linux, os: ubuntu-latest, args: '--linux deb --x64' }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: frontend/package-lock.json }
+      - run: npm ci
+      - run: npm run build
+      - name: Package
+        run: npx electron-builder ${{ matrix.args }} --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: karvio-${{ matrix.name }}
+          path: |
+            frontend/release/*.exe
+            frontend/release/*.dmg
+            frontend/release/*.deb
+          if-no-files-found: error
+
+  android:
+    name: Android (.apk)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: frontend/package-lock.json }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - run: npm ci
+      - run: npm run build
+      - run: npx cap add android
+      - run: node scripts/native-icons.mjs android
+      - run: npx cap sync android
+      - name: Build APK
+        working-directory: frontend/android
+        run: |
+          VERSION=$(node -p "require('../package.json').version")
+          sed -i "s/versionName \".*\"/versionName \"$VERSION\"/" app/build.gradle
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+          mkdir -p ../release
+          cp app/build/outputs/apk/debug/app-debug.apk "../release/Karvio-$VERSION-android.apk"
+      - uses: actions/upload-artifact@v4
+        with: { name: karvio-Android, path: frontend/release/*.apk, if-no-files-found: error }
+
+  ios:
+    name: iOS (.ipa, unsigned)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: frontend/package-lock.json }
+      - run: npm ci
+      - run: npm run build
+      - run: npx cap add ios
+      - run: node scripts/native-icons.mjs ios
+      - run: npx cap sync ios
+      - name: Build unsigned IPA
+        working-directory: frontend/ios/App
+        run: |
+          VERSION=$(node -p "require('../../package.json').version")
+          if [ -d App.xcworkspace ]; then SRC="-workspace App.xcworkspace"; else SRC="-project App.xcodeproj"; fi
+          xcodebuild $SRC -scheme App -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath build MARKETING_VERSION="$VERSION" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+          mkdir -p Payload ../../release
+          cp -R build/Build/Products/Release-iphoneos/App.app Payload/
+          zip -qry "../../release/Karvio-$VERSION-ios-unsigned.ipa" Payload
+      - uses: actions/upload-artifact@v4
+        with: { name: karvio-iOS, path: frontend/release/*.ipa, if-no-files-found: error }
+
+  release:
+    name: Publish release
+    needs: [desktop, android, ios]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: out, pattern: karvio-*, merge-multiple: true }
+      - name: Create or update the release
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(node -p "require('./frontend/package.json').version")
+          TAG="${GITHUB_REF_NAME}"; case "$TAG" in v*) ;; *) TAG="v$VERSION" ;; esac
+          ls -la out
+          NOTES="Karvio $TAG — installers for every platform.
+
+          - **Windows:** Karvio-*-win-x64.exe — run the installer.
+          - **macOS:** Karvio-*-mac-arm64.dmg (Apple Silicon) or Karvio-*-mac-x64.dmg (Intel). First open: right-click → Open (the app is not notarized).
+          - **Linux:** Karvio-*-linux-amd64.deb — \`sudo apt install ./Karvio-*.deb\`
+          - **Android:** Karvio-*-android.apk — allow installing from this source, then open the file.
+          - **iOS:** Karvio-*-ios-unsigned.ipa — must be signed (Sideloadly / AltStore with your Apple ID, or an Apple Developer account) before it installs.
+
+          Built from commit ${GITHUB_SHA::7}."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" out/* --clobber
+          else
+            gh release create "$TAG" out/* --title "Karvio $TAG" --notes "$NOTES" --target "$GITHUB_SHA"
+          fi

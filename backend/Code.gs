@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- *  ShopERP — Code.gs  (Google Apps Script backend)
+ *  Karvio — Code.gs  (Google Apps Script backend)
  *  Google Sheets = database  |  This Web App = REST / JSON API
  * ============================================================================
  *  FIRST-TIME SETUP
@@ -16,7 +16,7 @@
  */
 
 var APP_VERSION = '1.0.2';
-// Your ShopERP Database spreadsheet. Lets this script also run as a standalone project.
+// Your Karvio database spreadsheet. Lets this script also run as a standalone project.
 var DEFAULT_SHEET_ID = '1r7WI5GNHtppUCtCu_rZUmvfum92i0HZdK298Z4uZH7w';
 var SESSION_TTL = 21600; // 6 hours (CacheService maximum)
 
@@ -243,7 +243,7 @@ function nextNo_(key, prefix) {
  * ========================================================================== */
 function onOpen() {
   try {
-    SpreadsheetApp.getUi().createMenu('ShopERP')
+    SpreadsheetApp.getUi().createMenu('Karvio')
       .addItem('1. Setup / repair database', 'setupDatabase')
       .addItem('2. Reset admin password to admin123', 'resetAdminPassword')
       .addToUi();
@@ -287,7 +287,7 @@ function setupDatabase() {
   }
   units_();
   if (!all_('Categories').length) seedCategories_();
-  return 'ShopERP database is ready. Login: admin / admin123';
+  return 'Karvio database is ready. Login: admin / admin123';
 }
 
 /* Selling units. name = short code stored on products (pcs, meter, box); decimal = allow 1.5 qty. */
@@ -870,7 +870,7 @@ function sendSaleSms_(sale, lines, customer) {
   return sendSms_(phone, msg);
 }
 function smsTest_(p, user) {
-  var r = sendSms_(p.phone, 'Test SMS from ' + getSetting_('shop_name') + ' — ShopERP');
+  var r = sendSms_(p.phone, 'Test SMS from ' + getSetting_('shop_name') + ' — Karvio');
   if (!r.ok) fail_('SMS failed: ' + r.response);
   return r;
 }
@@ -1883,7 +1883,7 @@ function reports_(p, user) {
 function r_(perm, fn, write) { return { perm: perm, fn: fn, write: !!write }; }
 
 var ROUTES = {
-  ping:               { public: true, fn: function () { return { app: 'ShopERP', version: APP_VERSION, time: now_() }; } },
+  ping:               { public: true, fn: function () { return { app: 'Karvio', version: APP_VERSION, time: now_() }; } },
   login:              { public: true, fn: login_, write: false },
   logout:             r_(null, logout_),
   'password.change':  r_(null, changePassword_, true),
@@ -1957,7 +1957,7 @@ var ROUTES = {
 };
 
 function doGet() {
-  return json_({ ok: true, data: { app: 'ShopERP', version: APP_VERSION, message: 'ShopERP API is running. Send POST requests (text/plain JSON body).' } });
+  return json_({ ok: true, data: { app: 'Karvio', version: APP_VERSION, message: 'Karvio API is running. Send POST requests (text/plain JSON body).' } });
 }
 
 function doPost(e) {

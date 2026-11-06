@@ -1,4 +1,4 @@
-# ShopERP — সেটআপ গাইড
+# Karvio — সেটআপ গাইড
 
 কম্পিউটার, IT এক্সেসরিজ ও নেটওয়ার্কিং দোকানের জন্য POS ও শপ ম্যানেজমেন্ট সফটওয়্যার।
 ডাটাবেস: **Google Sheets** · ব্যাকএন্ড API: **Google Apps Script** · ফ্রন্টএন্ড: **React (Vite)** · ডেস্কটপ: **Electron / Tauri**
@@ -24,7 +24,7 @@ shop-erp/
 
 ## ধাপ ১ — Google Sheet ও Apps Script ব্যাকএন্ড
 
-1. [sheets.new](https://sheets.new) খুলে একটা নতুন খালি Google Sheet বানান। নাম দিন, যেমন `ShopERP Database`।
+1. [sheets.new](https://sheets.new) খুলে একটা নতুন খালি Google Sheet বানান। নাম দিন, যেমন `Karvio Database`।
 2. মেনু থেকে **Extensions → Apps Script** খুলুন।
 3. ডিফল্ট `Code.gs`-এর ভেতরের সব লেখা মুছে দিন। তারপর `backend/Code.gs` ফাইলের পুরোটা কপি করে পেস্ট করুন। **Save** (Ctrl+S) চাপুন।
 4. উপরের ফাংশন ড্রপডাউন থেকে `setupDatabase` বেছে **Run** চাপুন।
@@ -32,12 +32,12 @@ shop-erp/
    - কাজ শেষ হলে Sheet-এ ২৬টা ট্যাব তৈরি হবে (Products, Sales, Accounts …), সাথে ডিফল্ট ক্যাটাগরি, ওয়ারেন্টি পিরিয়ড আর একটা Cash অ্যাকাউন্ট।
 5. টাইমজোন ঠিক করুন: Apps Script-এ **Project Settings (⚙) → Time zone → (GMT+06:00) Dhaka**।
 6. ডিপ্লয় করুন: **Deploy → New deployment → ⚙ Select type → Web app**
-   - Description: `ShopERP API`
+   - Description: `Karvio API`
    - **Execute as: Me**
    - **Who has access: Anyone**
    - **Deploy** চাপুন, তারপর **Web app URL** কপি করুন (`https://script.google.com/macros/s/…/exec`)।
 
-> **"Anyone" কেন?** ব্রাউজার/ডেস্কটপ অ্যাপ যেন Google লগইন ছাড়াই API-তে পৌঁছাতে পারে। নিরাপত্তা দেয় ShopERP-এর নিজস্ব লগইন: প্রতিটা রিকোয়েস্টে সেশন টোকেন আর রোল-ভিত্তিক পারমিশন চেক হয়। পাসওয়ার্ড SHA-256 + salt দিয়ে হ্যাশ করে রাখা হয়।
+> **"Anyone" কেন?** ব্রাউজার/ডেস্কটপ অ্যাপ যেন Google লগইন ছাড়াই API-তে পৌঁছাতে পারে। নিরাপত্তা দেয় Karvio-এর নিজস্ব লগইন: প্রতিটা রিকোয়েস্টে সেশন টোকেন আর রোল-ভিত্তিক পারমিশন চেক হয়। পাসওয়ার্ড SHA-256 + salt দিয়ে হ্যাশ করে রাখা হয়।
 
 ### কোড আপডেট করলে
 **Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy**। এভাবে করলে URL একই থাকে। নতুন deployment বানালে URL বদলে যাবে, তখন অ্যাপের Settings-এ নতুন URL দিতে হবে।
@@ -167,7 +167,7 @@ USB বারকোড স্ক্যানার কীবোর্ডের �
 - Google Sheets ছোট-মাঝারি দোকানের জন্য যথেষ্ট, মোটামুটি **৫০,০০০–১,০০,০০০ ইনভয়েস** পর্যন্ত ভালো চলে। প্রতিটা রিকোয়েস্ট ১–৩ সেকেন্ড নিতে পারে, এটা Apps Script-এর স্বাভাবিক গতি।
 - বছর শেষে Sheet-এর একটা কপি রেখে দিন (**File → Make a copy**)। এটাই সবচেয়ে সহজ ব্যাকআপ।
 - Sheet-এ হাতে ডাটা এডিট করবেন না। বিশেষ করে `id` কলাম বা লেজার শিট বদলালে হিসাব গোলমাল হতে পারে।
-- অ্যাডমিন পাসওয়ার্ড ভুলে গেলে Sheet খুলে **ShopERP → Reset admin password** চাপুন। পাসওয়ার্ড `admin123` হয়ে যাবে।
+- অ্যাডমিন পাসওয়ার্ড ভুলে গেলে Sheet খুলে **Karvio → Reset admin password** চাপুন। পাসওয়ার্ড `admin123` হয়ে যাবে।
 - Apps Script-এর দৈনিক কোটা আছে (যেমন বাইরের URL কল, যা SMS-এ লাগে)। সাধারণ দোকানের জন্য যথেষ্ট, তবে বিস্তারিত দেখে নিন: [Apps Script quotas](https://developers.google.com/apps-script/guides/services/quotas)।
 
 ## টেস্ট

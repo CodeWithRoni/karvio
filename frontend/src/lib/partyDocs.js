@@ -26,7 +26,7 @@ export function statementHtml(kind, st) {
   const rows = st.rows.map((r) => `<tr><td>${esc(fdate(r.date))}</td><td>${esc(r.ref_no || '')}</td><td>${esc(r.note || r.type || '')}</td><td class="r">${r.debit ? esc(money(r.debit, false)) : ''}</td><td class="r">${r.credit ? esc(money(r.credit, false)) : ''}</td><td class="r">${esc(money(r.balance, false))}</td></tr>`).join('');
   const tag = st.closing > 0.004 ? ` (${L.pos})` : st.closing < -0.004 ? ` (${L.neg})` : '';
   return `<div class="pst">
-    <div class="top"><div><h1>${esc(s.shop_name || 'ShopERP')}</h1><div>${esc(s.shop_address || '')}</div><div>${esc(s.shop_phone || '')}</div></div>
+    <div class="top"><div><h1>${esc(s.shop_name || 'Karvio')}</h1><div>${esc(s.shop_address || '')}</div><div>${esc(s.shop_phone || '')}</div></div>
       <div><h2>${L.title}</h2><div style="text-align:right">${esc(fdate(new Date().toISOString()))}</div></div></div>
     <div class="box">
       <div><b class="t">${L.who}</b><b>${esc(st.party)}</b></div>

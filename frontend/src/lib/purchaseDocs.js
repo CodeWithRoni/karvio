@@ -30,7 +30,7 @@ export function purchaseInvoiceHtml(d) {
   }).join('');
   const pl = pays(p);
   return `<div class="pinv">
-    <div class="top"><div><h1>${esc(s.shop_name || 'ShopERP')}</h1><div>${esc(s.shop_address || '')}</div><div>${esc(s.shop_phone || '')}</div></div>
+    <div class="top"><div><h1>${esc(s.shop_name || 'Karvio')}</h1><div>${esc(s.shop_address || '')}</div><div>${esc(s.shop_phone || '')}</div></div>
       <div><h2>PURCHASE INVOICE</h2><div style="text-align:right"><b>${esc(p.invoice_no)}</b><br>Date: ${esc(fdate(p.date))}<br><span class="sm">Entered ${esc(fdatetime(p.created_at))} by ${esc(p.user || '')}</span></div></div></div>
     ${p.status === 'cancelled' ? `<div class="cx">CANCELLED — ${esc(p.cancel_reason || '')}</div>` : ''}
     <div class="meta">
