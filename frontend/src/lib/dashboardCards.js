@@ -5,6 +5,8 @@ export const DASH_CARDS = [
   ['sales', 'Sales'], ['sales_returns', 'Sales returns'], ['purchases', 'Purchases'], ['purchase_returns', 'Purchase returns'],
   ['expenses', 'Expenses'], ['gross_profit', 'Gross profit'], ['net_profit', 'Net profit'], ['new_dues', 'New dues on sales'],
   ['receivable', 'Receivable (customer dues)'], ['payable', 'Payable (supplier dues)'],
+  ['sales_week', 'Sales — this week'], ['sales_month', 'Sales — this month'], ['sales_last_month', 'Sales — last month'],
+  ['sales_six_months', 'Sales — last 6 months'], ['sales_year', 'Sales — this year'], ['sales_last_year', 'Sales — last year'],
   ['balances', 'Live balances (cash, bank, MFS)'], ['chart', 'Last 14 days chart'], ['leaderboard', 'Staff leaderboard / recent invoices'], ['low_stock', 'Low stock list']
 ];
 

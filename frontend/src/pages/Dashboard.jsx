@@ -52,6 +52,22 @@ export default function Dashboard() {
         </>}
       </div>
 
+      {Array.isArray(d.periods) && d.periods.some((x) => on('sales_' + x.key)) && (
+        <section style={{ marginTop: 18 }}>
+          <div className="card-head"><h2>Sales history</h2>{can('pos') && <Link to="/sales" className="link">Open sales</Link>}</div>
+          <div className="stats period-stats">
+            {d.periods.filter((x) => on('sales_' + x.key)).map((x) => (
+              <div className="stat" key={x.key} title={`${fdate(x.from)} – ${fdate(x.to)}`}>
+                <span>{x.label}</span>
+                <b>{money(x.sales)}</b>
+                <small>{x.invoices} invoice{x.invoices === 1 ? '' : 's'}{x.returns ? ` · returns ${money(x.returns, false)} · net ${money(x.net, false)}` : ''}{x.profit !== undefined ? ` · profit ${money(x.profit, false)}` : ''}</small>
+                <small className="period-range">{fdate(x.from)} – {fdate(x.to)}</small>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {on('balances') && d.accounts && (
         <section style={{ marginTop: 18 }}>
           <div className="card-head"><h2>Live balances</h2>{can('accounts') && <Link to="/accounts" className="link">Manage accounts</Link>}</div>

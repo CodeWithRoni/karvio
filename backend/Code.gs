@@ -1721,6 +1721,30 @@ function dashboard_(p, user) {
   }
   out.today = cards('today'); out.month = cards('month'); out.total = cards('total');
 
+  // Sales history cards: this week (Sat–Fri), this / last month, last 6 months, this / last year.
+  var y = Number(today.slice(0, 4)), m = Number(today.slice(5, 7));
+  var ym = function (yy, mm) { while (mm < 1) { mm += 12; yy--; } return yy + '-' + ('0' + mm).slice(-2); };
+  var lastDay = function (s) { var d = new Date(Number(s.slice(0, 4)), Number(s.slice(5, 7)), 0); return s + '-' + ('0' + d.getDate()).slice(-2); };
+  var dow = new Date(today + 'T12:00:00').getDay(); // 0 = Sunday … 6 = Saturday
+  var lm = ym(y, m - 1);
+  var ranges = [
+    ['week', 'This week', addDays_(today, -((dow + 1) % 7)), today],
+    ['month', 'This month', month + '-01', today],
+    ['last_month', 'Last month', lm + '-01', lastDay(lm)],
+    ['six_months', 'Last 6 months', ym(y, m - 5) + '-01', today],
+    ['year', 'This year', y + '-01-01', today],
+    ['last_year', 'Last year', (y - 1) + '-01-01', (y - 1) + '-12-31']
+  ];
+  var srAll = full ? all_('SalesReturns').filter(function (x) { return x.status === 'active'; }) : [];
+  out.periods = ranges.map(function (r) {
+    var inR = function (x) { var d = String(x.date).slice(0, 10); return d >= r[2] && d <= r[3]; };
+    var s = sales.filter(inR), ret = round_(sum_(srAll.filter(inR), function (x) { return x.total; }));
+    var tot = round_(sum_(s, function (x) { return x.total; }));
+    var row = { key: r[0], label: r[1], from: r[2], to: r[3], sales: tot, invoices: s.length, returns: ret, net: round_(tot - ret) };
+    if (showCost && full) row.profit = round_(sum_(s, function (x) { return x.profit; }) - sum_(srAll.filter(inR), function (x) { return x.total - x.cost; }));
+    return row;
+  });
+
   var series = [];
   for (var i = 13; i >= 0; i--) {
     var d = addDays_(today, -i), ds = sales.filter(function (x) { return x.date === d; });
