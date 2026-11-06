@@ -1735,13 +1735,28 @@ function dashboard_(p, user) {
     ['year', 'This year', y + '-01-01', today],
     ['last_year', 'Last year', (y - 1) + '-01-01', (y - 1) + '-12-31']
   ];
-  var srAll = full ? all_('SalesReturns').filter(function (x) { return x.status === 'active'; }) : [];
+  var act = function (t) { return full ? all_(t).filter(function (x) { return x.status === 'active'; }) : []; };
+  var srAll = act('SalesReturns'), puAll = act('Purchases'), prAll = act('PurchaseReturns'), exAll = act('Expenses');
   out.periods = ranges.map(function (r) {
     var inR = function (x) { var d = String(x.date).slice(0, 10); return d >= r[2] && d <= r[3]; };
     var s = sales.filter(inR), ret = round_(sum_(srAll.filter(inR), function (x) { return x.total; }));
     var tot = round_(sum_(s, function (x) { return x.total; }));
     var row = { key: r[0], label: r[1], from: r[2], to: r[3], sales: tot, invoices: s.length, returns: ret, net: round_(tot - ret) };
     if (showCost && full) row.profit = round_(sum_(s, function (x) { return x.profit; }) - sum_(srAll.filter(inR), function (x) { return x.total - x.cost; }));
+    if (full) {
+      var sr = srAll.filter(inR), pu = puAll.filter(inR), pr = prAll.filter(inR), ex = exAll.filter(inR);
+      row.sales_returns = { amount: ret, count: sr.length };
+      row.purchases = { amount: round_(sum_(pu, function (x) { return x.total; })), count: pu.length };
+      row.purchase_returns = { amount: round_(sum_(pr, function (x) { return x.total; })), count: pr.length };
+      row.expenses = { amount: round_(sum_(ex, function (x) { return x.amount; })), count: ex.length };
+      if (row.profit !== undefined) {
+        row.gross_profit = { amount: row.profit, count: s.length };
+        row.net_profit = { amount: round_(row.profit - row.expenses.amount), count: ex.length };
+      }
+      var sd = s.filter(function (x) { return x.due > 0; }), pd = pu.filter(function (x) { return x.due > 0; });
+      row.receivable = { amount: round_(sum_(sd, function (x) { return x.due; })), count: sd.length };
+      row.payable = { amount: round_(sum_(pd, function (x) { return x.due; })), count: pd.length };
+    }
     return row;
   });
 

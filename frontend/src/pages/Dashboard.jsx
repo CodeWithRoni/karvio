@@ -10,6 +10,18 @@ function Stat({ label, value, sub, tone }) {
   return <div className={`stat ${tone || ''}`}><span>{label}</span><b>{value}</b>{sub && <small>{sub}</small>}</div>;
 }
 
+// Extra history rows under "Sales history": [field, heading, counted thing, colour, link]
+const HISTORY = [
+  ['sales_returns', 'Sales returns history', 'return', 'warn', ['/sales', 'Open sales & returns', 'pos']],
+  ['purchases', 'Purchase history', 'purchase', '', ['/purchases', 'Open purchases', 'purchase']],
+  ['purchase_returns', 'Purchase returns history', 'return', '', ['/purchases', 'Open purchases', 'purchase']],
+  ['expenses', 'Expenses history', 'expense', '', ['/expenses', 'Open expenses', 'expenses']],
+  ['gross_profit', 'Gross profit history', '', 'pl', null],
+  ['net_profit', 'Net profit history', '', 'pl', null],
+  ['receivable', 'Receivable history — new customer dues', 'invoice with due', 'warn', ['/customers', 'Open customer dues', null]],
+  ['payable', 'Payable history — new supplier dues', 'purchase with due', 'down', ['/suppliers', 'Open suppliers', 'suppliers']]
+];
+
 export default function Dashboard() {
   const { data: d, loading, error, reload } = useApi('dashboard', {}, [], { refreshMs: 30000 });
   const can = useStore((s) => s.can);
@@ -67,6 +79,26 @@ export default function Dashboard() {
           </div>
         </section>
       )}
+
+      {Array.isArray(d.periods) && HISTORY.filter(([k]) => on('hist_' + k) && d.periods[0] && d.periods[0][k]).map(([k, title, unit, tone, link]) => (
+        <section style={{ marginTop: 18 }} key={k}>
+          <div className="card-head"><h2>{title}</h2>{link && (!link[2] || can(link[2])) && <Link to={link[0]} className="link">{link[1]}</Link>}</div>
+          <div className="stats period-stats">
+            {d.periods.map((x) => {
+              const v = x[k];
+              const cls = tone === 'pl' ? (v.amount > 0 ? 'up' : v.amount < 0 ? 'down' : '') : v.amount > 0 ? tone : '';
+              return (
+                <div className={`stat ${cls}`} key={x.key} title={`${fdate(x.from)} – ${fdate(x.to)}`}>
+                  <span>{x.label}</span>
+                  <b>{money(v.amount)}</b>
+                  <small>{unit ? `${v.count} ${unit}${v.count === 1 ? '' : 's'}` : '\u00a0'}</small>
+                  <small className="period-range">{fdate(x.from)} – {fdate(x.to)}</small>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ))}
 
       {on('balances') && d.accounts && (
         <section style={{ marginTop: 18 }}>
