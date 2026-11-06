@@ -121,7 +121,8 @@ const sale1 = ok(A('sale.create', {
   items: [{ product_id: ssd.id, qty: 1, price: 4000, serials: ['S1'] }, { product_id: mouse.id, qty: 2, price: 600 }, { product_id: cat6.id, qty: 12.5, price: 35 }],
   payments: [{ account_id: bkash.id, amount: 3000 }]
 }), 'sale');
-eq([sale1.sale.total, sale1.sale.paid, sale1.sale.due, sale1.sale.profit], [5500, 3000, 2500, 1450], 'sale totals / profit');
+// The purchase's 200 discount is now allocated into the received inventory cost.
+eq([sale1.sale.total, sale1.sale.paid, sale1.sale.due, sale1.sale.profit], [5500, 3000, 2500, 1482.14], 'sale totals / net purchase cost profit');
 eq(sale1.items[0].warranty_expiry > sale1.sale.date, true, 'serial warranty expiry set');
 eq(sale1.items[1].warranty_type, 'invoice', 'invoice-based warranty recorded');
 eq(sale1.sms && sale1.sms.ok, true, 'SMS dispatched for named customer');

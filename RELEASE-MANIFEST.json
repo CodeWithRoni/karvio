@@ -1,0 +1,44 @@
+{
+  "product": "Karvio",
+  "version": "1.0.6",
+  "preparedDate": "2026-11-06",
+  "contains": [
+    "complete source",
+    "prebuilt static website",
+    "Apps Script backend",
+    "offline Electron runtime",
+    "platform icons",
+    "regression tests",
+    "Bengali upload guide"
+  ],
+  "validation": {
+    "automatedChecks": 654,
+    "browserTests": 26,
+    "offlineElectronSource": "passed",
+    "offlineElectronPackagedWindows": "passed",
+    "offlineInternetRequests": 0
+  },
+  "excluded": [
+    ".cache",
+    ".git",
+    "__pycache__",
+    "backend/parts",
+    "backups",
+    "local credentials",
+    "node_modules",
+    "playwright-report",
+    "release",
+    "release-offline",
+    "session tokens",
+    "target",
+    "test-results",
+    "user databases",
+    "verification"
+  ],
+  "fileCount": 201,
+  "uploadOrder": [
+    "backend/Code.gs existing deployment new version",
+    "frontend source or frontend/dist"
+  ],
+  "onlineUploadPerformed": false
+}

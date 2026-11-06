@@ -15,10 +15,11 @@
  * ============================================================================
  */
 
-var APP_VERSION = '1.0.5';
+var APP_VERSION = '1.0.6';
 // Your Karvio database spreadsheet. Lets this script also run as a standalone project.
 var DEFAULT_SHEET_ID = '1r7WI5GNHtppUCtCu_rZUmvfum92i0HZdK298Z4uZH7w';
 var SESSION_TTL = 21600; // 6 hours (CacheService maximum)
+var API_CAPABILITIES = { idempotency: true, durableRecovery: true, credentialSessions: true };
 
 /* ---------------------------------------------------------------------------
  *  SHEET SCHEMA  —  "column" or "column:type"   (types: s=text, n=number, b=boolean)
@@ -43,7 +44,7 @@ var SCHEMA = {
   SalesReturns:        'id,return_no,date,sale_id,invoice_no,customer_id,customer_name,type,total:n,cost:n,refund:n,refund_account_id,note,status,user,created_at,cancel_reason',
   SalesReturnItems:    'id,return_id,sale_item_id,product_id,name,qty:n,price:n,cost:n,total:n,serials,valuation',
   PurchaseReturns:     'id,return_no,date,purchase_id,invoice_no,supplier_id,supplier_name,total:n,received:n,account_id,note,status,user,created_at,cancel_reason',
-  PurchaseReturnItems: 'id,return_id,purchase_item_id,product_id,name,qty:n,cost:n,total:n,serials',
+  PurchaseReturnItems: 'id,return_id,purchase_item_id,product_id,name,qty:n,cost:n,total:n,serials,valuation',
   Expenses:            'id,date,category,amount:n,account_id,note,user,status,created_at,cancel_reason',
   CustomerLedger:      'id,date,customer_id,type,ref_id,ref_no,debit:n,credit:n,note,voided:b',
   SupplierLedger:      'id,date,supplier_id,type,ref_id,ref_no,debit:n,credit:n,note,voided:b',
@@ -83,6 +84,9 @@ var DEFAULT_ROLE_PERMS = {
  *  1. DATABASE LAYER
  * ========================================================================== */
 var _mem = {}; // per-execution cache
+var _txn = null; // staged business rows; the durable journal is written before any data row
+var JOURNAL_SHEET = '__KarvioTxnJournal';
+var RECEIPT_SHEET = '__KarvioRequestReceipts';
 
 function TZ_()    { return Session.getScriptTimeZone() || 'Asia/Dhaka'; }
 function uid_()   { return Utilities.getUuid().replace(/-/g, '').slice(0, 12); }
@@ -163,9 +167,9 @@ function ser_(v, t) {
 /** Read a whole sheet as an array of objects (cached per execution). */
 function all_(name) {
   if (_mem[name]) return _mem[name];
-  var cs = cols_(name), sh = sheet_(name), last = sh.getLastRow(), rows = [];
+  var cs = cols_(name), sh = sheet_(name), last = dataLastRow_(name), rows = [];
   if (last > 1) {
-    var vals = sh.getRange(2, 1, last - 1, cs.length).getValues();
+    var vals = dataValues_(name, 2, last - 1, cs.length);
     vals.forEach(function (r, i) {
       if (r[0] === '' || r[0] === null) return;
       var o = { _row: i + 2 };
@@ -177,13 +181,132 @@ function all_(name) {
   return rows;
 }
 
+/** The real sheet is untouched until the complete row plan has been durably prepared. */
+function flush_() { if (SpreadsheetApp.flush) SpreadsheetApp.flush(); }
+function dataLastRow_(name) {
+  var last = sheet_(name).getLastRow();
+  if (_txn) Object.keys(_txn.rows).forEach(function (k) { var r = _txn.rows[k]; if (r.table === name) last = Math.max(last, r.row); });
+  return last;
+}
+function dataValues_(name, start, height, width) {
+  var sh = sheet_(name), actual = Math.max(0, Math.min(height, sh.getLastRow() - start + 1));
+  var rows = actual ? sh.getRange(start, 1, actual, width).getValues() : [];
+  while (rows.length < height) rows.push(Array(width).fill(''));
+  if (_txn) rows = rows.map(function (row, i) { var r = _txn.rows[name + '|' + (start + i)]; return r ? r.after.slice(0, width) : row; });
+  return rows;
+}
+function ensureRows_(sh, last) {
+  if (sh.getMaxRows && sh.insertRowsAfter && last > sh.getMaxRows()) sh.insertRowsAfter(sh.getMaxRows(), last - sh.getMaxRows());
+}
+function writeRows_(name, start, column, values) {
+  var sh = sheet_(name), width = cols_(name).length;
+  if (!_txn) { ensureRows_(sh, start + values.length - 1); sh.getRange(start, column, values.length, values[0].length).setValues(values); return; }
+  values.forEach(function (cells, i) {
+    var row = start + i, key = name + '|' + row, op = _txn.rows[key];
+    if (!op) {
+      var old = row <= sh.getLastRow() ? sh.getRange(row, 1, 1, width).getValues()[0] : Array(width).fill('');
+      op = _txn.rows[key] = { table: name, row: row, before: old.slice(), after: old.slice() };
+    }
+    cells.forEach(function (v, j) { op.after[column - 1 + j] = v; });
+  });
+}
+function privateSheet_(name) {
+  var ss = ss_(), sh = ss.getSheetByName(name);
+  if (!sh) { sh = ss.insertSheet(name); if (sh.hideSheet) sh.hideSheet(); }
+  return sh;
+}
+function journalCell_(value) { return value instanceof Date ? { __karvioDate: value.toISOString() } : value; }
+function restoreCell_(value) { return value && typeof value === 'object' && value.__karvioDate ? new Date(value.__karvioDate) : value; }
+function planText_(plan) {
+  var copy = Object.assign({}, plan, { rows: plan.rows.map(function (r) {
+    return { table: r.table, row: r.row, before: r.before.map(journalCell_), after: r.after.map(journalCell_) };
+  }) });
+  return JSON.stringify(copy);
+}
+function textDigest_(text) { return hash_('karvio-journal-v1', text); }
+function chunks_(text) { var out = []; for (var i = 0; i < text.length; i += 30000) out.push(text.slice(i, i + 30000)); return out.length ? out : ['']; }
+function readJournal_() {
+  var sh = privateSheet_(JOURNAL_SHEET), raw = sh.getRange(1, 1).getValues()[0][0];
+  if (!raw) return null;
+  var meta; try { meta = JSON.parse(raw); } catch (e) { fail_('Recovery required: transaction journal header is invalid'); }
+  if (meta.state === 'EMPTY' || meta.state === 'BUILDING') return { sh: sh, meta: meta, plan: null };
+  if (!meta.parts || meta.parts > 100000) fail_('Recovery required: transaction journal is incomplete');
+  var text = sh.getRange(2, 1, meta.parts, 1).getValues().map(function (r) { return String(r[0]).slice(2); }).join('');
+  if (textDigest_(text) !== meta.digest) fail_('Recovery required: transaction journal checksum mismatch');
+  return { sh: sh, meta: meta, plan: JSON.parse(text) };
+}
+function journalState_(sh, meta) { sh.getRange(1, 1).setValue(JSON.stringify(meta)); flush_(); }
+function applyPlan_(plan, side) {
+  // Row plans are independent (deletions are tombstones), so contiguous rows can be batched.
+  var rows = plan.rows.slice().sort(function (a, b) { return a.table < b.table ? -1 : a.table > b.table ? 1 : a.row - b.row; });
+  for (var i = 0; i < rows.length;) {
+    var first = rows[i], values = [first[side].map(restoreCell_)], next = i + 1;
+    while (next < rows.length && values.length < 100 && rows[next].table === first.table && rows[next].row === first.row + values.length && rows[next][side].length === values[0].length) {
+      values.push(rows[next][side].map(restoreCell_)); next++;
+    }
+    var sh = sheet_(first.table); ensureRows_(sh, first.row + values.length - 1);
+    sh.getRange(first.row, 1, values.length, values[0].length).setValues(values); i = next;
+  }
+  flush_();
+}
+/** Receipts are append-only; a footer is committed only after all response chunks flush. */
+function findReceipt_(key) {
+  if (!key) return null;
+  var sh = privateSheet_(RECEIPT_SHEET), last = sh.getLastRow();
+  if (!last) return null;
+  var keys = sh.getRange(1, 1, last, 2).getValues();
+  for (var i = keys.length - 1; i >= 0; i--) if (keys[i][0] === key && keys[i][1] === 'complete') {
+    var meta = JSON.parse(sh.getRange(i + 1, 3).getValues()[0][0]);
+    var text = sh.getRange(meta.start, 3, meta.parts, 1).getValues().map(function (r) { return String(r[0]).slice(2); }).join('');
+    if (textDigest_(text) !== meta.digest) fail_('Recovery required: saved request receipt is incomplete');
+    return { meta: meta, data: JSON.parse(text) };
+  }
+  return null;
+}
+function saveReceipt_(plan, result, replace) {
+  if (!plan.request || !plan.request.key) return;
+  var prior = findReceipt_(plan.request.key);
+  if (prior && !replace) return;
+  var text = JSON.stringify(result), parts = chunks_(text), sh = privateSheet_(RECEIPT_SHEET), start = sh.getLastRow() + 1;
+  ensureRows_(sh, start + parts.length);
+  sh.getRange(start, 1, parts.length, 3).setValues(parts.map(function (part) { return [plan.request.key, 'part', 'J:' + part]; })); flush_();
+  var meta = Object.assign({}, plan.request, { start: start, parts: parts.length, digest: textDigest_(text), transaction: plan.id });
+  sh.getRange(start + parts.length, 1, 1, 3).setValues([[plan.request.key, 'complete', JSON.stringify(meta)]]); flush_();
+}
+function recoverJournal_() {
+  var j = readJournal_();
+  if (!j || j.meta.state === 'EMPTY') return;
+  if (j.meta.state === 'PREPARED') applyPlan_(j.plan, 'before'); // repeatable even if a prior recovery was interrupted
+  else if (j.meta.state === 'COMMITTED') saveReceipt_(j.plan, j.plan.result, false);
+  else if (j.meta.state !== 'BUILDING') fail_('Recovery required: unknown transaction state');
+  journalState_(j.sh, { state: 'EMPTY' });
+  _mem = {};
+}
+function commitPlan_(plan) {
+  var sh = privateSheet_(JOURNAL_SHEET), text = planText_(plan), parts = chunks_(text);
+  // BUILDING is safe to discard: no business row is applied before PREPARED flushes.
+  journalState_(sh, { state: 'BUILDING', id: plan.id });
+  ensureRows_(sh, parts.length + 1);
+  sh.getRange(2, 1, parts.length, 1).setValues(parts.map(function (part) { return ['J:' + part]; })); flush_();
+  var meta = { state: 'PREPARED', id: plan.id, parts: parts.length, digest: textDigest_(text) };
+  journalState_(sh, meta);
+  applyPlan_(plan, 'after');
+  meta.state = 'COMMITTED'; journalState_(sh, meta);
+}
+function requestInfo_(req, user) {
+  var id = req.request_id || (req.payload && req.payload.request_id);
+  if (!id) return null; // old clients still work; current clients always send a request key
+  if (!/^[A-Za-z0-9_-]{12,160}$/.test(String(id))) fail_('Invalid request ID');
+  return { key: 'r_' + textDigest_((user ? user.id : 'public') + '|' + req.action + '|' + id), payload: textDigest_(JSON.stringify(req.payload || {})), action: req.action, user: user ? user.id : 'public' };
+}
+function retryError_(message) { var e = new Error(message); e.retryable = true; e.uncertain = true; return e; }
+
 function insertMany_(name, objs) {
   if (!objs.length) return [];
   var cs = cols_(name), sh = sheet_(name);
-  var start = Math.max(sh.getLastRow(), 1) + 1;
+  var start = Math.max(dataLastRow_(name), 1) + 1;
   objs.forEach(function (o) { if (!o.id) o.id = uid_(); });
-  sh.getRange(start, 1, objs.length, cs.length)
-    .setValues(objs.map(function (o) { return cs.map(function (c) { return ser_(o[c.k], c.t); }); }));
+  writeRows_(name, start, 1, objs.map(function (o) { return cs.map(function (c) { return ser_(o[c.k], c.t); }); }));
   var out = objs.map(function (o, i) {
     var full = { _row: start + i };
     cs.forEach(function (c) { full[c.k] = cast_(ser_(o[c.k], c.t), c.t); });
@@ -199,29 +322,64 @@ function update_(name, id, patch) {
   if (!r) fail_(name + ' record not found');
   var cs = cols_(name);
   cs.forEach(function (c) { if (patch.hasOwnProperty(c.k)) r[c.k] = cast_(ser_(patch[c.k], c.t), c.t); });
-  sheet_(name).getRange(r._row, 1, 1, cs.length)
-    .setValues([cs.map(function (c) { return ser_(r[c.k], c.t); })]);
+  writeRows_(name, r._row, 1, [cs.map(function (c) { return ser_(r[c.k], c.t); })]);
   return r;
 }
 
 function remove_(name, id) {
   var r = all_(name).filter(function (x) { return x.id === id; })[0];
   if (!r) fail_(name + ' record not found');
-  sheet_(name).deleteRow(r._row);
+  // Tombstones keep physical row addresses stable for interrupted transaction recovery.
+  writeRows_(name, r._row, 1, [cols_(name).map(function () { return ''; })]);
   delete _mem[name];
 }
 
-function withLock_(fn) {
+function withLock_(fn, write, request) {
   var lock = LockService.getScriptLock();
   lock.waitLock(28000);
-  try { var r = fn(); dailyLinkCleanup_(); return r; } finally { lock.releaseLock(); }
+  var plan = null, staged = null, result, committed = false;
+  try {
+    try { recoverJournal_(); } catch (e) { throw retryError_('Recovery required before continuing: ' + e.message); }
+    _mem = {};
+    if (!write) return fn();
+    _txn = staged = { rows: {}, sms: [] };
+    result = fn();
+    var info = request && request();
+    // A replay is resolved by the router before running any business function.
+    dailyLinkCleanup_();
+    plan = { version: 1, id: Utilities.getUuid(), rows: Object.keys(staged.rows).map(function (key) { return staged.rows[key]; }), result: result, request: info };
+    _txn = null;
+    try { commitPlan_(plan); committed = true; }
+    catch (error) {
+      // If the final write succeeded but its acknowledgement was lost, never undo a committed sale.
+      try { var j = readJournal_(); committed = !!j && j.meta.state === 'COMMITTED' && j.meta.id === plan.id; }
+      catch (readError) { throw retryError_('Save outcome is not yet confirmed. Retry the same request: ' + error.message); }
+      if (!committed) {
+        try { recoverJournal_(); } catch (recoveryError) { throw retryError_('Recovery is pending. Retry the same request: ' + recoveryError.message); }
+        throw error;
+      }
+    }
+    // A committed journal itself is a durable receipt until its append-only copy succeeds.
+    try { saveReceipt_(plan, result, false); } catch (receiptError) { return result; }
+    try { journalState_(privateSheet_(JOURNAL_SHEET), { state: 'EMPTY' }); } catch (clearError) { return result; }
+    staged.sms.forEach(function (job) {
+      try {
+        var delivered = sendSms_(job.phone, job.message, job.logMessage);
+        Object.keys(job.result).forEach(function (k) { delete job.result[k]; });
+        Object.assign(job.result, delivered);
+        if (job.linkId && (delivered.status === 'failed' || delivered.status === 'skipped')) removeLink_(job.linkId);
+      } catch (smsError) { Object.assign(job.result, { ok: false, status: 'unknown', response: 'Sale saved; SMS delivery could not be confirmed. Check SMS log before resending.' }); }
+    });
+    if (staged.sms.length) try { saveReceipt_(plan, result, true); } catch (smsReceiptError) {}
+    return result;
+  } finally { _txn = null; if (!committed) _mem = {}; lock.releaseLock(); }
 }
 
 /* ---- Settings (key / value sheet) ---- */
 function settingsMap_() {
   if (_mem.__settings) return _mem.__settings;
-  var sh = sheet_('Settings'), last = sh.getLastRow(), m = {};
-  if (last > 1) sh.getRange(2, 1, last - 1, 2).getValues().forEach(function (r) {
+  var sh = sheet_('Settings'), last = dataLastRow_('Settings'), m = {};
+  if (last > 1) dataValues_('Settings', 2, last - 1, 2).forEach(function (r) {
     if (r[0] !== '') m[String(r[0])] = r[1] === undefined || r[1] === null ? '' : String(r[1]);
   });
   _mem.__settings = m;
@@ -232,9 +390,9 @@ function getSetting_(k, def) {
   return (m.hasOwnProperty(k) && m[k] !== '') ? m[k] : (def === undefined ? '' : def);
 }
 function setSetting_(k, v) {
-  var sh = sheet_('Settings'), last = sh.getLastRow(), row = -1;
-  if (last > 1) sh.getRange(2, 1, last - 1, 1).getValues().forEach(function (r, i) { if (String(r[0]) === k) row = i + 2; });
-  if (row < 0) sh.appendRow([k, String(v)]); else sh.getRange(row, 2).setValue(String(v));
+  var sh = sheet_('Settings'), last = dataLastRow_('Settings'), row = -1;
+  if (last > 1) dataValues_('Settings', 2, last - 1, 2).forEach(function (r, i) { if (String(r[0]) === k) row = i + 2; });
+  if (row < 0) writeRows_('Settings', Math.max(last, 1) + 1, 1, [[k, String(v)]]); else writeRows_('Settings', row, 2, [[String(v)]]);
   settingsMap_()[k] = String(v);
 }
 function nextNo_(key, prefix) {
@@ -319,11 +477,13 @@ function seedCategories_() {
 }
 
 function resetAdminPassword() {
-  var u = all_('Users').filter(function (x) { return x.username === 'admin'; })[0];
-  if (!u) fail_('No admin user found');
-  var salt = uid_();
-  update_('Users', u.id, { salt: salt, password_hash: hash_(salt, 'admin123'), active: true });
-  return 'Admin password reset to admin123';
+  return withLock_(function () {
+    var u = all_('Users').filter(function (x) { return x.username === 'admin'; })[0];
+    if (!u) fail_('No admin user found');
+    var salt = uid_();
+    update_('Users', u.id, { salt: salt, password_hash: hash_(salt, 'admin123'), active: true });
+    return 'Admin password reset to admin123';
+  }, true);
 }
 
 /* ============================================================================
@@ -406,6 +566,8 @@ function authUser_(token) {
   var s = JSON.parse(raw);
   var u = all_('Users').filter(function (x) { return x.id === s.id; })[0];
   if (!u || !u.active) fail_('AUTH: Account disabled');
+  // A reset/change invalidates every previously issued token, including tokens from older releases.
+  if (!s.credential || s.credential !== hash_('karvio-session', u.salt + '|' + u.password_hash)) { cache.remove('tok_' + token); fail_('AUTH: Password changed; please sign in again'); }
   if (!accessAllowed_(u)) { cache.remove('tok_' + token); fail_('AUTH: ' + accessDenied_(u)); } // working hours ended: signed out
   cache.put('tok_' + token, raw, SESSION_TTL); // sliding session
   return u;
@@ -417,7 +579,7 @@ function login_(p) {
   if (!u || !u.active || hash_(u.salt, String(p.password || '')) !== u.password_hash) fail_('Invalid username or password');
   if (!accessAllowed_(u)) fail_(accessDenied_(u)); // checked after the password, so the hours are only shown to the right person
   var token = Utilities.getUuid() + Utilities.getUuid();
-  CacheService.getScriptCache().put('tok_' + token, JSON.stringify({ id: u.id }), SESSION_TTL);
+  CacheService.getScriptCache().put('tok_' + token, JSON.stringify({ id: u.id, credential: hash_('karvio-session', u.salt + '|' + u.password_hash) }), SESSION_TTL);
   return { token: token, user: pubUser_(u), perms: permsFor_(u.role) };
 }
 function logout_(p, user, token) { try { CacheService.getScriptCache().remove('tok_' + token); } catch (e) {} return true; }
@@ -745,6 +907,10 @@ function customersList_() {
 }
 function customerSave_(p, user) {
   var name = String(p.name || '').trim(); if (!name) fail_('Customer name is required');
+  var combined = p.combined === undefined ? undefined : (p.combined === true || p.combined === 'true');
+  var current = p.id ? all_('Customers').filter(function (c) { return c.id === p.id; })[0] : null;
+  if (p.id) { need_(user, 'customers'); if (!current) fail_('Customer record not found'); }
+  if (combined || (current && current.link_id)) need_(user, 'suppliers'); // all permissions before the first write
   var phones = joinList_(p.phones, ',');
   var row = { name: name, phones: phones, addresses: joinList_(p.addresses, '|'), note: p.note || '' };
   if (p.id) {
@@ -752,7 +918,7 @@ function customerSave_(p, user) {
     row.opening_balance = num_(p.opening_balance);
     if (p.active !== undefined) row.active = p.active === true || p.active === 'true';
     var upd = update_('Customers', p.id, row);
-    var comb = p.combined === undefined ? undefined : (p.combined === true || p.combined === 'true');
+    var comb = combined;
     if (comb && !upd.link_id) need_(user, 'suppliers');
     if (comb !== undefined || upd.link_id) return syncCombined_('customer', upd, comb === undefined ? !!upd.link_id : comb);
     return upd;
@@ -760,7 +926,7 @@ function customerSave_(p, user) {
   row.opening_balance = can_(user, 'customers') ? num_(p.opening_balance) : 0;
   row.active = true; row.created_at = now_();
   var ins = insert_('Customers', row);
-  if (p.combined === true || p.combined === 'true') { need_(user, 'suppliers'); return syncCombined_('customer', ins, true); }
+  if (combined) return syncCombined_('customer', ins, true);
   return ins;
 }
 function customerQuickAdd_(p, user) {
@@ -897,7 +1063,7 @@ var SECRET_KEYS = ['sms_api_key'];
 function settingsGet_(p, user) {
   var m = Object.assign({}, settingsMap_());
   Object.keys(m).forEach(function (k) { if (k.indexOf('seq_') === 0) delete m[k]; });
-  if (!can_(user, 'settings')) SECRET_KEYS.concat(['sms_url', 'sms_body', 'sms_sender_id']).forEach(function (k) { delete m[k]; });
+  if (!can_(user, 'settings')) SECRET_KEYS.concat(['sms_url', 'sms_body', 'sms_sender_id', 'sms_headers']).forEach(function (k) { delete m[k]; });
   return m;
 }
 /** Expense categories live in the Expenses module (staff with the expenses permission manage them). */
@@ -946,6 +1112,11 @@ function smsNumber_(phone) {
   return d;
 }
 function sendSms_(phone, message, logMessage) {
+  if (_txn) {
+    var queued = { ok: false, status: 'queued', response: 'Financial changes saved; SMS delivery is not confirmed. Check SMS log before resending.' };
+    _txn.sms.push({ phone: phone, message: message, logMessage: logMessage, result: queued });
+    return queued;
+  }
   var number = smsNumber_(phone);
   if (!number) return { ok: false, status: 'skipped', response: 'No phone number' };
   var vars = { api_key: getSetting_('sms_api_key'), sender_id: getSetting_('sms_sender_id'), number: number, message: message };
@@ -973,8 +1144,9 @@ function sendSms_(phone, message, logMessage) {
     }
     text = res.getContentText().slice(0, 300);
     if (res.getResponseCode() >= 400 || smsReplyFailed_(text)) status = 'failed';
-  } catch (e) { status = 'failed'; text = String(e.message || e); }
-  insert_('SmsLog', { ts: now_(), phone: number, message: logMessage || message, status: status, response: text });
+  } catch (e) { status = 'unknown'; text = 'Delivery could not be confirmed. Check gateway before resending: ' + String(e.message || e); }
+  // A log write failure must never turn an already committed sale into a reported failure.
+  try { insert_('SmsLog', { ts: now_(), phone: number, message: logMessage || message, status: status, response: text }); } catch (logError) { return { ok: false, status: 'unknown', response: 'SMS response received but log could not be saved. Check gateway before resending.' }; }
   return { ok: status === 'sent', status: status, response: text };
 }
 /**
@@ -1018,7 +1190,8 @@ function sendSaleSms_(sale, lines, customer) {
   if (!link) msg = msg.replace(/\s*(View|Invoice|Link):?\s*$/i, ''); // template ends with "View: {link}" but links are off
   // the SMS log keeps the message without the working link
   var r = sendSms_(phone, msg, link ? msg.split(link.url).join(maskLink_(link.url)) : null);
-  if (link && !r.ok) removeLink_(link.id); // nothing was sent: the link is not needed
+  if (_txn && link) _txn.sms[_txn.sms.length - 1].linkId = link.id;
+  if (link && (r.status === 'failed' || r.status === 'skipped')) removeLink_(link.id); // retain valid links when delivery is merely unconfirmed
   return r;
 }
 
@@ -1060,8 +1233,7 @@ function removeLink_(id) { try { remove_('InvoiceLinks', id); } catch (e) {} }
 function cleanupLinks_() {
   var now = now_(), dead = all_('InvoiceLinks').filter(function (l) { return !l.expires_at || l.expires_at <= now; });
   if (!dead.length) return 0;
-  var sh = sheet_('InvoiceLinks');
-  dead.sort(function (a, b) { return b._row - a._row; }).forEach(function (l) { sh.deleteRow(l._row); });
+  dead.forEach(function (l) { remove_('InvoiceLinks', l.id); });
   delete _mem.InvoiceLinks;
   return dead.length;
 }
@@ -1125,7 +1297,7 @@ function bootstrap_(p, user) {
   if (!can_(user, 'accounts')) accounts = accounts.map(function (a) { return { id: a.id, name: a.name, type: a.type, active: a.active }; });
   var cats = all_('Categories').map(function (c) { return { id: c.id, name: c.name, parent_id: c.parent_id }; });
   return {
-    user: pubUser_(user), perms: permsFor_(user.role), permLabels: PERMS,
+    user: pubUser_(user), perms: permsFor_(user.role), permLabels: PERMS, apiCapabilities: API_CAPABILITIES,
     settings: settings,
     accounts: accounts, categories: cats,
     brands: all_('Brands').map(function (b) { return { id: b.id, name: b.name }; }),
@@ -1167,6 +1339,58 @@ function serialIds_(lines) { return lines.filter(function (l) { return l.pr && i
 function isService_(pr) { return !!pr && (pr.service === true || pr.service === 'true'); }
 function nameKey_(s) { return String(s || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
 
+function valuation_(value) {
+  if (value && typeof value === 'object') return value;
+  try { return JSON.parse(value || 'null') || null; } catch (e) { return null; }
+}
+/** Older purchases booked gross cost. Never silently revalue existing stock after an upgrade. */
+function purchaseInventoryCost_(item) {
+  var v = valuation_(item.valuation);
+  return v && v.cost_version === 1 ? num_(v.inventory_cost) : round_(item.qty * item.cost, 4);
+}
+/** Rounded line allocations sum exactly to the invoice total, including old invoices. */
+function invoiceLineNet_(item, items, invoice) {
+  var gross = 0, allocated = 0, answer = 0;
+  items.forEach(function (line) {
+    gross += num_(line.total);
+    var through = invoice.subtotal > 0 ? round_(invoice.total * gross / invoice.subtotal) : 0;
+    if (line.id === item.id) answer = round_(through - allocated);
+    allocated = through;
+  });
+  return answer;
+}
+function returnLineValue_(lineTotal, originalQty, returnedQty, returnedValue, qty) {
+  if (returnedValue > lineTotal + 0.005) fail_('Earlier returns exceed the invoice value; reconcile them before another return');
+  return Math.max(0, round_(Math.min(lineTotal - returnedValue, round_(lineTotal * (returnedQty + qty) / originalQty) - returnedValue)));
+}
+function addInventoryValue_(pr, qty, value) {
+  var stock = round_(pr.stock + qty, 4);
+  if (pr.stock < -1e-9) fail_('Repair the negative stock of ' + pr.name + ' before changing its valuation');
+  return { stock: stock, cost_price: stock > 0 ? round_((pr.stock * pr.cost_price + value) / stock, 4) : pr.cost_price };
+}
+/** Removing a historical layer must not leave negative value or value with no units. */
+function removeInventoryValue_(pr, qty, value) {
+  var stock = round_(pr.stock - qty, 4), left = round_(pr.stock * pr.cost_price - value, 4);
+  // A four-decimal unit cost can accumulate a few fractional cents on long cable rolls.
+  var tolerance = Math.max(0.005, Math.abs(pr.stock) * 0.000051);
+  if (stock < -1e-9) fail_('Insufficient stock for ' + pr.name);
+  if (left < -tolerance || (stock <= 1e-9 && Math.abs(left) > tolerance))
+    fail_('Cannot change the cost layer of ' + pr.name + ': reverse later inventory changes first');
+  return { stock: Math.max(0, stock), cost_price: stock > 1e-9 ? round_(Math.max(0, left) / stock, 4) : pr.cost_price };
+}
+function laterInventoryChange_(productId, refType, refId, serial) {
+  var events = all_('ItemEvents'), marker = 0;
+  events.forEach(function (e) { if (e.product_id === productId && e.ref_type === refType && e.ref_id === refId) marker = Math.max(marker, e._row); });
+  if (!marker) return true; // Cannot safely infer the cost of a legacy return without its history.
+  var active = { purchase: indexBy_(all_('Purchases')), sale: indexBy_(all_('Sales')), sreturn: indexBy_(all_('SalesReturns')), preturn: indexBy_(all_('PurchaseReturns')) };
+  return events.some(function (e) {
+    if (e.product_id !== productId || e._row <= marker || (serial && e.serial !== serial)) return false;
+    if (e.event === 'stock_adjust') return true;
+    var row = active[e.ref_type] && active[e.ref_type][e.ref_id];
+    return row && row.status === 'active' && ['purchase', 'sale', 'sale_return', 'purchase_return'].indexOf(e.event) >= 0;
+  });
+}
+
 function purchaseCreate_(p, user) {
   var pmap = indexBy_(all_('Products')), items = p.items || [];
   if (!items.length) fail_('Add at least one item');
@@ -1202,6 +1426,13 @@ function purchaseCreate_(p, user) {
 
   subtotal = round_(subtotal);
   var discount = Math.min(Math.max(num_(p.discount), 0), subtotal), total = round_(subtotal - discount);
+  // Allocate the invoice discount cumulatively, so line values add to the exact payable.
+  var grossAllocated = 0, netAllocated = 0;
+  lines.forEach(function (l) {
+    grossAllocated += l.total;
+    var through = subtotal > 0 ? round_(total * grossAllocated / subtotal) : 0;
+    l.inventoryCost = round_(through - netAllocated); netAllocated = through;
+  });
   var pays = payList_(p.payments), paid = round_(sum_(pays, function (x) { return x.amount; }));
   if (paid > total + 0.005) fail_('Paid amount (' + paid + ') exceeds the purchase total (' + total + ')');
   var due = round_(total - paid);
@@ -1230,18 +1461,20 @@ function purchaseCreate_(p, user) {
     var pr = l.pr, oldStock = pr.stock;
     // weighted-average cost for non-serial items; latest cost otherwise
     // Weighted average of what is in stock and what arrives now. Serial items: average of the in-stock units' own costs.
-    var newCost = l.cost;
+    var unitCost = l.inventoryCost / l.qty, newCost = round_(unitCost, 4);
     if (isSerialProduct_(pr)) {
       var held = all_('SerialItems').filter(function (s) { return s.product_id === pr.id && s.status === 'in_stock'; });
-      newCost = round_((sum_(held, function (s) { return num_(s.cost); }) + l.cost * l.qty) / (held.length + l.qty), 4);
-    } else if (oldStock > 0) newCost = round_((oldStock * pr.cost_price + l.total) / (oldStock + l.qty), 4);
-    update_('PurchaseItems', rows[index].id, { valuation: { stock: oldStock, cost: pr.cost_price, after_stock: round_(oldStock + l.qty, 4), after_cost: newCost } });
+      var arriving = newSerials.filter(function (s) { return s.product_id === pr.id; });
+      newCost = round_((sum_(held.concat(arriving), function (s) { return num_(s.cost); }) + l.inventoryCost) / (held.length + arriving.length + l.qty), 4);
+    } else if (oldStock > 0) newCost = round_((oldStock * pr.cost_price + l.inventoryCost) / (oldStock + l.qty), 4);
+    update_('PurchaseItems', rows[index].id, { valuation: { stock: oldStock, cost: pr.cost_price, after_stock: round_(oldStock + l.qty, 4), after_cost: newCost, cost_version: 1, inventory_cost: l.inventoryCost } });
     var patch = { stock: round_(oldStock + l.qty, 4), cost_price: newCost };
     if (l.sale > 0) patch.sale_price = l.sale;
     if (l.whole !== null) patch.wholesale_price = l.whole;
     update_('Products', pr.id, patch);
-    l.serials.forEach(function (s) {
-      newSerials.push({ product_id: pr.id, serial: s, purchase_id: pur.id, sale_id: '', status: 'in_stock', cost: l.cost, created_at: now_() });
+    l.serials.forEach(function (s, serialNo) {
+      var serialCost = round_(l.inventoryCost * (serialNo + 1) / l.qty, 4) - round_(l.inventoryCost * serialNo / l.qty, 4);
+      newSerials.push({ product_id: pr.id, serial: s, purchase_id: pur.id, sale_id: '', status: 'in_stock', cost: round_(serialCost, 4), created_at: now_() });
       events.push({ serial: s, product_id: pr.id, product_name: pr.name, event: 'purchase', ref_type: 'purchase', ref_id: pur.id, ref_no: inv, party: pur.supplier_name, qty: 1, amount: l.cost, note: 'Stock received' });
     });
     if (!l.serials.length) events.push({ serial: '', product_id: pr.id, product_name: pr.name, event: 'purchase', ref_type: 'purchase', ref_id: pur.id, ref_no: inv, party: pur.supplier_name, qty: l.qty, amount: l.total, note: 'Stock received' });
@@ -1439,12 +1672,15 @@ function sreturnCreate_(p, user) {
   var pmap = indexBy_(all_('Products')), sidx = serialIndex_();
   var sitems = all_('SaleItems').filter(function (i) { return i.sale_id === sale.id; });
   var retIds = {}; all_('SalesReturns').forEach(function (r) { if (r.sale_id === sale.id && r.status === 'active') retIds[r.id] = 1; });
-  var retQty = {}; all_('SalesReturnItems').forEach(function (x) { if (retIds[x.return_id]) retQty[x.sale_item_id] = (retQty[x.sale_item_id] || 0) + x.qty; });
-  var ratio = sale.subtotal > 0 ? sale.total / sale.subtotal : 1, lines = [], total = 0, costTotal = 0;
+  var retQty = {}, retValue = {}; all_('SalesReturnItems').forEach(function (x) { if (retIds[x.return_id]) { retQty[x.sale_item_id] = (retQty[x.sale_item_id] || 0) + x.qty; retValue[x.sale_item_id] = (retValue[x.sale_item_id] || 0) + x.total; } });
+  var ratio = sale.subtotal > 0 ? sale.total / sale.subtotal : 1, lines = [], total = 0, costTotal = 0, seenLines = {}, seenSerials = {};
 
   (p.items || []).forEach(function (it) {
     var qty = num_(it.qty); if (qty <= 0) return;
     var si = sitems.filter(function (x) { return x.id === it.sale_item_id; })[0]; if (!si) fail_('Invoice line not found');
+    if (seenLines[si.id]) fail_('Duplicate return line for ' + si.name);
+    seenLines[si.id] = true;
+    if ((!isDecimalUnit_(si.unit) || si.serials) && qty % 1 !== 0) fail_('Return quantity for ' + si.name + ' must be a whole number');
     var remaining = si.qty - (retQty[si.id] || 0);
     if (qty > remaining + 1e-9) fail_('Return quantity for ' + si.name + ' exceeds what is returnable (' + remaining + ')');
     var sers = [], cost = 0;
@@ -1452,12 +1688,14 @@ function sreturnCreate_(p, user) {
       var sold = parseList_(si.serials); sers = splitSerials_(it.serials);
       if (sers.length !== qty) fail_('Select ' + qty + ' serial number(s) being returned for ' + si.name);
       sers.forEach(function (s) {
-        var rec = sidx[si.product_id + '|' + s];
+        var key = si.product_id + '|' + s, rec = sidx[key];
+        if (seenSerials[key]) fail_('Duplicate serial ' + s + ' in return');
+        seenSerials[key] = true;
         if (sold.indexOf(s) < 0 || !rec || rec.status !== 'sold' || rec.sale_id !== sale.id) fail_('Serial ' + s + ' cannot be returned on this invoice');
         cost += rec.cost;
       });
-    } else cost = si.cost * qty / si.qty;
-    var value = round_(qty * si.price * ratio);
+    } else cost = round_(si.cost * ((retQty[si.id] || 0) + qty) / si.qty, 4) - round_(si.cost * (retQty[si.id] || 0) / si.qty, 4);
+    var value = returnLineValue_(invoiceLineNet_(si, sitems, sale), si.qty, retQty[si.id] || 0, retValue[si.id] || 0, qty);
     lines.push({ si: si, pr: pmap[si.product_id], qty: qty, value: value, cost: round_(cost, 4), serials: sers });
     total += value; costTotal += cost;
   });
@@ -1470,14 +1708,14 @@ function sreturnCreate_(p, user) {
   } else {
     accId = rf.account_id; refund = round_(rf.amount === undefined ? total : rf.amount);
     if (!all_('Accounts').some(function (a) { return a.id === accId && a.active; })) fail_('Select the account used for the refund');
-    if (refund <= 0 || refund > total + 0.005) fail_('Refund must be between 0 and ' + total);
+    if (refund < 0 || refund > total + 0.005) fail_('Refund must be between 0 and ' + total);
     if (!sale.customer_id && Math.abs(refund - total) > 0.005) fail_('Walk-in returns must be refunded in full');
   }
 
   var no = nextNo_('seq_sreturn', 'SR-'), date = today_();
   var ret = insert_('SalesReturns', {
     return_no: no, date: date, sale_id: sale.id, invoice_no: sale.invoice_no, customer_id: sale.customer_id, customer_name: sale.customer_name,
-    type: p.type === 'exchange' ? 'exchange' : 'return', total: total, cost: round_(costTotal), refund: refund, refund_account_id: accId,
+    type: p.type === 'exchange' ? 'exchange' : 'return', total: total, cost: round_(costTotal, 4), refund: refund, refund_account_id: accId,
     note: p.note || '', status: 'active', user: user.name, created_at: now_()
   });
   insertMany_('SalesReturnItems', lines.map(function (l) {
@@ -1492,7 +1730,7 @@ function sreturnCreate_(p, user) {
       if (!isSerialProduct_(cur)) newCost = newStock > 0 ? round_((Math.max(oldStock, 0) * oldCost + l.cost) / (Math.max(oldStock, 0) + l.qty), 4) : oldCost;
       update_('Products', cur.id, { stock: newStock, cost_price: newCost });
       cur.stock = newStock; cur.cost_price = newCost;
-      if (retRows[li]) update_('SalesReturnItems', retRows[li].id, { valuation: { stock: oldStock, cost: oldCost, after_stock: newStock, after_cost: newCost } });
+      if (retRows[li]) update_('SalesReturnItems', retRows[li].id, { valuation: { stock: oldStock, cost: oldCost, after_stock: newStock, after_cost: newCost, serial_ids: l.serials.map(function (s) { return sidx[l.pr.id + '|' + s].id; }) } });
     }
     l.serials.forEach(function (s) {
       update_('SerialItems', sidx[l.pr.id + '|' + s].id, { status: 'in_stock', sale_id: '' });
@@ -1528,27 +1766,38 @@ function preturnCreate_(p, user) {
   var pmap = indexBy_(all_('Products')), sidx = serialIndex_();
   var pitems = all_('PurchaseItems').filter(function (i) { return i.purchase_id === pur.id; });
   var retIds = {}; all_('PurchaseReturns').forEach(function (r) { if (r.purchase_id === pur.id && r.status === 'active') retIds[r.id] = 1; });
-  var retQty = {}; all_('PurchaseReturnItems').forEach(function (x) { if (retIds[x.return_id]) retQty[x.purchase_item_id] = (retQty[x.purchase_item_id] || 0) + x.qty; });
-  var ratio = pur.subtotal > 0 ? pur.total / pur.subtotal : 1, lines = [], total = 0;
+  var retQty = {}, retValue = {}; all_('PurchaseReturnItems').forEach(function (x) { if (retIds[x.return_id]) { retQty[x.purchase_item_id] = (retQty[x.purchase_item_id] || 0) + x.qty; retValue[x.purchase_item_id] = (retValue[x.purchase_item_id] || 0) + x.total; } });
+  var ratio = pur.subtotal > 0 ? pur.total / pur.subtotal : 1, lines = [], total = 0, seenLines = {}, seenSerials = {}, planned = {};
 
   (p.items || []).forEach(function (it) {
     var qty = num_(it.qty); if (qty <= 0) return;
     var pi = pitems.filter(function (x) { return x.id === it.purchase_item_id; })[0]; if (!pi) fail_('Purchase line not found');
+    if (seenLines[pi.id]) fail_('Duplicate return line for ' + pi.name);
+    seenLines[pi.id] = true;
+    if ((!isDecimalUnit_(pi.unit) || pi.serials) && qty % 1 !== 0) fail_('Return quantity for ' + pi.name + ' must be a whole number');
     var remaining = pi.qty - (retQty[pi.id] || 0);
     if (qty > remaining + 1e-9) fail_('Return quantity for ' + pi.name + ' exceeds what is returnable (' + remaining + ')');
-    var pr = pmap[pi.product_id];
-    if (pr.stock < qty - 1e-9) fail_('Only ' + pr.stock + ' of ' + pr.name + ' left in stock — cannot return ' + qty);
-    var sers = [];
+    var pr = pmap[pi.product_id]; if (!pr || isService_(pr)) fail_('Inventory product not found for ' + pi.name);
+    var cur = planned[pr.id] || Object.assign({}, pr);
+    if (cur.stock < qty - 1e-9) fail_('Only ' + cur.stock + ' of ' + pr.name + ' left in stock — cannot return ' + qty);
+    var sers = [], inventoryCost = 0;
     if (pi.serials) {
       var bought = parseList_(pi.serials); sers = splitSerials_(it.serials);
       if (sers.length !== qty) fail_('Select ' + qty + ' serial number(s) to return for ' + pi.name);
       sers.forEach(function (s) {
-        var rec = sidx[pi.product_id + '|' + s];
-        if (bought.indexOf(s) < 0 || !rec || rec.status !== 'in_stock') fail_('Serial ' + s + ' is not in stock — it cannot be returned to the supplier');
+        var key = pi.product_id + '|' + s, rec = sidx[key];
+        if (seenSerials[key]) fail_('Duplicate serial ' + s + ' in return');
+        seenSerials[key] = true;
+        if (bought.indexOf(s) < 0 || !rec || rec.status !== 'in_stock' || rec.purchase_id !== pur.id) fail_('Serial ' + s + ' is not in stock from this purchase — it cannot be returned to the supplier');
+        inventoryCost += rec.cost;
       });
-    }
-    var value = round_(qty * pi.cost * ratio);
-    lines.push({ pi: pi, pr: pr, qty: qty, value: value, serials: sers }); total += value;
+    } else inventoryCost = round_(purchaseInventoryCost_(pi) * ((retQty[pi.id] || 0) + qty) / pi.qty, 4) - round_(purchaseInventoryCost_(pi) * (retQty[pi.id] || 0) / pi.qty, 4);
+    inventoryCost = round_(inventoryCost, 4);
+    var after = pi.serials ? { stock: round_(cur.stock - qty, 4), cost_price: cur.cost_price } : removeInventoryValue_(cur, qty, inventoryCost);
+    var snapshot = { stock: cur.stock, cost: cur.cost_price, after_stock: after.stock, after_cost: after.cost_price, inventory_cost: inventoryCost, serial_ids: sers.map(function (s) { return sidx[pr.id + '|' + s].id; }) };
+    cur.stock = after.stock; cur.cost_price = after.cost_price; planned[pr.id] = cur;
+    var value = returnLineValue_(invoiceLineNet_(pi, pitems, pur), pi.qty, retQty[pi.id] || 0, retValue[pi.id] || 0, qty);
+    lines.push({ pi: pi, pr: pr, qty: qty, value: value, serials: sers, valuation: snapshot }); total += value;
   });
   if (!lines.length) fail_('Select at least one item to return');
   total = round_(total);
@@ -1557,7 +1806,7 @@ function preturnCreate_(p, user) {
   if (rf.mode !== 'adjust') {
     accId = rf.account_id; received = round_(rf.amount === undefined ? total : rf.amount);
     if (!all_('Accounts').some(function (a) { return a.id === accId && a.active; })) fail_('Select the account that received the refund');
-    if (received <= 0 || received > total + 0.005) fail_('Refund must be between 0 and ' + total);
+    if (received < 0 || received > total + 0.005) fail_('Refund must be between 0 and ' + total);
   } else if (!pur.supplier_id) fail_('This purchase has no supplier — record the refund against an account');
 
   var no = nextNo_('seq_preturn', 'PR-'), date = today_();
@@ -1566,11 +1815,11 @@ function preturnCreate_(p, user) {
     total: total, received: received, account_id: accId, note: p.note || '', status: 'active', user: user.name, created_at: now_()
   });
   insertMany_('PurchaseReturnItems', lines.map(function (l) {
-    return { return_id: ret.id, purchase_item_id: l.pi.id, product_id: l.pi.product_id, name: l.pi.name, qty: l.qty, cost: l.pi.cost, total: l.value, serials: l.serials.join(',') };
+    return { return_id: ret.id, purchase_item_id: l.pi.id, product_id: l.pi.product_id, name: l.pi.name, qty: l.qty, cost: l.pi.cost, total: l.value, serials: l.serials.join(','), valuation: l.valuation };
   }));
   var events = [];
   lines.forEach(function (l) {
-    update_('Products', l.pr.id, { stock: round_(l.pr.stock - l.qty, 4) });
+    update_('Products', l.pr.id, { stock: l.valuation.after_stock, cost_price: l.valuation.after_cost });
     l.serials.forEach(function (s) {
       update_('SerialItems', sidx[l.pr.id + '|' + s].id, { status: 'returned_supplier' });
       events.push({ serial: s, product_id: l.pr.id, product_name: l.pr.name, event: 'purchase_return', ref_type: 'preturn', ref_id: ret.id, ref_no: no, party: pur.supplier_name, qty: 1, amount: l.pi.cost, note: 'Returned to supplier from ' + pur.invoice_no });
@@ -1697,8 +1946,16 @@ function reverseSale_(p, user, reason) {
   if (all_('SalesReturns').some(function (r) { return r.sale_id === s.id && r.status === 'active'; })) fail_('Cancel the return(s) of this invoice first');
   if (all_('WarrantyClaims').some(function (c) { return c.sale_id === s.id && c.status !== 'Delivered' && c.status !== 'Rejected'; })) fail_('This invoice has open warranty claims');
   var pmap = indexBy_(all_('Products')), sidx = serialIndex_(), events = [];
-  all_('SaleItems').filter(function (i) { return i.sale_id === s.id; }).forEach(function (i) {
-    var pr = pmap[i.product_id]; if (pr && !isService_(pr)) update_('Products', pr.id, { stock: round_(pr.stock + i.qty, 4) });
+  var items = all_('SaleItems').filter(function (i) { return i.sale_id === s.id; });
+  items.forEach(function (i) {
+    parseList_(i.serials).forEach(function (sn) {
+      var rec = sidx[i.product_id + '|' + sn];
+      if (!rec || rec.status !== 'sold' || rec.sale_id !== s.id) fail_('Cannot cancel: serial ' + sn + ' is no longer sold on this invoice');
+    });
+  });
+  items.forEach(function (i) {
+    var pr = pmap[i.product_id];
+    if (pr && !isService_(pr)) update_('Products', pr.id, i.serials ? { stock: round_(pr.stock + i.qty, 4) } : addInventoryValue_(pr, i.qty, i.cost));
     parseList_(i.serials).forEach(function (sn) {
       var rec = sidx[i.product_id + '|' + sn]; if (rec && rec.sale_id === s.id) update_('SerialItems', rec.id, { status: 'in_stock', sale_id: '' });
       events.push({ serial: sn, product_id: i.product_id, product_name: i.name, event: 'sale_cancelled', ref_type: 'sale', ref_id: s.id, ref_no: s.invoice_no, party: s.customer_name, qty: 1, amount: 0, note: 'Invoice cancelled: ' + reason });
@@ -1731,11 +1988,11 @@ function reversePurchase_(p, user, reason) {
   items.slice().reverse().forEach(function (i) {
     var pr = planned[i.product_id] || Object.assign({}, pmap[i.product_id]);
     if (!pr.id || pr.stock < i.qty - 1e-9) fail_('Cannot cancel: insufficient stock for ' + i.name);
-    var before = null; try { before = JSON.parse(i.valuation || 'null'); } catch (e) {}
+    var before = valuation_(i.valuation);
     var remaining = round_(pr.stock - i.qty, 4), cost = pr.cost_price;
     if (before && Math.abs(pr.stock - before.after_stock) < 1e-9 && Math.abs(cost - before.after_cost) < 0.00005) cost = before.cost;
     else if (!i.serials) {
-      cost = remaining > 0 ? round_((pr.stock * cost - i.qty * i.cost) / remaining, 4) : 0;
+      cost = remaining > 0 ? round_((pr.stock * cost - purchaseInventoryCost_(i)) / remaining, 4) : 0;
       if (cost < -0.0001) fail_('Cannot cancel: later inventory changes must be reversed first');
       cost = Math.max(0, cost);
     }
@@ -1767,22 +2024,25 @@ function reversePurchase_(p, user, reason) {
 function reverseSreturn_(p, user, reason) {
   var r = all_('SalesReturns').filter(function (x) { return x.id === p.id; })[0];
   if (!r) fail_('Return not found'); if (r.status !== 'active') fail_('Return is already cancelled');
-  var pmap = indexBy_(all_('Products')), sidx = serialIndex_(), items = all_('SalesReturnItems').filter(function (i) { return i.return_id === r.id; });
-  items.forEach(function (i) {
-    var pr = pmap[i.product_id];
-    if (!isService_(pr) && pr.stock < i.qty - 1e-9) fail_('Cannot cancel: ' + i.name + ' returned stock has already been sold again');
-    parseList_(i.serials).forEach(function (sn) { var rec = sidx[i.product_id + '|' + sn]; if (!rec || rec.status !== 'in_stock') fail_('Cannot cancel: serial ' + sn + ' is no longer in stock'); });
-  });
-  var events = [];
+  var pmap = indexBy_(all_('Products')), sidx = serialIndex_(), items = all_('SalesReturnItems').filter(function (i) { return i.return_id === r.id; }), planned = {};
   items.slice().reverse().forEach(function (i) {
-    var pr = pmap[i.product_id]; if (isService_(pr)) return;
-    var remaining = round_(pr.stock - i.qty, 4), cost = pr.cost_price, before = null;
-    try { before = typeof i.valuation === 'string' ? JSON.parse(i.valuation || 'null') : i.valuation; } catch (e) {}
-    if (before && Math.abs(pr.stock - before.after_stock) < 1e-9 && Math.abs(cost - before.after_cost) < 0.00005) cost = before.cost;
-    else if (before && !i.serials && remaining > 0) cost = Math.max(0, round_((pr.stock * cost - i.cost) / remaining, 4));
-    update_('Products', pr.id, { stock: remaining, cost_price: cost });
-    pr.stock = remaining; pr.cost_price = cost;
+    var original = pmap[i.product_id]; if (!original) fail_('Product not found: ' + i.name); if (isService_(original)) return;
+    var pr = planned[original.id] || Object.assign({}, original), before = valuation_(i.valuation);
+    if (pr.stock < i.qty - 1e-9) fail_('Cannot cancel: ' + i.name + ' returned stock has already been sold again');
+    var serials = parseList_(i.serials);
+    serials.forEach(function (sn, n) {
+      var rec = sidx[i.product_id + '|' + sn];
+      if (!rec || rec.status !== 'in_stock' || (before && before.serial_ids && rec.id !== before.serial_ids[n]) || laterInventoryChange_(i.product_id, 'sreturn', r.id, sn))
+        fail_('Cannot cancel: serial ' + sn + ' has later inventory changes; reverse them first');
+    });
+    var after;
+    if (before && Math.abs(pr.stock - before.after_stock) < 1e-9 && Math.abs(pr.cost_price - before.after_cost) < 0.00005)
+      after = { stock: round_(pr.stock - i.qty, 4), cost_price: before.cost };
+    else after = serials.length ? { stock: round_(pr.stock - i.qty, 4), cost_price: pr.cost_price } : removeInventoryValue_(pr, i.qty, i.cost);
+    pr.stock = after.stock; pr.cost_price = after.cost_price; planned[pr.id] = pr;
   });
+  Object.keys(planned).forEach(function (id) { update_('Products', id, { stock: planned[id].stock, cost_price: planned[id].cost_price }); });
+  var events = [];
   items.forEach(function (i) {
     parseList_(i.serials).forEach(function (sn) {
       update_('SerialItems', sidx[i.product_id + '|' + sn].id, { status: 'sold', sale_id: r.sale_id });
@@ -1798,11 +2058,31 @@ function reverseSreturn_(p, user, reason) {
 function reversePreturn_(p, user, reason) {
   var r = all_('PurchaseReturns').filter(function (x) { return x.id === p.id; })[0];
   if (!r) fail_('Return not found'); if (r.status !== 'active') fail_('Return is already cancelled');
-  var pmap = indexBy_(all_('Products')), sidx = serialIndex_(), events = [];
-  all_('PurchaseReturnItems').filter(function (i) { return i.return_id === r.id; }).forEach(function (i) {
-    var pr = pmap[i.product_id]; update_('Products', pr.id, { stock: round_(pr.stock + i.qty, 4) });
+  var pmap = indexBy_(all_('Products')), sidx = serialIndex_(), events = [], planned = {}, items = all_('PurchaseReturnItems').filter(function (i) { return i.return_id === r.id; });
+  items.slice().reverse().forEach(function (i) {
+    var original = pmap[i.product_id]; if (!original || isService_(original)) fail_('Inventory product not found: ' + i.name);
+    var pr = planned[original.id] || Object.assign({}, original), before = valuation_(i.valuation), serials = parseList_(i.serials);
+    serials.forEach(function (sn, n) {
+      var rec = sidx[i.product_id + '|' + sn];
+      if (!rec || rec.status !== 'returned_supplier' || rec.purchase_id !== r.purchase_id || (before && before.serial_ids && rec.id !== before.serial_ids[n]))
+        fail_('Cannot cancel: serial ' + sn + ' has been purchased or moved again; reverse those later operations first');
+    });
+    var after;
+    if (before && Math.abs(pr.stock - before.after_stock) < 1e-9 && Math.abs(pr.cost_price - before.after_cost) < 0.00005)
+      after = { stock: round_(pr.stock + i.qty, 4), cost_price: before.cost };
+    else if (serials.length) after = { stock: round_(pr.stock + i.qty, 4), cost_price: pr.cost_price };
+    else if (before && Object.prototype.hasOwnProperty.call(before, 'inventory_cost')) after = addInventoryValue_(pr, i.qty, num_(before.inventory_cost));
+    else {
+      if (laterInventoryChange_(pr.id, 'preturn', r.id)) fail_('Cannot cancel this legacy return: reverse later inventory changes first');
+      // Pre-1.0.6 purchase returns changed quantity only. Restore their actual old bookkeeping.
+      after = { stock: round_(pr.stock + i.qty, 4), cost_price: pr.cost_price };
+    }
+    pr.stock = after.stock; pr.cost_price = after.cost_price; planned[pr.id] = pr;
+  });
+  Object.keys(planned).forEach(function (id) { update_('Products', id, { stock: planned[id].stock, cost_price: planned[id].cost_price }); });
+  items.forEach(function (i) {
     parseList_(i.serials).forEach(function (sn) {
-      var rec = sidx[i.product_id + '|' + sn]; if (rec) update_('SerialItems', rec.id, { status: 'in_stock' });
+      var rec = sidx[i.product_id + '|' + sn]; update_('SerialItems', rec.id, { status: 'in_stock', sale_id: '' });
       events.push({ serial: sn, product_id: i.product_id, product_name: i.name, event: 'return_cancelled', ref_type: 'preturn', ref_id: r.id, ref_no: r.return_no, party: r.supplier_name, qty: 1, amount: 0, note: 'Purchase return cancelled: ' + reason });
     });
     if (!i.serials) events.push({ serial: '', product_id: i.product_id, product_name: i.name, event: 'return_cancelled', ref_type: 'preturn', ref_id: r.id, ref_no: r.return_no, party: r.supplier_name, qty: i.qty, amount: 0, note: 'Purchase return cancelled: ' + reason });
@@ -1915,8 +2195,17 @@ function itemHistory_(p, user) {
   var q = String(p.q || '').trim(); if (!q) fail_('Enter a serial number, barcode or invoice number');
   var ql = q.toLowerCase(), events = all_('ItemEvents'), res = { query: q, kind: 'none', summary: null, items: [], timeline: [], claims: [], returns: [] };
   var pmap = indexBy_(all_('Products')), sales = indexBy_(all_('Sales')), purs = indexBy_(all_('Purchases'));
-  function cleanEv(e) { return { id: e.id, ts: e.ts, event: e.event, serial: e.serial, product_name: e.product_name, ref_no: e.ref_no, ref_type: e.ref_type, ref_id: e.ref_id, party: e.party, qty: e.qty, amount: e.amount, note: e.note, user: e.user }; }
-  function sortEv(list) { return list.sort(function (a, b) { return a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0; }); }
+  var returnsById = indexBy_(all_('SalesReturns'));
+  function ownSale(s) { return !s || can_(user, 'sales.all') || s.user_id === user.id; }
+  function visibleEv(e) {
+    var sale = e.ref_type === 'sale' ? sales[e.ref_id] : (e.ref_type === 'sreturn' && returnsById[e.ref_id] ? sales[returnsById[e.ref_id].sale_id] : null);
+    return ownSale(sale);
+  }
+  function cleanEv(e) {
+    var costEvent = e.ref_type === 'purchase' || e.ref_type === 'preturn' || e.event === 'purchase' || e.event === 'purchase_return';
+    return { id: e.id, ts: e.ts, event: e.event, serial: e.serial, product_name: e.product_name, ref_no: e.ref_no, ref_type: e.ref_type, ref_id: e.ref_id, party: e.party, qty: e.qty, amount: !costEvent || can_(user, 'cost') ? e.amount : undefined, note: e.note, user: e.user };
+  }
+  function sortEv(list) { return list.filter(visibleEv).sort(function (a, b) { return a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0; }); }
 
   // 1) Serial number
   var serialRecs = all_('SerialItems').filter(function (s) { return s.serial.toLowerCase() === ql && s.status !== 'cancelled'; });
@@ -1927,15 +2216,16 @@ function itemHistory_(p, user) {
     if (sale) si = all_('SaleItems').filter(function (i) { return i.sale_id === sale.id && i.product_id === rec.product_id && parseList_(i.serials).indexOf(rec.serial) >= 0; })[0];
     var inDate = pur ? pur.date : String(rec.created_at).slice(0, 10), outDate = sale ? sale.date : today_();
     var exp = si ? si.warranty_expiry : '';
+    var visibleSale = ownSale(sale) ? sale : null;
     res.summary = {
       serial: rec.serial, product: pr.name || '', status: rec.status, purchase_invoice: pur ? pur.invoice_no : '', supplier: pur ? pur.supplier_name : '',
-      purchase_date: inDate, cost: can_(user, 'cost') ? rec.cost : undefined, sale_invoice: sale ? sale.invoice_no : '', customer: sale ? sale.customer_name : '',
-      sale_date: sale ? sale.date : '', sale_price: si ? si.price : undefined, warranty_expiry: exp, in_warranty: !!exp && exp >= today_(), days_left: exp ? daysBetween_(today_(), exp) : null,
+      purchase_date: inDate, cost: can_(user, 'cost') ? rec.cost : undefined, sale_invoice: visibleSale ? visibleSale.invoice_no : '', customer: visibleSale ? visibleSale.customer_name : '',
+      sale_date: visibleSale ? visibleSale.date : '', sale_price: visibleSale && si ? si.price : undefined, warranty_expiry: exp, in_warranty: !!exp && exp >= today_(), days_left: exp ? daysBetween_(today_(), exp) : null,
       days_in_inventory: daysBetween_(inDate, outDate)
     };
     var ids = {}; serialRecs.forEach(function (s) { ids[s.product_id] = 1; });
     res.timeline = sortEv(events.filter(function (e) { return e.serial.toLowerCase() === ql; }).map(cleanEv));
-    res.claims = all_('WarrantyClaims').filter(function (c) { return c.serial.toLowerCase() === ql; }).map(function (c) { var o = Object.assign({}, c); delete o._row; try { o.log = JSON.parse(c.log || '[]'); } catch (e) { o.log = []; } return o; });
+    res.claims = all_('WarrantyClaims').filter(function (c) { return c.serial.toLowerCase() === ql && ownSale(sales[c.sale_id]); }).map(function (c) { var o = Object.assign({}, c); delete o._row; try { o.log = JSON.parse(c.log || '[]'); } catch (e) { o.log = []; } return o; });
     return res;
   }
 
@@ -1957,6 +2247,7 @@ function itemHistory_(p, user) {
   var pu = all_('Purchases').filter(function (s) { return s.invoice_no.toLowerCase() === ql; })[0]
     || all_('Purchases').filter(function (s) { return s.supplier_invoice && s.supplier_invoice.toLowerCase() === ql; }).sort(function (a, b) { return (b.status === 'active') - (a.status === 'active') || b._row - a._row; })[0];
   if (pu) {
+    if (!can_(user, 'purchase')) fail_('Permission denied: purchase invoice history');
     res.kind = 'purchase_invoice';
     var pits = all_('PurchaseItems').filter(function (i) { return i.purchase_id === pu.id; });
     res.summary = { invoice: pu.invoice_no, supplier_invoice: pu.supplier_invoice || '', date: pu.date, supplier: pu.supplier_name, total: pu.total, paid: pu.paid, due: pu.due, status: pu.status };
@@ -1973,7 +2264,7 @@ function itemHistory_(p, user) {
     var srs = all_('SerialItems').filter(function (s) { return s.product_id === prod.id && s.status !== 'cancelled'; });
     var counts = {}; srs.forEach(function (s) { counts[s.status] = (counts[s.status] || 0) + 1; });
     res.summary = { product: prod.name, barcode: prod.barcode, sku: prod.sku, stock: prod.stock, unit: prod.unit, serials_in_stock: counts.in_stock || 0, serials_sold: counts.sold || 0, serials_returned_supplier: counts.returned_supplier || 0 };
-    res.items = srs.slice(-300).map(function (s) { return { serial: s.serial, status: s.status, sale_invoice: s.sale_id && sales[s.sale_id] ? sales[s.sale_id].invoice_no : '', purchase_invoice: purs[s.purchase_id] ? purs[s.purchase_id].invoice_no : '' }; });
+    res.items = srs.slice(-300).map(function (s) { return { serial: s.serial, status: s.status, sale_invoice: s.sale_id && ownSale(sales[s.sale_id]) && sales[s.sale_id] ? sales[s.sale_id].invoice_no : '', purchase_invoice: purs[s.purchase_id] ? purs[s.purchase_id].invoice_no : '' }; });
     res.timeline = sortEv(events.filter(function (e) { return e.product_id === prod.id; }).slice(-300).map(cleanEv));
     return res;
   }
@@ -2321,8 +2612,9 @@ function reports_(p, user) {
 function r_(perm, fn, write) { return { perm: perm, fn: fn, write: !!write }; }
 
 var ROUTES = {
-  ping:               { public: true, fn: function () { return { app: 'Karvio', version: APP_VERSION, time: now_() }; } },
-  'invoice.public':   { public: true, fn: invoicePublic_, write: true },
+  ping:               { public: true, fn: function () { return { app: 'Karvio', version: APP_VERSION, time: now_(), apiCapabilities: API_CAPABILITIES }; } },
+  // Expiry cleanup is idempotent housekeeping; a rejected public link must still stay deleted.
+  'invoice.public':   { public: true, fn: invoicePublic_, write: false },
   login:              { public: true, fn: login_, write: false },
   logout:             r_(null, logout_),
   'password.change':  r_(null, changePassword_, true),
@@ -2410,16 +2702,24 @@ function doPost(e) {
   try {
     var route = ROUTES[req.action];
     if (!route) fail_('Unknown action: ' + req.action);
-    var user = null;
-    if (!route.public) {
-      user = authUser_(req.token);
-      need_(user, route.perm);
-    }
-    var run = function () { return route.fn(req.payload || {}, user, req.token); };
-    var data = route.write ? withLock_(run) : run();
+    var user = null, info = null;
+    var run = function () {
+      if (!route.public) { user = authUser_(req.token); need_(user, route.perm); }
+      if (route.write) {
+        info = requestInfo_(req, user);
+        var saved = info && findReceipt_(info.key);
+        if (saved) {
+          if (saved.meta.payload !== info.payload) fail_('This request ID was already used with different data. Start a new operation.');
+          return saved.data;
+        }
+      }
+      return route.fn(req.payload || {}, user, req.token);
+    };
+    // Reads acquire the same lock and recover unfinished commits before exposing business data.
+    var data = withLock_(run, route.write, function () { return info; });
     return json_({ ok: true, data: data });
   } catch (err) {
     var msg = String(err && err.message ? err.message : err);
-    return json_({ ok: false, error: msg.replace(/^Error:\s*/, ''), auth: msg.indexOf('AUTH:') === 0 });
+    return json_({ ok: false, error: msg.replace(/^Error:\s*/, ''), auth: msg.indexOf('AUTH:') === 0, retryable: !!err.retryable, uncertain: !!err.uncertain });
   }
 }

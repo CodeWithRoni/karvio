@@ -1,21 +1,23 @@
-# Karvio
+# Karvio 1.0.6
 
-Shop management & POS for a computer, IT accessories and networking retail/wholesale business.
+Computer / IT / networking shop management and POS: React web/mobile UI, Google Apps Script + Sheets online backend, and Electron offline desktop with local persistent data.
 
-- **Frontend:** React (Vite) — POS with barcode & serial support, stock explorer, purchases & returns, multi-account ledger (cash / bKash / Nagad / bank), customer dues (Bakir Khata), warranty claims, item history explorer, PC builder & quotations, reports with Excel / PDF / print, role-based access, dark/light mode.
-- **Backend:** Google Apps Script (`backend/Code.gs`) deployed as a Web App, with Google Sheets as the database.
-- **Live app:** published to GitHub Pages by `.github/workflows/deploy.yml` on every push to `main`.
+Start with **[UPLOAD_GUIDE-বাংলা.md](UPLOAD_GUIDE-বাংলা.md)** for deployment order and local/offline usage. See **FIXES-1.0.6.md** for the fourteen review fixes and **VERIFICATION.md** for validation.
 
-See **[SETUP.md](SETUP.md)** for the full setup guide (Bangla) and **[AI_HANDOVER.md](AI_HANDOVER.md)** for the complete A–Z handover (architecture, database, API, features, tests, deploy, history).
+- Online backend source: `backend/Code.gs` (the single authoritative Apps Script file).
+- Web source: `frontend/src/`; prebuilt static website: `frontend/dist/`.
+- Offline desktop: `frontend/desktop/`, included backend resource, existing `ShopERP Offline` data directory preserved.
+- Online desktop: explicit `npm run desktop:online`; mobile/Tauri use the online API.
+- Test fixtures use local in-memory Sheets or isolated temporary folders, never production data.
 
-```bash
+```sh
 cd frontend
-npm install
-npm run dev     # http://localhost:5173
+npm ci
+npm test
+npm run build
+npm run dev
 ```
 
-Backend tests (offline simulation of Apps Script):
+Desktop: `npm run desktop` (offline by default). Browser tests: `npm run test:e2e`. Native SDK/toolchains are needed only for native builds.
 
-```bash
-node backend/test/simulate.js
-```
+Deploy the new backend before the new frontend. No deployment was performed while preparing this package. No customer database, session credentials or backups are included.
