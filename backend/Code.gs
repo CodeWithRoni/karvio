@@ -620,6 +620,14 @@ function serialsList_(p) {
   return all_('SerialItems').filter(function (s) { return s.product_id === p.product_id && (!p.status || s.status === p.status); })
     .map(function (s) { return { serial: s.serial, status: s.status }; });
 }
+/** Find which product a scanned serial number belongs to (case-insensitive). In-stock units win over sold ones. */
+function serialFind_(p) {
+  var code = String(p.serial || '').trim().toLowerCase(); if (!code) return null;
+  var hits = all_('SerialItems').filter(function (s) { return String(s.serial).trim().toLowerCase() === code; });
+  if (!hits.length) return null;
+  var h = hits.filter(function (s) { return s.status === 'in_stock'; })[0] || hits[0];
+  return { product_id: h.product_id, serial: h.serial, status: h.status };
+}
 function stockAdjust_(p, user) {
   var pr = all_('Products').filter(function (x) { return x.id === p.product_id; })[0]; if (!pr) fail_('Product not found');
   if (isService_(pr)) fail_(pr.name + ' is a service (no inventory), so it has no stock to adjust');
@@ -1894,6 +1902,7 @@ var ROUTES = {
   'product.save':     r_('products', productSave_, true),
   'product.delete':   r_('products', productDelete_, true),
   'serials.list':     r_(null, serialsList_),
+  'serials.find':     r_(null, serialFind_),
   'stock.adjust':     r_('products', stockAdjust_, true),
   'master.save':      r_('products', masterSave_, true),
   'master.delete':    r_('products', masterDelete_, true),

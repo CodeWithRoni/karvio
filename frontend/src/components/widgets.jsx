@@ -8,8 +8,10 @@ import { Modal, Btn, Field, useAction } from './ui';
  * Product search box with barcode support.
  * Typing a barcode / SKU and pressing Enter adds it straight away.
  * ---------------------------------------------------------------- */
-export function ProductSearch({ onPick, inStockOnly = false, noServices = false, autoFocus, placeholder = 'Scan barcode or search product (F2)', inputRef }) {
+export function ProductSearch({ onPick, onCode, inStockOnly = false, noServices = false, autoFocus, placeholder = 'Search product by name, model or brand (F2)', inputRef }) {
   const products = useStore((s) => s.products);
+  const brands = useStore((s) => s.brands);
+  const brandMap = useMemo(() => Object.fromEntries((brands || []).map((b) => [b.id, b.name])), [brands]);
   const [q, setQ] = useState('');
   const [hi, setHi] = useState(0);
   const localRef = useRef();
@@ -20,9 +22,9 @@ export function ProductSearch({ onPick, inStockOnly = false, noServices = false,
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
     return products
       .filter((p) => p.active && (!noServices || !p.service) && (!inStockOnly || p.service || p.stock > 0))
-      .filter((p) => { const hay = `${p.name} ${p.sku} ${p.barcode}`.toLowerCase(); return words.every((w) => hay.includes(w)); })
+      .filter((p) => { const hay = `${p.name} ${p.sku || ''} ${p.barcode || ''} ${brandMap[p.brand_id] || ''}`.toLowerCase(); return words.every((w) => hay.includes(w)); })
       .slice(0, 12);
-  }, [q, products, inStockOnly, noServices]);
+  }, [q, products, inStockOnly, noServices, brandMap]);
 
   const pick = (p) => { onPick(p); setQ(''); setHi(0); ref.current?.focus(); };
   const onKey = (e) => {
@@ -32,7 +34,12 @@ export function ProductSearch({ onPick, inStockOnly = false, noServices = false,
       e.preventDefault();
       const code = q.trim().toLowerCase();
       const exact = products.find((p) => p.active && (!noServices || !p.service) && ((p.barcode && p.barcode.toLowerCase() === code) || (p.sku && p.sku.toLowerCase() === code)));
-      if (exact) pick(exact); else if (list[hi]) pick(list[hi]);
+      if (exact) pick(exact);
+      else if (onCode && code && !code.includes(' ')) {
+        // Maybe a scanned serial number: ask the parent; fall back to the highlighted match.
+        const raw = q.trim(), fallback = list[hi];
+        Promise.resolve(onCode(raw)).then((done) => { if (done) { setQ(''); setHi(0); ref.current?.focus(); } else if (fallback) pick(fallback); });
+      } else if (list[hi]) pick(list[hi]);
     } else if (e.key === 'Escape') setQ('');
   };
 

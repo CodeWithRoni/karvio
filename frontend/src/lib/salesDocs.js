@@ -107,12 +107,13 @@ function businessInvoiceHtml(d) {
   const prev = hasBal ? outstanding - (Number(s.due) || 0) : 0;
   const user = esc(s.user_name || '');
   const phone = c.phones ? esc(splitList(c.phones).join(', ')) : '';
+  const walkIn = !s.customer_id || !s.customer_name || /^walk-?in/i.test(String(s.customer_name).trim());
   const now = new Date();
   return `<div class="bdoc">
     <div class="bh"><h1>${esc(st.shop_name || 'Karvio')}</h1>${st.shop_address ? `<div>${esc(st.shop_address)}</div>` : ''}${shopContacts(st) ? `<div>${shopContacts(st)}</div>` : ''}</div>
     <div class="bbar">Invoice/ Bill</div>
     <div class="binfo">
-      <table>${row('Sold To', `<b>${esc(s.customer_name || 'Walk-in customer')}</b>${c.addresses ? `<div>${esc(String(c.addresses).split('|').join('; '))}</div>` : ''}`)}${row('Contact No', phone || '—')}${row('Invoice No', esc(s.invoice_no))}</table>
+      <table>${row('Sold To', `<b>${walkIn ? 'CASH' : esc(s.customer_name)}</b>${!walkIn && c.addresses ? `<div>${esc(String(c.addresses).split('|').join('; '))}</div>` : ''}`)}${row('Contact No', walkIn ? esc(st.shop_tel || st.shop_phone || '—') : phone || '—')}${row('Invoice No', esc(s.invoice_no))}</table>
       <table>${row('Date', esc(fdate(s.date || s.created_at)))}${row('Sold By', user)}${row('Billing By', user)}${row('Sales Person By', user)}</table>
     </div>
     ${s.status === 'cancelled' ? `<div class="cx">CANCELLED — ${esc(s.cancel_reason || '')}</div>` : ''}

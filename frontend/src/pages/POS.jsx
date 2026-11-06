@@ -41,16 +41,30 @@ export default function POS() {
   const isSerial = (p) => !p.service && p.has_warranty && p.warranty_type === 'serial';
   const priceFor = (p) => (tier === 'wholesale' && p.wholesale_price ? p.wholesale_price : p.sale_price);
 
-  const add = (p) => {
+  const add = (p, serial) => {
     if (!p.service && p.stock <= 0) return toast(`${p.name} is out of stock`, 'err');
     const i = cart.findIndex((l) => l.product_id === p.id);
     if (i >= 0) {
-      setCart(cart.map((l, j) => (j === i ? { ...l, qty: round2(Number(l.qty) + 1) } : l)));
-      if (isSerial(p)) setSerialFor(i);
+      const l = cart[i];
+      if (serial && l.serials.includes(serial)) return toast(`${serial} is already in the cart`, 'err');
+      const serials = serial ? [...l.serials, serial] : l.serials;
+      setCart(cart.map((x, j) => (j === i ? { ...x, qty: round2(Number(x.qty) + 1), serials } : x)));
+      if (isSerial(p) && !serial) setSerialFor(i);
       return;
     }
-    setCart([...cart, { product_id: p.id, qty: 1, price: priceFor(p), serials: [], warranty_days: p.has_warranty ? p.warranty_days : '' }]);
-    if (isSerial(p)) setSerialFor(cart.length);
+    setCart([...cart, { product_id: p.id, qty: 1, price: priceFor(p), serials: serial ? [serial] : [], warranty_days: p.has_warranty ? p.warranty_days : '' }]);
+    if (isSerial(p) && !serial) setSerialFor(cart.length);
+  };
+  // A scanned code that is not a barcode / model: look it up as a serial number.
+  const addBySerial = async (code) => {
+    let hit = null;
+    try { hit = await api('serials.find', { serial: code }); } catch { return false; }
+    if (!hit) return false;
+    const p = products.find((x) => x.id === hit.product_id);
+    if (!p) return false;
+    if (hit.status !== 'in_stock') { toast(`Serial ${hit.serial} (${p.name}) is ${String(hit.status).replace(/_/g, ' ')} — not in stock`, 'err'); return true; }
+    add(p, hit.serial);
+    return true;
   };
   const upd = (i, patch) => setCart((c) => c.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const del = (i) => setCart((c) => c.filter((_, j) => j !== i));
@@ -124,7 +138,7 @@ export default function POS() {
     <div className="pos">
       <div className="pos-left">
         <div className="row">
-          <div style={{ flex: 1 }}><ProductSearch onPick={add} inputRef={searchRef} autoFocus /></div>
+          <div style={{ flex: 1 }}><ProductSearch onPick={(p) => add(p)} onCode={addBySerial} placeholder="Search Product With Serial / Name / Model / Brand (F2)" inputRef={searchRef} autoFocus /></div>
           <Tabs tabs={[['retail', 'Retail'], ['wholesale', 'Wholesale']]} value={tier} onChange={setTier} />
         </div>
         <div className="cart">
