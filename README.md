@@ -6,7 +6,7 @@ Shop management & POS for a computer, IT accessories and networking retail/whole
 - **Backend:** Google Apps Script (`backend/Code.gs`) deployed as a Web App, with Google Sheets as the database.
 - **Live app:** published to GitHub Pages by `.github/workflows/deploy.yml` on every push to `main`.
 
-See **[SETUP.md](SETUP.md)** for the full setup guide (Bangla).
+See **[SETUP.md](SETUP.md)** for the full setup guide (Bangla) and **[AI_HANDOVER.md](AI_HANDOVER.md)** for the complete A–Z handover (architecture, database, API, features, tests, deploy, history).
 
 ```bash
 cd frontend
