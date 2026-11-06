@@ -16,6 +16,7 @@ const Suppliers = lazy(() => import('./pages/Suppliers'));
 const Stock = lazy(() => import('./pages/Stock'));
 const Purchases = lazy(() => import('./pages/Purchases'));
 const Prices = lazy(() => import('./pages/Prices'));
+const Barcodes = lazy(() => import('./pages/Barcodes'));
 const Warranty = lazy(() => import('./pages/Warranty'));
 const History = lazy(() => import('./pages/History'));
 const Accounts = lazy(() => import('./pages/Accounts'));
@@ -60,6 +61,7 @@ export default function App() {
               <Route path="suppliers" element={<Guard perm="suppliers"><Suppliers /></Guard>} />
               <Route path="suppliers/:id" element={<Guard perm="suppliers"><Suppliers /></Guard>} />
               <Route path="stock" element={<Stock />} />
+              <Route path="barcodes" element={<Barcodes />} />
               <Route path="prices" element={<Guard perm="products"><Prices /></Guard>} />
               <Route path="purchases" element={<Guard perm="purchase"><Purchases /></Guard>} />
               <Route path="warranty" element={<Guard perm="warranty"><Warranty /></Guard>} />

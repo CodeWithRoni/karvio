@@ -403,3 +403,80 @@ test('dashboard shows leaderboard, top selling and low stock as three equal card
   expect(narrow[1].top).toBeGreaterThan(narrow[0].bottom - 1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
+
+test('barcode labels: create a shop barcode, custom size, A4 start position, purchase labels and printed content', async ({ page, request }) => {
+  const errors = []; page.on('pageerror', (e) => errors.push(e.message));
+  const sup = await call(request, 'supplier.save', { name: 'Label Supplier ' + Date.now() });
+  const pr = await call(request, 'product.save', { name: 'Label Test SSD ' + Date.now(), has_warranty: true, warranty_type: 'invoice', warranty_days: 365 });
+  const pur = await call(request, 'purchase.create', { supplier_id: sup.id, items: [{ product_id: pr.id, qty: 3, cost: 4000, sale_price: 5250 }], payments: [] });
+  const hookPrint = () => page.evaluate(() => {
+    window.__printed = null;
+    const d = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentWindow');
+    if (window.__hooked) return; window.__hooked = 1;
+    Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', { get() { const w = d.get.call(this); if (w && !w.__h) { w.__h = 1; w.print = () => { window.__printed = w.document.documentElement.outerHTML; }; } return w; } });
+  });
+  await page.addInitScript(() => { try { if (!sessionStorage.getItem('lbl_reset')) { localStorage.removeItem('karvio_label_opts'); sessionStorage.setItem('lbl_reset', '1'); } } catch {} });
+
+  // menu: right under Products & Stock
+  await page.goto('/#/stock');
+  await expect(page.locator('.rail a', { hasText: 'Barcode Labels' })).toBeVisible();
+  const links = await page.locator('.rail a').allTextContents();
+  const i = links.findIndex((t) => t.includes('Products & Stock'));
+  expect(links[i + 1]).toContain('Barcode Labels');
+  await page.locator('.rail a', { hasText: 'Barcode Labels' }).click();
+  await expect(page.locator('.page-head h1')).toHaveText('Barcode labels');
+
+  // add the product: it has no barcode yet → create one
+  await page.getByLabel('Search product').fill(pr.name);
+  await page.locator('.psearch-list li').first().click();
+  await expect(page.getByText('1 product has no barcode')).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Print 1 label/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Create barcode for it' }).click();
+  await expect(page.getByText('1 product has no barcode')).toHaveCount(0);
+  const code = (await call(request, 'products.list')).find((p) => p.id === pr.id).barcode;
+  expect(code).toMatch(/^20\d{11}$/);
+  await expect(page.locator('.bc-rows code')).toHaveText(code);
+  await page.getByLabel(`Labels for ${pr.name}`).fill('4');
+
+  // custom size 50 × 30 mm, extra line, warranty
+  await page.getByLabel('Label size').selectOption('custom');
+  await page.getByLabel('Width (mm)').fill('50');
+  await page.getByLabel('Height (mm)').fill('30');
+  await page.locator('.bc-opt', { hasText: 'Warranty' }).click();
+  await page.locator('.bc-opt', { hasText: 'Extra line' }).click();
+  await page.getByLabel('Extra line text').fill('Call 01700000000');
+  await expect(page.locator('.card', { hasText: 'Preview' }).getByText('4 labels · 4 pages · 50 × 30 mm')).toBeVisible();
+  await hookPrint();
+  await page.getByRole('button', { name: /^Print 4 labels/ }).click();
+  await page.waitForFunction(() => window.__printed);
+  let html = await page.evaluate(() => window.__printed);
+  expect(html).toContain('size:50mm 30mm');
+  expect((html.match(/class="cell"/g) || []).length).toBe(4);
+  for (const t of ['1 Year warranty', 'Call 01700000000', 'Tk 5,250', code, '<svg']) expect(html).toContain(t);
+  expect(html).not.toContain('data-thin');
+
+  // A4 sheet, starting at label 3 → two blank cells before the labels
+  await page.getByRole('tab', { name: 'A4 sheet' }).click();
+  await page.getByLabel('Start at label no.').fill('3');
+  await page.evaluate(() => { window.__printed = null; });
+  await page.getByRole('button', { name: /^Print 4 labels/ }).click();
+  await page.waitForFunction(() => window.__printed);
+  html = await page.evaluate(() => window.__printed);
+  expect(html).toContain('size:210mm 297mm');
+  expect((html.match(/class="cell blank"/g) || []).length).toBe(2);
+  expect((html.match(/class="cell"/g) || []).length).toBe(4);
+  expect(html.indexOf('cell blank')).toBeLessThan(html.indexOf('class="cell"'));
+
+  // settings are remembered; a size that does not fit is refused
+  await page.reload();
+  await expect(page.getByRole('tab', { name: 'A4 sheet' })).toHaveAttribute('aria-selected', 'true');
+  await page.getByRole('combobox', { name: 'Sheet', exact: true }).selectOption('custom');
+  await page.getByLabel('Width (mm)').fill('80');
+  await page.getByLabel('Labels across').fill('3');
+  await expect(page.getByText('3 labels of 80 mm do not fit across an A4 page')).toBeVisible();
+
+  // from the purchase screen link: one label per unit bought
+  await page.goto(`/#/barcodes?purchase=${pur.purchase.id}`);
+  await expect(page.getByLabel(`Labels for ${pr.name}`)).toHaveValue('3');
+  expect(errors).toEqual([]);
+});

@@ -611,6 +611,38 @@ function priceUpdate_(p, user) {
   if (changed.length) audit_(user, 'price_update', { count: changed.length, items: changed.slice(0, 50) });
   return { updated: changed.length };
 }
+/** EAN-13 check digit for the first 12 digits. */
+function ean13Check_(d12) {
+  var s = 0; for (var i = 0; i < 12; i++) s += Number(d12.charAt(i)) * (i % 2 ? 3 : 1);
+  return String((10 - s % 10) % 10);
+}
+/** Give the selected products that have no barcode a unique shop barcode.
+ *  Codes are EAN-13 starting with 20 — the GS1 range reserved for in-store use, so they never clash with
+ *  manufacturer barcodes — numbered on from the highest one already issued. Products that already have a
+ *  barcode are left untouched. */
+function productBarcodes_(p, user) {
+  var ids = Array.isArray(p.ids) ? p.ids.slice(0, 500) : [];
+  if (!ids.length) fail_('Select at least one product');
+  var prods = all_('Products'), pm = indexBy_(prods), used = {}, next = 0, out = [];
+  prods.forEach(function (x) {
+    var b = String(x.barcode || '').trim(), k = String(x.sku || '').trim();
+    if (b) used[b.toLowerCase()] = 1;
+    if (k) used[k.toLowerCase()] = 1;
+    if (/^20\d{11}$/.test(b)) next = Math.max(next, Number(b.slice(2, 12)));
+  });
+  all_('SerialItems').forEach(function (x) { var sn = String(x.serial || '').trim(); if (sn) used[sn.toLowerCase()] = 1; });
+  ids.forEach(function (id) {
+    var x = pm[id]; if (!x) fail_('Product not found');
+    if (String(x.barcode || '').trim()) return;
+    var code;
+    do { next++; if (next > 9999999999) fail_('No more shop barcodes available'); var d12 = '20' + ('0000000000' + next).slice(-10); code = d12 + ean13Check_(d12); } while (used[code]);
+    used[code] = 1;
+    update_('Products', id, { barcode: code });
+    out.push({ id: id, name: x.name, barcode: code });
+  });
+  if (out.length) audit_(user, 'barcode_assign', { count: out.length, items: out.slice(0, 50) });
+  return { assigned: out };
+}
 function productDelete_(p, user) {
   var used = all_('SaleItems').some(function (i) { return i.product_id === p.id; }) || all_('PurchaseItems').some(function (i) { return i.product_id === p.id; });
   if (used) { update_('Products', p.id, { active: false }); return { deactivated: true }; }
@@ -2121,6 +2153,7 @@ var ROUTES = {
   'products.list':    r_(null, function (p, u) { return productsList_(u); }),
   'product.save':     r_('products', productSave_, true),
   'product.delete':   r_('products', productDelete_, true),
+  'product.barcodes': r_('products', productBarcodes_, true),
   'serials.list':     r_(null, serialsList_),
   'serials.find':     r_(null, serialFind_),
   'product.history':  r_(null, function (p, u) { if (!can_(u, 'pos') && !can_(u, 'purchase')) fail_('Permission denied'); return productHistory_(p, u); }),

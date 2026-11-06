@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useStore, shopDay } from '../lib/store';
 import { api } from '../lib/api';
 import { money, qty as fqty, fdate, monthStart, today, splitList, round2, isDecimalUnit } from '../lib/format';
@@ -350,6 +351,7 @@ function PurchaseDetail({ id, onClose, onChanged }) {
           <button onClick={() => pdfPurchases([data], `purchase-${p.invoice_no}.pdf`)}>PDF</button>
           <button onClick={() => printPurchases([data])}>Print</button>
         </div>
+        {p.status === 'active' && <Link className="btn btn-ghost" to={`/barcodes?purchase=${p.id}`}>Print barcode labels</Link>}
         <span className="spacer" />
         {p.status === 'active' && <>{can('cancel') && <Btn kind="danger" onClick={() => setRev(true)}>Cancel purchase</Btn>}<Btn onClick={() => setRet(true)}>Return to supplier</Btn></>}
       </>}>

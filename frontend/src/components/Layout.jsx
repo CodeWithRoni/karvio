@@ -35,6 +35,7 @@ export const NAV = [
   { to: '/customers', label: 'Customers & Dues', key: '4' },
   { group: 'Stock' },
   { to: '/stock', label: 'Products & Stock', key: '5' },
+  { to: '/barcodes', label: 'Barcode Labels' },
   { to: '/prices', label: 'Price Manager', perm: 'products' },
   { to: '/purchases', label: 'Purchases', perm: 'purchase', key: '6' },
   { to: '/suppliers', label: 'Suppliers', perm: 'suppliers' },
