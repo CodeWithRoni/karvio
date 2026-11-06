@@ -8,6 +8,7 @@ import { PageHead, Btn, Field, useAction, Tabs, useApi, Badge } from '../compone
 import { DASH_CARDS, hiddenCards } from '../lib/dashboardCards';
 import { PAPERS, TEMPLATES, printInvoice } from '../lib/receipt';
 import { PRESETS, matchPreset } from '../lib/smsPresets';
+import { DatabaseTab } from '../components/DatabaseTools';
 
 export default function Settings() {
   const can = useStore((s) => s.can);
@@ -15,7 +16,7 @@ export default function Settings() {
   const admin = useStore((s) => s.user?.role === 'admin');
   const owner = useStore((s) => s.user?.owner === true); // the Administrator account only — not every admin
   const [tab, setTab] = useState(can('settings') ? 'shop' : offline ? 'me' : 'api');
-  const tabs = [...(can('settings') ? [['shop', 'Shop'], ['invoice', 'Invoice'], ['dashboard', 'Dashboard'], ...(!offline ? [['sms', 'SMS gateway']] : [])] : []), ...(offline ? admin ? [['local', 'Offline data & backup']] : [] : [['api', 'API connection']]), ['me', 'My password'], ...(owner ? [['reset', 'Database reset']] : [])];
+  const tabs = [...(can('settings') ? [['shop', 'Shop'], ['invoice', 'Invoice'], ['dashboard', 'Dashboard'], ...(!offline ? [['sms', 'SMS gateway']] : [])] : []), ...(offline ? admin ? [['local', 'Offline data & backup']] : [] : [['api', 'API connection']]), ['me', 'My password'], ...(owner ? [['database', 'Database']] : [])];
   return (
     <>
       <PageHead title="Settings"><Tabs tabs={tabs} value={tab} onChange={setTab} /></PageHead>
@@ -26,7 +27,7 @@ export default function Settings() {
       {tab === 'api' && <ApiSettings />}
       {tab === 'local' && <OfflineSettings />}
       {tab === 'me' && <MyPassword />}
-      {tab === 'reset' && owner && <DatabaseReset />}
+      {tab === 'database' && owner && <DatabaseTab Reset={DatabaseReset} />}
     </>
   );
 }
@@ -291,7 +292,7 @@ function MyPassword() {
 
 const RESET_WORD = 'RESET';
 /** Empties the whole shop database (Administrator account only). The server copies the spreadsheet first. */
-function DatabaseReset() {
+function DatabaseReset({ onDone }) {
   const [f, setF] = useState({ password: '', confirm: '', keep_settings: false, keep_users: false });
   const [done, setDone] = useState(null);
   const [busy, run] = useAction();
@@ -299,15 +300,16 @@ function DatabaseReset() {
   const ready = f.password && f.confirm.trim() === RESET_WORD;
   const reset = async () => {
     if (!ready) return;
-    const r = await run(() => api('database.reset', f), 'Database reset — Karvio is fresh');
+    let r; try { r = await run(() => api('database.reset', f), 'Database reset — Karvio is fresh'); } catch { return; } // shown as a message; nothing changed
     // this computer's saved cart and saved PC Builder quotes point at products that no longer exist
     ['erp_pos_draft', 'erp_quotes'].forEach((k) => { try { localStorage.removeItem(k); } catch { /* private mode */ } });
     setF({ password: '', confirm: '', keep_settings: false, keep_users: false });
     setDone(r);
     await useStore.getState().refresh('all').catch(() => {});
+    onDone?.();
   };
   return (
-    <div className="card form reset-card" style={{ maxWidth: 640 }}>
+    <div className="card form reset-card">
       <h2 className="wide" style={{ margin: 0 }}>Reset the whole database</h2>
       {done && <div className="wide note reset-done" role="status">
         <b>Done — Karvio is fresh.</b>{' '}

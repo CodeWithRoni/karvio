@@ -1072,25 +1072,15 @@ function rolePermsSave_(p, user) {
  *      if the copy cannot be made, nothing is deleted. ---- */
 var RESET_WORD = 'RESET';
 function blankRows_(h, w) { var out = []; for (var i = 0; i < h; i++) out.push(Array(w).fill('')); return out; }
-function databaseReset_(p, user) {
-  if (!isOwner_(user)) fail_('Only the Administrator account can reset the database');
-  if (hash_(user.salt, String(p.password || '')) !== user.password_hash) fail_('Incorrect password — nothing was reset');
-  if (String(p.confirm || '').trim() !== RESET_WORD) fail_('Type RESET to confirm — nothing was reset');
-  var keepUsers = p.keep_users === true, keepSettings = p.keep_settings === true;
-  var ss = ss_(), stamp = now_().replace('T', ' ');
-
-  var backup = null;
-  if (typeof ss.copy === 'function') {
-    var copy = ss.copy('Karvio backup before reset ' + stamp);
-    backup = { name: copy.getName(), url: copy.getUrl ? copy.getUrl() : '' };
-  }
-
-  // What stays: this Administrator account (same password), and on request the other users / the shop settings.
-  var users = all_('Users').filter(function (u) { return u.id === user.id || keepUsers; })
-    .map(function (u) { var o = {}; cols_('Users').forEach(function (c) { o[c.k] = u[c.k]; }); return o; });
-  var sm = settingsMap_();
-  var settings = keepSettings ? Object.keys(sm).filter(function (k) { return k.indexOf('seq_') !== 0; }).map(function (k) { return [k, sm[k]]; }) : [];
-
+/** A full copy of the spreadsheet in the owner's Google Drive. Throws if it cannot be made (callers then change nothing).
+ *  The offline desktop app has no copy(); it keeps its previous data file instead. */
+function driveCopy_(ss, name) {
+  if (typeof ss.copy !== 'function') return null;
+  var copy = ss.copy(name);
+  return { name: copy.getName(), url: copy.getUrl ? copy.getUrl() : '' };
+}
+/** Empty every business table (headers stay) and the private transaction journal / request receipts. */
+function wipeAll_(ss) {
   Object.keys(SCHEMA).forEach(function (name) {
     var sh = sheet_(name), last = sh.getLastRow(), w = cols_(name).length;
     if (last > 1) sh.getRange(2, 1, last - 1, w).setValues(blankRows_(last - 1, w));
@@ -1101,6 +1091,126 @@ function databaseReset_(p, user) {
   });
   flush_();
   _mem = { __ss: ss };
+}
+
+/* ---- Full database backup (export) and restore (import): Administrator account only ----
+ * The file holds every business table (not the private journal / receipts) and a checksum,
+ * so a damaged or hand-edited file is refused before anything is changed. */
+var BACKUP_FORMAT = 'Karvio database backup', BACKUP_VERSION = 1, RESTORE_WORD = 'RESTORE';
+function backupDigest_(tables) { return hash_('karvio-backup-v1', JSON.stringify(tables)); }
+function tableRows_(name) {
+  if (name === 'Settings') {
+    var last = dataLastRow_('Settings');
+    return last > 1 ? dataValues_('Settings', 2, last - 1, 2).filter(function (r) { return r[0] !== '' && r[0] !== null; })
+      .map(function (r) { return [String(r[0]), r[1] === null || r[1] === undefined ? '' : String(r[1])]; }) : [];
+  }
+  var cs = cols_(name);
+  return all_(name).map(function (o) { return cs.map(function (c) { return ser_(o[c.k], c.t); }); });
+}
+function databaseInfo_(p, user) {
+  if (!isOwner_(user)) fail_('Only the Administrator account can see this');
+  var tables = Object.keys(SCHEMA).map(function (name) { return { name: name, rows: name === 'Settings' ? tableRows_(name).length : all_(name).length }; });
+  return {
+    tables: tables, total: sum_(tables, function (t) { return t.rows; }),
+    last_backup: getSetting_('last_backup_at', ''), last_restore: getSetting_('last_restore_at', ''),
+    offline: typeof ss_().copy !== 'function'
+  };
+}
+function databaseExport_(p, user) {
+  if (!isOwner_(user)) fail_('Only the Administrator account can back up the database');
+  var tables = {}, counts = {};
+  Object.keys(SCHEMA).forEach(function (name) {
+    var rows = tableRows_(name);
+    tables[name] = { columns: name === 'Settings' ? ['key', 'value'] : cols_(name).map(function (c) { return c.k; }), rows: rows };
+    counts[name] = rows.length;
+  });
+  var created = now_();
+  var out = { format: BACKUP_FORMAT, version: BACKUP_VERSION, app_version: APP_VERSION, created_at: created,
+    shop_name: getSetting_('shop_name', ''), created_by: user.name, counts: counts, tables: tables, checksum: backupDigest_(tables) };
+  setSetting_('last_backup_at', created); // straight to the sheet: this route is not journaled
+  audit_(user, 'database_backup', { rows: sum_(Object.keys(counts), function (k) { return counts[k]; }) });
+  flush_();
+  return out;
+}
+/** Checks a backup completely and returns the rows to write. Throws (changing nothing) on any problem. */
+function checkBackup_(b) {
+  if (!b || typeof b !== 'object' || b.format !== BACKUP_FORMAT) fail_('This is not a Karvio database backup file');
+  if (b.version !== BACKUP_VERSION) fail_('This backup was made by a newer Karvio. Update Karvio first');
+  if (!b.tables || typeof b.tables !== 'object' || Array.isArray(b.tables)) fail_('The backup file has no tables');
+  if (backupDigest_(b.tables) !== b.checksum) fail_('The backup file is damaged or was edited — nothing was restored');
+  var plan = {};
+  Object.keys(b.tables).forEach(function (name) { if (!SCHEMA.hasOwnProperty(name)) fail_('Unknown table in the backup: ' + name); });
+  Object.keys(SCHEMA).forEach(function (name) {
+    var t = b.tables[name];
+    if (!t) { if (name === 'Users' || name === 'Settings') fail_('The backup has no ' + name + ' table'); plan[name] = []; return; }
+    var want = name === 'Settings' ? ['key', 'value'] : cols_(name).map(function (c) { return c.k; });
+    if (!Array.isArray(t.columns) || !t.columns.length || t.columns.length > want.length) fail_('The ' + name + ' table in the backup does not match this Karvio');
+    t.columns.forEach(function (c, i) { if (c !== want[i]) fail_('The ' + name + ' table in the backup does not match this Karvio (' + c + ')'); });
+    if (!Array.isArray(t.rows)) fail_('The ' + name + ' table in the backup is damaged');
+    var seen = {};
+    plan[name] = t.rows.map(function (r) {
+      if (!Array.isArray(r) || r.length !== t.columns.length) fail_('A row in ' + name + ' is damaged');
+      r.forEach(function (v) { if (v !== null && ['string', 'number', 'boolean'].indexOf(typeof v) < 0) fail_('A row in ' + name + ' is damaged'); });
+      var id = String(r[0] === null ? '' : r[0]);
+      if (!id) fail_('A row in ' + name + ' has no ID');
+      if (seen[id]) fail_('Duplicate ID in ' + name + ': ' + id);
+      seen[id] = 1;
+      var full = r.map(function (v) { return v === null ? '' : v; });
+      while (full.length < want.length) full.push('');
+      return full;
+    });
+  });
+  var uc = cols_('Users').map(function (c) { return c.k; }), iu = uc.indexOf('username'), ir = uc.indexOf('role'), ia = uc.indexOf('active');
+  var owner = plan.Users.some(function (r) { return String(r[iu]).toLowerCase() === OWNER_USERNAME && r[ir] === 'admin' && (r[ia] === true || r[ia] === 'TRUE' || r[ia] === 'true'); });
+  if (!owner) fail_('The backup has no active Administrator account (username admin) — nothing was restored');
+  return plan;
+}
+function databaseRestore_(p, user) {
+  if (!isOwner_(user)) fail_('Only the Administrator account can restore the database');
+  if (hash_(user.salt, String(p.password || '')) !== user.password_hash) fail_('Incorrect password — nothing was restored');
+  if (String(p.confirm || '').trim() !== RESTORE_WORD) fail_('Type RESTORE to confirm — nothing was restored');
+  var b; try { b = JSON.parse(String(p.backup_text || '')); } catch (e) { fail_('This is not a Karvio database backup file'); }
+  var plan = checkBackup_(b);
+  var ss = ss_(), stamp = now_().replace('T', ' ');
+  var safety = driveCopy_(ss, 'Karvio backup before restore ' + stamp);
+  wipeAll_(ss);
+  Object.keys(plan).forEach(function (name) {
+    var rows = plan[name], sh = sheet_(name);
+    for (var i = 0; i < rows.length; i += 5000) {
+      var part = rows.slice(i, i + 5000);
+      ensureRows_(sh, 1 + i + part.length);
+      sh.getRange(2 + i, 1, part.length, part[0].length).setValues(part);
+    }
+  });
+  flush_();
+  _mem = { __ss: ss };
+  setupDatabase(); // only fills what is missing (settings added after this backup was made)
+  _mem = { __ss: ss };
+  var restoredAt = now_();
+  setSetting_('last_restore_at', restoredAt);
+  audit_(user, 'database_restore', { from: b.created_at, shop: b.shop_name, safety_copy: safety ? safety.name : '' });
+  flush_();
+  var me = all_('Users').filter(function (u) { return u.id === user.id; })[0];
+  var stillSignedIn = !!me && me.active && me.salt === user.salt && me.password_hash === user.password_hash && isOwner_(me);
+  var counts = {}; Object.keys(plan).forEach(function (k) { counts[k] = plan[k].length; });
+  return { safety: safety, backup_created_at: b.created_at, shop_name: b.shop_name, counts: counts, signed_out: !stillSignedIn, restored_at: restoredAt };
+}
+function databaseReset_(p, user) {
+  if (!isOwner_(user)) fail_('Only the Administrator account can reset the database');
+  if (hash_(user.salt, String(p.password || '')) !== user.password_hash) fail_('Incorrect password — nothing was reset');
+  if (String(p.confirm || '').trim() !== RESET_WORD) fail_('Type RESET to confirm — nothing was reset');
+  var keepUsers = p.keep_users === true, keepSettings = p.keep_settings === true;
+  var ss = ss_(), stamp = now_().replace('T', ' ');
+
+  var backup = driveCopy_(ss, 'Karvio backup before reset ' + stamp);
+
+  // What stays: this Administrator account (same password), and on request the other users / the shop settings.
+  var users = all_('Users').filter(function (u) { return u.id === user.id || keepUsers; })
+    .map(function (u) { var o = {}; cols_('Users').forEach(function (c) { o[c.k] = u[c.k]; }); return o; });
+  var sm = settingsMap_();
+  var settings = keepSettings ? Object.keys(sm).filter(function (k) { return k.indexOf('seq_') !== 0; }).map(function (k) { return [k, sm[k]]; }) : [];
+
+  wipeAll_(ss);
 
   insertMany_('Users', users);
   if (settings.length) writeRows_('Settings', 2, 1, settings);
@@ -2817,6 +2927,9 @@ var ROUTES = {
   'settings.save':    r_('settings', settingsSave_, true),
   // Not journaled (it empties every table); runs under the script lock after recovery. Administrator account only.
   'database.reset':   r_('settings', databaseReset_, false),
+  'database.info':    r_('settings', databaseInfo_, false),
+  'database.export':  r_('settings', databaseExport_, false),
+  'database.restore': r_('settings', databaseRestore_, false),
   'sale.link':        r_('pos', saleLink_, true),
   'sms.test':         r_('settings', smsTest_),
   'sms.log':          r_('settings', smsLog_)

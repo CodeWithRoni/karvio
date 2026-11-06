@@ -168,7 +168,72 @@ test('Profit page and the dashboard profit row', async ({ page, request }) => {
   expect(errors).toEqual([]);
 });
 
+test('database backup downloads every table and restore brings it back exactly', async ({ page, request }, info) => {
+  const errors = []; page.on('pageerror', (e) => errors.push(e.message));
+  await signIn(page, token);
+  await page.goto('/#/settings');
+  await page.getByRole('tab', { name: 'Database', exact: true }).click();
+  const overview = page.locator('.db-overview');
+  await expect(overview).toContainText('Last backup');
+  await expect(overview.locator('.db-stamp').first()).toContainText('Never');
+  const productsBefore = (await call(request, 'products.list')).length;
+  await expect(overview.locator('.db-tables div').filter({ hasText: /^Products/ })).toContainText(String(productsBefore));
+
+  // backup (export)
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download backup' }).click()]);
+  expect(download.suggestedFilename()).toMatch(/^Karvio-backup-[A-Za-z0-9-]+-\d{4}-\d{2}-\d{2}-\d{4}\.json$/);
+  const file = info.outputPath('backup.json');
+  await download.saveAs(file);
+  const fs = await import('node:fs');
+  const backup = JSON.parse(fs.readFileSync(file, 'utf8'));
+  expect(backup.format).toBe('Karvio database backup');
+  expect(backup.counts.Products).toBe(productsBefore);
+  await expect(page.locator('.db-card .reset-done')).toContainText('Saved: ' + download.suggestedFilename());
+  await expect(overview.locator('.db-stamp').first()).toContainText('Today');
+
+  // change the data after the backup
+  await call(request, 'product.save', { name: 'Made After Backup' });
+  expect((await call(request, 'products.list')).length).toBe(productsBefore + 1);
+
+  // a damaged file is refused in the browser already
+  const broken = info.outputPath('broken.json');
+  fs.writeFileSync(broken, JSON.stringify({ ...backup, tables: { ...backup.tables, Products: { ...backup.tables.Products, rows: [] } } }));
+  const fileBox = page.getByLabel('Backup file');
+  await fileBox.setInputFiles(broken);
+  await expect(page.locator('.db-card .errbox')).toHaveText('This file is damaged or was edited — it cannot be restored.');
+  await expect(page.getByRole('button', { name: 'Restore database' })).toHaveCount(0);
+  fs.writeFileSync(broken, 'not json');
+  await fileBox.setInputFiles(broken);
+  await expect(page.locator('.db-card .errbox')).toHaveText('This is not a Karvio database backup file.');
+
+  // restore (import)
+  await fileBox.setInputFiles(file);
+  const preview = page.locator('.db-preview');
+  await expect(preview.locator('.db-badge')).toHaveText('✓ File verified');
+  await expect(preview).toContainText('Backup made');
+  await expect(preview.locator('.db-tables div').filter({ hasText: /^Products/ })).toContainText(String(productsBefore));
+  const go = page.getByRole('button', { name: 'Restore database' });
+  await expect(go).toBeDisabled();
+  await page.getByLabel('Administrator password').first().fill('wrong-pass');
+  await page.getByLabel('Type RESTORE to confirm').fill('RESTORE');
+  await go.click();
+  await expect(page.locator('.toast-err')).toContainText('Incorrect password — nothing was restored');
+  expect((await call(request, 'products.list')).length).toBe(productsBefore + 1); // nothing changed
+  await page.getByLabel('Administrator password').first().fill('admin123');
+  await go.click();
+  await expect(page.locator('.db-card .reset-done').filter({ hasText: 'Restored' })).toContainText('Karvio backup before restore');
+  const after = await call(request, 'products.list');
+  expect(after.length).toBe(productsBefore);
+  expect(after.some((p) => p.name === 'Made After Backup')).toBe(false);
+  await expect(overview.locator('.db-stamp').nth(1)).not.toContainText('—');
+  // phone width: nothing spills sideways
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  expect(errors).toEqual([]);
+});
+
 test('database reset: only the Administrator sees it, and it leaves a fresh shop', async ({ page, request, browser }) => {
+  const errors = []; page.on('pageerror', (e) => errors.push(e.message));
   // another admin does not see the tab
   await call(request, 'user.save', { name: 'Second Admin', username: 'second', password: 'second1', role: 'admin' });
   const second = (await call(request, 'login', { username: 'second', password: 'second1' }, null)).token;
@@ -176,12 +241,12 @@ test('database reset: only the Administrator sees it, and it leaves a fresh shop
   await signIn(other, second);
   await other.goto('/#/settings');
   await expect(other.getByRole('tab', { name: 'My password' })).toBeVisible();
-  await expect(other.getByRole('tab', { name: 'Database reset' })).toHaveCount(0);
+  await expect(other.getByRole('tab', { name: 'Database', exact: true })).toHaveCount(0);
   await other.close();
 
   await signIn(page, token);
   await page.goto('/#/settings');
-  await page.getByRole('tab', { name: 'Database reset' }).click();
+  await page.getByRole('tab', { name: 'Database', exact: true }).click();
   const go = page.getByRole('button', { name: 'Reset database' });
   await expect(go).toBeDisabled();
   await page.getByLabel('Administrator password').fill('wrong-pass');
@@ -199,4 +264,5 @@ test('database reset: only the Administrator sees it, and it leaves a fresh shop
   // the dashboard shows an empty shop and the session is still signed in
   await page.goto('/');
   await expect(page.locator('.profit-stat').first()).toContainText('Tk 0');
+  expect(errors).toEqual([]); // a refused reset (wrong password) is a message, not a page error
 });

@@ -873,3 +873,34 @@ body::before { content: ''; position: fixed; top: 0; left: 0; right: 0; height: 
 .profit-steps tr.total td { font-size: 16px; }
 .profit-steps tr.up td:last-child { color: var(--ok); } .profit-steps tr.down td:last-child { color: var(--bad); }
 .profit-steps small { font-weight: 500; }
+
+/* ---------- Settings → Database (Administrator account only) ---------- */
+.db-tab { display: grid; gap: 16px; }
+.db-tab .card + .card, .db-grid > .card { margin-top: 0; }
+.db-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+@media (max-width: 980px) { .db-grid { grid-template-columns: minmax(0, 1fr); } }
+.db-card h2 { margin: 0; }
+.db-stamps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.db-stamp { border: 1px solid var(--line); border-left: 3px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--panel-2); min-width: 0; }
+.db-stamp.ok { border-left-color: var(--ok); } .db-stamp.warn { border-left-color: var(--warn); }
+.db-stamp span { display: block; font-size: 12px; color: var(--muted); font-weight: 600; }
+.db-stamp b { display: block; font-size: 16px; margin: 2px 0; }
+.db-stamp small { color: var(--muted); font-size: 12px; }
+.db-stamp.warn small { color: var(--warn); }
+.db-tables { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.db-tables div { display: flex; justify-content: space-between; gap: 8px; padding: 6px 10px; border-radius: 6px; background: var(--panel-2); font-size: 12.5px; min-width: 0; }
+.db-tables div span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-tables div b { font-variant-numeric: tabular-nums; }
+.db-tables div.db-main span { color: var(--text); font-weight: 600; }
+.db-secret { margin: 0; font-size: 12.5px; color: var(--warn); }
+.db-drop { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; text-align: center; min-height: 92px; padding: 14px;
+  border: 1.5px dashed var(--line); border-radius: 10px; background: var(--panel-2); cursor: pointer; transition: border-color .12s, background .12s; min-width: 0; }
+.db-drop:hover, .db-drop.on, .db-drop:focus-within { border-color: var(--aqua); background: color-mix(in srgb, var(--aqua) 8%, var(--panel-2)); }
+.db-drop input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.db-drop b { overflow-wrap: anywhere; }
+.db-drop small { color: var(--muted); }
+.db-preview { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 10px; }
+.db-preview-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+.db-preview-head small { display: block; color: var(--muted); font-size: 12px; }
+.db-badge { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.db-badge.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); }
