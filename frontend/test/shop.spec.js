@@ -480,3 +480,62 @@ test('barcode labels: create a shop barcode, custom size, A4 start position, pur
   await expect(page.getByLabel(`Labels for ${pr.name}`)).toHaveValue('3');
   expect(errors).toEqual([]);
 });
+
+test('phone app: clear of status and gesture bars, POS cart fits, back button closes, goes back, then asks before exit', async ({ browser }) => {
+  const ctx = await browser.newContext({ viewport: { width: 412, height: 860 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+  const page = await ctx.newPage();
+  const errors = []; page.on('pageerror', (e) => errors.push(e.message));
+  await page.addInitScript(({ endpoint, token }) => {
+    localStorage.setItem('erp_api_config', JSON.stringify({ scriptUrl: endpoint }));
+    localStorage.setItem('erp_token', token);
+    // what the Android app injects: 32px status bar, 24px gesture bar
+    document.addEventListener('DOMContentLoaded', () => { const s = document.documentElement.style; s.setProperty('--safe-area-inset-top', '32px'); s.setProperty('--safe-area-inset-bottom', '24px'); });
+  }, { endpoint, token });
+  await page.goto('/#/');
+  await expect(page.locator('.topbar')).toBeVisible();
+  expect((await page.locator('.topbar').boundingBox()).y).toBeGreaterThanOrEqual(32);
+
+  // menu drawer: top clear of the status bar, bottom clear of the gesture bar
+  await page.getByRole('button', { name: 'Open menu' }).click();
+  await expect(page.locator('.shell.nav-open')).toHaveCount(1);
+  await page.waitForTimeout(300);
+  expect((await page.locator('.rail .brand').boundingBox()).y).toBeGreaterThanOrEqual(32);
+  await page.locator('.rail').evaluate((r) => { r.scrollTop = 1e6; });
+  const foot = await page.locator('.rail-foot').boundingBox();
+  expect(foot.y + foot.height).toBeLessThanOrEqual(860 - 24 + 1);
+  // back closes the menu first
+  expect(await page.evaluate(() => window.__karvioBack(true))).toBe('closed');
+  await expect(page.locator('.shell.nav-open')).toHaveCount(0);
+
+  // POS: a cart line stays inside the screen
+  await page.goto('/#/pos');
+  await page.getByLabel('Search product').fill(product.name);
+  await page.locator('.psearch-list li').first().click();
+  await expect(page.locator('.cart tbody tr')).toHaveCount(1);
+  const wide = await page.evaluate(() => [...document.querySelectorAll('.pos *')].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.right > innerWidth + 1; }).length);
+  expect(wide).toBe(0);
+  expect(await page.evaluate(() => document.querySelector('.content').scrollWidth <= document.querySelector('.content').clientWidth)).toBe(true);
+  await expect(page.getByLabel('Quantity')).toBeVisible();
+  await expect(page.getByLabel('Unit price')).toBeVisible();
+
+  // back on a page goes back (here: to the dashboard), not out of the app
+  expect(await page.evaluate(() => window.__karvioBack(true))).toBe('back');
+  await expect(page).toHaveURL(/#\/$/);
+  // back on the dashboard asks first; back again = stay
+  expect(await page.evaluate(() => window.__karvioBack(false))).toBe('ask');
+  await expect(page.getByRole('alertdialog', { name: 'Exit Karvio?' })).toBeVisible();
+  await page.waitForTimeout(450); // slide-up animation
+  const sheet = await page.locator('.exit-sheet').boundingBox();
+  expect(sheet.y + sheet.height).toBeLessThanOrEqual(860 - 24);
+  expect(await page.evaluate(() => window.__karvioBack(false))).toBe('stay');
+  await expect(page.locator('.exit-sheet')).toHaveCount(0);
+  // Stay button and Exit button
+  await page.evaluate(() => window.__karvioBack(false));
+  await page.getByRole('button', { name: 'Stay' }).click();
+  await expect(page.locator('.exit-sheet')).toHaveCount(0);
+  await page.evaluate(() => window.__karvioBack(false));
+  await page.getByRole('button', { name: 'Exit' }).click();
+  expect(await page.evaluate(() => window.__karvioExited)).toBe(true);
+  expect(errors).toEqual([]);
+  await ctx.close();
+});

@@ -193,7 +193,7 @@ export default function POS() {
                         </div>
                       )}
                     </td>
-                    {canCost && <td className="cost-col">{costOn && (costShown[p.id]
+                    {canCost && <td className="cost-col" data-label="Cost" data-empty={costOn ? undefined : ''}>{costOn && (costShown[p.id]
                       ? <span className="cost-peek">{(() => {
                           const h = hist[p.id] || {}, lp = h.last_purchase ? h.last_purchase.cost : null;
                           const shownCost = lp !== null ? lp : p.cost_price;
@@ -203,8 +203,8 @@ export default function POS() {
                           </>;
                         })()}<button type="button" className="link" onClick={() => setCostShown({ ...costShown, [p.id]: false })}>Hide</button></span>
                       : <button type="button" className="link" onClick={() => setCostShown({ ...costShown, [p.id]: true })} aria-label={`Show cost of ${p.name}`}>Show</button>)}</td>}
-                    <td><input type="number" min="0" step={isDecimalUnit(p.unit) ? 0.5 : 1} value={l.qty} onChange={(e) => upd(i, { qty: e.target.value, serials: isSerial(p) ? l.serials.slice(0, Number(e.target.value)) : l.serials })} aria-label="Quantity" /></td>
-                    <td><input type="number" min="0" step="any" value={l.price} onChange={(e) => upd(i, { price: e.target.value })} aria-label="Unit price" />
+                    <td data-label="Qty"><input type="number" min="0" step={isDecimalUnit(p.unit) ? 0.5 : 1} value={l.qty} onChange={(e) => upd(i, { qty: e.target.value, serials: isSerial(p) ? l.serials.slice(0, Number(e.target.value)) : l.serials })} aria-label="Quantity" /></td>
+                    <td data-label="Price"><input type="number" min="0" step="any" value={l.price} onChange={(e) => upd(i, { price: e.target.value })} aria-label="Unit price" />
                       {(() => {
                         const h = hist[p.id];
                         if (!h || h.loading) return <span className="price-hist">…</span>;
@@ -214,8 +214,8 @@ export default function POS() {
                         </span>;
                       })()}
                     </td>
-                    <td className="r num"><b>{money((Number(l.qty) || 0) * (Number(l.price) || 0), false)}</b></td>
-                    <td><button className="x" onClick={() => del(i)} aria-label={`Remove ${p.name}`}>×</button></td>
+                    <td className="r num" data-label="Amount"><b>{money((Number(l.qty) || 0) * (Number(l.price) || 0), false)}</b></td>
+                    <td className="x-cell"><button className="x" onClick={() => del(i)} aria-label={`Remove ${p.name}`}>×</button></td>
                   </tr>
                 );
               })}

@@ -1,7 +1,7 @@
 {
   "name": "karvio",
   "private": true,
-  "version": "1.0.3",
+  "version": "1.0.4",
   "author": {
     "name": "Karvio",
     "email": "CodeWithRoni@users.noreply.github.com"
@@ -27,6 +27,7 @@
     "ios:prepare": "vite build && npx cap add ios && node scripts/native-icons.mjs ios && npx cap sync ios"
   },
   "dependencies": {
+    "@capacitor/app": "8.1.2",
     "@capacitor/core": "^8.6.0",
     "@fontsource/hind-siliguri": "^5.3.0",
     "@fontsource/manrope": "^5.3.0",

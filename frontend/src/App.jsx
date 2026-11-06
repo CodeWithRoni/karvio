@@ -5,6 +5,7 @@ import { endpoint } from './lib/api';
 import Layout from './components/Layout';
 import { Loading, Toasts, Btn } from './components/ui';
 import Login from './pages/Login';
+import { NativeShell } from './components/NativeShell';
 
 // Route-level code splitting keeps the first load fast.
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -78,5 +79,5 @@ export default function App() {
       </HashRouter>
     );
   }
-  return <>{body}<Toasts /></>;
+  return <>{body}<Toasts /><NativeShell /></>;
 }

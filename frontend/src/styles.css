@@ -42,7 +42,17 @@
 }
 
 * { box-sizing: border-box; }
+/* Phone notches, status bar and gesture bar. The Android app (Capacitor) injects --safe-area-inset-*;
+   browsers and iOS provide env(). 0 on a normal computer screen. */
+:root {
+  --sat: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --sab: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --sal: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  --sar: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+}
 html, body, #root { height: 100%; }
+/* keep the whole app clear of the status bar (top) and the gesture / navigation bar (bottom) */
+body { padding: var(--sat) var(--sar) var(--sab) var(--sal); }
 body {
   margin: 0; background: var(--rack); color: var(--text);
   font: 14px/1.45 var(--font);
@@ -130,7 +140,7 @@ input[type='checkbox'] { width: auto; min-height: 0; accent-color: var(--fiber);
 .shell.nav-hidden .rail { display: none; }
 .shell:not(.nav-hidden) .rail { animation: rail-in .2s ease-out; }
 @keyframes rail-in { from { opacity: 0; transform: translateX(-14px); } to { opacity: 1; transform: none; } }
-.door-float { position: fixed; top: 12px; left: 10px; z-index: 40; box-shadow: var(--shadow); animation: rail-in .2s ease-out; }
+.door-float { position: fixed; top: calc(12px + var(--sat)); left: calc(10px + var(--sal)); z-index: 40; box-shadow: var(--shadow); animation: rail-in .2s ease-out; }
 .shell.nav-hidden .content { padding-left: 48px; }
 .nav kbd { white-space: nowrap; flex: none; }
 .nav a { min-width: 0; }
@@ -228,7 +238,7 @@ table { width: 100%; border-collapse: collapse; }
 .note { border-left: 3px solid var(--aqua); background: color-mix(in srgb, var(--aqua) 8%, transparent); padding: 9px 12px; border-radius: 0 7px 7px 0; font-size: 13px; }
 
 /* ---------- modal & toast ---------- */
-.modal-bg { position: fixed; inset: 0; background: rgba(6, 12, 20, .62); display: flex; align-items: flex-start; justify-content: center; padding: 6vh 16px; z-index: 50; overflow-y: auto; animation: fade .12s; }
+.modal-bg { position: fixed; inset: 0; background: rgba(6, 12, 20, .62); display: flex; align-items: flex-start; justify-content: center; padding: calc(6vh + var(--sat)) calc(16px + var(--sar)) calc(6vh + var(--sab)) calc(16px + var(--sal)); z-index: 50; overflow-y: auto; animation: fade .12s; }
 .modal { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; width: 100%; box-shadow: var(--shadow); animation: rise .16s ease-out; }
 .modal-sm { max-width: 440px; } .modal-md { max-width: 680px; } .modal-lg { max-width: 980px; }
 .modal-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--line); }
@@ -236,7 +246,7 @@ table { width: 100%; border-collapse: collapse; }
 .modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--line); flex-wrap: wrap; }
 @keyframes fade { from { opacity: 0; } }
 @keyframes rise { from { opacity: 0; transform: translateY(10px); } }
-.toasts { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 80; max-width: min(420px, calc(100vw - 32px)); }
+.toasts { position: fixed; right: calc(16px + var(--sar)); bottom: calc(16px + var(--sab)); display: flex; flex-direction: column; gap: 8px; z-index: 80; max-width: min(420px, calc(100vw - 32px)); }
 .toast { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--ok); padding: 10px 14px; border-radius: 8px; box-shadow: var(--shadow); animation: rise .18s ease-out; font-weight: 600; }
 .toast-err { border-left-color: var(--bad); }
 
@@ -314,7 +324,7 @@ table { width: 100%; border-collapse: collapse; }
 
 /* ---------- responsive ---------- */
 @media (max-width: 1100px) {
-  .pos { grid-template-columns: 1fr; height: auto; }
+  .pos { grid-template-columns: minmax(0, 1fr); height: auto; }
   .cart { min-height: 260px; }
   .split { grid-template-columns: 1fr; }
 }
@@ -333,7 +343,8 @@ table { width: 100%; border-collapse: collapse; }
   .door-btn { width: 32px; height: 32px; }
   body.nav-lock { overflow: hidden; }
   .shell.nav-open::after { animation: fade-in .2s ease-out; }
-  .rail { position: fixed; inset: 0 auto 0 0; width: 270px; z-index: 60; transform: translateX(-100%); transition: transform .2s; box-shadow: var(--shadow); }
+  .rail { position: fixed; inset: 0 auto 0 0; width: 270px; z-index: 60; transform: translateX(-100%); transition: transform .2s; box-shadow: var(--shadow);
+    padding: var(--sat) 0 var(--sab) var(--sal); } /* drawer covers the status / gesture bars: keep its content clear of them */
   .shell.nav-open .rail { transform: none; }
   .shell.nav-open::after { content: ''; position: fixed; inset: 0; background: rgba(6, 12, 20, .5); z-index: 55; }
   .topbar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); font-weight: 800; }
@@ -730,3 +741,49 @@ small.margin.bad { color: var(--bad); }
 .bc-preview { width: 100%; height: 380px; border: 1px solid var(--line); border-radius: 10px; background: #525a66; display: block; }
 .bc-layout > .grid, .bc-layout .card { min-width: 0; }
 @media (max-width: 600px) { .bc-rows th:nth-child(3), .bc-rows td:nth-child(3) { display: none; } .bc-rows .del-btn { font-size: 0; gap: 0; padding: 6px 8px; } .bc-rows td { padding: 8px 4px; } .bc-count { width: 64px; } }
+
+/* ---------- POS on phones: each cart line becomes a card (no sideways scrolling) ---------- */
+@media (max-width: 640px) {
+  .pos-left > .row { flex-wrap: wrap; }
+  .pos-left > .row > div:first-child { flex: 1 1 100% !important; }
+  .keys { display: none; } /* keyboard shortcuts: no F-keys on a phone */
+  .cart { min-height: 0; }
+  .cart table { display: block; width: 100%; }
+  .cart thead { display: none; }
+  .cart tbody { display: block; }
+  .cart tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1fr); gap: 6px 10px; padding: 12px 12px 10px; position: relative;
+    border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+  .cart tbody td { display: block; padding: 0; border: 0; min-width: 0; }
+  .cart tbody td.cn { grid-column: 1 / -1; padding-right: 34px; }
+  .cart tbody td.cost-col { grid-column: 1 / -1; }
+  .cart tbody td[data-label]::before { content: attr(data-label); display: block; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 3px; }
+  .cart tbody td.cost-col:empty, .cart tbody td.cost-col[data-empty] { display: none; }
+  .cart tbody td.r { text-align: right; }
+  .cart tbody td.x-cell { position: absolute; top: 8px; right: 6px; }
+  .cart input { width: 100%; }
+  .cart .price-hist { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+  .totals input { width: 110px; }
+}
+/* status-bar strip in the app's bar colour, so the clock / battery sit on a clean band */
+body::before { content: ''; position: fixed; top: 0; left: 0; right: 0; height: var(--sat); background: var(--panel); z-index: 100; pointer-events: none; }
+
+/* ---------- "Exit Karvio?" (Android back button on the Dashboard) ---------- */
+.exit-bg { position: fixed; inset: 0; z-index: 120; display: flex; align-items: flex-end; justify-content: center; padding: 16px calc(12px + var(--sar)) calc(14px + var(--sab)) calc(12px + var(--sal));
+  background: rgba(6, 12, 20, .55); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); animation: fade .16s ease-out; }
+.exit-sheet { width: 100%; max-width: 420px; text-align: center; padding: 10px 22px 16px; border-radius: 20px; border: 1px solid var(--line);
+  background: linear-gradient(170deg, color-mix(in srgb, var(--fiber) 10%, var(--panel)) 0%, var(--panel) 60%); box-shadow: 0 -10px 40px rgba(0, 0, 0, .35);
+  animation: exit-up .28s cubic-bezier(.2, .9, .25, 1.15); }
+.exit-sheet.leaving { animation: exit-down .36s ease-in forwards; }
+.exit-grip { width: 38px; height: 4px; border-radius: 4px; background: var(--line); margin: 0 auto 14px; }
+.exit-door { width: 66px; height: 66px; margin: 0 auto 10px; border-radius: 50%; display: grid; place-items: center; color: var(--fiber);
+  background: color-mix(in srgb, var(--fiber) 14%, transparent); box-shadow: 0 0 0 6px color-mix(in srgb, var(--fiber) 7%, transparent); animation: exit-knock 1.6s ease-in-out .3s infinite; }
+.exit-sheet h2 { font-size: 19px; margin-bottom: 6px; }
+.exit-sheet p { margin: 0 auto 16px; color: var(--muted); font-size: 13.5px; max-width: 320px; }
+.exit-sheet p b { color: var(--text); }
+.exit-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.exit-actions .btn { min-height: 46px; font-size: 15px; justify-content: center; }
+.exit-hint { display: block; margin-top: 10px; color: var(--muted); font-size: 11.5px; }
+@keyframes exit-up { from { transform: translateY(110%); opacity: .4; } to { transform: none; opacity: 1; } }
+@keyframes exit-down { to { transform: translateY(115%); opacity: 0; } }
+@keyframes exit-knock { 0%, 70%, 100% { transform: none; } 78% { transform: rotate(-8deg); } 86% { transform: rotate(6deg); } 93% { transform: rotate(-3deg); } }
+@media (min-width: 861px) { .exit-bg { align-items: center; } }

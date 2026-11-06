@@ -7,9 +7,15 @@
   },
   "ios": {
     "backgroundColor": "#0d1b2a",
-    "contentInset": "always"
+    "contentInset": "never"
   },
   "server": {
     "androidScheme": "https"
+  },
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "css",
+      "style": "DARK"
+    }
   }
 }
