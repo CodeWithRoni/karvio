@@ -539,3 +539,122 @@ test('phone app: clear of status and gesture bars, POS cart fits, back button cl
   expect(errors).toEqual([]);
   await ctx.close();
 });
+
+test('purchase: supplier invoice no. is its own field, warns on a repeat, and is searchable', async ({ page, request }) => {
+  const sup = await call(request, 'supplier.save', { name: 'Inv Supplier ' + Date.now() });
+  const pr = await call(request, 'product.save', { name: 'Supplier Inv Test SSD ' + Date.now(), sale_price: 3600 });
+  const supInv = 'ST-' + Date.now();
+  const buy = async () => {
+    await page.goto('/#/purchases');
+    await page.getByRole('tab', { name: /New purchase/ }).click();
+    await page.getByRole('combobox', { name: 'Supplier', exact: true }).selectOption(sup.id);
+    await page.getByRole('combobox', { name: 'Search product' }).fill(pr.name);
+    await page.keyboard.press('Enter');
+    const row = page.locator('.pur-line', { hasText: pr.name });
+    await row.getByLabel(`Quantity of ${pr.name}`).fill('2');
+    await row.getByLabel(`Unit cost for ${pr.name}`).fill('3000');
+    await page.getByLabel('Supplier invoice no.').fill(supInv);
+    await page.getByLabel('Note', { exact: true }).fill('Delivered by Rahim');
+    await page.getByRole('button', { name: 'Save purchase' }).click();
+  };
+  await buy();
+  await expect(page.getByText('Purchase saved').first()).toBeVisible();
+  const saved = (await call(request, 'purchases.list', { q: supInv, page: 1, per: 10 })).rows;
+  expect(saved.map((r) => [r.supplier_invoice, r.note])).toEqual([[supInv, 'Delivered by Rahim']]);
+
+  // the same supplier invoice again: asks first; "Go back" saves nothing
+  await buy();
+  const dlg = page.getByRole('dialog', { name: 'Supplier invoice already entered' });
+  await expect(dlg).toContainText(`Supplier invoice ${supInv} is already entered on purchase ${saved[0].invoice_no}`);
+  await dlg.getByRole('button', { name: 'Go back' }).click();
+  await expect(dlg).toHaveCount(0);
+  expect((await call(request, 'purchases.list', { q: supInv, page: 1, per: 10 })).total).toBe(1);
+  await expect(page.locator('.toast.err')).toHaveCount(0);
+  // "Save anyway" saves it
+  await page.getByRole('button', { name: 'Save purchase' }).click();
+  await page.getByRole('dialog', { name: 'Supplier invoice already entered' }).getByRole('button', { name: 'Save anyway' }).click();
+  await expect.poll(async () => (await call(request, 'purchases.list', { q: supInv, page: 1, per: 10 })).total).toBe(2);
+  expect((await call(request, 'purchases.list', { q: supInv, page: 1, per: 10 })).total).toBe(2);
+
+  // list column + search box, detail, Advance Search
+  await page.getByRole('tab', { name: 'Purchase invoices' }).click();
+  await page.getByLabel('Search purchases').fill(supInv);
+  await expect(page.locator('.pl-table tbody tr')).toHaveCount(2);
+  await expect(page.locator('.pl-table tbody tr').first()).toContainText(supInv);
+  await page.locator('.pl-table tbody tr').first().click();
+  await expect(page.locator('.modal .kv')).toContainText(supInv);
+  await expect(page.locator('.modal .kv')).toContainText('Delivered by Rahim');
+  await page.keyboard.press('Escape');
+  await page.goto('/#/history');
+  await page.getByPlaceholder(/Serial \/ IMEI/).fill(supInv);
+  await page.keyboard.press('Enter');
+  await expect(page.getByText('Supplier invoice', { exact: true })).toBeVisible();
+});
+
+test('working hours: set in Users, refused at sign-in outside them, and signed out mid-session', async ({ page, request, browser }) => {
+  const dhakaHour = Number(new Date().toLocaleString('en-GB', { timeZone: 'Asia/Dhaka', hour: '2-digit', hour12: false }));
+  const pad = (h) => String((h + 24) % 24).padStart(2, '0') + ':00';
+  const uname = 'shift' + Date.now();
+  // set the hours in the Users screen (a window that does not include now)
+  await page.goto('/#/users');
+  await page.getByRole('button', { name: 'Add user' }).click();
+  const m = page.locator('.modal');
+  await m.getByLabel('Full name').fill('Shift Staff');
+  await m.getByLabel('Username').fill(uname);
+  await m.getByLabel('Password').fill('secret1');
+  await m.getByText('Limit working hours').click();
+  await m.getByLabel('From').fill(pad(dhakaHour + 2));
+  await m.getByLabel('To').fill(pad(dhakaHour + 3));
+  await m.getByRole('button', { name: 'Fri' }).click(); // day off
+  await expect(m.locator('.wh-sum')).toContainText('Sat, Sun, Mon, Tue, Wed, Thu');
+  await m.getByRole('button', { name: 'Save user' }).click();
+  await expect(page.locator('.dt tbody tr', { hasText: uname })).toContainText('Sat, Sun, Mon, Tue, Wed, Thu');
+  const u = (await call(request, 'users.list')).find((x) => x.username === uname);
+  expect([u.access_limit, u.access_from, u.access_to, u.access_days]).toEqual([true, pad(dhakaHour + 2), pad(dhakaHour + 3), 'sat,sun,mon,tue,wed,thu']);
+
+  // sign-in outside the hours: refused with the hours shown
+  const ctx = await browser.newContext();
+  const p2 = await ctx.newPage();
+  await p2.addInitScript((ep) => localStorage.setItem('erp_api_config', JSON.stringify({ scriptUrl: ep })), endpoint);
+  await p2.goto('/');
+  await p2.getByLabel('Username').fill(uname);
+  await p2.getByLabel('Password').fill('secret1');
+  await p2.getByRole('button', { name: /sign in/i }).click();
+  await expect(p2.locator('.errbox')).toContainText('Your working hours are');
+
+  // inside the hours: signed in; then the hours change → the next request signs them out with the reason
+  await call(request, 'user.save', { ...u, access_from: pad(dhakaHour - 1), access_to: pad(dhakaHour + 2), access_days: 'sat,sun,mon,tue,wed,thu,fri' });
+  await p2.getByRole('button', { name: /sign in/i }).click();
+  await expect(p2.locator('.shell')).toBeVisible();
+  await call(request, 'user.save', { ...u, access_from: pad(dhakaHour + 2), access_to: pad(dhakaHour + 3), access_days: 'sat,sun,mon,tue,wed,thu,fri' });
+  await p2.reload();
+  await expect(p2.locator('.errbox')).toContainText('Your working hours are');
+  await expect(p2.getByLabel('Username')).toBeVisible();
+  await ctx.close();
+});
+
+test('customer invoice link: opens without signing in, downloads a PDF, bad links explain themselves', async ({ request, browser }) => {
+  const sale = (await call(request, 'sales.list', {})).find((s) => s.status === 'active');
+  const l = await call(request, 'sale.link', { id: sale.id });
+  expect(l.url).toMatch(/^https:\/\/codewithroni\.github\.io\/shop-erp\/#\/i\/[A-Za-z0-9]{22}$/);
+  expect(l.days).toBe(15);
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, acceptDownloads: true });
+  const p = await ctx.newPage();
+  const errors = []; p.on('pageerror', (e) => errors.push(e.message));
+  await p.addInitScript((ep) => localStorage.setItem('erp_api_config', JSON.stringify({ scriptUrl: ep })), endpoint); // no sign-in
+  await p.goto('/#/i/' + l.url.split('/i/')[1]);
+  await expect(p.getByRole('article', { name: `Invoice ${sale.invoice_no}` })).toBeVisible();
+  await expect(p.locator('.pubinv-foot')).toContainText('works until');
+  expect(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await expect(p.locator('.auth')).toHaveCount(0); // no sign-in screen
+  const [dl] = await Promise.all([p.waitForEvent('download'), p.getByRole('button', { name: 'Download PDF' }).click()]);
+  expect(dl.suggestedFilename()).toBe(`invoice-${sale.invoice_no}.pdf`);
+  const size = (await fs.stat(await dl.path())).size;
+  expect(size).toBeGreaterThan(20000);
+  expect(size).toBeLessThan(1500000);
+  await p.goto('/#/i/AAAAAAAAAAAAAAAAAAAAAA');
+  await expect(p.getByRole('heading', { name: 'Link not available' })).toBeVisible();
+  await expect(p.getByText('expired or is not valid')).toBeVisible();
+  expect(errors).toEqual([]);
+  await ctx.close();
+});

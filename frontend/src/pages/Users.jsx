@@ -22,12 +22,54 @@ export default function Users() {
           <DataTable title="Users" loading={list.loading} rows={list.data || []} onRowClick={(u) => setEdit({ ...u, password: '' })} exportable={false}
             columns={[
               { key: 'name', label: 'Name' }, { key: 'username', label: 'Username' },
-              { key: 'role', label: 'Role', value: (r) => ROLE[r.role] }, { key: 'active', label: 'Status', render: (r) => <Badge tone={r.active ? 'ok' : 'muted'}>{r.active ? 'Active' : 'Disabled'}</Badge> }
+              { key: 'role', label: 'Role', value: (r) => ROLE[r.role] },
+              { key: 'access', label: 'Working hours', value: (r) => (r.role !== 'admin' && r.access_limit ? hoursText(r) : 'Any time') },
+              { key: 'active', label: 'Status', render: (r) => <Badge tone={r.active ? 'ok' : 'muted'}>{r.active ? 'Active' : 'Disabled'}</Badge> }
             ]} />
         </>
       ) : <RolePerms />}
       {edit && <UserForm initial={edit} onClose={() => setEdit(null)} onDone={list.reload} />}
     </>
+  );
+}
+
+// Bangladesh week order, Saturday first
+const DAYS = [['sat', 'Sat'], ['sun', 'Sun'], ['mon', 'Mon'], ['tue', 'Tue'], ['wed', 'Wed'], ['thu', 'Thu'], ['fri', 'Fri']];
+const t12 = (hm) => {
+  const m = /^(\d{1,2}):(\d{2})/.exec(hm || ''); if (!m) return hm || '';
+  const h = Number(m[1]); return `${h % 12 || 12}:${m[2]} ${h < 12 ? 'AM' : 'PM'}`;
+};
+const dayList = (d) => String(d || '').split(',').filter(Boolean);
+export function hoursText(u) {
+  const days = dayList(u.access_days);
+  const names = DAYS.filter(([k]) => days.includes(k)).map(([, l]) => l);
+  return `${t12(u.access_from)} – ${t12(u.access_to)}${names.length === 7 || !names.length ? ', every day' : `, ${names.join(', ')}`}`;
+}
+
+function WorkingHours({ f, setF }) {
+  const days = dayList(f.access_days);
+  const toggleDay = (k) => setF({ ...f, access_days: (days.includes(k) ? days.filter((x) => x !== k) : [...days, k]).join(',') });
+  const overnight = f.access_from && f.access_to && f.access_from > f.access_to;
+  return (
+    <div className="wide wh-box">
+      <label className="check"><input type="checkbox" checked={!!f.access_limit}
+        onChange={(e) => setF({ ...f, access_limit: e.target.checked, access_from: f.access_from || '10:00', access_to: f.access_to || '20:00', access_days: f.access_days || DAYS.map(([k]) => k).join(',') })} />
+        <b>Limit working hours</b></label>
+      <p className="muted" style={{ margin: '2px 0 0', fontSize: 12.5 }}>Outside these hours this person cannot sign in — even with the right password — and is signed out if already in.</p>
+      {f.access_limit && (
+        <>
+          <div className="wh-times">
+            <Field label="From"><input type="time" value={f.access_from} onChange={(e) => setF({ ...f, access_from: e.target.value })} /></Field>
+            <Field label="To"><input type="time" value={f.access_to} onChange={(e) => setF({ ...f, access_to: e.target.value })} /></Field>
+          </div>
+          <div className="wh-days" role="group" aria-label="Working days">
+            {DAYS.map(([k, l]) => <button type="button" key={k} className={`wh-day ${days.includes(k) ? 'on' : ''}`} aria-pressed={days.includes(k)} onClick={() => toggleDay(k)}>{l}</button>)}
+          </div>
+          <div className="wh-sum">{days.length ? <>Can use Karvio: <b>{hoursText(f)}</b>{overnight ? ' (ends after midnight)' : ''}</> : <span style={{ color: 'var(--bad)' }}>Choose at least one working day</span>}</div>
+          {f.access_from && f.access_from === f.access_to && <div className="wh-sum" style={{ color: 'var(--bad)' }}>Start and end time cannot be the same</div>}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -43,6 +85,7 @@ function UserForm({ initial, onClose, onDone }) {
         <Field label={f.id ? 'New password' : 'Password'} wide hint={f.id ? 'Leave blank to keep the current password.' : 'At least 6 characters.'}><input type="password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} autoComplete="new-password" /></Field>
         <Field label="Role" wide><select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>{Object.entries(ROLE).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
         {f.id && <label className="check"><input type="checkbox" checked={f.active} onChange={(e) => setF({ ...f, active: e.target.checked })} /> Can sign in</label>}
+        {f.role === 'admin' ? <p className="wide muted" style={{ margin: 0, fontSize: 12.5 }}>Admins can sign in at any time (working hours apply to managers and sales staff).</p> : <WorkingHours f={f} setF={setF} />}
       </div>
     </Modal>
   );

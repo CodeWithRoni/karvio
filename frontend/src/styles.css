@@ -787,3 +787,57 @@ body::before { content: ''; position: fixed; top: 0; left: 0; right: 0; height: 
 @keyframes exit-down { to { transform: translateY(115%); opacity: 0; } }
 @keyframes exit-knock { 0%, 70%, 100% { transform: none; } 78% { transform: rotate(-8deg); } 86% { transform: rotate(6deg); } 93% { transform: rotate(-3deg); } }
 @media (min-width: 861px) { .exit-bg { align-items: center; } }
+
+/* Users: working hours */
+.wh-box { border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; gap: 10px; }
+.wh-times { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.wh-days { display: flex; flex-wrap: wrap; gap: 6px; }
+.wh-day { min-width: 46px; padding: 7px 10px; border-radius: 99px; border: 1px solid var(--line); background: transparent; color: var(--muted); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.wh-day.on { color: var(--text); border-color: color-mix(in srgb, var(--fiber) 60%, transparent); background: color-mix(in srgb, var(--fiber) 14%, transparent); }
+.wh-sum { font-size: 13px; color: var(--muted); }
+.wh-sum b { color: var(--text); }
+
+/* ---------- Customer invoice link (public, light, phone first) ---------- */
+.pubinv-wrap { min-height: 100%; background: #eef2f6; padding: calc(16px + var(--sat)) 12px calc(24px + var(--sab)); display: flex; justify-content: center; align-items: flex-start; overflow-y: auto; height: 100%; }
+.pubinv { width: 100%; max-width: 560px; background: #fff; color: #142233; border-radius: 16px; box-shadow: 0 6px 24px rgba(15, 30, 50, .12); padding: 22px 20px; font: 14px/1.45 'Manrope', 'Hind Siliguri', system-ui, sans-serif; }
+.pubinv b { color: #0d1b2a; }
+.pubinv small { display: block; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #6b7a8c; }
+.pubinv-shop { text-align: center; padding-bottom: 14px; border-bottom: 3px solid #0d1b2a; }
+.pubinv-shop h1 { margin: 0 0 4px; font-size: 22px; color: #0d1b2a; }
+.pubinv-shop > div { font-size: 13px; color: #44546a; }
+.pubinv-contacts { display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: center; margin-top: 4px; }
+.pubinv-head { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end; padding: 14px 0 10px; }
+.pubinv-head b { font-size: 15px; }
+.pi-tag { display: inline-block; padding: 5px 10px; border-radius: 99px; font-weight: 800; font-size: 12.5px; white-space: nowrap; }
+.pi-tag.ok { background: #e3f6ec; color: #13794b; } .pi-tag.warn { background: #fff3dc; color: #a35d00; } .pi-tag.bad { background: #fde8e8; color: #b42318; }
+.pubinv-cx { margin: 0 0 10px; padding: 8px 10px; border: 2px solid #b42318; border-radius: 8px; color: #b42318; font-weight: 800; text-align: center; }
+.pubinv-to { background: #f4f7fa; border-radius: 10px; padding: 10px 12px; }
+.pubinv-to b { font-size: 15px; }
+.pubinv-items { margin-top: 12px; }
+.pi-item { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 10px 0; border-bottom: 1px dashed #d5dde6; }
+.pi-name { grid-column: 1 / -1; }
+.pi-sn { font: 12px Consolas, 'Courier New', monospace; color: #44546a; word-break: break-all; margin-top: 2px; }
+.pi-war { font-size: 12px; color: #5b3fb3; margin-top: 2px; }
+.pi-qty { color: #44546a; font-size: 13px; }
+.pi-amt { text-align: right; font-weight: 800; font-variant-numeric: tabular-nums; }
+.pubinv-tot { margin-top: 12px; display: grid; gap: 4px; }
+.pubinv-tot > div { display: flex; justify-content: space-between; gap: 12px; font-variant-numeric: tabular-nums; }
+.pubinv-tot .sm { font-size: 12.5px; color: #6b7a8c; }
+.pubinv-tot .g { border-top: 2px solid #0d1b2a; padding-top: 6px; margin-top: 4px; font-weight: 800; font-size: 17px; }
+.pubinv-tot .due { color: #a35d00; font-weight: 800; font-size: 15px; }
+.pubinv-note { margin: 12px 0 0; font-size: 12.5px; color: #44546a; white-space: pre-wrap; }
+.pubinv-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }
+.pi-btn { min-height: 46px; border-radius: 10px; border: 1px solid #c4cfdb; background: #fff; color: #0d1b2a; font-family: inherit; font-size: 15px; font-weight: 700; cursor: pointer; }
+.pi-btn.primary { background: #0d1b2a; border-color: #0d1b2a; color: #fff; }
+.pi-btn:disabled { opacity: .6; cursor: wait; }
+.pubinv-err { color: #b42318; font-size: 13px; }
+.pubinv-foot { margin-top: 14px; padding-top: 12px; border-top: 1px solid #e3e9ef; font-size: 12px; color: #6b7a8c; text-align: center; }
+.pubinv-msg { text-align: center; padding: 40px 22px; }
+.pubinv-msg h1 { font-size: 20px; margin: 8px 0; color: #0d1b2a; }
+.pubinv-msg p { color: #44546a; }
+.pubinv-ico { font-size: 40px; }
+.pubinv-spin { width: 34px; height: 34px; margin: 20px auto; border-radius: 50%; border: 3px solid #d5dde6; border-top-color: #0d1b2a; animation: spin .8s linear infinite; }
+@media (max-width: 380px) { .pubinv-head { grid-template-columns: 1fr 1fr; } .pubinv-status { grid-column: 1 / -1; } }
+.sms-link { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.cust-link { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--ok) 45%, transparent); background: color-mix(in srgb, var(--ok) 8%, transparent); border-radius: 10px; font-size: 13px; }
+.cust-link input { flex: 1 1 260px; min-width: 0; font: 12.5px Consolas, 'Courier New', monospace; }

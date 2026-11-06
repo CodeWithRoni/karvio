@@ -59,6 +59,8 @@ const http = require('http');
 const PORT = Number(process.env.PORT || 8787);
 http.createServer((req, res) => {
   const cors = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' };
+  // test helper: what the mock SMS gateway was asked to send
+  if (req.method === 'GET' && req.url === '/__fetchlog') { res.writeHead(200, cors); return res.end(JSON.stringify(fetchLog.slice(-20))); }
   if (req.method !== 'POST') { res.writeHead(200, cors); return res.end(sandbox.doGet().getContent()); }
   let body = '';
   req.on('data', (c) => (body += c));

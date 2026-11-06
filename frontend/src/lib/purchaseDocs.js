@@ -31,7 +31,7 @@ export function purchaseInvoiceHtml(d) {
   const pl = pays(p);
   return `<div class="pinv">
     <div class="top"><div><h1>${esc(s.shop_name || 'Karvio')}</h1><div>${esc(s.shop_address || '')}</div><div>${shopContacts(s)}</div></div>
-      <div><h2>PURCHASE INVOICE</h2><div style="text-align:right"><b>${esc(p.invoice_no)}</b><br>Date: ${esc(fdate(p.date))}<br><span class="sm">Entered ${esc(fdatetime(p.created_at))} by ${esc(p.user || '')}</span></div></div></div>
+      <div><h2>PURCHASE INVOICE</h2><div style="text-align:right"><b>${esc(p.invoice_no)}</b><br>${p.supplier_invoice ? `Supplier invoice: <b>${esc(p.supplier_invoice)}</b><br>` : ''}Date: ${esc(fdate(p.date))}<br><span class="sm">Entered ${esc(fdatetime(p.created_at))} by ${esc(p.user || '')}</span></div></div></div>
     ${p.status === 'cancelled' ? `<div class="cx">CANCELLED — ${esc(p.cancel_reason || '')}</div>` : ''}
     <div class="meta">
       <div class="box"><b class="t">Supplier</b><b>${esc(sup.name || p.supplier_name || '—')}</b>${sup.phones ? `<div>Phone: ${esc(splitList(sup.phones).join(', '))}</div>` : ''}${sup.address ? `<div>${esc(sup.address)}</div>` : ''}</div>
@@ -76,7 +76,7 @@ export async function pdfPages(blocks, styles, filename) {
         const c = document.createElement('canvas'); c.width = canvas.width; c.height = Math.min(sliceH, canvas.height - y);
         c.getContext('2d').drawImage(canvas, 0, y, c.width, c.height, 0, 0, c.width, c.height);
         if (!first) doc.addPage(); first = false;
-        doc.addImage(c.toDataURL('image/png'), 'PNG', M, M, pw, (c.height / c.width) * pw);
+        doc.addImage(c.toDataURL('image/jpeg', 0.92), 'JPEG', M, M, pw, (c.height / c.width) * pw); // JPEG: about 10× smaller than PNG, still sharp at scale 2
       }
     }
     doc.save(filename);
@@ -87,18 +87,18 @@ export const pdfPurchases = (list, filename) => pdfPages(list.map(purchaseInvoic
 /** Sheet 1: one line per invoice. Sheet 2: every product line with supplier details and serial numbers. */
 export async function excelPurchases(list, filename) {
   const XLSX = await import('xlsx');
-  const inv = [['Purchase #', 'Date', 'Status', 'Supplier', 'Phone', 'Address', 'Subtotal', 'Discount', 'Total', 'Paid', 'Due', 'Payment', 'Note', 'Entered by']];
-  const lines = [['Purchase #', 'Date', 'Supplier', 'Phone', 'Address', 'Product', 'Model', 'Description', 'Unit', 'Qty', 'Purchase price', 'Amount', 'Serial numbers']];
+  const inv = [['Purchase #', 'Supplier invoice', 'Date', 'Status', 'Supplier', 'Phone', 'Address', 'Subtotal', 'Discount', 'Total', 'Paid', 'Due', 'Payment', 'Note', 'Entered by']];
+  const lines = [['Purchase #', 'Supplier invoice', 'Date', 'Supplier', 'Phone', 'Address', 'Product', 'Model', 'Description', 'Unit', 'Qty', 'Purchase price', 'Amount', 'Serial numbers']];
   list.forEach((d) => {
     const p = d.purchase, s = d.supplier || {}, phone = splitList(s.phones || '').join(', ');
-    inv.push([p.invoice_no, String(p.date).slice(0, 10), p.status, s.name || p.supplier_name || '', phone, s.address || '', p.subtotal, p.discount, p.total, p.paid, p.due,
+    inv.push([p.invoice_no, p.supplier_invoice || '', String(p.date).slice(0, 10), p.status, s.name || p.supplier_name || '', phone, s.address || '', p.subtotal, p.discount, p.total, p.paid, p.due,
       pays(p).map((x) => `${x.account_name || ''} ${x.amount}`).join('; '), p.note || '', p.user || '']);
-    d.items.forEach((i) => lines.push([p.invoice_no, String(p.date).slice(0, 10), s.name || p.supplier_name || '', phone, s.address || '', i.name, i.sku || '', i.description || '',
+    d.items.forEach((i) => lines.push([p.invoice_no, p.supplier_invoice || '', String(p.date).slice(0, 10), s.name || p.supplier_name || '', phone, s.address || '', i.name, i.sku || '', i.description || '',
       i.unit || 'pcs', i.qty, i.cost, i.total, splitList(String(i.serials || '').replace(/\n/g, ',')).join(', ')]));
   });
   const wb = XLSX.utils.book_new();
   const a = XLSX.utils.aoa_to_sheet(inv); a['!cols'] = inv[0].map((h) => ({ wch: Math.max(12, h.length + 2) }));
-  const b = XLSX.utils.aoa_to_sheet(lines); b['!cols'] = lines[0].map((h, i) => ({ wch: [5, 7, 12].includes(i) ? 34 : Math.max(12, h.length + 2) }));
+  const b = XLSX.utils.aoa_to_sheet(lines); b['!cols'] = lines[0].map((h, i) => ({ wch: [6, 8, 13].includes(i) ? 34 : Math.max(12, h.length + 2) }));
   XLSX.utils.book_append_sheet(wb, a, 'Invoices');
   XLSX.utils.book_append_sheet(wb, b, 'Items & serials');
   XLSX.writeFile(wb, filename);

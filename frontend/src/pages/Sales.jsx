@@ -80,7 +80,18 @@ function SaleDetail({ id, onClose, onChanged }) {
   const { data, loading, error, reload } = useApi('sale.detail', { id });
   const [ret, setRet] = useState(false);
   const [rev, setRev] = useState(false);
+  const [link, setLink] = useState(null); // { url, expires_at } — a customer link made for this invoice
+  const [linkBusy, setLinkBusy] = useState(false);
+  const toast = useStore((st) => st.toast);
   const s = data?.sale;
+  const makeLink = async () => {
+    setLinkBusy(true);
+    try {
+      const l = await api('sale.link', { id: s.id });
+      setLink(l);
+      try { await navigator.clipboard.writeText(l.url); toast('Customer link copied — valid for 15 days', 'ok'); } catch { toast('Customer link ready — copy it below', 'ok'); }
+    } catch (e) { toast(e.message, 'err'); } finally { setLinkBusy(false); }
+  };
   const pays = s ? (Array.isArray(s.payments) ? s.payments : (() => { try { return JSON.parse(s.payments); } catch { return []; } })()) : [];
 
   return (
@@ -88,6 +99,7 @@ function SaleDetail({ id, onClose, onChanged }) {
       footer={s && <>
         {can('cancel') && s.status === 'active' && <Btn kind="danger" onClick={() => setRev(true)}>Cancel invoice</Btn>}
         {can('sales.return') && s.status === 'active' && <Btn onClick={() => setRet(true)}>Return / exchange</Btn>}
+        {can('pos') && <Btn busy={linkBusy} onClick={makeLink} title="A private link to this invoice for the customer (WhatsApp, Messenger…). Works for 15 days.">Customer link</Btn>}
         <span className="spacer" />
         <div className="seg">
           <button onClick={() => excelSales([data], `invoice-${s.invoice_no}.xlsx`)}>Excel</button>
@@ -103,6 +115,13 @@ function SaleDetail({ id, onClose, onChanged }) {
       {s && (
         <>
           {s.status === 'cancelled' && <div className="errbox">Cancelled — {s.cancel_reason}</div>}
+          {link && (
+            <div className="cust-link" role="status">
+              <span>Customer link (works until {fdate(link.expires_at)}):</span>
+              <input readOnly value={link.url} onFocus={(e) => e.target.select()} aria-label="Customer invoice link" />
+              <a className="btn btn-sm btn-ghost" href={`https://wa.me/?text=${encodeURIComponent(`Invoice ${s.invoice_no}: ${link.url}`)}`} target="_blank" rel="noreferrer">WhatsApp</a>
+            </div>
+          )}
           <div className="kv">
             <div><span>Date</span><b>{fdatetime(s.created_at)}</b></div>
             <div><span>Customer</span><b>{s.customer_name}</b></div>

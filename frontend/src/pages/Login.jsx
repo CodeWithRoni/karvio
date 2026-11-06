@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from '../lib/store';
 import { getApiConfig, setApiConfig, testConnection, endpoint } from '../lib/api';
 import { Btn, Field } from '../components/ui';
@@ -9,7 +9,9 @@ export default function Login() {
   const [showApi, setShowApi] = useState(!endpoint());
   const [f, setF] = useState({ username: '', password: '' });
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
+  // why the last session ended (e.g. outside working hours) — shown once
+  const [err, setErr] = useState(() => { const n = useStore.getState().authNote || ''; return /sign in again|please sign in/i.test(n) ? '' : n; });
+  useEffect(() => { if (useStore.getState().authNote) useStore.setState({ authNote: '' }); }, []);
   const [ok, setOk] = useState('');
 
   const saveApi = async (e) => {

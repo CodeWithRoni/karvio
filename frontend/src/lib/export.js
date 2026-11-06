@@ -89,7 +89,7 @@ async function exportBengaliPdf(title, columns, rows, totals) {
         const slice = document.createElement('canvas'); slice.width = canvas.width; slice.height = Math.min(maxSlice, canvas.height - offset);
         slice.getContext('2d').drawImage(canvas, 0, offset, canvas.width, slice.height, 0, 0, slice.width, slice.height);
         if (page++) doc.addPage();
-        doc.addImage(slice.toDataURL('image/png'), 'PNG', 40, 40, pageWidth - 80, slice.height / slice.width * (pageWidth - 80));
+        doc.addImage(slice.toDataURL('image/jpeg', 0.92), 'JPEG', 40, 40, pageWidth - 80, slice.height / slice.width * (pageWidth - 80));
         doc.setFontSize(8); doc.text(String(page), pageWidth - 40, pageHeight - 24, { align: 'right' });
       }
     };

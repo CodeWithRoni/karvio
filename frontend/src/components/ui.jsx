@@ -48,7 +48,7 @@ export function useAction() {
   const run = async (fn, okMsg) => {
     setBusy(true);
     try { const r = await fn(); if (okMsg) toast(okMsg); return r; }
-    catch (e) { toast(e.message, 'err'); throw e; }
+    catch (e) { if (!e.quiet) toast(e.message, 'err'); throw e; } // quiet = the user chose to stop
     finally { setBusy(false); }
   };
   return [busy, run];

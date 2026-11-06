@@ -83,4 +83,5 @@ export const useStore = create((set, get) => ({
   }
 }));
 
-onAuthExpired(() => useStore.setState({ token: null, user: null, perms: [] }));
+// signed out by the server (session expired, account disabled, outside working hours): keep the reason for the sign-in page
+onAuthExpired((reason) => useStore.setState({ token: null, user: null, perms: [], authNote: reason || '' }));

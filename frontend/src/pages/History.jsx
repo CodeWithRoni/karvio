@@ -29,7 +29,7 @@ export default function History() {
     <>
       <PageHead title="Advance Search" sub="Scan a serial number, product barcode or invoice number to see its complete life cycle." />
       <form className="row" onSubmit={go} style={{ marginBottom: 16 }}>
-        <div className="psearch" style={{ flex: 1 }}><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Serial / IMEI, barcode, INV-000123 or PUR-000045" autoFocus /></div>
+        <div className="psearch" style={{ flex: 1 }}><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Serial / IMEI, barcode, INV-000123, PUR-000045 or supplier invoice" autoFocus /></div>
         <Btn kind="primary" size="lg" busy={loading} type="submit">Search</Btn>
       </form>
       <ErrorBox error={err} />
@@ -74,6 +74,7 @@ export default function History() {
               <div className="kv">
                 <div><span>Date</span><b>{fdate(s.date)}</b></div>
                 <div><span>{res.kind === 'sale_invoice' ? 'Customer' : 'Supplier'}</span><b>{s.customer || s.supplier || '—'}</b></div>
+                {s.supplier_invoice && <div><span>Supplier invoice</span><b>{s.supplier_invoice}</b></div>}
                 <div><span>Total</span><b>{money(s.total)}</b></div><div><span>Due</span><b>{money(s.due)}</b></div>
               </div>
               <table style={{ marginTop: 12 }}><tbody>{res.items.map((i, k) => (

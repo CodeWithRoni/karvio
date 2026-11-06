@@ -4,7 +4,7 @@ import { useStore, shopDay } from '../lib/store';
 import { api } from '../lib/api';
 import { money, qty as fqty, fdate, monthStart, today, splitList, round2, isDecimalUnit } from '../lib/format';
 import DataTable from '../components/DataTable';
-import { useApi, PageHead, Tabs, DateRange, Badge, statusTone, Modal, Btn, Field, Loading, ErrorBox, useAction, Select } from '../components/ui';
+import { useApi, PageHead, Tabs, DateRange, Badge, statusTone, Modal, Btn, Field, Loading, ErrorBox, useAction, useConfirm, Select } from '../components/ui';
 import { ProductSearch, PaymentSplit, cleanPays, defaultPay, ReverseDialog } from '../components/widgets';
 import { excelPurchases, pdfPurchases, printPurchases } from '../lib/purchaseDocs';
 
@@ -13,8 +13,8 @@ export default function Purchases() {
   const [tab, setTab] = useState('list');
   const [range, setRange] = useState({ from: monthStart(), to: today() });
   // Purchase invoices: newest 10 per page; narrow by supplier and / or dates.
-  const [lf, setLf] = useState({ supplier_id: '', from: '', to: '', page: 1 });
-  const list = useApi('purchases.list', { ...lf, per: 10 }, [lf.supplier_id, lf.from, lf.to, lf.page], { skip: tab !== 'list' });
+  const [lf, setLf] = useState({ supplier_id: '', from: '', to: '', q: '', page: 1 });
+  const list = useApi('purchases.list', { ...lf, per: 10 }, [lf.supplier_id, lf.from, lf.to, lf.q, lf.page], { skip: tab !== 'list' });
   const rets = useApi('preturns.list', range, [], { skip: tab !== 'returns' });
   const [open, setOpen] = useState(null);
   const [rev, setRev] = useState(null);
@@ -56,6 +56,9 @@ function PurchaseList({ list, f, setF, onOpen }) {
   const toggle = (r) => setSel((x) => { const n = { ...x }; if (n[r.id]) delete n[r.id]; else n[r.id] = r.invoice_no; return n; });
   const togglePage = () => setSel((x) => { const n = { ...x }; d.rows.forEach((r) => { if (allOnPage) delete n[r.id]; else n[r.id] = r.invoice_no; }); return n; });
   const set = (patch) => setF({ ...f, ...patch, page: patch.page || 1 });
+  // search box: waits until typing stops
+  const [q, setQ] = useState(f.q || '');
+  useEffect(() => { const t = setTimeout(() => { if (q.trim() !== (f.q || '')) set({ q: q.trim() }); }, 350); return () => clearTimeout(t); }, [q]); // eslint-disable-line react-hooks/exhaustive-deps
   const out = async (kind) => {
     setBusy(kind);
     try {
@@ -72,12 +75,13 @@ function PurchaseList({ list, f, setF, onOpen }) {
   return (
     <>
       <div className="filters">
+        <Field label="Search"><input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Purchase # / supplier invoice / product" aria-label="Search purchases" style={{ minWidth: 240 }} /></Field>
         <Field label="Supplier"><select value={f.supplier_id} onChange={(e) => set({ supplier_id: e.target.value })} aria-label="Filter by supplier" style={{ minWidth: 220 }}>
           <option value="">All suppliers</option>{suppliers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
         </select></Field>
         <Field label="From"><input type="date" value={f.from} onChange={(e) => set({ from: e.target.value })} aria-label="From date" /></Field>
         <Field label="To"><input type="date" value={f.to} onChange={(e) => set({ to: e.target.value })} aria-label="To date" /></Field>
-        {(f.supplier_id || f.from || f.to) && <button className="link" style={{ paddingBottom: 10 }} onClick={() => setF({ supplier_id: '', from: '', to: '', page: 1 })}>Clear filters</button>}
+        {(f.supplier_id || f.from || f.to || f.q) && <button className="link" style={{ paddingBottom: 10 }} onClick={() => { setQ(''); setF({ supplier_id: '', from: '', to: '', q: '', page: 1 }); }}>Clear filters</button>}
         <span className="spacer" />
         <div className="pl-export">
           <span className="muted">{ids.length ? `${ids.length} selected` : 'Tick invoices to export'}</span>
@@ -93,12 +97,12 @@ function PurchaseList({ list, f, setF, onOpen }) {
       <div className="dt"><div className="dt-scroll"><table className="pl-table">
         <thead><tr>
           <th style={{ width: 36 }}><input type="checkbox" checked={allOnPage} onChange={togglePage} aria-label="Select all on this page" /></th>
-          <th>Date</th><th>Purchase #</th><th>Supplier</th><th>Items</th><th className="r">Total</th><th className="r">Paid</th><th className="r">Due</th><th>Status</th>
+          <th>Date</th><th>Purchase #</th><th>Supplier invoice</th><th>Supplier</th><th>Items</th><th className="r">Total</th><th className="r">Paid</th><th className="r">Due</th><th>Status</th>
         </tr></thead>
         <tbody>{d.rows.map((r) => (
           <tr key={r.id} className={`${r.status === 'cancelled' ? 'dim' : ''} ${sel[r.id] ? 'picked' : ''}`} onClick={() => onOpen(r.id)}>
             <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={!!sel[r.id]} onChange={() => toggle(r)} aria-label={`Select ${r.invoice_no}`} /></td>
-            <td className="nowrap">{fdate(r.date)}</td><td>{r.invoice_no}</td><td>{r.supplier_name || '—'}</td><td className="clip">{r.items_text}</td>
+            <td className="nowrap">{fdate(r.date)}</td><td>{r.invoice_no}</td><td>{r.supplier_invoice || <span className="muted">—</span>}</td><td>{r.supplier_name || '—'}</td><td className="clip">{r.items_text}</td>
             <td className="r num">{money(r.total, false)}</td><td className="r num">{money(r.paid, false)}</td><td className="r num">{money(r.due, false)}</td>
             <td><Badge tone={statusTone(r.status)}>{r.status}</Badge></td>
           </tr>
@@ -132,6 +136,8 @@ function NewPurchase({ onDone }) {
   const [discount, setDiscount] = useState('');
   const [pays, setPays] = useState(() => defaultPay(''));
   const [note, setNote] = useState('');
+  const [supInv, setSupInv] = useState(''); // the supplier's own invoice / bill number
+  const [confirmDlg, ask] = useConfirm();
   const [tried, setTried] = useState(false);
   const [needSupplier, setNeedSupplier] = useState(false);
   const [busy, run] = useAction();
@@ -215,10 +221,20 @@ function NewPurchase({ onDone }) {
       return toast(b.qty ? (isSerial(p) ? `Scan the serial numbers for ${p.name}` : `Enter the quantity for ${p.name}`) : `Enter the unit cost and retail price for ${p.name}`, 'err');
     }
     if (paid > total + 0.004) return toast(`Paid (${money(paid, false)}) is more than the purchase total (${money(total, false)})`, 'err');
-    await run(() => api('purchase.create', {
-      supplier_id: supplier, date, discount: Number(discount) || 0, note, payments: cleanPays(pays),
+    const payload = {
+      supplier_id: supplier, date, discount: Number(discount) || 0, note, supplier_invoice: supInv.trim(), payments: cleanPays(pays),
       items: lines.map((l) => ({ product_id: l.product_id, qty: Number(l.qty), cost: Number(l.cost), sale_price: l.sale === '' ? '' : Number(l.sale), wholesale_price: l.whole === '' ? '' : Number(l.whole), serials: l.serials.join('\n') }))
-    }), due > 0 ? `Purchase saved — ${money(due)} added to ${sup.name}'s payable` : 'Purchase saved — stock updated');
+    };
+    await run(async () => {
+      try { return await api('purchase.create', payload); }
+      catch (e) {
+        // the same supplier invoice was entered before: probably a double entry — ask first
+        if (!/^DUPLICATE_SUPPLIER_INVOICE:/.test(e.message)) throw e;
+        const yes = await ask({ title: 'Supplier invoice already entered', message: `${e.message.replace(/^DUPLICATE_SUPPLIER_INVOICE:\s*/, '')} Save this purchase anyway?`, confirmLabel: 'Save anyway', cancelLabel: 'Go back' });
+        if (!yes) { const stop = new Error('Not saved'); stop.quiet = true; throw stop; }
+        return api('purchase.create', { ...payload, allow_duplicate_invoice: true });
+      }
+    }, due > 0 ? `Purchase saved — ${money(due)} added to ${sup.name}'s payable` : 'Purchase saved — stock updated');
     await refresh('products', 'suppliers');
     onDone();
   };
@@ -330,7 +346,9 @@ function NewPurchase({ onDone }) {
             <span><b>{after >= 0 ? 'Total payable to supplier' : 'Advance left with supplier'}</b></span><b className="num" style={{ color: after > 0 ? 'var(--bad)' : 'var(--ok)' }}>{money(Math.abs(after))}</b>
           </>}
         </div>
-        <Field label="Note" wide><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Supplier invoice number, etc." /></Field>
+        <Field label="Supplier invoice no." wide hint="The number printed on the supplier's bill — search for it later in Purchases or Advance Search."><input value={supInv} maxLength={60} onChange={(e) => setSupInv(e.target.value)} placeholder="e.g. INV-2026-0457" /></Field>
+        <Field label="Note" wide><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Anything to remember about this purchase" /></Field>
+        {confirmDlg}
         <Btn kind="primary" size="lg" style={{ width: '100%', marginTop: 14 }} busy={busy} disabled={!lines.length} onClick={save}>Save purchase</Btn>
       </div>
     </div>
@@ -360,6 +378,8 @@ function PurchaseDetail({ id, onClose, onChanged }) {
         {p.status === 'cancelled' && <div className="errbox">Cancelled — {p.cancel_reason}</div>}
         <div className="kv">
           <div><span>Date</span><b>{fdate(p.date)}</b></div><div><span>Supplier</span><b>{p.supplier_name || '—'}</b></div>
+          <div><span>Supplier invoice</span><b>{p.supplier_invoice || '—'}</b></div>
+          {p.note && <div><span>Note</span><b>{p.note}</b></div>}
           <div><span>Total</span><b>{money(p.total)}</b></div><div><span>Paid</span><b>{money(p.paid)}</b></div><div><span>Due</span><b>{money(p.due)}</b></div>
           <div><span>Entered by</span><b>{p.user}</b></div>
           {data.supplier && <div><span>Supplier phone</span><b>{splitList(data.supplier.phones || '').join(', ') || '—'}</b></div>}

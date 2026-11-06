@@ -139,13 +139,30 @@ function DashboardSettings() {
   );
 }
 
+const DEFAULT_LINK_BASE = 'https://codewithroni.github.io/shop-erp/';
+const linkBaseOf = (v) => {
+  const b = String(v || '').trim();
+  return (/^https?:\/\//i.test(b) ? b : DEFAULT_LINK_BASE).replace(/[#?].*$/, '').replace(/\/*$/, '/');
+};
+/** How many SMS a message takes: 160 / 153 per part in English, 70 / 67 in Bangla (Unicode). */
+export function smsParts(text) {
+  const unicode = /[^\x00-\x7F]/.test(text);
+  const n = [...text].length, one = unicode ? 70 : 160, multi = unicode ? 67 : 153;
+  return { unicode, count: n <= one ? 1 : Math.ceil(n / multi) };
+}
+
 function SmsSettings() {
-  const { f, setF, bind, save, busy } = useSettingsForm(['sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_headers']);
+  const { f, setF, bind, save, busy } = useSettingsForm(['sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_headers', 'sms_invoice_link', 'invoice_link_base']);
+  const linkOn = f.sms_invoice_link !== 'false'; // on unless switched off
   const [phone, setPhone] = useState('');
   const preset = matchPreset(f);
   const [tbusy, run] = useAction();
   const log = useApi('sms.log', {});
-  const sample = (f.sms_template || '').replace(/\{(\w+)\}/g, (m, k) => ({ name: 'Rahim', shop: useStore.getState().settings.shop_name, items: 'Kingston 512GB SSD x1, Cat6 Cable x15', invoice: 'INV-000123', total: '5,250', paid: '5,000', due: '250', date: '2026-11-05' }[k] ?? m));
+  const sampleLink = `${linkBaseOf(f.invoice_link_base)}#/i/Ab12Cd34Ef56Gh78Ij90Kl`;
+  let sample = (f.sms_template || '').replace(/\{(\w+)\}/g, (m, k) => ({ name: 'Rahim', shop: useStore.getState().settings.shop_name, items: 'Kingston 512GB SSD x1, Cat6 Cable x15', invoice: 'INV-000123', total: '5,250', paid: '5,000', due: '250', date: '2026-11-05', link: linkOn ? sampleLink : '' }[k] ?? m));
+  if (linkOn && !/\{link\}/.test(f.sms_template || '')) sample += ` Invoice: ${sampleLink}`;
+  if (!linkOn) sample = sample.replace(/\s*(View|Invoice|Link):?\s*$/i, '');
+  const parts = smsParts(sample);
   return (
     <div className="split">
       <div className="card form">
@@ -176,8 +193,19 @@ function SmsSettings() {
         <Field label="Request headers (optional)" wide hint="One per line, like  Authorization: Bearer {api_key}  — only for gateways that want the key in a header."><textarea {...bind('sms_headers')} rows={2} placeholder="Authorization: Bearer {api_key}" /></Field>
         <Field label="API key"><input type="password" {...bind('sms_api_key')} autoComplete="off" /></Field>
         <Field label="Sender ID"><input {...bind('sms_sender_id')} /></Field>
-        <Field label="Message template" wide hint="Placeholders: {name} {shop} {items} {invoice} {total} {paid} {due} {date}"><textarea {...bind('sms_template')} /></Field>
-        <div className="wide note">Preview ({sample.length} characters): {sample}</div>
+        <Field label="Message template" wide hint="Placeholders: {name} {shop} {items} {invoice} {total} {paid} {due} {date} {link}"><textarea {...bind('sms_template')} /></Field>
+        <div className="wide sms-link">
+          <label className="check"><input type="checkbox" checked={linkOn} onChange={(e) => setF({ ...f, sms_invoice_link: String(e.target.checked) })} /> <b>Add a link to the invoice</b></label>
+          <p className="muted" style={{ margin: '4px 0 0', fontSize: 12.5 }}>The customer taps it to see (and download) only their own invoice. Each link works for <b>15 days</b>, then it is deleted from your sheet. Put <code>{'{link}'}</code> in the template to choose where it goes — otherwise it is added at the end.</p>
+          {linkOn && (
+            <details style={{ marginTop: 6 }}>
+              <summary className="muted" style={{ cursor: 'pointer', fontSize: 12.5 }}>Web address of the invoice page</summary>
+              <input {...bind('invoice_link_base')} placeholder={DEFAULT_LINK_BASE} aria-label="Invoice page web address" style={{ marginTop: 6, width: '100%' }} />
+              <p className="muted" style={{ margin: '4px 0 0', fontSize: 12 }}>Leave empty to use {DEFAULT_LINK_BASE}. Change it only if Karvio runs on your own domain.</p>
+            </details>
+          )}
+        </div>
+        <div className="wide note">Preview ({sample.length} characters · {parts.count} SMS{parts.unicode ? ' · Bangla / Unicode' : ''}): {sample}</div>
         <div className="wide row end"><Btn kind="primary" busy={busy} onClick={save}>Save SMS settings</Btn></div>
       </div>
       <div className="grid">

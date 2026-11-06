@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { useStore } from './lib/store';
 import { endpoint } from './lib/api';
@@ -25,6 +25,10 @@ const Expenses = lazy(() => import('./pages/Expenses'));
 const Reports = lazy(() => import('./pages/Reports'));
 const Users = lazy(() => import('./pages/Users'));
 const Settings = lazy(() => import('./pages/Settings'));
+const PublicInvoice = lazy(() => import('./pages/PublicInvoice'));
+
+/** #/i/<key>: a customer's invoice link (from the sale SMS) — shown without signing in. */
+const linkToken = () => (/^#\/i\/([A-Za-z0-9]{1,64})\/?$/.exec(window.location.hash) || [])[1] || '';
 
 function Guard({ perm, children }) {
   const can = useStore((s) => s.can);
@@ -34,12 +38,15 @@ function Guard({ perm, children }) {
 
 export default function App() {
   const { theme, token, user, booting, bootError, boot, logout } = useStore();
+  const [pub, setPub] = useState(linkToken);
+  useEffect(() => { const h = () => setPub(linkToken()); window.addEventListener('hashchange', h); return () => window.removeEventListener('hashchange', h); }, []);
 
   useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
-  useEffect(() => { if (token && !user && endpoint()) boot().catch(() => {}); }, [token, user, boot]);
+  useEffect(() => { if (!pub && token && !user && endpoint()) boot().catch(() => {}); }, [pub, token, user, boot]);
 
   let body;
-  if (!token || !endpoint()) body = <Login />;
+  if (pub) body = <Suspense fallback={<Loading />}><PublicInvoice token={pub} /></Suspense>;
+  else if (!token || !endpoint()) body = <Login />;
   else if (!user) {
     body = (
       <div className="auth"><div className="auth-card">

@@ -15,7 +15,7 @@
  * ============================================================================
  */
 
-var APP_VERSION = '1.0.4';
+var APP_VERSION = '1.0.5';
 // Your Karvio database spreadsheet. Lets this script also run as a standalone project.
 var DEFAULT_SHEET_ID = '1r7WI5GNHtppUCtCu_rZUmvfum92i0HZdK298Z4uZH7w';
 var SESSION_TTL = 21600; // 6 hours (CacheService maximum)
@@ -24,7 +24,7 @@ var SESSION_TTL = 21600; // 6 hours (CacheService maximum)
  *  SHEET SCHEMA  —  "column" or "column:type"   (types: s=text, n=number, b=boolean)
  * ------------------------------------------------------------------------- */
 var SCHEMA = {
-  Users:               'id,name,username,password_hash,salt,role,active:b,created_at',
+  Users:               'id,name,username,password_hash,salt,role,active:b,created_at,access_limit:b,access_from,access_to,access_days',
   Settings:            'key,value',
   Accounts:            'id,name,type,number,opening_balance:n,active:b,created_at',
   AccountTxns:         'id,date,account_id,direction,amount:n,ref_type,ref_id,note,user,voided:b',
@@ -36,7 +36,7 @@ var SCHEMA = {
   SerialItems:         'id,product_id,serial,purchase_id,sale_id,status,cost:n,created_at',
   Customers:           'id,name,phones,addresses,opening_balance:n,note,active:b,created_at,link_id',
   Suppliers:           'id,name,phones,address,opening_balance:n,note,active:b,created_at,link_id',
-  Purchases:           'id,invoice_no,date,supplier_id,supplier_name,subtotal:n,discount:n,total:n,paid:n,due:n,note,status,user,created_at,payments,cancel_reason',
+  Purchases:           'id,invoice_no,date,supplier_id,supplier_name,subtotal:n,discount:n,total:n,paid:n,due:n,note,status,user,created_at,payments,cancel_reason,supplier_invoice',
   PurchaseItems:       'id,purchase_id,product_id,name,unit,qty:n,cost:n,total:n,serials,valuation',
   Sales:               'id,invoice_no,date,customer_id,customer_name,subtotal:n,discount:n,total:n,paid:n,credit_used:n,due:n,cost:n,profit:n,note,status,user_id,user_name,created_at,payments,cancel_reason,next_payment_date',
   SaleItems:           'id,sale_id,product_id,name,unit,qty:n,price:n,cost:n,total:n,serials,warranty_type,warranty_days:n,warranty_expiry',
@@ -50,6 +50,7 @@ var SCHEMA = {
   WarrantyClaims:      'id,claim_no,date,serial,sale_id,invoice_no,product_id,product_name,customer_id,customer_name,phone,issue,expiry,in_warranty:b,status,vendor,log,delivered_date,updated_at',
   ItemEvents:          'id,ts,serial,product_id,product_name,event,ref_type,ref_id,ref_no,party,qty:n,amount:n,note,user',
   SmsLog:              'id,ts,phone,message,status,response',
+  InvoiceLinks:        'id,token_hash,sale_id,created_at,expires_at',
   AuditLog:            'id,ts,user,action,detail'
 };
 
@@ -130,7 +131,11 @@ function sheet_(name) {
       sh.insertColumnsAfter(sh.getMaxColumns(), cs.length - sh.getMaxColumns());
     var headers = sh.getRange(1, 1, 1, cs.length).getValues()[0];
     cs.forEach(function (c, i) {
-      if (!headers[i]) sh.getRange(1, i + 1).setValue(c.k).setFontWeight('bold');
+      if (!headers[i]) {
+        sh.getRange(1, i + 1).setValue(c.k).setFontWeight('bold');
+        // text columns stay plain text, so "09:30" or "00123" are not turned into a time or a number
+        if (c.t === 's' && sh.getMaxRows) sh.getRange(1, i + 1, sh.getMaxRows(), 1).setNumberFormat('@');
+      }
       else if (headers[i] !== c.k) fail_('Unexpected column in ' + name + ': ' + headers[i]);
     });
     _mem['__schema_' + name] = true;
@@ -209,7 +214,7 @@ function remove_(name, id) {
 function withLock_(fn) {
   var lock = LockService.getScriptLock();
   lock.waitLock(28000);
-  try { return fn(); } finally { lock.releaseLock(); }
+  try { var r = fn(); dailyLinkCleanup_(); return r; } finally { lock.releaseLock(); }
 }
 
 /* ---- Settings (key / value sheet) ---- */
@@ -269,7 +274,8 @@ function setupDatabase() {
     sms_enabled: 'false', sms_method: 'GET',
     sms_url: 'https://bulksmsbd.net/api/smsapi?api_key={api_key}&type=text&number={number}&senderid={sender_id}&message={message}',
     sms_body: '', sms_body_type: 'form', sms_api_key: '', sms_sender_id: '', sms_number_format: 'intl', sms_headers: '',
-    sms_template: 'Dear {name}, thank you for shopping at {shop}. Items: {items}. Invoice {invoice}, Total {total}, Paid {paid}, Due {due}.'
+    sms_template: 'Dear {name}, thank you for shopping at {shop}. Items: {items}. Invoice {invoice}, Total {total}, Paid {paid}, Due {due}. View: {link}',
+    sms_invoice_link: 'true', invoice_link_base: DEFAULT_LINK_BASE
   };
   Object.keys(defaults).forEach(function (k) { if (getSetting_(k, null) === null) setSetting_(k, defaults[k]); });
   // getSetting_ returns '' for blanks; make sure all keys exist
@@ -327,7 +333,57 @@ function hash_(salt, pw) {
   var d = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, salt + '|' + pw, Utilities.Charset.UTF_8);
   return d.map(function (b) { return ('0' + (b & 0xff).toString(16)).slice(-2); }).join('');
 }
-function pubUser_(u) { return { id: u.id, name: u.name, username: u.username, role: u.role, active: u.active }; }
+function pubUser_(u) {
+  return { id: u.id, name: u.name, username: u.username, role: u.role, active: u.active,
+    access_limit: !!u.access_limit, access_from: u.access_from || '', access_to: u.access_to || '', access_days: u.access_days || '' };
+}
+
+/* ---- Staff working hours: outside them a staff member cannot sign in or use the app. Admins are never limited. ---- */
+var DAYS_ = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+var DAY_NAMES_ = { sun: 'Sun', mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat' };
+var WEEK_BD_ = ['sat', 'sun', 'mon', 'tue', 'wed', 'thu', 'fri']; // Bangladesh week order, for saving and showing
+var CLOCK_OVERRIDE_ = null; // tests only: { hm: 'HH:mm', dow: 0-6 }
+/** Shop clock (Asia/Dhaka): time as HH:mm and day of week (0 = Sunday). */
+function clock_() {
+  if (CLOCK_OVERRIDE_) return CLOCK_OVERRIDE_;
+  var d = today_();
+  return { hm: now_().slice(11, 16), dow: new Date(d + 'T12:00:00Z').getUTCDay() };
+}
+function hmMin_(hm) {
+  // "09:30", or a time the sheet stored as a date-time ("1899-12-30T09:30:00")
+  var m = /^(\d{1,2}):(\d{2})$/.exec(String(hm || '').trim()) || /T(\d{2}):(\d{2})/.exec(String(hm || ''));
+  return m && Number(m[1]) < 24 && Number(m[2]) < 60 ? Number(m[1]) * 60 + Number(m[2]) : NaN;
+}
+function hm12_(hm) {
+  var t = hmMin_(hm); if (isNaN(t)) return hm;
+  var h = Math.floor(t / 60), m = t % 60, ap = h < 12 ? 'AM' : 'PM', h12 = h % 12 || 12;
+  return h12 + ':' + (m < 10 ? '0' : '') + m + ' ' + ap;
+}
+function accessDays_(u) {
+  var d = String(u.access_days || '').toLowerCase().split(',').map(function (x) { return x.trim(); }).filter(function (x) { return DAYS_.indexOf(x) >= 0; });
+  return d.length ? d : DAYS_.slice();
+}
+/** Human description, e.g. "10:00 AM – 8:00 PM, Sat–Thu". */
+function accessText_(u) {
+  var days = WEEK_BD_.filter(function (d) { return accessDays_(u).indexOf(d) >= 0; }), txt = hm12_(u.access_from) + ' – ' + hm12_(u.access_to);
+  return days.length === 7 ? txt + ', every day' : txt + ', ' + days.map(function (x) { return DAY_NAMES_[x]; }).join(', ');
+}
+/** True when the user may work right now. A window that ends before it starts runs past midnight
+ *  (e.g. 10:00 PM – 6:00 AM); its early-morning part belongs to the day the shift started. */
+function accessAllowed_(u, clk) {
+  if (!u.access_limit || u.role === 'admin') return true;
+  var from = hmMin_(u.access_from), to = hmMin_(u.access_to);
+  if (isNaN(from) || isNaN(to) || from === to) return false;
+  var c = clk || clock_(), now = hmMin_(c.hm), days = accessDays_(u);
+  var dayOk = function (dow) { return days.indexOf(DAYS_[(dow + 7) % 7]) >= 0; };
+  if (from < to) return now >= from && now < to && dayOk(c.dow);
+  if (now >= from) return dayOk(c.dow);
+  if (now < to) return dayOk(c.dow - 1);
+  return false;
+}
+function accessDenied_(u) {
+  return 'Your working hours are ' + accessText_(u) + '. You cannot use Karvio outside this time — please try again during your working hours or ask an admin.';
+}
 
 function rolePerms_() {
   var cfg = null;
@@ -350,6 +406,7 @@ function authUser_(token) {
   var s = JSON.parse(raw);
   var u = all_('Users').filter(function (x) { return x.id === s.id; })[0];
   if (!u || !u.active) fail_('AUTH: Account disabled');
+  if (!accessAllowed_(u)) { cache.remove('tok_' + token); fail_('AUTH: ' + accessDenied_(u)); } // working hours ended: signed out
   cache.put('tok_' + token, raw, SESSION_TTL); // sliding session
   return u;
 }
@@ -358,6 +415,7 @@ function login_(p) {
   var name = String(p.username || '').trim().toLowerCase();
   var u = all_('Users').filter(function (x) { return x.username.toLowerCase() === name; })[0];
   if (!u || !u.active || hash_(u.salt, String(p.password || '')) !== u.password_hash) fail_('Invalid username or password');
+  if (!accessAllowed_(u)) fail_(accessDenied_(u)); // checked after the password, so the hours are only shown to the right person
   var token = Utilities.getUuid() + Utilities.getUuid();
   CacheService.getScriptCache().put('tok_' + token, JSON.stringify({ id: u.id }), SESSION_TTL);
   return { token: token, user: pubUser_(u), perms: permsFor_(u.role) };
@@ -808,6 +866,17 @@ function userSave_(p, user) {
   if (['admin', 'manager', 'sales'].indexOf(p.role) < 0) fail_('Invalid role');
   all_('Users').forEach(function (u) { if (u.id !== p.id && u.username.toLowerCase() === username) fail_('Username already taken'); });
   var row = { name: String(p.name).trim(), username: username, role: p.role, active: p.active === undefined ? true : (p.active === true || p.active === 'true') };
+  // working hours (staff only; admins are never limited)
+  var lim = p.access_limit === true || p.access_limit === 'true';
+  if (lim && row.role !== 'admin') {
+    var from = String(p.access_from || '').trim(), to = String(p.access_to || '').trim();
+    if (isNaN(hmMin_(from)) || isNaN(hmMin_(to)) || hmMin_(from) >= 1440 || hmMin_(to) >= 1440) fail_('Enter the working hours (start and end time)');
+    if (hmMin_(from) === hmMin_(to)) fail_('Start and end time cannot be the same');
+    var days = (Array.isArray(p.access_days) ? p.access_days : String(p.access_days || '').split(',')).map(function (x) { return String(x).trim().toLowerCase(); });
+    days = WEEK_BD_.filter(function (d) { return days.indexOf(d) >= 0; });
+    if (!days.length) fail_('Choose at least one working day');
+    row.access_limit = true; row.access_from = from.length === 4 ? '0' + from : from; row.access_to = to.length === 4 ? '0' + to : to; row.access_days = days.join(',');
+  } else { row.access_limit = false; row.access_from = ''; row.access_to = ''; row.access_days = ''; }
   if (p.id) {
     if (p.id === user.id && (!row.active || row.role !== 'admin')) fail_('You cannot disable or demote your own account');
     if (p.password) { if (String(p.password).length < 6) fail_('Password must be at least 6 characters'); row.salt = uid_(); row.password_hash = hash_(row.salt, p.password); }
@@ -843,7 +912,8 @@ function expenseCategoriesSave_(p, user) {
 function settingsSave_(p, user) {
   var allowed = ['shop_name', 'shop_phone', 'shop_tel', 'shop_email', 'shop_web', 'shop_social', 'shop_address', 'shop_footer', 'currency', 'invoice_prefix', 'receipt_width', 'low_stock_default', 'expense_categories',
     'sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_headers',
-    'dashboard_hidden', 'invoice_template', 'invoice_paper', 'invoice_custom_width', 'invoice_custom_height', 'invoice_note'];
+    'dashboard_hidden', 'invoice_template', 'invoice_paper', 'invoice_custom_width', 'invoice_custom_height', 'invoice_note',
+    'sms_invoice_link', 'invoice_link_base'];
   var vals = p.values || {};
   Object.keys(vals).forEach(function (k) {
     if (allowed.indexOf(k) < 0) return;
@@ -875,7 +945,7 @@ function smsNumber_(phone) {
   } else if (d.indexOf('8801') === 0 && d.length === 13) return d.slice(2);
   return d;
 }
-function sendSms_(phone, message) {
+function sendSms_(phone, message, logMessage) {
   var number = smsNumber_(phone);
   if (!number) return { ok: false, status: 'skipped', response: 'No phone number' };
   var vars = { api_key: getSetting_('sms_api_key'), sender_id: getSetting_('sms_sender_id'), number: number, message: message };
@@ -904,7 +974,7 @@ function sendSms_(phone, message) {
     text = res.getContentText().slice(0, 300);
     if (res.getResponseCode() >= 400 || smsReplyFailed_(text)) status = 'failed';
   } catch (e) { status = 'failed'; text = String(e.message || e); }
-  insert_('SmsLog', { ts: now_(), phone: number, message: message, status: status, response: text });
+  insert_('SmsLog', { ts: now_(), phone: number, message: logMessage || message, status: status, response: text });
   return { ok: status === 'sent', status: status, response: text };
 }
 /**
@@ -937,11 +1007,107 @@ function smsMessage_(tplKey, vars) { return fillTpl_(getSetting_(tplKey), vars, 
 function sendSaleSms_(sale, lines, customer) {
   if (getSetting_('sms_enabled', 'false') !== 'true' || !customer) return null;
   var phone = parseList_(customer.phones)[0]; if (!phone) return null;
-  var msg = smsMessage_('sms_template', {
+  // a private link to this invoice, valid for LINK_DAYS days (deleted afterwards)
+  var link = getSetting_('sms_invoice_link', 'true') === 'true' ? invoiceLinkCreate_(sale.id) : null;
+  var tpl = getSetting_('sms_template');
+  var msg = fillTpl_(tpl, {
     name: customer.name, shop: getSetting_('shop_name'), items: itemsSummary_(lines), invoice: sale.invoice_no,
-    total: sale.total, paid: sale.paid, due: sale.due, date: sale.date
-  });
-  return sendSms_(phone, msg);
+    total: sale.total, paid: sale.paid, due: sale.due, date: sale.date, link: link ? link.url : ''
+  }, 'raw');
+  if (link && String(tpl).indexOf('{link}') < 0) msg += ' Invoice: ' + link.url; // older templates without {link}
+  if (!link) msg = msg.replace(/\s*(View|Invoice|Link):?\s*$/i, ''); // template ends with "View: {link}" but links are off
+  // the SMS log keeps the message without the working link
+  var r = sendSms_(phone, msg, link ? msg.split(link.url).join(maskLink_(link.url)) : null);
+  if (link && !r.ok) removeLink_(link.id); // nothing was sent: the link is not needed
+  return r;
+}
+
+/* ============================================================================
+ *  10b. CUSTOMER INVOICE LINKS — a private, read-only view of one invoice.
+ *  Only a SHA-256 hash of the link's key is stored; links stop working after LINK_DAYS days and
+ *  their rows are deleted (when opened, when a new link is made, and once a day on any save).
+ * ========================================================================== */
+var LINK_DAYS = 15;
+var DEFAULT_LINK_BASE = 'https://codewithroni.github.io/shop-erp/';
+function linkHash_(token) { return hash_('karvio-invoice-link', token); }
+function linkBase_() {
+  var b = String(getSetting_('invoice_link_base', '') || DEFAULT_LINK_BASE).trim();
+  if (!/^https?:\/\//i.test(b)) b = DEFAULT_LINK_BASE;
+  return b.replace(/[#?].*$/, '').replace(/\/*$/, '/');
+}
+/** 22 random letters and digits (about 130 bits). */
+function newLinkToken_() {
+  var abc = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789', out = '';
+  while (out.length < 22) {
+    var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid() + Utilities.getUuid() + Date.now() + Math.random(), Utilities.Charset.UTF_8);
+    for (var i = 0; i < bytes.length && out.length < 22; i++) { var b = bytes[i] & 0xff; if (b < 248) out += abc.charAt(b % 62); } // 248 = 4 × 62: no bias
+  }
+  return out;
+}
+function maskLink_(url) { return String(url).replace(/(#\/i\/)([A-Za-z0-9]{4})[A-Za-z0-9]+/, '$1$2…'); }
+function linkExpiry_(fromIso) {
+  var d = new Date(fromIso.slice(0, 10) + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + LINK_DAYS);
+  return d.toISOString().slice(0, 10) + fromIso.slice(10); // same time of day, LINK_DAYS later
+}
+function invoiceLinkCreate_(saleId) {
+  cleanupLinks_();
+  var token = newLinkToken_(), created = now_();
+  var row = insert_('InvoiceLinks', { token_hash: linkHash_(token), sale_id: saleId, created_at: created, expires_at: linkExpiry_(created) });
+  return { id: row.id, url: linkBase_() + '#/i/' + token, expires_at: row.expires_at };
+}
+function removeLink_(id) { try { remove_('InvoiceLinks', id); } catch (e) {} }
+/** Delete every expired link row (bottom-up, so row numbers stay valid). */
+function cleanupLinks_() {
+  var now = now_(), dead = all_('InvoiceLinks').filter(function (l) { return !l.expires_at || l.expires_at <= now; });
+  if (!dead.length) return 0;
+  var sh = sheet_('InvoiceLinks');
+  dead.sort(function (a, b) { return b._row - a._row; }).forEach(function (l) { sh.deleteRow(l._row); });
+  delete _mem.InvoiceLinks;
+  return dead.length;
+}
+/** Once a day, on the first save, clear out expired links even if nobody opens them. */
+function dailyLinkCleanup_() {
+  try {
+    var props = PropertiesService.getScriptProperties(), day = today_();
+    if (props.getProperty('links_cleaned') === day) return;
+    cleanupLinks_();
+    props.setProperty('links_cleaned', day);
+  } catch (e) {}
+}
+/** Staff: make (or re-make) a customer link for an invoice, e.g. to share on WhatsApp. */
+function saleLink_(p, user) {
+  var s = all_('Sales').filter(function (x) { return x.id === p.id; })[0];
+  if (!s) fail_('Invoice not found');
+  if (!can_(user, 'sales.all') && s.user_id !== user.id) fail_('Permission denied: this invoice belongs to another user');
+  var l = invoiceLinkCreate_(s.id);
+  audit_(user, 'invoice_link', s.invoice_no);
+  return { url: l.url, expires_at: l.expires_at, days: LINK_DAYS };
+}
+/** Public (no sign-in): the invoice behind a link, with only what is printed on the invoice. */
+function invoicePublic_(p) {
+  var token = String(p.token || '');
+  var bad = 'This invoice link has expired or is not valid. Please contact the shop for a new one.';
+  if (!/^[A-Za-z0-9]{20,40}$/.test(token)) fail_(bad);
+  cleanupLinks_();
+  var h = linkHash_(token), link = all_('InvoiceLinks').filter(function (l) { return l.token_hash === h; })[0];
+  if (!link) fail_(bad);
+  var s = all_('Sales').filter(function (x) { return x.id === link.sale_id; })[0];
+  if (!s) { removeLink_(link.id); fail_(bad); }
+  var d = saleDetail_({ id: s.id }, null);
+  var pick = function (o, keys) { var r = {}; keys.forEach(function (k) { if (o && o[k] !== undefined) r[k] = o[k]; }); return r; };
+  var st = settingsMap_(), shop = {};
+  ['shop_name', 'shop_address', 'shop_phone', 'shop_tel', 'shop_email', 'shop_web', 'shop_social', 'shop_footer', 'currency', 'invoice_template', 'invoice_note']
+    .forEach(function (k) { shop[k] = st[k] || ''; });
+  var pays = []; try { pays = (typeof s.payments === 'string' ? JSON.parse(s.payments || '[]') : s.payments) || []; } catch (e) {}
+  return {
+    sale: Object.assign(pick(s, ['invoice_no', 'date', 'customer_id', 'customer_name', 'subtotal', 'discount', 'total', 'paid', 'credit_used', 'due', 'note', 'status', 'user_name', 'created_at', 'cancel_reason', 'next_payment_date']),
+      { payments: pays.map(function (x) { return { account_name: x.account_name || '', amount: x.amount }; }) }),
+    items: d.items.map(function (i) { return pick(i, ['id', 'name', 'unit', 'qty', 'price', 'total', 'serials', 'warranty_type', 'warranty_days', 'warranty_expiry', 'returned_qty']); }),
+    customer: d.customer ? pick(d.customer, ['name', 'phones', 'addresses', 'balance']) : null,
+    returns: d.returns.map(function (r) { return pick(r, ['return_no', 'date', 'total', 'status']); }),
+    shop: shop,
+    expires_at: link.expires_at
+  };
 }
 function smsTest_(p, user) {
   var r = sendSms_(p.phone, 'Test SMS from ' + getSetting_('shop_name') + ' - Karvio');
@@ -1040,12 +1206,21 @@ function purchaseCreate_(p, user) {
   if (paid > total + 0.005) fail_('Paid amount (' + paid + ') exceeds the purchase total (' + total + ')');
   var due = round_(total - paid);
   if (due > 0.005 && !supplier) fail_('Select a supplier to buy on credit');
+  // the supplier's own invoice / bill number (separate from the note)
+  var supInv = String(p.supplier_invoice == null ? '' : p.supplier_invoice).replace(/\s+/g, ' ').trim();
+  if (supInv.length > 60) fail_('Supplier invoice number is too long (60 characters at most)');
+  if (supInv && !p.allow_duplicate_invoice) {
+    var dup = all_('Purchases').filter(function (x) {
+      return x.status === 'active' && x.supplier_invoice && x.supplier_invoice.toLowerCase() === supInv.toLowerCase() && x.supplier_id === (supplier ? supplier.id : '');
+    })[0];
+    if (dup) fail_('DUPLICATE_SUPPLIER_INVOICE: Supplier invoice ' + supInv + ' is already entered on purchase ' + dup.invoice_no + ' (' + dup.date + ')' + (dup.supplier_name ? ' from ' + dup.supplier_name : '') + '.');
+  }
 
   var inv = nextNo_('seq_purchase', 'PUR-');
   var pur = insert_('Purchases', {
     invoice_no: inv, date: date, supplier_id: supplier ? supplier.id : '', supplier_name: supplier ? supplier.name : '',
     subtotal: subtotal, discount: discount, total: total, paid: paid, due: due, note: p.note || '', status: 'active',
-    user: user.name, created_at: now_(), payments: pays
+    user: user.name, created_at: now_(), payments: pays, supplier_invoice: supInv
   });
   var rows = insertMany_('PurchaseItems', lines.map(function (l) {
     return { purchase_id: pur.id, product_id: l.pr.id, name: l.pr.name, unit: l.pr.unit, qty: l.qty, cost: l.cost, total: l.total, serials: l.serials.join(',') };
@@ -1073,7 +1248,7 @@ function purchaseCreate_(p, user) {
   });
   insertMany_('SerialItems', newSerials).forEach(function (s) { serialIndex_()[s.product_id + '|' + s.serial] = s; });
   pays.forEach(function (x) { acctTxn_(x.account_id, 'out', x.amount, 'purchase', pur.id, 'Purchase ' + inv, user, date); });
-  if (supplier) insert_('SupplierLedger', { date: date, supplier_id: supplier.id, type: 'purchase', ref_id: pur.id, ref_no: inv, debit: paid, credit: total, note: 'Purchase ' + inv, voided: false });
+  if (supplier) insert_('SupplierLedger', { date: date, supplier_id: supplier.id, type: 'purchase', ref_id: pur.id, ref_no: inv, debit: paid, credit: total, note: 'Purchase ' + inv + (supInv ? ' · Supplier invoice ' + supInv : ''), voided: false });
   evBatch_(user, events);
   syncSerialCost_(serialIds_(lines));
   audit_(user, 'purchase_create', inv);
@@ -1109,7 +1284,7 @@ function purchasesList_(p) {
     if (!inRange_(x.date, p.from, p.to)) return false;
     if (p.status && x.status !== p.status) return false;
     if (p.supplier_id && x.supplier_id !== p.supplier_id) return false;
-    if (q && (x.invoice_no + ' ' + x.supplier_name + ' ' + (items[x.id] || []).join(' ')).toLowerCase().indexOf(q) < 0) return false;
+    if (q && (x.invoice_no + ' ' + (x.supplier_invoice || '') + ' ' + x.supplier_name + ' ' + (x.note || '') + ' ' + (items[x.id] || []).join(' ')).toLowerCase().indexOf(q) < 0) return false;
     return true;
   }).sort(function (a, b) { return b._row - a._row; });
   var clean = function (x) { var o = Object.assign({}, x); delete o._row; o.items_text = (items[x.id] || []).join(', '); return o; };
@@ -1778,11 +1953,13 @@ function itemHistory_(p, user) {
     res.claims = all_('WarrantyClaims').filter(function (c) { return c.sale_id === sl.id; }).map(function (c) { return { claim_no: c.claim_no, serial: c.serial, product_name: c.product_name, status: c.status, date: c.date, log: (function () { try { return JSON.parse(c.log || '[]'); } catch (e) { return []; } })() }; });
     return res;
   }
-  var pu = all_('Purchases').filter(function (s) { return s.invoice_no.toLowerCase() === ql; })[0];
+  // our purchase number, or the supplier's own invoice number (newest match)
+  var pu = all_('Purchases').filter(function (s) { return s.invoice_no.toLowerCase() === ql; })[0]
+    || all_('Purchases').filter(function (s) { return s.supplier_invoice && s.supplier_invoice.toLowerCase() === ql; }).sort(function (a, b) { return (b.status === 'active') - (a.status === 'active') || b._row - a._row; })[0];
   if (pu) {
     res.kind = 'purchase_invoice';
     var pits = all_('PurchaseItems').filter(function (i) { return i.purchase_id === pu.id; });
-    res.summary = { invoice: pu.invoice_no, date: pu.date, supplier: pu.supplier_name, total: pu.total, paid: pu.paid, due: pu.due, status: pu.status };
+    res.summary = { invoice: pu.invoice_no, supplier_invoice: pu.supplier_invoice || '', date: pu.date, supplier: pu.supplier_name, total: pu.total, paid: pu.paid, due: pu.due, status: pu.status };
     res.items = pits.map(function (i) { return { name: i.name, qty: i.qty, cost: can_(user, 'cost') ? i.cost : undefined, serials: i.serials }; });
     var ps = {}; pits.forEach(function (i) { parseList_(i.serials).forEach(function (s) { ps[s] = 1; }); });
     res.timeline = sortEv(events.filter(function (e) { return e.ref_id === pu.id || (e.serial && ps[e.serial]); }).map(cleanEv));
@@ -2145,6 +2322,7 @@ function r_(perm, fn, write) { return { perm: perm, fn: fn, write: !!write }; }
 
 var ROUTES = {
   ping:               { public: true, fn: function () { return { app: 'Karvio', version: APP_VERSION, time: now_() }; } },
+  'invoice.public':   { public: true, fn: invoicePublic_, write: true },
   login:              { public: true, fn: login_, write: false },
   logout:             r_(null, logout_),
   'password.change':  r_(null, changePassword_, true),
@@ -2217,6 +2395,7 @@ var ROUTES = {
   'rolePerms.save':   r_('users', rolePermsSave_, true),
   'settings.get':     r_(null, settingsGet_),
   'settings.save':    r_('settings', settingsSave_, true),
+  'sale.link':        r_('pos', saleLink_, true),
   'sms.test':         r_('settings', smsTest_),
   'sms.log':          r_('settings', smsLog_)
 };

@@ -49,7 +49,7 @@ export async function api(action, payload = {}, { url } = {}) {
     throw new ApiError('The server did not return JSON. Make sure the Web App is deployed with access set to "Anyone".');
   }
   if (!body.ok) {
-    if (body.auth) { setToken(null); onAuthLost(); }
+    if (body.auth) { setToken(null); onAuthLost(String(body.error || '').replace(/^AUTH:\s*/, '')); }
     throw new ApiError(String(body.error || 'Unknown error').replace(/^AUTH:\s*/, ''), body.auth);
   }
   return body.data;
