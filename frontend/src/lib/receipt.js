@@ -11,7 +11,7 @@ function shopHead(s) {
 
 /** Paper sizes for invoices (Settings → Invoice). Thermal widths in mm, or a full page. */
 export const PAPERS = [['80', '80 mm thermal'], ['58', '58 mm thermal'], ['a4', 'A4 page'], ['a5', 'A5 page'], ['custom', 'Custom']];
-export const TEMPLATES = [['classic', 'Classic'], ['modern', 'Modern'], ['minimal', 'Minimal']];
+export const TEMPLATES = [['classic', 'Classic'], ['modern', 'Modern'], ['minimal', 'Minimal'], ['business', 'Business']];
 
 /** Print an invoice the way Settings says: template, paper size and footer note. `paperOverride` = '58' | '80' | 'a4' … */
 export function printInvoice(detail, paperOverride) {

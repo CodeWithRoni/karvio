@@ -594,6 +594,10 @@ small.margin.bad { color: var(--bad); }
 .tpl-thumb.t-modern i:first-child { background: #0d1b2a; border-right: 26px solid #f2c230; }
 .tpl-thumb.t-modern i:nth-child(2) { background: #12b5b0; }
 .tpl-thumb.t-minimal i { background: #fff; border-bottom: 1.5px solid #111; border-radius: 0; }
+.tpl-thumb.t-business i:first-child { background: #fff; height: 14px; margin: 0 22%; border-bottom: 4px solid #111; border-radius: 0; }
+.tpl-thumb.t-business i:nth-child(2) { background: #c8c8c8; border: 1px solid #9a9a9a; }
+.tpl-thumb.t-business i:nth-child(3) { background: #efefef; height: 18px; border: 1px solid #c8c8c8; }
+.tpl-thumb.t-business i:nth-child(4) { background: #fff; border: 1px solid #333; }
 .dash-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; }
 .dash-opt { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
 .dash-opt.on { border-color: color-mix(in srgb, var(--ok) 50%, transparent); background: color-mix(in srgb, var(--ok) 7%, transparent); }

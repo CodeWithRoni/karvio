@@ -32,8 +32,107 @@ const tplCss = `
   .sdoc .note-line{margin-top:14px;text-align:left;white-space:pre-wrap;font-size:11.5px}
 `;
 const pageCss = (paper) => paper === 'a5' ? '@page{size:A5;margin:8mm}.sdoc{font-size:10.5px}.sdoc h1{font-size:16px}.sdoc h2{font-size:16px}' : '@page{size:A4;margin:12mm}';
-const wrap = (blocks, paper = 'a4') => `<style>${pageCss(paper)}body{margin:0}${css}${tplCss}.sdoc+.sdoc{page-break-before:always;break-before:page}</style>${blocks.join('')}`;
+const isBiz = () => useStore.getState().settings.invoice_template === 'business';
+const wrap = (blocks, paper = 'a4', biz = false) => `<style>${biz && paper !== 'a5' ? bizPageCss() : pageCss(paper)}body{margin:0}${css}${tplCss}${biz ? bizCss : ''}.sdoc+.sdoc,.bdoc+.bdoc{page-break-before:always;break-before:page}</style>${blocks.join('')}`;
 const noteHtml = () => { const n = String(useStore.getState().settings.invoice_note || '').trim(); return n ? `<div class="note-line"><b>Note:</b> ${esc(n)}</div>` : ''; };
+
+/* ---------------- "Business" template: centred letterhead, grey bill bar, boxed info, page footer ---------------- */
+const ONES = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+const TENS = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+const w99 = (n) => (n < 20 ? ONES[n] : `${TENS[Math.floor(n / 10)]}${n % 10 ? ' ' + ONES[n % 10] : ''}`);
+const w999 = (n) => [n >= 100 ? `${ONES[Math.floor(n / 100)]} Hundred` : '', w99(n % 100)].filter(Boolean).join(' ');
+/** Taka in words, Bangladesh style (Crore / Lakh / Thousand): 12500 → "Twelve Thousand Five Hundred Only". */
+export function amountInWords(v) {
+  const amt = Math.abs(Number(v) || 0), t = Math.floor(amt), ps = Math.round((amt - t) * 100);
+  const part = (n) => {
+    if (!n) return '';
+    const out = []; let r = n;
+    if (r >= 1e7) { out.push(`${part(Math.floor(r / 1e7))} Crore`); r %= 1e7; }
+    if (r >= 1e5) { out.push(`${w99(Math.floor(r / 1e5))} Lakh`); r %= 1e5; }
+    if (r >= 1e3) { out.push(`${w99(Math.floor(r / 1e3))} Thousand`); r %= 1e3; }
+    if (r) out.push(w999(r));
+    return out.join(' ');
+  };
+  const words = part(t) || 'Zero';
+  return `${words}${ps ? ` and ${w99(ps)} Paisa` : ''} Only`;
+}
+const bizCss = `
+  .bdoc{font:12.5px/1.4 'Times New Roman',Times,'Hind Siliguri',serif;color:#000;background:#fff}
+  .bdoc *{box-sizing:border-box}
+  .bdoc .bh{text-align:center;margin-bottom:8px}.bdoc .bh h1{margin:0 0 4px;font-size:30px;font-weight:700}.bdoc .bh div{font-size:11.5px}
+  .bdoc .bbar{background:#c8c8c8;border:1px solid #9a9a9a;text-align:center;font-weight:700;font-size:14px;padding:5px}
+  .bdoc .binfo{display:grid;grid-template-columns:1.15fr 1fr;gap:20px;background:#efefef;border:1px solid #c8c8c8;border-top:0;padding:10px 12px;margin-bottom:12px}
+  .bdoc .binfo table{width:100%;border-collapse:collapse}.bdoc .binfo td{padding:2px 0;vertical-align:top;border:0}
+  .bdoc .binfo td.k{font-weight:700;width:118px;white-space:nowrap}.bdoc .binfo td.c{width:18px}
+  .bdoc .bitems{width:100%;border-collapse:collapse}.bdoc .bitems th,.bdoc .bitems td{border:1px solid #333;padding:6px 7px;vertical-align:top}
+  .bdoc .bitems th{background:#e2e2e2;font-weight:700;text-align:center}.bdoc .bitems td.r{text-align:right}.bdoc .bitems td.cn{text-align:center}
+  .bdoc .bitems thead{display:table-header-group}.bdoc .bitems tr{break-inside:avoid;page-break-inside:avoid}
+  .bdoc .sn{font-size:11px;margin-top:2px;word-break:break-all}
+  .bdoc .bsum{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;margin-top:8px;break-inside:avoid;page-break-inside:avoid}
+  .bdoc .btot td{padding:2px 0 2px 12px;border:0}.bdoc .btot td.k{font-weight:700;padding-left:0}.bdoc .btot td.r{text-align:right;min-width:110px}
+  .bdoc .bdue{border:1.5px solid #000;padding:8px 10px;margin-top:10px;width:300px}.bdoc .bdue td{padding:2px 0;border:0}.bdoc .bdue td.k{font-weight:700}.bdoc .bdue td.r{text-align:right}
+  .bdoc .bsign{display:flex;justify-content:flex-end;margin-top:44px;break-inside:avoid;page-break-inside:avoid}
+  .bdoc .bsign span{width:220px;border-top:1px solid #000;text-align:center;padding-top:5px}
+  .bdoc .note-line{margin-top:16px;text-align:left;white-space:pre-wrap;font-size:11.5px;break-inside:avoid}
+  .bdoc .cx{margin:8px 0;padding:6px 10px;border:2px solid #c0392b;color:#c0392b;font-weight:800;text-align:center}
+  .bdoc .bfoot{display:flex;justify-content:space-between;border-top:1px solid #777;margin-top:22px;padding-top:5px;font-size:11px}
+  @media print{.bdoc .bfoot{display:none}}
+`;
+const m2 = (v, _x) => (Number(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const SOFTWARE_LINE = 'For Software: 01913354321';
+/** Footer printed in the bottom margin of every A4 page, with "Page X of Y". */
+const bizPageCss = () => {
+  const now = new Date(), q = (t) => JSON.stringify(t);
+  const box = 'font:10.5px "Times New Roman",Times,serif;color:#000;border-top:1px solid #777;padding-top:4px;vertical-align:top';
+  return `@page{size:A4;margin:12mm 12mm 16mm;
+    @bottom-left{content:${q(`Print Date: ${fdate(now.toISOString())}\u00a0\u00a0\u00a0\u00a0Print Time: ${now.toLocaleTimeString('en-US')}`)};${box}}
+    @bottom-center{content:${q(SOFTWARE_LINE)};${box}}
+    @bottom-right{content:"Page " counter(page) " of " counter(pages);${box}}}`;
+};
+function businessInvoiceHtml(d) {
+  const st = useStore.getState().settings;
+  const s = d.sale, c = d.customer || {};
+  const row = (k, v) => `<tr><td class="k">${k}</td><td class="c">:</td><td>${v}</td></tr>`;
+  const rows = d.items.map((i, n) => {
+    const sn = sers(i.serials);
+    return `<tr><td class="cn">${n + 1}</td><td>${esc(i.name)}${sn.length ? `<div class="sn">${esc(sn.join(', '))}</div>` : ''}${i.returned_qty ? `<div class="sn">Returned: ${esc(qty(i.returned_qty))}</div>` : ''}</td>
+      <td class="cn">${Number(i.warranty_days) > 0 ? esc(i.warranty_days) : '—'}</td><td class="r">${esc(m2(i.price, false))}</td><td class="cn">${esc(qty(i.qty))}${i.unit && i.unit !== 'pcs' ? ' ' + esc(i.unit) : ''}</td><td class="r">${esc(m2(i.total, false))}</td></tr>`;
+  }).join('');
+  const total = Number(s.total) || 0, paid = Number(s.paid) || 0;
+  const hasBal = d.customer && d.customer.balance !== undefined;
+  const outstanding = hasBal ? Number(d.customer.balance) || 0 : Number(s.due) || 0;
+  const prev = hasBal ? outstanding - (Number(s.due) || 0) : 0;
+  const user = esc(s.user_name || '');
+  const phone = c.phones ? esc(splitList(c.phones).join(', ')) : '';
+  const now = new Date();
+  return `<div class="bdoc">
+    <div class="bh"><h1>${esc(st.shop_name || 'Karvio')}</h1>${st.shop_address ? `<div>${esc(st.shop_address)}</div>` : ''}${shopContacts(st) ? `<div>${shopContacts(st)}</div>` : ''}</div>
+    <div class="bbar">Invoice/ Bill</div>
+    <div class="binfo">
+      <table>${row('Sold To', `<b>${esc(s.customer_name || 'Walk-in customer')}</b>${c.addresses ? `<div>${esc(String(c.addresses).split('|').join('; '))}</div>` : ''}`)}${row('Contact No', phone || '—')}${row('Invoice No', esc(s.invoice_no))}</table>
+      <table>${row('Date', esc(fdate(s.date || s.created_at)))}${row('Sold By', user)}${row('Billing By', user)}${row('Sales Person By', user)}</table>
+    </div>
+    ${s.status === 'cancelled' ? `<div class="cx">CANCELLED — ${esc(s.cancel_reason || '')}</div>` : ''}
+    <table class="bitems"><thead><tr><th style="width:38px">S/L</th><th>Item Descriptions</th><th style="width:72px">Warranty Days</th><th style="width:96px">Unit Price</th><th style="width:72px">Quantity</th><th style="width:100px">Total</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="bsum">
+      <div><div><b>Amount In Words :</b> ${esc(amountInWords(total))}</div>
+        <table class="bdue">
+          <tr><td class="k">Previous Due</td><td>:</td><td class="r">${esc(m2(prev, false))}</td></tr>
+          <tr><td class="k">Sales Amount</td><td>:</td><td class="r">${esc(m2(total, false))}</td></tr>
+          <tr><td class="k">Collected Amount</td><td>:</td><td class="r">${esc(m2(paid + (Number(s.credit_used) || 0), false))}</td></tr>
+          <tr><td class="k">Outstanding Amount</td><td>:</td><td class="r">${esc(m2(outstanding, false))}</td></tr>
+        </table></div>
+      <table class="btot">
+        <tr><td class="k">TOTAL :</td><td class="r">${esc(m2(s.subtotal, false))}</td></tr>
+        <tr><td class="k">Discount :</td><td class="r">${esc(m2(s.discount || 0, false))}</td></tr>
+        <tr><td class="k">Grand TOTAL :</td><td class="r"><b>${esc(m2(total, false))}</b></td></tr>
+      </table>
+    </div>
+    <div class="bsign"><span>Authorised Signature And Company Stamp</span></div>
+    ${noteHtml()}
+    <div class="bfoot"><span>Print Date: ${esc(fdate(now.toISOString()))}</span><span>Print Time: ${esc(now.toLocaleTimeString('en-US'))}</span><span>${SOFTWARE_LINE}</span><span>Page 1 of 1</span></div>
+  </div>`;
+}
 
 /* ---------------- Sales invoices ---------------- */
 export function saleInvoiceHtml(d) {
@@ -45,6 +144,7 @@ export function saleInvoiceHtml(d) {
   }).join('');
   const pl = pays(s);
   const tpl = useStore.getState().settings.invoice_template || 'classic';
+  if (tpl === 'business') return businessInvoiceHtml(d);
   return `<div class="sdoc tpl-${esc(tpl)}">${head('INVOICE', `<b>${esc(s.invoice_no)}</b><br>${esc(fdatetime(s.created_at || s.date))}<br><span class="sm">Served by ${esc(s.user_name || '')}</span>`)}
     ${s.status === 'cancelled' ? `<div class="cx">CANCELLED — ${esc(s.cancel_reason || '')}</div>` : ''}
     <div class="meta">
@@ -63,8 +163,8 @@ export function saleInvoiceHtml(d) {
     ${d.returns && d.returns.length ? `<p class="sm">Returns: ${esc(d.returns.map((r) => `${r.return_no} (${money(r.total, false)}, ${r.status})`).join(', '))}</p>` : ''}
     <div class="foot"><span>Printed ${esc(new Date().toLocaleString())}</span><span>Customer signature: ____________________</span></div>${noteHtml()}</div>`;
 }
-export const printSales = (list, paper) => printHtml(wrap(list.map(saleInvoiceHtml), paper));
-export const pdfSales = (list, filename) => pdfPages(list.map(saleInvoiceHtml), css + tplCss, filename);
+export const printSales = (list, paper) => printHtml(wrap(list.map(saleInvoiceHtml), paper, isBiz()));
+export const pdfSales = (list, filename) => pdfPages(list.map(saleInvoiceHtml), css + tplCss + (isBiz() ? bizCss : ''), filename);
 export async function excelSales(list, filename) {
   const XLSX = await import('xlsx');
   const a = [['Invoice #', 'Date', 'Status', 'Customer', 'Phone', 'Address', 'Subtotal', 'Discount', 'Total', 'Paid', 'Due', 'Payment', 'Served by', 'Note']];

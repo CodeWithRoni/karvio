@@ -89,7 +89,7 @@ function InvoiceSettings() {
             <button type="button" key={k} role="radio" aria-checked={tpl === k} className={`tpl-card ${tpl === k ? 'on' : ''}`} onClick={() => setF({ ...f, invoice_template: k })}>
               <span className={`tpl-thumb t-${k}`}><i /><i /><i /><i /></span>
               <b>{label}</b>
-              <small>{k === 'classic' ? 'Dark header, boxed tables' : k === 'modern' ? 'Colour banner, teal accents' : 'Clean lines, no shading'}</small>
+              <small>{k === 'classic' ? 'Dark header, boxed tables' : k === 'modern' ? 'Colour banner, teal accents' : k === 'business' ? 'Centred letterhead, grey bill bar (A4)' : 'Clean lines, no shading'}</small>
             </button>
           ))}
         </div>
