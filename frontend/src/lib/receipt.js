@@ -10,7 +10,7 @@ function shopHead(s) {
 }
 
 /** Paper sizes for invoices (Settings → Invoice). Thermal widths in mm, or a full page. */
-export const PAPERS = [['80', '80 mm thermal'], ['58', '58 mm thermal'], ['a4', 'A4 page'], ['a5', 'A5 page'], ['custom', 'Custom width (mm)']];
+export const PAPERS = [['80', '80 mm thermal'], ['58', '58 mm thermal'], ['a4', 'A4 page'], ['a5', 'A5 page'], ['custom', 'Custom']];
 export const TEMPLATES = [['classic', 'Classic'], ['modern', 'Modern'], ['minimal', 'Minimal']];
 
 /** Print an invoice the way Settings says: template, paper size and footer note. `paperOverride` = '58' | '80' | 'a4' … */
@@ -18,12 +18,15 @@ export function printInvoice(detail, paperOverride) {
   const s = useStore.getState().settings;
   const paper = paperOverride || s.invoice_paper || String(s.receipt_width || 80);
   if (paper === 'a4' || paper === 'a5') return import('./salesDocs').then((m) => m.printSales([detail], paper));
-  const w = paper === 'custom' ? Math.min(Math.max(Number(s.invoice_custom_width) || 80, 40), 216) : Number(paper) || 80;
-  return printReceipt(detail, w);
+  if (paper !== 'custom') return printReceipt(detail, Number(paper) || 80);
+  const w = Math.min(Math.max(Number(s.invoice_custom_width) || 80, 40), 216);
+  const h = Number(s.invoice_custom_height) > 0 ? Math.min(Math.max(Number(s.invoice_custom_height), 40), 1000) : 0;
+  return printReceipt(detail, w, h);
 }
 
 /** detail = response of sale.detail / sale.create  ({sale, items, customer}) */
-export function printReceipt(detail, widthOverride) {
+/** `height` in mm fixes the page height (custom paper); 0 = page grows with the invoice. */
+export function printReceipt(detail, widthOverride, height = 0) {
   const s = useStore.getState().settings;
   const w = Number(widthOverride || s.receipt_width || 80);
   const paper = w <= 60 ? w - 10 : w - 8; // printable width in mm
@@ -42,7 +45,7 @@ export function printReceipt(detail, widthOverride) {
   const font = tpl === 'minimal' ? "system-ui,'Hind Siliguri',sans-serif" : "'Courier New','Hind Siliguri',ui-monospace,monospace";
   printHtml(`
   <style>
-    @page{size:${w}mm auto;margin:0}
+    @page{size:${w}mm ${height ? height + 'mm' : 'auto'};margin:0}
     body{margin:0;font:${fs}px/1.35 ${font};color:#000;width:${paper}mm;padding:3mm ${(w - paper) / 2}mm}
     .c{text-align:center}.shop{font-size:${fs + 4}px}.r{text-align:right}.sm{font-size:${fs - 2}px}.nm{padding-top:4px;font-weight:700}
     table{width:100%;border-collapse:collapse}td{vertical-align:top;padding:0}

@@ -69,7 +69,7 @@ const SAMPLE = {
 };
 
 function InvoiceSettings() {
-  const { f, setF, bind, save, busy } = useSettingsForm(['invoice_template', 'invoice_paper', 'invoice_custom_width', 'invoice_note', 'shop_footer', 'receipt_width']);
+  const { f, setF, bind, save, busy } = useSettingsForm(['invoice_template', 'invoice_paper', 'invoice_custom_width', 'invoice_custom_height', 'invoice_note', 'shop_footer', 'receipt_width']);
   const settings = useStore((s) => s.settings);
   const paper = f.invoice_paper || String(f.receipt_width || 80);
   const tpl = f.invoice_template || 'classic';
@@ -97,7 +97,10 @@ function InvoiceSettings() {
       <Field label="Paper size" hint="Used by Complete & print in the POS.">
         <select value={paper} onChange={(e) => setF({ ...f, invoice_paper: e.target.value })}>{PAPERS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
       </Field>
-      {paper === 'custom' && <Field label="Custom width (mm)" hint="40 – 216 mm. Height grows with the invoice."><input type="number" min="40" max="216" {...bind('invoice_custom_width')} placeholder="e.g. 90" /></Field>}
+      {paper === 'custom' && <>
+        <Field label="Width (mm)" hint="40 – 216 mm"><input type="number" min="40" max="216" {...bind('invoice_custom_width')} placeholder="e.g. 90" /></Field>
+        <Field label="Height (mm)" hint="Leave empty to fit the invoice"><input type="number" min="40" max="1000" {...bind('invoice_custom_height')} placeholder="Auto" /></Field>
+      </>}
       <Field label="Thank-you line" wide hint="Centered under the totals."><input {...bind('shop_footer')} placeholder="Thank you for your business!" /></Field>
       <Field label="Footer note" wide hint="Printed at the very bottom, left side, after “Note:”. Leave empty to hide.">
         <textarea {...bind('invoice_note')} rows={3} placeholder="e.g. Goods once sold are not refundable. Warranty does not cover burn or physical damage." />
@@ -107,7 +110,7 @@ function InvoiceSettings() {
         <Btn onClick={sample}>Print a sample</Btn>
         <Btn kind="primary" busy={busy} onClick={saveAll}>Save invoice settings</Btn>
       </div>
-      {settings.invoice_paper !== paper && <p className="wide muted" style={{ margin: 0 }}>Not saved yet — the POS still prints on {PAPERS.find((x) => x[0] === (settings.invoice_paper || String(settings.receipt_width || 80)))?.[1]}.</p>}
+      {settings.invoice_paper !== paper && <p className="wide muted" style={{ margin: 0 }}>Not saved yet — the POS still prints on {settings.invoice_paper === 'custom' ? `custom ${settings.invoice_custom_width || 80} mm${Number(settings.invoice_custom_height) > 0 ? ` × ${settings.invoice_custom_height} mm` : ''}` : PAPERS.find((x) => x[0] === (settings.invoice_paper || String(settings.receipt_width || 80)))?.[1]}.</p>}
     </div>
   );
 }
