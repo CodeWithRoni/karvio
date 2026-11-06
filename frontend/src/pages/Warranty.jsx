@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api } from '../lib/api';
 import { fdate, fdatetime } from '../lib/format';
-import { printHtml, esc } from '../lib/export';
+import { printHtml, esc, shopContacts } from '../lib/export';
 import { useStore } from '../lib/store';
 import DataTable from '../components/DataTable';
 import { excelClaims, pdfClaims, printClaims } from '../lib/salesDocs';
@@ -117,7 +117,7 @@ function ClaimDetail({ claim, onClose, onDone }) {
 function printClaimSlip(c) {
   const s = useStore.getState().settings;
   printHtml(`<style>@page{size:80mm auto;margin:0}body{margin:0;width:72mm;padding:3mm 4mm;font:11px/1.4 'Courier New',monospace}.c{text-align:center}hr{border:0;border-top:1px dashed #000}</style>
-  <div class="c"><b style="font-size:15px">${esc(s.shop_name)}</b><div>${esc(s.shop_phone || '')}</div></div><hr>
+  <div class="c"><b style="font-size:15px">${esc(s.shop_name)}</b><div>${shopContacts(s, '<br>')}</div></div><hr>
   <div class="c"><b>WARRANTY RECEIVING SLIP</b></div>
   <div>Claim: <b>${esc(c.claim_no)}</b></div><div>Date: ${esc(fdate(c.date))}</div><div>Customer: ${esc(c.customer_name)} ${esc(c.phone || '')}</div>
   <div>Invoice: ${esc(c.invoice_no)}</div><div>Item: ${esc(c.product_name)}</div><div>Serial: ${esc(c.serial || '—')}</div>

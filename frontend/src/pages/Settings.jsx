@@ -38,13 +38,17 @@ function useSettingsForm(keys) {
 }
 
 function ShopSettings() {
-  const { f, setF, bind, save, busy } = useSettingsForm(['shop_name', 'shop_phone', 'shop_address', 'currency', 'invoice_prefix', 'low_stock_default']);
+  const { f, setF, bind, save, busy } = useSettingsForm(['shop_name', 'shop_phone', 'shop_tel', 'shop_email', 'shop_web', 'shop_social', 'shop_address', 'currency', 'invoice_prefix', 'low_stock_default']);
   return (
     <div className="card form">
       <Field label="Shop name" wide><input {...bind('shop_name')} /></Field>
       <Field label="Phone"><input {...bind('shop_phone')} /></Field>
+      <Field label="Tel"><input {...bind('shop_tel')} placeholder="Landline / hotline" /></Field>
+      <Field label="Email"><input type="email" {...bind('shop_email')} placeholder="shop@example.com" /></Field>
+      <Field label="Website"><input {...bind('shop_web')} placeholder="www.example.com" /></Field>
+      <Field label="Social"><input {...bind('shop_social')} placeholder="facebook.com/yourshop" /></Field>
+      <Field label="Address" wide hint="Phone, Tel, Email, Website and Social print under the shop name on invoices, receipts, quotations and statements. Leave one empty to hide it."><input {...bind('shop_address')} /></Field>
       <Field label="Currency label"><input {...bind('currency')} placeholder="Tk" /></Field>
-      <Field label="Address" wide><input {...bind('shop_address')} /></Field>
       <Field label="Invoice prefix" hint="Applies to new invoices."><input {...bind('invoice_prefix')} /></Field>
       <Field label="Default low-stock alert"><input type="number" {...bind('low_stock_default')} /></Field>
 

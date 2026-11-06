@@ -1,12 +1,12 @@
 // Thermal receipts (58mm / 80mm), A4 quotation and ledger statements.
 import { useStore } from './store';
 import { money, qty, fdate, fdatetime, splitList } from './format';
-import { printHtml, esc } from './export';
+import { printHtml, esc, shopContacts } from './export';
 
 function shopHead(s) {
   return `<div class="c"><b class="shop">${esc(s.shop_name || 'Karvio')}</b>
     ${s.shop_address ? `<div>${esc(s.shop_address)}</div>` : ''}
-    ${s.shop_phone ? `<div>${esc(s.shop_phone)}</div>` : ''}</div>`;
+    ${shopContacts(s, '<br>') ? `<div>${shopContacts(s, '<br>')}</div>` : ''}</div>`;
 }
 
 /** Paper sizes for invoices (Settings → Invoice). Thermal widths in mm, or a full page. */
@@ -95,7 +95,7 @@ export function printQuotation({ title, customer, phone, lines, discount = 0, no
     th{background:#0d1b2a;color:#fff;font-weight:600}.r{text-align:right}.tot td{font-weight:700;border:0}.big{font-size:16px}
     .meta{display:grid;grid-template-columns:1fr 1fr;gap:4px 24px}.note{margin-top:18px;color:#444}
   </style>
-  <div class="top"><div><h1>${esc(s.shop_name || 'Karvio')}</h1><div>${esc(s.shop_address || '')}</div><div>${esc(s.shop_phone || '')}</div></div>
+  <div class="top"><div><h1>${esc(s.shop_name || 'Karvio')}</h1><div>${esc(s.shop_address || '')}</div><div>${shopContacts(s)}</div></div>
   <div class="r"><h2>QUOTATION</h2><div>${esc(no)}</div><div>${esc(fdate(new Date().toISOString()))}</div></div></div>
   <div class="meta"><div><b>Prepared for:</b> ${esc(customer || '—')}</div><div><b>Phone:</b> ${esc(phone || '—')}</div>
   <div><b>Subject:</b> ${esc(title || 'Custom PC build')}</div><div><b>Valid for:</b> ${esc(validDays)} days</div></div>
@@ -119,7 +119,7 @@ export function printStatement(kind, st, from, to) {
   <style>@page{size:A4;margin:14mm}body{font:11.5px/1.45 system-ui,'Hind Siliguri',sans-serif;color:#111;margin:0}
   h1{margin:0;font-size:18px}table{width:100%;border-collapse:collapse;margin-top:12px}th,td{border:1px solid #ccc;padding:5px 7px;text-align:left}
   th{background:#eef1f6}.r{text-align:right}.b{font-weight:700}</style>
-  <h1>${esc(s.shop_name || 'Karvio')}</h1><div>${esc(s.shop_address || '')} ${esc(s.shop_phone || '')}</div>
+  <h1>${esc(s.shop_name || 'Karvio')}</h1><div>${esc(s.shop_address || '')}</div><div>${shopContacts(s)}</div>
   <h3 style="margin:14px 0 4px">${kind === 'customer' ? 'Customer' : 'Supplier'} statement — ${esc(st.party)}</h3>
   <div>${esc(st.phones || '')} ${esc(st.address || '')}</div>
   <div>Period: ${esc(from ? fdate(from) : 'Beginning')} to ${esc(to ? fdate(to) : 'Today')}</div>

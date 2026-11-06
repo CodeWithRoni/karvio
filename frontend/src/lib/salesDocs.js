@@ -1,7 +1,7 @@
 // Sales invoices and warranty claims as full A4 documents: print, PDF (one per page) and Excel.
 import { useStore } from './store';
 import { money, qty, fdate, fdatetime, splitList } from './format';
-import { printHtml, esc } from './export';
+import { printHtml, esc, shopContacts } from './export';
 import { pdfPages } from './purchaseDocs';
 
 const css = `
@@ -19,7 +19,7 @@ const css = `
   .sdoc .cx{margin:8px 0;padding:6px 10px;border:2px solid #c0392b;color:#c0392b;font-weight:800;text-align:center}
   .sdoc .log li{margin:3px 0}.sdoc .foot{margin-top:18px;display:flex;justify-content:space-between;font-size:11px;color:#444}
 `;
-const head = (title, right) => { const s = useStore.getState().settings; return `<div class="top"><div><h1>${esc(s.shop_name || 'Karvio')}</h1><div>${esc(s.shop_address || '')}</div><div>${esc(s.shop_phone || '')}</div></div><div><h2>${title}</h2><div style="text-align:right">${right}</div></div></div>`; };
+const head = (title, right) => { const s = useStore.getState().settings; return `<div class="top"><div><h1>${esc(s.shop_name || 'Karvio')}</h1><div>${esc(s.shop_address || '')}</div><div>${shopContacts(s)}</div></div><div><h2>${title}</h2><div style="text-align:right">${right}</div></div></div>`; };
 const pays = (x) => { try { return Array.isArray(x.payments) ? x.payments : JSON.parse(x.payments || '[]'); } catch { return []; } };
 const sers = (v) => splitList(String(v || '').replace(/\n/g, ','));
 // Invoice templates (Settings → Invoice). They restyle the same content.

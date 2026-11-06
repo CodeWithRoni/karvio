@@ -148,3 +148,10 @@ export async function printHtml(html) {
   } catch (e) { f.remove(); throw e; }
 }
 export { esc };
+
+/** Shop contact lines for printed headers: phone, tel, email, website, social (only the filled ones). */
+export function shopContacts(st, sep = ' · ') {
+  const parts = [['Phone', st.shop_phone], ['Tel', st.shop_tel], ['Email', st.shop_email], ['Web', st.shop_web], ['Social', st.shop_social]]
+    .filter(([, v]) => v && String(v).trim()).map(([k, v]) => `${k}: ${esc(String(v).trim())}`);
+  return parts.join(sep);
+}
