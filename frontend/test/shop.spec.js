@@ -360,6 +360,11 @@ test('SMS preset box keeps showing the chosen provider, also after saving and re
   await page.getByRole('tab', { name: 'SMS gateway' }).click();
   await box().selectOption('OneCodeSoft (Bulk SMS API v3)');
   await expect(box()).toHaveValue('OneCodeSoft (Bulk SMS API v3)');
+  // the open list holds only real providers: no greyed-out "Choose…" or "Custom" rows
+  const listed = () => box().locator('option:not([hidden]):not([disabled])');
+  await expect(box().locator('option')).toHaveCount(6);
+  await expect(listed()).toHaveCount(6);
+  await expect(box().locator('option[disabled]')).toHaveCount(0);
   await expect(url).toHaveValue(/PASTE-BASE-URL/);
   // the user pastes their own base address: still OneCodeSoft
   await url.fill('https://app.example-ocs.com/api/v3/send-sms');
@@ -377,4 +382,5 @@ test('SMS preset box keeps showing the chosen provider, also after saving and re
   await url.fill('https://my-own-gateway.bd/send?key={api_key}');
   await expect(box()).toHaveValue('custom');
   await expect(box().locator('option:checked')).toHaveText('Custom settings (my own)');
+  await expect(listed()).toHaveCount(6); // the custom label is not offered as a choice
 });

@@ -142,6 +142,7 @@ function DashboardSettings() {
 function SmsSettings() {
   const { f, setF, bind, save, busy } = useSettingsForm(['sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_headers']);
   const [phone, setPhone] = useState('');
+  const preset = matchPreset(f);
   const [tbusy, run] = useAction();
   const log = useApi('sms.log', {});
   const sample = (f.sms_template || '').replace(/\{(\w+)\}/g, (m, k) => ({ name: 'Rahim', shop: useStore.getState().settings.shop_name, items: 'Kingston 512GB SSD x1, Cat6 Cable x15', invoice: 'INV-000123', total: '5,250', paid: '5,000', due: '250', date: '2026-11-05' }[k] ?? m));
@@ -151,10 +152,12 @@ function SmsSettings() {
         <label className="check wide"><input type="checkbox" checked={f.sms_enabled === 'true'} onChange={(e) => setF({ ...f, sms_enabled: String(e.target.checked) })} /> Send an SMS after every sale that has a named customer</label>
         <p className="muted wide" style={{ margin: 0 }}>Walk-in sales never trigger an SMS. The API key is stored in your Google Sheet and never sent to the browser of non-admin users.</p>
         <Field label="Start from a preset" wide>
-          <select value={matchPreset(f)} aria-label="SMS provider preset" onChange={(e) => PRESETS[e.target.value] && setF({ ...f, ...PRESETS[e.target.value] })}>
-            <option value="" disabled>Choose a provider template…</option>
+          {/* The list shows only real providers. "Choose…" / "Custom" are status labels for the closed box,
+              added (hidden) only while they are the current state, so they never appear as dead rows in the list. */}
+          <select value={preset} aria-label="SMS provider preset" onChange={(e) => PRESETS[e.target.value] && setF({ ...f, ...PRESETS[e.target.value] })}>
+            {preset === '' && <option value="" hidden>Choose a provider template…</option>}
             {Object.keys(PRESETS).map((k) => <option key={k} value={k}>{k}</option>)}
-            <option value="custom" disabled>Custom settings (my own)</option>
+            {preset === 'custom' && <option value="custom" hidden>Custom settings (my own)</option>}
           </select>
         </Field>
         <Field label="Method"><select {...bind('sms_method')}><option>GET</option><option>POST</option></select></Field>
