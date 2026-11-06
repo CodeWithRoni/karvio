@@ -7,3 +7,15 @@ playwright-report/
 verification/
 .env.local
 .clasp.json
+
+# Local records and credentials never belong in a source upload.
+release-offline/
+backups/
+**/shop-erp*.json
+**/*backup*.json
+.env
+.env.*
+!.env.example
+.clasprc.json
+*.pem
+*.key
