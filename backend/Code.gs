@@ -1061,7 +1061,7 @@ function saleCreate_(p, user) {
     } else cost = isService_(pr) ? 0 : pr.cost_price * qty;
     var wDays = 0, wExp = '';
     if (pr.has_warranty) {
-      wDays = (it.warranty_days !== undefined && it.warranty_days !== null && it.warranty_days !== '') ? Math.round(num_(it.warranty_days)) : pr.warranty_days;
+      wDays = (it.warranty_days !== undefined && it.warranty_days !== null && it.warranty_days !== '') ? Math.min(Math.max(Math.round(num_(it.warranty_days)), 0), 36500) : pr.warranty_days;
       if (wDays > 0) wExp = addDays_(date, wDays);
     }
     var total = round_(qty * price);

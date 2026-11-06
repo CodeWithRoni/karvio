@@ -102,7 +102,7 @@ export default function POS() {
     }
     const res = await run(() => api('sale.create', {
       customer_id: customerId, discount: disc, note, send_sms: smsReady && sendSms, credit_used: credit,
-      items: cart.map((l) => ({ product_id: l.product_id, qty: Number(l.qty), price: Number(l.price), serials: l.serials, warranty_days: l.warranty_days })),
+      items: cart.map((l) => ({ product_id: l.product_id, qty: Number(l.qty), price: Number(l.price), serials: l.serials, warranty_days: l.warranty_days === '' ? 0 : l.warranty_days })),
       payments: payList
     }));
     setDone({ ...res, change });
@@ -143,9 +143,17 @@ export default function POS() {
                         : <div><button className="serial-need" onClick={() => setSerialFor(i)}>Pick serial numbers ({l.serials.length}/{l.qty})</button></div>)}
                       {p.has_warranty && (
                         <div className="w">Warranty&nbsp;
-                          <select value={l.warranty_days} onChange={(e) => upd(i, { warranty_days: e.target.value })} style={{ width: 'auto', minHeight: 24, padding: '0 4px', fontSize: 12 }} aria-label="Warranty period">
-                            {[...new Set([Number(p.warranty_days), ...warrantyPeriods.map((w) => w.days), 0])].sort((a, b) => a - b).map((d) => <option key={d} value={d}>{d ? `${d} days` : 'No warranty'}</option>)}
-                          </select>
+                          {(() => {
+                            const opts = [...new Set([Number(p.warranty_days), ...warrantyPeriods.map((w) => Number(w.days)), 0])].sort((a, b) => a - b);
+                            const custom = l.w_custom || !opts.includes(Number(l.warranty_days));
+                            return <>
+                              <select value={custom ? 'custom' : l.warranty_days} onChange={(e) => upd(i, e.target.value === 'custom' ? { w_custom: true } : { w_custom: false, warranty_days: e.target.value })} style={{ width: 'auto', minHeight: 24, padding: '0 4px', fontSize: 12 }} aria-label="Warranty period">
+                                {opts.map((d) => <option key={d} value={d}>{d ? `${d} days` : 'No warranty'}</option>)}
+                                <option value="custom">Custom days…</option>
+                              </select>
+                              {custom && <span className="w-custom">&nbsp;<input type="number" min="0" max="36500" step="1" value={l.warranty_days} onChange={(e) => upd(i, { warranty_days: e.target.value === '' ? '' : String(Math.max(0, Math.round(Number(e.target.value) || 0))) })} placeholder="Days" aria-label="Custom warranty days for this invoice" style={{ width: 70, minHeight: 24, padding: '0 6px', fontSize: 12 }} /> days <span className="muted">(this invoice only)</span></span>}
+                            </>;
+                          })()}
                           {p.warranty_type === 'invoice' && ' (invoice-based)'}
                         </div>
                       )}
