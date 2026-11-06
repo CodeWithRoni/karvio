@@ -28,7 +28,7 @@ class Sheet {
   appendRow(arr) { this.rows[this.getLastRow()] = arr.slice(); }
   deleteRow(n) { this.rows.splice(n - 1, 1); }
 }
-const book = { sheets: {}, getId: () => 'SHEET1', getSheetByName(n) { return this.sheets[n] || null; }, insertSheet(n) { return (this.sheets[n] = new Sheet(n)); }, getSheets() { return Object.values(this.sheets); }, deleteSheet() {}, setSpreadsheetTimeZone() {} };
+const book = { sheets: {}, copies: [], copy(name) { this.copies.push(name); return { getName: () => name, getUrl: () => 'https://docs.google.com/spreadsheets/d/LOCAL-COPY' }; }, getId: () => 'SHEET1', getSheetByName(n) { return this.sheets[n] || null; }, insertSheet(n) { return (this.sheets[n] = new Sheet(n)); }, getSheets() { return Object.values(this.sheets); }, deleteSheet() {}, setSpreadsheetTimeZone() {} };
 const props = {}, cacheStore = new Map(), fetchLog = [];
 const sandbox = {
   console, JSON, Math, Date, Object, Array, String, Number, isFinite, parseInt, parseFloat, encodeURIComponent, RegExp, Error, Boolean,

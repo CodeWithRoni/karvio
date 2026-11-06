@@ -12,7 +12,7 @@ export const DASH_CARDS = [
   ['hist_expenses', 'History — expenses'], ['hist_gross_profit', 'History — gross profit'], ['hist_net_profit', 'History — net profit'],
   ['hist_receivable', 'History — receivable (new customer dues)'], ['hist_payable', 'History — payable (new supplier dues)'],
   ['stock_summary', 'Stock summary (products, cost, sales price)'],
-  ['balances', 'Live balances (cash, bank, MFS)'], ['chart', 'Last 14 days chart'], ['leaderboard', 'Staff leaderboard / recent invoices'], ['top_products', 'Top selling products / groups'], ['low_stock', 'Low stock list']
+  ['balances', 'Live balances (cash, bank, MFS)'], ['profit_card', 'Profit — today, week, month, 6 months (gross & net)'], ['chart', 'Last 14 days chart'], ['leaderboard', 'Staff leaderboard / recent invoices'], ['top_products', 'Top selling products / groups'], ['low_stock', 'Low stock list']
 ];
 
 export function hiddenCards(settings) {

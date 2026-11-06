@@ -273,6 +273,11 @@ table { width: 100%; border-collapse: collapse; }
 .serial-grid { display: flex; flex-wrap: wrap; gap: 6px; max-height: 180px; overflow-y: auto; }
 .serial-grid button { font: 600 12px var(--font); padding: 5px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); cursor: pointer; }
 .serial-grid button.on { background: var(--violet); border-color: var(--violet); color: #fff; }
+.serial-status { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: -2px 0 8px; font-size: 12.5px; color: var(--muted); }
+.serial-status b { color: var(--text); font-size: 14px; }
+.serial-note { font-weight: 700; }
+.serial-note.ok { color: var(--ok); }
+.serial-note.bad { color: var(--bad); }
 
 /* ---------- POS ---------- */
 .pos { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 14px; height: calc(100vh - 62px); }
@@ -285,6 +290,10 @@ table { width: 100%; border-collapse: collapse; }
 .cart .cn small { color: var(--muted); }
 .cart .w { color: var(--violet); font-size: 11.5px; font-weight: 600; }
 .cart .serial-need { color: var(--warn); font-size: 12px; font-weight: 700; cursor: pointer; background: none; border: 0; padding: 0; }
+/* serial products: the quantity is the number of serials picked — a button that opens the picker, not a typed number */
+.cart .qty-serial { width: 100%; min-height: 32px; padding: 4px 8px; text-align: right; font: 700 14px var(--font); font-variant-numeric: tabular-nums;
+  color: var(--text); background: var(--panel-2); border: 1px dashed color-mix(in srgb, var(--violet) 55%, var(--line)); border-radius: 8px; cursor: pointer; }
+.cart .qty-serial:hover, .cart .qty-serial:focus-visible { border-color: var(--violet); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--violet) 22%, transparent); }
 .cart .serial-ok { color: var(--violet); font-size: 12px; font-weight: 600; cursor: pointer; background: none; border: 0; padding: 0; text-align: left; }
 .pos-right { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow-y: auto; }
 .totals { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; align-items: center; }
@@ -841,3 +850,26 @@ body::before { content: ''; position: fixed; top: 0; left: 0; right: 0; height: 
 .sms-link { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
 .cust-link { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--ok) 45%, transparent); background: color-mix(in srgb, var(--ok) 8%, transparent); border-radius: 10px; font-size: 13px; }
 .cust-link input { flex: 1 1 260px; min-width: 0; font: 12.5px Consolas, 'Courier New', monospace; }
+
+/* ---------- Settings → Database reset (Administrator account only) ---------- */
+.reset-warn { border-left: 3px solid var(--bad); background: color-mix(in srgb, var(--bad) 9%, transparent); padding: 10px 12px; border-radius: 0 8px 8px 0; font-size: 13px; line-height: 1.5; }
+.reset-warn b { color: var(--bad); }
+.reset-done { border-left-color: var(--ok); background: color-mix(in srgb, var(--ok) 9%, transparent); }
+
+/* ---------- Dashboard profit row ---------- */
+.profit-stats { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+.profit-stat .pf-line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 4px; }
+.profit-stat .pf-line em { font-style: normal; font-size: 12px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+.profit-stat .pf-line b { margin: 0; text-align: right; }
+.profit-stat .pf-line b.pf-gross { font-size: 16px; }
+.profit-stat b.pf-up { color: var(--ok); } .profit-stat b.pf-down { color: var(--bad); }
+.profit-stat small { display: block; margin-top: 4px; }
+
+/* ---------- Profit page ---------- */
+.profit-filters { align-items: center; }
+.profit-summary { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+.profit-steps table td { padding: 7px 4px; }
+.profit-steps tr.sub td { border-top: 1px solid var(--line); font-weight: 700; }
+.profit-steps tr.total td { font-size: 16px; }
+.profit-steps tr.up td:last-child { color: var(--ok); } .profit-steps tr.down td:last-child { color: var(--bad); }
+.profit-steps small { font-weight: 500; }

@@ -224,27 +224,53 @@ export function CustomerPicker({ value, onChange, onAddNew }) {
   );
 }
 
-/* Serial chooser: shows a checkbox grid of serials in stock for a product */
+/* Serial chooser: the serials in stock for a product. Click to pick / unpick (any number),
+ * or scan a barcode — the scanner types the serial and presses Enter, which picks it. */
 export function SerialChooser({ productId, value, onChange, max }) {
   const [list, setList] = useState(null);
   const [q, setQ] = useState('');
+  const [note, setNote] = useState(null); // { ok, text } — result of the last scan
+  const inputRef = useRef();
   useEffect(() => {
     let live = true;
+    setList(null);
     api('serials.list', { product_id: productId, status: 'in_stock' })
       .then((r) => live && setList(r.map((x) => x.serial)))
       .catch(() => live && setList([]));
     return () => { live = false; };
   }, [productId]);
+  useEffect(() => { if (list) inputRef.current?.focus(); }, [list]); // ready for the scanner straight away
   if (!list) return <span className="muted">Loading serials…</span>;
-  const shown = list.filter((s) => !q || s.toLowerCase().includes(q.toLowerCase()));
-  const toggle = (s) => onChange(value.includes(s) ? value.filter((x) => x !== s) : max && value.length >= max ? value : [...value, s]);
+  const full = !!max && value.length >= max;
+  const shown = list.filter((s) => !q || s.toLowerCase().includes(q.trim().toLowerCase()));
+  const toggle = (s) => {
+    setNote(null);
+    if (value.includes(s)) onChange(value.filter((x) => x !== s));
+    else if (!full) onChange([...value, s]);
+  };
+  const scan = () => {
+    const code = q.trim(); setQ('');
+    if (!code) return;
+    const hit = list.find((s) => s.toLowerCase() === code.toLowerCase());
+    if (!hit) return setNote({ ok: false, text: `${code} — not in stock for this product` });
+    if (value.includes(hit)) return setNote({ ok: false, text: `${hit} is already picked` });
+    if (full) return setNote({ ok: false, text: `Only ${max} can be picked` });
+    onChange([...value, hit]);
+    setNote({ ok: true, text: `${hit} added` });
+  };
   return (
     <div className="serials">
-      <input placeholder="Scan / type serial and press Enter" value={q} onChange={(e) => setQ(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const hit = list.find((s) => s.toLowerCase() === q.trim().toLowerCase()); if (hit && !value.includes(hit)) toggle(hit); setQ(''); } }} />
+      <input ref={inputRef} placeholder="Scan / type serial and press Enter" value={q} onChange={(e) => { setQ(e.target.value); setNote(null); }}
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); scan(); } }} aria-label="Scan or type a serial number" autoComplete="off" />
+      <div className="serial-status" role="status" aria-live="polite">
+        <span><b>{value.length}</b> picked{list.length ? ` of ${list.length} in stock` : ''}</span>
+        {note && <span className={note.ok ? 'serial-note ok' : 'serial-note bad'}>{note.text}</span>}
+        {value.length > 0 && <button type="button" className="link" onClick={() => { onChange([]); setNote(null); inputRef.current?.focus(); }}>Clear</button>}
+      </div>
       <div className="serial-grid">
-        {shown.map((s) => <button type="button" key={s} className={value.includes(s) ? 'on' : ''} onClick={() => toggle(s)}>{s}</button>)}
+        {shown.map((s) => <button type="button" key={s} className={value.includes(s) ? 'on' : ''} aria-pressed={value.includes(s)} onClick={() => toggle(s)}>{s}</button>)}
         {!list.length && <span className="muted">No serials in stock for this product.</span>}
+        {list.length > 0 && !shown.length && <span className="muted">No serial matches “{q.trim()}”</span>}
       </div>
     </div>
   );

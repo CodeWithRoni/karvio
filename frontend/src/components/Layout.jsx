@@ -43,6 +43,7 @@ export const NAV = [
   { to: '/warranty', label: 'Warranty Claims', perm: 'warranty', key: '7' },
   { group: 'Money & Reports' },
   { to: '/accounts', label: 'Cash, Bank & MFS', perm: 'accounts' },
+  { to: '/profit', label: 'Profit', perm: ['reports', 'cost'] },
   { to: '/expenses', label: 'Expenses', perm: 'expenses' },
   { to: '/reports', label: 'Reports Hub', perm: 'reports', key: '9' },
   { group: 'Admin' },

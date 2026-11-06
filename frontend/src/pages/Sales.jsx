@@ -8,7 +8,7 @@ import DataTable from '../components/DataTable';
 import { excelSales, pdfSales, printSales } from '../lib/salesDocs';
 // Full invoices for ticked rows (fetched in one call).
 const saleDocs = { excel: async (rows) => excelSales(await api('sales.details', { ids: rows.map((r) => r.id) }), `invoices-${rows.length}.xlsx`), pdf: async (rows) => pdfSales(await api('sales.details', { ids: rows.map((r) => r.id) }), `invoices-${rows.length}.pdf`), print: async (rows) => printSales(await api('sales.details', { ids: rows.map((r) => r.id) })) };
-import { useApi, PageHead, Tabs, DateRange, Badge, statusTone, Modal, Btn, Field, Loading, ErrorBox, useAction, Select } from '../components/ui';
+import { useApi, PageHead, Tabs, DateRange, Badge, statusTone, Modal, Btn, Field, Loading, ErrorBox, useAction, Select, noWheel } from '../components/ui';
 import { ReverseDialog } from '../components/widgets';
 
 export default function Sales() {
@@ -188,7 +188,7 @@ function ReturnForm({ detail, onClose, onDone }) {
             <tr key={it.id}>
               <td>{it.name}</td><td className="r num">{fqty(it.qty, it.unit)}</td><td className="r num">{fqty(left, it.unit)}</td>
               <td><input type="number" min="0" max={left} step={isDecimalUnit(it.unit) ? 0.5 : 1} value={lines[i].qty} disabled={left <= 0}
-                onChange={(e) => set(i, { qty: e.target.value, serials: lines[i].serials.slice(0, Number(e.target.value) || 0) })} /></td>
+                onChange={(e) => set(i, { qty: e.target.value, serials: lines[i].serials.slice(0, Number(e.target.value) || 0) })} onWheel={noWheel} /></td>
               <td>{sers.length > 0 && <div className="serial-grid">{sers.map((sn) => (
                 <button type="button" key={sn} className={lines[i].serials.includes(sn) ? 'on' : ''}
                   onClick={() => { const cur = lines[i].serials; const next = cur.includes(sn) ? cur.filter((x) => x !== sn) : [...cur, sn]; set(i, { serials: next, qty: next.length || '' }); }}>{sn}</button>

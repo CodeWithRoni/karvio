@@ -5,7 +5,7 @@ import { api } from '../lib/api';
 import { money, qty as fqty, isDecimalUnit } from '../lib/format';
 import DataTable from '../components/DataTable';
 import MasterData from '../components/MasterData';
-import { PageHead, Tabs, Modal, Btn, Field, Badge, Select, useAction } from '../components/ui';
+import { PageHead, Tabs, Modal, Btn, Field, Badge, Select, useAction, noWheel } from '../components/ui';
 
 const blank = { name: '', sku: '', barcode: '', category_id: '', subcategory_id: '', brand_id: '', unit: 'pcs', roll_length: '', cost_price: '', sale_price: '', wholesale_price: '', low_stock: '', has_warranty: false, warranty_type: 'serial', warranty_days: 0, active: true, service: false, description: '' };
 // Auto name = Product group + Category + Brand + Model, e.g. "Networking Router TP-Link Archer C6".
@@ -62,7 +62,7 @@ export default function Stock() {
             <Field label="Product group"><Select value={f.cat} onChange={(v) => setF({ ...f, cat: v, sub: '' })} options={tops} placeholder="All groups" /></Field>
             <Field label="Category"><Select value={f.sub} onChange={(v) => setF({ ...f, sub: v })} options={subs.map((c) => ({ ...c, name: f.cat ? c.name : `${catMap[c.parent_id]} / ${c.name}` }))} placeholder="All categories" /></Field>
             <Field label="Brand"><Select value={f.brand} onChange={(v) => setF({ ...f, brand: v })} options={brands} placeholder="All brands" /></Field>
-            <Field label="Exact stock qty"><input type="number" step="any" value={f.qty} onChange={(e) => setF({ ...f, qty: e.target.value })} placeholder="e.g. 0" style={{ width: 120, minWidth: 0 }} /></Field>
+            <Field label="Exact stock qty"><input type="number" step="any" value={f.qty} onChange={(e) => setF({ ...f, qty: e.target.value })} onWheel={noWheel} placeholder="e.g. 0" style={{ width: 120, minWidth: 0 }} /></Field>
             <label className="check" style={{ paddingBottom: 8 }}><input type="checkbox" checked={f.low} onChange={(e) => setF({ ...f, low: e.target.checked })} /> Low stock only</label>
             <label className="check" style={{ paddingBottom: 8 }}><input type="checkbox" checked={f.inactive} onChange={(e) => setF({ ...f, inactive: e.target.checked })} /> Show inactive</label>
             {(f.cat || f.sub || f.brand || f.qty !== '' || f.low) && <button className="link" style={{ paddingBottom: 10 }} onClick={() => setF({ cat: '', sub: '', brand: '', qty: '', low: false, inactive: false })}>Clear filters</button>}
@@ -172,7 +172,7 @@ function AdjustForm({ product, onClose }) {
     <Modal open onClose={onClose} size="sm" title={`Adjust stock — ${product.name}`} footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={save}>Save count</Btn></>}>
       <div className="form">
         <Field label="Current" wide><input value={fqty(product.stock, product.unit)} readOnly /></Field>
-        <Field label={`Counted quantity (${product.unit})`} wide><input type="number" step="any" min="0" value={n} onChange={(e) => setN(e.target.value)} /></Field>
+        <Field label={`Counted quantity (${product.unit})`} wide><input type="number" step="any" min="0" value={n} onChange={(e) => setN(e.target.value)} onWheel={noWheel} /></Field>
         <Field label="Reason" wide><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. physical count, damaged" /></Field>
       </div>
     </Modal>

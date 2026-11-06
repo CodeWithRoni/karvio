@@ -4,7 +4,7 @@ import { useStore, shopDay } from '../lib/store';
 import { api } from '../lib/api';
 import { money, qty as fqty, fdate, monthStart, today, splitList, round2, isDecimalUnit } from '../lib/format';
 import DataTable from '../components/DataTable';
-import { useApi, PageHead, Tabs, DateRange, Badge, statusTone, Modal, Btn, Field, Loading, ErrorBox, useAction, useConfirm, Select } from '../components/ui';
+import { useApi, PageHead, Tabs, DateRange, Badge, statusTone, Modal, Btn, Field, Loading, ErrorBox, useAction, useConfirm, Select, noWheel } from '../components/ui';
 import { ProductSearch, PaymentSplit, cleanPays, defaultPay, ReverseDialog } from '../components/widgets';
 import { excelPurchases, pdfPurchases, printPurchases } from '../lib/purchaseDocs';
 
@@ -280,7 +280,7 @@ function NewPurchase({ onDone }) {
                     </div>
                   </td>
                   <td><input type="number" min="0" step={isDecimalUnit(p?.unit) ? 'any' : 1} value={l.qty} readOnly={serial} title={serial ? 'Counted from the serial numbers' : undefined}
-                    className={`${serial ? 'readonly-qty' : ''} ${tried && b.qty ? 'invalid' : ''}`} onChange={(e) => upd(l.product_id, { qty: e.target.value })} aria-label={`Quantity of ${p?.name}`} /></td>
+                    className={`${serial ? 'readonly-qty' : ''} ${tried && b.qty ? 'invalid' : ''}`} onChange={(e) => upd(l.product_id, { qty: e.target.value })} onWheel={noWheel} aria-label={`Quantity of ${p?.name}`} /></td>
                   <td><input type="number" min="0" step="any" value={l.cost} onChange={(e) => upd(l.product_id, { cost: e.target.value, costTyped: true })} aria-label={`Unit cost for ${p?.name}`} className={tried && b.cost ? 'invalid' : ''} />
                     {(() => {
                       // The product cost after this purchase: weighted average of the stock on hand and this purchase.
@@ -432,7 +432,7 @@ function PReturnForm({ detail, onClose, onDone }) {
         <thead><tr><th>Item</th><th className="r">Bought</th><th style={{ width: 110 }} className="r">Return qty</th><th>Serials</th></tr></thead>
         <tbody>{items.map((it, i) => (
           <tr key={it.id}><td>{it.name}</td><td className="r num">{fqty(it.qty, it.unit)}</td>
-            <td><input type="number" min="0" max={it.qty} step="any" value={lines[i].qty} onChange={(e) => set(i, { qty: e.target.value })} /></td>
+            <td><input type="number" min="0" max={it.qty} step="any" value={lines[i].qty} onChange={(e) => set(i, { qty: e.target.value })} onWheel={noWheel} /></td>
             <td>{splitList(it.serials).length > 0 && <div className="serial-grid">{splitList(it.serials).map((sn) => (
               <button type="button" key={sn} className={lines[i].serials.includes(sn) ? 'on' : ''} onClick={() => { const c = lines[i].serials; const n = c.includes(sn) ? c.filter((x) => x !== sn) : [...c, sn]; set(i, { serials: n, qty: n.length || '' }); }}>{sn}</button>
             ))}</div>}</td></tr>

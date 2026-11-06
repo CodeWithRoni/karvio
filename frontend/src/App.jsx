@@ -22,6 +22,7 @@ const Warranty = lazy(() => import('./pages/Warranty'));
 const History = lazy(() => import('./pages/History'));
 const Accounts = lazy(() => import('./pages/Accounts'));
 const Expenses = lazy(() => import('./pages/Expenses'));
+const Profit = lazy(() => import('./pages/Profit'));
 const Reports = lazy(() => import('./pages/Reports'));
 const Users = lazy(() => import('./pages/Users'));
 const Settings = lazy(() => import('./pages/Settings'));
@@ -75,6 +76,7 @@ export default function App() {
               <Route path="warranty" element={<Guard perm="warranty"><Warranty /></Guard>} />
               <Route path="history" element={<History />} />
               <Route path="accounts" element={<Guard perm="accounts"><Accounts /></Guard>} />
+              <Route path="profit" element={<Guard perm={['reports', 'cost']}><Profit /></Guard>} />
               <Route path="expenses" element={<Guard perm="expenses"><Expenses /></Guard>} />
               <Route path="reports" element={<Guard perm="reports"><Reports /></Guard>} />
               <Route path="users" element={<Guard perm="users"><Users /></Guard>} />

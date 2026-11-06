@@ -37,6 +37,7 @@ export const useStore = create((set, get) => ({
   },
 
   can(perm) {
+    if (Array.isArray(perm)) return perm.every((x) => get().can(x)); // every permission in the list
     const p = get().perms;
     return !perm || p.includes('*') || p.includes(perm);
   },

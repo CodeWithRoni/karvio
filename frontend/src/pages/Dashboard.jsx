@@ -123,7 +123,25 @@ export default function Dashboard() {
         </section>
       )}
 
-      {on('chart') && <div className="card" style={{ marginTop: 18 }}>
+      {/* Profit row (under Live balances): today, this week, this month, last 6 months — net and gross. */}
+      {on('profit_card') && Array.isArray(d.profit) && (
+        <section style={{ marginTop: 18 }}>
+          <div className="card-head"><h2>Profit</h2>{can(['reports', 'cost']) && <Link to="/profit" className="link">Open profit report</Link>}</div>
+          <div className="stats period-stats profit-stats">
+            {d.profit.map((x) => (
+              <div className="stat profit-stat" key={x.key} title={`${fdate(x.from)} – ${fdate(x.to)}`}>
+                <span>{x.label}</span>
+                <div className="pf-line"><em>Net profit</em><b className={x.net > 0 ? 'pf-up' : x.net < 0 ? 'pf-down' : ''}>{money(x.net)}</b></div>
+                <div className="pf-line"><em>Gross profit</em><b className={`pf-gross ${x.gross > 0 ? 'pf-up' : x.gross < 0 ? 'pf-down' : ''}`}>{money(x.gross)}</b></div>
+                <small>Sales {money(x.sales, false)} · expenses {money(x.expenses, false)}</small>
+                <small className="period-range">{x.from === x.to ? fdate(x.from) : `${fdate(x.from)} – ${fdate(x.to)}`}</small>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {on('chart') &&<div className="card" style={{ marginTop: 18 }}>
         <div className="card-head"><h2>Last 14 days</h2><span className="muted">Hover a bar for the amount</span></div>
         <div className="bars">
           {d.series.map((x, i) => (

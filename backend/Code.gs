@@ -494,9 +494,13 @@ function hash_(salt, pw) {
   return d.map(function (b) { return ('0' + (b & 0xff).toString(16)).slice(-2); }).join('');
 }
 function pubUser_(u) {
-  return { id: u.id, name: u.name, username: u.username, role: u.role, active: u.active,
+  return { id: u.id, name: u.name, username: u.username, role: u.role, active: u.active, owner: isOwner_(u),
     access_limit: !!u.access_limit, access_from: u.access_from || '', access_to: u.access_to || '', access_days: u.access_days || '' };
 }
+/** The built-in Administrator account (username "admin", made by setup). Only this account may reset the database;
+ *  other admins cannot change it, so they cannot take it over. */
+var OWNER_USERNAME = 'admin';
+function isOwner_(u) { return !!u && String(u.username || '').toLowerCase() === OWNER_USERNAME && u.role === 'admin'; }
 
 /* ---- Staff working hours: outside them a staff member cannot sign in or use the app. Admins are never limited. ---- */
 var DAYS_ = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
@@ -1031,6 +1035,11 @@ function userSave_(p, user) {
   if (!username || !String(p.name || '').trim()) fail_('Name and username are required');
   if (['admin', 'manager', 'sales'].indexOf(p.role) < 0) fail_('Invalid role');
   all_('Users').forEach(function (u) { if (u.id !== p.id && u.username.toLowerCase() === username) fail_('Username already taken'); });
+  var target = p.id ? all_('Users').filter(function (u) { return u.id === p.id; })[0] : null;
+  if (target && isOwner_(target)) {
+    if (!isOwner_(user)) fail_('Only the Administrator can change the Administrator account');
+    if (username !== OWNER_USERNAME) fail_('The Administrator account keeps the username "admin"');
+  } else if (username === OWNER_USERNAME) fail_('The username "admin" is reserved for the Administrator account');
   var row = { name: String(p.name).trim(), username: username, role: p.role, active: p.active === undefined ? true : (p.active === true || p.active === 'true') };
   // working hours (staff only; admins are never limited)
   var lim = p.access_limit === true || p.access_limit === 'true';
@@ -1057,6 +1066,50 @@ function rolePermsSave_(p, user) {
   ['manager', 'sales'].forEach(function (r) { cfg[r] = (p[r] || []).filter(function (x) { return PERMS[x]; }); });
   setSetting_('role_perms', JSON.stringify(cfg));
   return cfg;
+}
+
+/* ---- Full database reset: Administrator account only. A copy of the whole spreadsheet is made first;
+ *      if the copy cannot be made, nothing is deleted. ---- */
+var RESET_WORD = 'RESET';
+function blankRows_(h, w) { var out = []; for (var i = 0; i < h; i++) out.push(Array(w).fill('')); return out; }
+function databaseReset_(p, user) {
+  if (!isOwner_(user)) fail_('Only the Administrator account can reset the database');
+  if (hash_(user.salt, String(p.password || '')) !== user.password_hash) fail_('Incorrect password — nothing was reset');
+  if (String(p.confirm || '').trim() !== RESET_WORD) fail_('Type RESET to confirm — nothing was reset');
+  var keepUsers = p.keep_users === true, keepSettings = p.keep_settings === true;
+  var ss = ss_(), stamp = now_().replace('T', ' ');
+
+  var backup = null;
+  if (typeof ss.copy === 'function') {
+    var copy = ss.copy('Karvio backup before reset ' + stamp);
+    backup = { name: copy.getName(), url: copy.getUrl ? copy.getUrl() : '' };
+  }
+
+  // What stays: this Administrator account (same password), and on request the other users / the shop settings.
+  var users = all_('Users').filter(function (u) { return u.id === user.id || keepUsers; })
+    .map(function (u) { var o = {}; cols_('Users').forEach(function (c) { o[c.k] = u[c.k]; }); return o; });
+  var sm = settingsMap_();
+  var settings = keepSettings ? Object.keys(sm).filter(function (k) { return k.indexOf('seq_') !== 0; }).map(function (k) { return [k, sm[k]]; }) : [];
+
+  Object.keys(SCHEMA).forEach(function (name) {
+    var sh = sheet_(name), last = sh.getLastRow(), w = cols_(name).length;
+    if (last > 1) sh.getRange(2, 1, last - 1, w).setValues(blankRows_(last - 1, w));
+  });
+  [[JOURNAL_SHEET, 1], [RECEIPT_SHEET, 3]].forEach(function (x) {
+    var sh = ss.getSheetByName(x[0]), last = sh ? sh.getLastRow() : 0;
+    if (last) sh.getRange(1, 1, last, x[1]).setValues(blankRows_(last, x[1]));
+  });
+  flush_();
+  _mem = { __ss: ss };
+
+  insertMany_('Users', users);
+  if (settings.length) writeRows_('Settings', 2, 1, settings);
+  _mem = { __ss: ss };
+  setupDatabase(); // default settings, Cash account, warranty periods, units and categories, as on day one
+  _mem = { __ss: ss };
+  audit_(user, 'database_reset', { backup: backup ? backup.name : '', kept_users: keepUsers, kept_settings: keepSettings });
+  flush_();
+  return { backup: backup, users: users.length, kept_settings: keepSettings };
 }
 
 var SECRET_KEYS = ['sms_api_key'];
@@ -2363,6 +2416,72 @@ function productHistory_(p, user) {
   return out;
 }
 
+/* ---- Profit: gross = sales − cost of goods − profit on returned goods; net = gross − expenses ---- */
+function profitSummary_(from, to) {
+  var inR = function (x) { return x.status === 'active' && inRange_(x.date, from, to); };
+  var s = all_('Sales').filter(inR), r = all_('SalesReturns').filter(inR), e = all_('Expenses').filter(inR);
+  var sales = round_(sum_(s, function (x) { return x.total; })), returns = round_(sum_(r, function (x) { return x.total; }));
+  var o = {
+    invoices: s.length, sales: sales, discount: round_(sum_(s, function (x) { return x.discount; })),
+    cost: round_(sum_(s, function (x) { return x.cost; })), sales_profit: round_(sum_(s, function (x) { return x.profit; })),
+    return_count: r.length, returns: returns, returns_cost: round_(sum_(r, function (x) { return x.cost; })),
+    returns_profit: round_(sum_(r, function (x) { return x.total - x.cost; })),
+    expense_count: e.length, expenses: round_(sum_(e, function (x) { return x.amount; }))
+  };
+  o.net_sales = round_(sales - returns);
+  o.gross = round_(o.sales_profit - o.returns_profit);
+  o.net = round_(o.gross - o.expenses);
+  o.margin = o.net_sales > 0 ? round_(o.gross / o.net_sales * 100, 1) : 0;
+  o.net_margin = o.net_sales > 0 ? round_(o.net / o.net_sales * 100, 1) : 0;
+  return o;
+}
+function profitReport_(p, user) {
+  if (!can_(user, 'cost')) fail_('Permission denied');
+  var today = today_(), from = String(p.from || today.slice(0, 8) + '01').slice(0, 10), to = String(p.to || today).slice(0, 10);
+  if (from > to) fail_('The start date is after the end date');
+  var days = Math.round((new Date(to + 'T12:00:00Z') - new Date(from + 'T12:00:00Z')) / 864e5) + 1;
+  var group = p.group === 'month' || p.group === 'day' ? p.group : days > 62 ? 'month' : 'day';
+  var key = function (d) { return group === 'month' ? String(d).slice(0, 7) : String(d).slice(0, 10); };
+  var inR = function (x) { return x.status === 'active' && inRange_(x.date, from, to); };
+  var sales = all_('Sales').filter(inR), rets = all_('SalesReturns').filter(inR), exps = all_('Expenses').filter(inR);
+
+  var tl = {}, row = function (k) { return tl[k] = tl[k] || { period: k, invoices: 0, sales: 0, cost: 0, returns: 0, returns_profit: 0, gross: 0, expenses: 0, net: 0 }; };
+  sales.forEach(function (s) { var r = row(key(s.date)); r.invoices++; r.sales += s.total; r.cost += s.cost; r.gross += s.profit; });
+  rets.forEach(function (x) { var r = row(key(x.date)); r.returns += x.total; r.returns_profit += x.total - x.cost; r.gross -= x.total - x.cost; });
+  exps.forEach(function (x) { row(key(x.date)).expenses += x.amount; });
+  var timeline = Object.keys(tl).sort().map(function (k) {
+    var r = tl[k]; ['sales', 'cost', 'returns', 'returns_profit', 'gross', 'expenses'].forEach(function (f) { r[f] = round_(r[f]); });
+    r.net = round_(r.gross - r.expenses); return r;
+  });
+
+  // Per product: item profit before invoice discounts, less profit on returned units.
+  var sIds = indexBy_(sales), rIds = indexBy_(rets), pg = {};
+  var prow = function (id, name, unit) { return pg[id] = pg[id] || { product_id: id, name: name, unit: unit || 'pcs', qty: 0, revenue: 0, cost: 0, returned_qty: 0, returns: 0, returns_profit: 0, profit: 0 }; };
+  all_('SaleItems').forEach(function (i) { if (!sIds[i.sale_id]) return; var r = prow(i.product_id, i.name, i.unit); r.qty += i.qty; r.revenue += i.total; r.cost += i.cost; r.profit += i.total - i.cost; });
+  all_('SalesReturnItems').forEach(function (i) { if (!rIds[i.return_id]) return; var r = prow(i.product_id, i.name, ''); r.returned_qty += i.qty; r.returns += i.total; r.returns_profit += i.total - i.cost; r.profit -= i.total - i.cost; });
+  var products = Object.keys(pg).map(function (k) {
+    var r = pg[k]; ['revenue', 'cost', 'returns', 'returns_profit', 'profit'].forEach(function (f) { r[f] = round_(r[f]); });
+    r.qty = round_(r.qty, 4); r.returned_qty = round_(r.returned_qty, 4);
+    r.margin = r.revenue - r.returns > 0 ? round_(r.profit / (r.revenue - r.returns) * 100, 1) : 0; return r;
+  }).sort(function (a, b) { return b.profit - a.profit; });
+
+  // Per staff member (returns count against the person who made the original sale).
+  var allSales = indexBy_(all_('Sales')), st = {};
+  var srow = function (n) { n = n || '—'; return st[n] = st[n] || { name: n, invoices: 0, sales: 0, returns: 0, gross: 0 }; };
+  sales.forEach(function (s) { var r = srow(s.user_name); r.invoices++; r.sales += s.total; r.gross += s.profit; });
+  rets.forEach(function (x) { var r = srow((allSales[x.sale_id] || {}).user_name || x.user); r.returns += x.total; r.gross -= x.total - x.cost; });
+  var staff = Object.keys(st).map(function (k) { var r = st[k]; r.sales = round_(r.sales); r.returns = round_(r.returns); r.gross = round_(r.gross); return r; })
+    .sort(function (a, b) { return b.gross - a.gross; });
+
+  var ec = {};
+  exps.forEach(function (x) { var c = x.category || 'Other', r = ec[c] = ec[c] || { category: c, count: 0, amount: 0 }; r.count++; r.amount += x.amount; });
+  var expenses = Object.keys(ec).map(function (k) { ec[k].amount = round_(ec[k].amount); return ec[k]; }).sort(function (a, b) { return b.amount - a.amount; });
+
+  var summary = profitSummary_(from, to);
+  summary.items_profit = round_(sum_(products, function (r) { return r.profit + r.returns_profit; }));
+  return { from: from, to: to, group: group, summary: summary, timeline: timeline, products: products, staff: staff, expenses: expenses };
+}
+
 function dashboard_(p, user) {
   var full = can_(user, 'reports'), showCost = can_(user, 'cost'), today = today_(), month = today.slice(0, 7);
   var inP = { today: function (d) { return d === today; }, month: function (d) { return d.slice(0, 7) === month; }, total: function () { return true; } };
@@ -2428,6 +2547,14 @@ function dashboard_(p, user) {
     }
     return row;
   });
+  // Profit card: today, this week, this month, last 6 months — gross and net (admins / staff who see cost).
+  if (full && showCost) {
+    out.profit = [['today', 'Today', today, today]].concat(ranges.filter(function (r) { return ['week', 'month', 'six_months'].indexOf(r[0]) >= 0; }))
+      .map(function (r) {
+        var x = profitSummary_(r[2], r[3]);
+        return { key: r[0], label: r[1], from: r[2], to: r[3], gross: x.gross, net: x.net, sales: x.net_sales, expenses: x.expenses, invoices: x.invoices };
+      });
+  }
 
   var series = [];
   for (var i = 13; i >= 0; i--) {
@@ -2681,12 +2808,15 @@ var ROUTES = {
   'history':          r_(null, itemHistory_),
   'dashboard':        r_(null, dashboard_),
   'reports':          r_('reports', reports_),
+  'profit.report':    r_('reports', profitReport_),
 
   'users.list':       r_('users', usersList_),
   'user.save':        r_('users', userSave_, true),
   'rolePerms.save':   r_('users', rolePermsSave_, true),
   'settings.get':     r_(null, settingsGet_),
   'settings.save':    r_('settings', settingsSave_, true),
+  // Not journaled (it empties every table); runs under the script lock after recovery. Administrator account only.
+  'database.reset':   r_('settings', databaseReset_, false),
   'sale.link':        r_('pos', saleLink_, true),
   'sms.test':         r_('settings', smsTest_),
   'sms.log':          r_('settings', smsLog_)

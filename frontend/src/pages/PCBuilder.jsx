@@ -4,7 +4,7 @@ import { useStore } from '../lib/store';
 import { money, qty as fqty } from '../lib/format';
 import { printQuotation } from '../lib/receipt';
 import { textOf, cpuInfo, boardInfo, ramInfo, boardFitsCpu, ramFits } from '../lib/compat';
-import { PageHead, Btn, Field } from '../components/ui';
+import { PageHead, Btn, Field, noWheel } from '../components/ui';
 
 // Suggest parts using their product group, category or product name.
 const SLOTS = [
@@ -95,7 +95,7 @@ export default function PCBuilder() {
                   </select>
                   {bad ? <small className="pcb-warn">Not compatible with the selected {l.group === 'RAM' ? (board?.ddr ? 'motherboard' : 'processor') : 'processor'} — choose another</small> : h && <small className="pcb-hint">{h}</small>}
                 </div>
-                <input type="number" min="0" value={l.qty} onChange={(e) => upd(i, { qty: e.target.value })} aria-label="Qty" />
+                <input type="number" min="0" value={l.qty} onChange={(e) => upd(i, { qty: e.target.value })} onWheel={noWheel} aria-label="Qty" />
                 <input type="number" min="0" step="any" value={l.price} onChange={(e) => upd(i, { price: e.target.value })} placeholder="Price" aria-label="Price" />
                 <b className="r num">{l.name ? money((Number(l.qty) || 0) * (Number(l.price) || 0), false) : ''}</b>
                 <button className="x" onClick={() => setLines(lines.filter((_, j) => j !== i))} aria-label="Remove line">×</button>

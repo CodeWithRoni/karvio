@@ -3,7 +3,7 @@ import { useStore, shopDay } from '../lib/store';
 import { api } from '../lib/api';
 import { money, qty as fqty, round2, isDecimalUnit, fdate } from '../lib/format';
 import { printReceipt, printInvoice } from '../lib/receipt';
-import { Btn, Modal, Field, Tabs, useAction, useHotkeys, useConfirm } from '../components/ui';
+import { Btn, Modal, Field, Tabs, useAction, useHotkeys, useConfirm, noWheel } from '../components/ui';
 import { ProductSearch, PaymentSplit, defaultPay, cleanPays, QuickCustomer, CustomerPicker, SerialChooser } from '../components/widgets';
 
 const DRAFT = 'erp_pos_draft';
@@ -56,21 +56,41 @@ export default function POS() {
   };
   // price history for lines restored from a saved draft
   useEffect(() => { cart.forEach((l) => loadHist(l.product_id)); }, [cart.map((l) => l.product_id).join()]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Serial products: the quantity is always the number of serials picked (click them, or scan each box).
   const add = (p, serial) => {
     if (!p.service && p.stock <= 0) { setOos(p); loadHist(p.id, true); return; } // not in stock: show its prices instead
     const i = cart.findIndex((l) => l.product_id === p.id);
     if (i >= 0) {
       const l = cart[i];
       if (serial && l.serials.includes(serial)) return toast(`${serial} is already in the cart`, 'err');
-      const serials = serial ? [...l.serials, serial] : l.serials;
-      setCart(cart.map((x, j) => (j === i ? { ...x, qty: round2(Number(x.qty) + 1), serials } : x)));
-      if (isSerial(p) && !serial) setSerialFor(i);
+      if (isSerial(p)) {
+        if (!serial) return setSerialFor(i); // searched by name / barcode again: pick more serials
+        const serials = [...l.serials, serial];
+        setCart(cart.map((x, j) => (j === i ? { ...x, serials, qty: serials.length } : x)));
+        return;
+      }
+      setCart(cart.map((x, j) => (j === i ? { ...x, qty: round2(Number(x.qty) + 1) } : x)));
       return;
     }
-    setCart([...cart, { product_id: p.id, qty: 1, price: priceFor(p), serials: serial ? [serial] : [], warranty_days: p.has_warranty ? p.warranty_days : '' }]);
+    const serials = serial ? [serial] : [];
+    setCart([...cart, { product_id: p.id, qty: isSerial(p) ? serials.length : 1, price: priceFor(p), serials, warranty_days: p.has_warranty ? p.warranty_days : '' }]);
     loadHist(p.id);
     if (isSerial(p) && !serial) setSerialFor(cart.length);
   };
+  // A saved draft (or a PC Builder quote) may hold a serial product without its serials: quantity follows the serials,
+  // and the planned number is kept as a reminder in the serial picker.
+  useEffect(() => {
+    setCart((c) => {
+      let changed = false;
+      const next = c.map((l) => {
+        const p = pmap[l.product_id];
+        if (!p || !isSerial(p) || Number(l.qty) === l.serials.length) return l;
+        changed = true;
+        return { ...l, want: Math.max(Number(l.want) || 0, Number(l.qty) || 0), qty: l.serials.length };
+      });
+      return changed ? next : c;
+    });
+  }, [pmap]); // eslint-disable-line react-hooks/exhaustive-deps
   // A scanned code that is not a barcode / model: look it up as a serial number.
   const addBySerial = async (code) => {
     let hit = null;
@@ -103,7 +123,7 @@ export default function POS() {
   cart.forEach((l) => {
     const p = pmap[l.product_id];
     if (!p) return problems.push('A cart item no longer exists');
-    if (isSerial(p) && l.serials.length !== Number(l.qty)) problems.push(`Pick ${l.qty} serial(s) for ${p.name}`);
+    if (isSerial(p) && (!l.serials.length || l.serials.length !== Number(l.qty))) problems.push(`Pick the serial numbers for ${p.name}`);
     if (!p.service && Number(l.qty) > p.stock) problems.push(`Only ${fqty(p.stock, p.unit)} of ${p.name} in stock`);
   });
   if (due > 0.004 && !customer) problems.push('Cash sales must be fully paid — select a customer to sell on due');
@@ -177,9 +197,9 @@ export default function POS() {
                     <td className="cn">
                       <b>{p.name}</b>
                       <small>{p.service ? 'Service — no stock' : `${fqty(p.stock, p.unit)} in stock`}{p.unit !== 'pcs' ? ` · sold by ${p.unit}` : ''}</small>
-                      {isSerial(p) && (l.serials.length === Number(l.qty)
+                      {isSerial(p) && (l.serials.length
                         ? <div><button className="serial-ok" onClick={() => setSerialFor(i)}>S/N: {l.serials.join(', ')}</button></div>
-                        : <div><button className="serial-need" onClick={() => setSerialFor(i)}>Pick serial numbers ({l.serials.length}/{l.qty})</button></div>)}
+                        : <div><button className="serial-need" onClick={() => setSerialFor(i)}>Pick serial numbers{l.want ? ` (${l.want} planned)` : ''}</button></div>)}
                       {p.has_warranty && (
                         <div className="w">Warranty&nbsp;
                           {(() => {
@@ -207,7 +227,9 @@ export default function POS() {
                           </>;
                         })()}<button type="button" className="link" onClick={() => setCostShown({ ...costShown, [p.id]: false })}>Hide</button></span>
                       : <button type="button" className="link" onClick={() => setCostShown({ ...costShown, [p.id]: true })} aria-label={`Show cost of ${p.name}`}>Show</button>)}</td>}
-                    <td data-label="Qty"><input type="number" min="0" step={isDecimalUnit(p.unit) ? 0.5 : 1} value={l.qty} onChange={(e) => upd(i, { qty: e.target.value, serials: isSerial(p) ? l.serials.slice(0, Number(e.target.value)) : l.serials })} aria-label="Quantity" /></td>
+                    <td data-label="Qty">{isSerial(p)
+                      ? <button type="button" className="qty-serial" onClick={() => setSerialFor(i)} aria-label={`Quantity ${l.serials.length} — pick serial numbers of ${p.name}`} title="Quantity = serial numbers picked. Click to add or remove serials.">{l.serials.length}</button>
+                      : <input type="number" min="0" step={isDecimalUnit(p.unit) ? 0.5 : 1} value={l.qty} onChange={(e) => upd(i, { qty: e.target.value })} onWheel={noWheel} aria-label="Quantity" />}</td>
                     <td data-label="Price"><input type="number" min="0" step="any" value={l.price} onChange={(e) => upd(i, { price: e.target.value })} aria-label="Unit price" />
                       {(() => {
                         const h = hist[p.id];
@@ -334,9 +356,9 @@ export default function POS() {
         footer={<Btn kind="primary" onClick={() => setSerialFor(null)}>Done</Btn>}>
         {serialFor !== null && cart[serialFor] && (
           <>
-            <p className="muted">Select {cart[serialFor].qty} serial(s). Scan the barcode on the box and press Enter.</p>
-            <SerialChooser productId={cart[serialFor].product_id} value={cart[serialFor].serials} max={Number(cart[serialFor].qty)}
-              onChange={(v) => upd(serialFor, { serials: v })} />
+            <p className="muted">Click every serial number you are selling, or scan the barcode on each box — the quantity is the number of serials picked.{cart[serialFor].want ? ` Planned: ${cart[serialFor].want}.` : ''}</p>
+            <SerialChooser productId={cart[serialFor].product_id} value={cart[serialFor].serials}
+              onChange={(v) => upd(serialFor, { serials: v, qty: v.length })} />
           </>
         )}
       </Modal>

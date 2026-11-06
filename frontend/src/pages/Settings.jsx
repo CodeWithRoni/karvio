@@ -13,8 +13,9 @@ export default function Settings() {
   const can = useStore((s) => s.can);
   const offline = isOffline();
   const admin = useStore((s) => s.user?.role === 'admin');
+  const owner = useStore((s) => s.user?.owner === true); // the Administrator account only — not every admin
   const [tab, setTab] = useState(can('settings') ? 'shop' : offline ? 'me' : 'api');
-  const tabs = [...(can('settings') ? [['shop', 'Shop'], ['invoice', 'Invoice'], ['dashboard', 'Dashboard'], ...(!offline ? [['sms', 'SMS gateway']] : [])] : []), ...(offline ? admin ? [['local', 'Offline data & backup']] : [] : [['api', 'API connection']]), ['me', 'My password']];
+  const tabs = [...(can('settings') ? [['shop', 'Shop'], ['invoice', 'Invoice'], ['dashboard', 'Dashboard'], ...(!offline ? [['sms', 'SMS gateway']] : [])] : []), ...(offline ? admin ? [['local', 'Offline data & backup']] : [] : [['api', 'API connection']]), ['me', 'My password'], ...(owner ? [['reset', 'Database reset']] : [])];
   return (
     <>
       <PageHead title="Settings"><Tabs tabs={tabs} value={tab} onChange={setTab} /></PageHead>
@@ -25,6 +26,7 @@ export default function Settings() {
       {tab === 'api' && <ApiSettings />}
       {tab === 'local' && <OfflineSettings />}
       {tab === 'me' && <MyPassword />}
+      {tab === 'reset' && owner && <DatabaseReset />}
     </>
   );
 }
@@ -283,6 +285,45 @@ function MyPassword() {
       <Field label="New password" wide><input type="password" value={f.new_password} onChange={(e) => setF({ ...f, new_password: e.target.value })} autoComplete="new-password" /></Field>
       <Field label="Repeat new password" wide><input type="password" value={f.confirm} onChange={(e) => setF({ ...f, confirm: e.target.value })} autoComplete="new-password" /></Field>
       <div className="wide row end"><Btn kind="primary" busy={busy} onClick={save}>Change password</Btn></div>
+    </div>
+  );
+}
+
+const RESET_WORD = 'RESET';
+/** Empties the whole shop database (Administrator account only). The server copies the spreadsheet first. */
+function DatabaseReset() {
+  const [f, setF] = useState({ password: '', confirm: '', keep_settings: false, keep_users: false });
+  const [done, setDone] = useState(null);
+  const [busy, run] = useAction();
+  const offline = isOffline();
+  const ready = f.password && f.confirm.trim() === RESET_WORD;
+  const reset = async () => {
+    if (!ready) return;
+    const r = await run(() => api('database.reset', f), 'Database reset — Karvio is fresh');
+    // this computer's saved cart and saved PC Builder quotes point at products that no longer exist
+    ['erp_pos_draft', 'erp_quotes'].forEach((k) => { try { localStorage.removeItem(k); } catch { /* private mode */ } });
+    setF({ password: '', confirm: '', keep_settings: false, keep_users: false });
+    setDone(r);
+    await useStore.getState().refresh('all').catch(() => {});
+  };
+  return (
+    <div className="card form reset-card" style={{ maxWidth: 640 }}>
+      <h2 className="wide" style={{ margin: 0 }}>Reset the whole database</h2>
+      {done && <div className="wide note reset-done" role="status">
+        <b>Done — Karvio is fresh.</b>{' '}
+        {done.backup ? <>A full copy of the old data was saved to your Google Drive as <b>{done.backup.name}</b>{done.backup.url ? <> (<a href={done.backup.url} target="_blank" rel="noreferrer">open the copy</a>)</> : null}.</>
+          : offline ? 'The previous data file is kept in the data folder on this computer.' : null}
+      </div>}
+      <div className="wide reset-warn">
+        <b>This deletes everything:</b> products and stock, serial numbers, purchases, sales, returns, customers, suppliers, dues and ledgers,
+        accounts and their balances, expenses, warranty claims, SMS log, invoice links and history. Invoice numbers start again from 1.
+        <div style={{ marginTop: 6 }}>Your Administrator account stays, with the same password. {offline ? 'The previous data file is kept on this computer.' : 'Before deleting, a full copy of the spreadsheet is saved to your Google Drive — if the copy cannot be made, nothing is deleted.'}</div>
+      </div>
+      <label className="check wide"><input type="checkbox" checked={f.keep_settings} onChange={(e) => setF({ ...f, keep_settings: e.target.checked })} /> Keep shop settings (shop name, invoice, SMS gateway, dashboard)</label>
+      <label className="check wide"><input type="checkbox" checked={f.keep_users} onChange={(e) => setF({ ...f, keep_users: e.target.checked })} /> Keep the other user accounts</label>
+      <Field label="Administrator password" wide><input type="password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} autoComplete="current-password" /></Field>
+      <Field label={`Type ${RESET_WORD} to confirm`} wide><input value={f.confirm} onChange={(e) => setF({ ...f, confirm: e.target.value })} placeholder={RESET_WORD} autoComplete="off" autoCapitalize="characters" spellCheck={false} /></Field>
+      <div className="wide row end"><Btn kind="danger" busy={busy} disabled={!ready} onClick={reset}>Reset database</Btn></div>
     </div>
   );
 }

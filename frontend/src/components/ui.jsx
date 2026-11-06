@@ -41,6 +41,9 @@ export function useApi(action, payload, deps = [], { skip = false, refreshMs = 0
   return { ...state, reload: run, setData: (d) => set((s) => ({ ...s, data: typeof d === 'function' ? d(s.data) : d })) };
 }
 
+/** onWheel for quantity boxes: the mouse wheel scrolls the page instead of changing the number. */
+export const noWheel = (e) => { if (document.activeElement === e.currentTarget) e.currentTarget.blur(); };
+
 /** Wrap an async action with a busy flag and toast on error / success. */
 export function useAction() {
   const [busy, setBusy] = useState(false);
