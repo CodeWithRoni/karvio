@@ -5,6 +5,7 @@ import { money, qty, fdate } from '../lib/format';
 import { useApi, PageHead, Tabs, Loading, ErrorBox, Btn, Empty } from '../components/ui';
 import LiveClock from '../components/LiveClock';
 import { useCardOn } from '../lib/dashboardCards';
+import { CollectionReminders, StockSummary, TopProducts } from '../components/DashboardExtras';
 
 function Stat({ label, value, sub, tone }) {
   return <div className={`stat ${tone || ''}`}><span>{label}</span><b>{value}</b>{sub && <small>{sub}</small>}</div>;
@@ -43,6 +44,7 @@ export default function Dashboard() {
       </PageHead>
 
       {error && <ErrorBox error={`Could not update the dashboard. Showing the last loaded balances. ${error}`} onRetry={reload} />}
+      {on('reminders') && <CollectionReminders list={d.reminders} onChanged={reload} />}
       <div className="stats">
         {on('sales') && <Stat label="Sales" value={money(c.sales)} sub={`${c.invoices} invoices`} />}
         {!d.limited && <>
@@ -99,6 +101,8 @@ export default function Dashboard() {
           </div>
         </section>
       ))}
+
+      {on('stock_summary') && !d.limited && <StockSummary s={d.stock_summary} />}
 
       {on('balances') && d.accounts && (
         <section style={{ marginTop: 18 }}>
@@ -162,6 +166,8 @@ export default function Dashboard() {
           </div>
         )}
       </div>}
+
+      {on('top_products') && d.top_products && <div style={{ marginTop: 14 }}><TopProducts data={d.top_products} showProfit={can('cost') && !d.limited} /></div>}
 
       {on('low_stock') && <div className="card" style={{ marginTop: 14 }}>
         <div className="card-head"><h2>Low stock</h2><Link to="/stock?low=1" className="link">Open stock explorer</Link></div>

@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useStore } from '../lib/store';
+import { useStore, shopDay } from '../lib/store';
 import { api } from '../lib/api';
-import { money, qty as fqty, round2, isDecimalUnit } from '../lib/format';
+import { money, qty as fqty, round2, isDecimalUnit, fdate } from '../lib/format';
 import { printReceipt, printInvoice } from '../lib/receipt';
 import { Btn, Modal, Field, Tabs, useAction, useHotkeys, useConfirm } from '../components/ui';
 import { ProductSearch, PaymentSplit, defaultPay, cleanPays, QuickCustomer, CustomerPicker, SerialChooser } from '../components/widgets';
 
 const DRAFT = 'erp_pos_draft';
+// Next payment date picker works in the shop's date (server time zone), not this computer's clock.
+const inDays = (n) => shopDay(n);
 const loadDraft = () => { try { return JSON.parse(localStorage.getItem(DRAFT)) || null; } catch { return null; } };
 
 export default function POS() {
@@ -30,6 +32,9 @@ export default function POS() {
   const canCost = useStore((st) => st.can('cost'));
   const [costOn, setCostOn] = useState(false);
   const [costShown, setCostShown] = useState({});
+  const [nextPay, setNextPay] = useState(''); // promised date for the due on this sale
+  const [hist, setHist] = useState({}); // product_id -> { last_sales, last_purchase, avg_cost } (POS price history)
+  const [oos, setOos] = useState(null); // out-of-stock product being looked at
   const [busy, run] = useAction();
   const searchRef = useRef();
   const discRef = useRef();
@@ -41,8 +46,17 @@ export default function POS() {
   const isSerial = (p) => !p.service && p.has_warranty && p.warranty_type === 'serial';
   const priceFor = (p) => (tier === 'wholesale' && p.wholesale_price ? p.wholesale_price : p.sale_price);
 
+  const loadHist = (id, force) => {
+    if (!force && hist[id]) return;
+    setHist((h) => ({ ...h, [id]: h[id] || { loading: true } }));
+    api('product.history', { product_id: id })
+      .then((r) => setHist((h) => ({ ...h, [id]: r })))
+      .catch(() => setHist((h) => ({ ...h, [id]: { last_sales: [], failed: true } })));
+  };
+  // price history for lines restored from a saved draft
+  useEffect(() => { cart.forEach((l) => loadHist(l.product_id)); }, [cart.map((l) => l.product_id).join()]); // eslint-disable-line react-hooks/exhaustive-deps
   const add = (p, serial) => {
-    if (!p.service && p.stock <= 0) return toast(`${p.name} is out of stock`, 'err');
+    if (!p.service && p.stock <= 0) { setOos(p); loadHist(p.id, true); return; } // not in stock: show its prices instead
     const i = cart.findIndex((l) => l.product_id === p.id);
     if (i >= 0) {
       const l = cart[i];
@@ -53,6 +67,7 @@ export default function POS() {
       return;
     }
     setCart([...cart, { product_id: p.id, qty: 1, price: priceFor(p), serials: serial ? [serial] : [], warranty_days: p.has_warranty ? p.warranty_days : '' }]);
+    loadHist(p.id);
     if (isSerial(p) && !serial) setSerialFor(cart.length);
   };
   // A scanned code that is not a barcode / model: look it up as a serial number.
@@ -99,7 +114,7 @@ export default function POS() {
   };
 
   const [confirmUI, ask] = useConfirm();
-  const reset = () => { setSendSms(false); setCart([]); setCustomerId(''); setDiscount(''); setPaysRaw(defaultPay()); setPayTouched(false); setUseCredit(false); setNote(''); searchRef.current?.focus(); };
+  const reset = () => { setNextPay(''); setSendSms(false); setCart([]); setCustomerId(''); setDiscount(''); setPaysRaw(defaultPay()); setPayTouched(false); setUseCredit(false); setNote(''); searchRef.current?.focus(); };
 
   const gatewayOn = settings.sms_enabled === 'true';
   const phone = customer?.phones?.split(',')[0]?.trim() || '';
@@ -116,6 +131,7 @@ export default function POS() {
     }
     const res = await run(() => api('sale.create', {
       customer_id: customerId, discount: disc, note, send_sms: smsReady && sendSms, credit_used: credit,
+      next_payment_date: due > 0.004 ? nextPay : '',
       items: cart.map((l) => ({ product_id: l.product_id, qty: Number(l.qty), price: Number(l.price), serials: l.serials, warranty_days: l.warranty_days === '' ? 0 : l.warranty_days })),
       payments: payList
     }));
@@ -126,6 +142,7 @@ export default function POS() {
       searchRef.current?.focus();
     } else setDone({ ...res, change });
     reset();
+    setHist({});
     refresh('products', 'customers');
   };
 
@@ -147,7 +164,7 @@ export default function POS() {
         </div>
         <div className="cart">
           <table>
-            <thead><tr><th>Item</th>{canCost && <th style={{ width: 110 }} className="cost-col"><label className="cost-toggle"><input type="checkbox" checked={costOn} onChange={(e) => { setCostOn(e.target.checked); setCostShown({}); }} aria-label="Show cost column" /> Cost</label></th>}<th style={{ width: 100 }} className="r">Qty</th><th style={{ width: 120 }} className="r">Price</th><th style={{ width: 110 }} className="r">Amount</th><th style={{ width: 30 }} /></tr></thead>
+            <thead><tr><th>Item</th>{canCost && <th style={{ width: 110 }} className="cost-col"><label className="cost-toggle"><input type="checkbox" checked={costOn} onChange={(e) => { setCostOn(e.target.checked); setCostShown({}); }} aria-label="Show cost column" /> Cost</label></th>}<th style={{ width: 100 }} className="r">Qty</th><th style={{ width: 150 }} className="r">Price</th><th style={{ width: 110 }} className="r">Amount</th><th style={{ width: 30 }} /></tr></thead>
             <tbody>
               {cart.map((l, i) => {
                 const p = pmap[l.product_id]; if (!p) return null;
@@ -177,10 +194,26 @@ export default function POS() {
                       )}
                     </td>
                     {canCost && <td className="cost-col">{costOn && (costShown[p.id]
-                      ? <span className="cost-peek"><b className={Number(l.price) < Number(p.cost_price) ? 'loss' : ''}>{p.cost_price > 0 ? money(p.cost_price, false) : 'No cost'}</b><button type="button" className="link" onClick={() => setCostShown({ ...costShown, [p.id]: false })}>Hide</button></span>
+                      ? <span className="cost-peek">{(() => {
+                          const h = hist[p.id] || {}, lp = h.last_purchase ? h.last_purchase.cost : null;
+                          const shownCost = lp !== null ? lp : p.cost_price;
+                          return <>
+                            <b className={Number(l.price) < Number(p.cost_price) ? 'loss' : ''} title={h.last_purchase ? `Last purchase ${fdate(h.last_purchase.date)} · ${h.last_purchase.invoice_no}${h.last_purchase.supplier ? ' · ' + h.last_purchase.supplier : ''}` : 'Average cost'}>{shownCost > 0 ? money(shownCost, false) : 'No cost'}</b>
+                            {lp !== null && <small>last buy{Math.abs(lp - p.cost_price) > 0.004 ? ` · avg ${money(p.cost_price, false)}` : ''}</small>}
+                          </>;
+                        })()}<button type="button" className="link" onClick={() => setCostShown({ ...costShown, [p.id]: false })}>Hide</button></span>
                       : <button type="button" className="link" onClick={() => setCostShown({ ...costShown, [p.id]: true })} aria-label={`Show cost of ${p.name}`}>Show</button>)}</td>}
                     <td><input type="number" min="0" step={isDecimalUnit(p.unit) ? 0.5 : 1} value={l.qty} onChange={(e) => upd(i, { qty: e.target.value, serials: isSerial(p) ? l.serials.slice(0, Number(e.target.value)) : l.serials })} aria-label="Quantity" /></td>
-                    <td><input type="number" min="0" step="any" value={l.price} onChange={(e) => upd(i, { price: e.target.value })} aria-label="Unit price" /></td>
+                    <td><input type="number" min="0" step="any" value={l.price} onChange={(e) => upd(i, { price: e.target.value })} aria-label="Unit price" />
+                      {(() => {
+                        const h = hist[p.id];
+                        if (!h || h.loading) return <span className="price-hist">…</span>;
+                        if (!h.last_sales || !h.last_sales.length) return <span className="price-hist">{h.failed ? '' : 'Not sold before'}</span>;
+                        return <span className="price-hist" aria-label={`Last selling prices of ${p.name}`}><span className="ph-label">Last {h.last_sales.length} sold</span>
+                          <span className="ph-vals">{h.last_sales.map((x, k) => <button type="button" key={k} onClick={() => upd(i, { price: x.price })} title={`${fdate(x.date)} · ${x.invoice_no} · ${x.customer} · qty ${x.qty} — click to use this price`}>{money(x.price, false)}</button>)}</span>
+                        </span>;
+                      })()}
+                    </td>
                     <td className="r num"><b>{money((Number(l.qty) || 0) * (Number(l.price) || 0), false)}</b></td>
                     <td><button className="x" onClick={() => del(i)} aria-label={`Remove ${p.name}`}>×</button></td>
                   </tr>
@@ -212,6 +245,19 @@ export default function POS() {
                   {customer.balance > 0.004 && <div className="row"><span>Previous due</span><b>{money(customer.balance)}</b></div>}
                   {total > 0 && due > 0.004 && <div className="row"><span>Due on this sale</span><b>{money(due)}</b></div>}
                   {customer.balance > 0.004 && total > 0 && due > 0.004 && <div className="row total-due"><span>Total due</span><b>{money(customer.balance + due)}</b></div>}
+                </div>
+              )}
+              {total > 0 && due > 0.004 && (
+                <div className="next-pay">
+                  <label htmlFor="pos-next-pay">Next payment date</label>
+                  <div className="row">
+                    <input id="pos-next-pay" type="date" min={inDays(0)} value={nextPay} onChange={(e) => setNextPay(e.target.value)} />
+                    {[[3, '3 days'], [7, '1 week'], [15, '15 days'], [30, '1 month']].map(([n, t]) => (
+                      <button type="button" key={n} className={`chip ${nextPay === inDays(n) ? 'on' : ''}`} onClick={() => setNextPay(inDays(n))}>{t}</button>
+                    ))}
+                    {nextPay && <button type="button" className="chip" onClick={() => setNextPay('')} aria-label="Remove the date" title="Remove the date">×</button>}
+                  </div>
+                  <small>{nextPay ? `The dashboard reminds you on ${fdate(nextPay)} if ${money(due)} is still unpaid.` : 'Optional — pick a date to get a collection reminder on the dashboard.'}</small>
                 </div>
               )}
               {change > 0 && <div className="row" style={{ justifyContent: 'space-between', marginTop: 8 }}><span>Change to return</span><b className="change num">{money(change)}</b></div>}
@@ -257,6 +303,28 @@ export default function POS() {
         </button>
         {confirmUI}
       </div>
+
+      <Modal open={!!oos} onClose={() => { setOos(null); searchRef.current?.focus(); }} title={oos ? `${oos.name} — out of stock` : ''} size="sm"
+        footer={<Btn kind="primary" onClick={() => { setOos(null); searchRef.current?.focus(); }}>Close</Btn>}>
+        {oos && (() => {
+          const h = hist[oos.id] || { loading: true };
+          return (
+            <div className="oos-info">
+              <p className="muted" style={{ marginTop: 0 }}>This product has no stock, so it cannot be sold now. Its prices for reference:</p>
+              <div className="kv2">
+                <span>Retail price</span><b>{oos.sale_price > 0 ? money(oos.sale_price) : 'Not set'}</b>
+                {oos.wholesale_price > 0 && <><span>Wholesale price</span><b>{money(oos.wholesale_price)}</b></>}
+                {canCost && <><span>Last purchase price</span><b>{h.loading ? '…' : h.last_purchase ? `${money(h.last_purchase.cost)} · ${fdate(h.last_purchase.date)}${h.last_purchase.supplier ? ' · ' + h.last_purchase.supplier : ''}` : 'Never purchased'}</b></>}
+                {canCost && h.avg_cost > 0 && <><span>Average cost</span><b>{money(h.avg_cost)}</b></>}
+              </div>
+              <h4 style={{ margin: '14px 0 2px' }}>Last selling prices</h4>
+              {h.loading ? <p className="muted">Loading…</p> : h.last_sales && h.last_sales.length ? (
+                <table><tbody>{h.last_sales.map((x, k) => <tr key={k}><td>{fdate(x.date)}</td><td>{x.invoice_no}</td><td>{x.customer}</td><td className="r num"><b>{money(x.price, false)}</b></td></tr>)}</tbody></table>
+              ) : <p className="muted">Not sold before.</p>}
+            </div>
+          );
+        })()}
+      </Modal>
 
       <Modal open={serialFor !== null} onClose={() => setSerialFor(null)} title={serialFor !== null && cart[serialFor] ? `Serial numbers — ${pmap[cart[serialFor].product_id]?.name}` : ''}
         footer={<Btn kind="primary" onClick={() => setSerialFor(null)}>Done</Btn>}>

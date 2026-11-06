@@ -640,3 +640,42 @@ small.margin.bad { color: var(--bad); }
 .dash-opt.on { border-color: color-mix(in srgb, var(--ok) 50%, transparent); background: color-mix(in srgb, var(--ok) 7%, transparent); }
 
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* collection reminders */
+.reminders { margin-bottom: 14px; border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); background: linear-gradient(160deg, color-mix(in srgb, var(--warn) 10%, var(--panel)), var(--panel) 60%); }
+.reminders h2 { display: flex; align-items: center; gap: 8px; }
+.rem-count { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; background: var(--warn); color: #1d1500; font-size: 12px; font-weight: 800; }
+.rem-list { display: flex; flex-direction: column; gap: 8px; }
+.rem-row { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.rem-row.late { border-left: 3px solid var(--bad); } .rem-row.today { border-left: 3px solid var(--warn); }
+.rem-who, .rem-when, .rem-amt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rem-who small, .rem-when small, .rem-amt small { color: var(--muted); font-size: 12px; }
+.rem-amt { text-align: right; } .rem-amt b { font-size: 16px; color: var(--warn); }
+.rem-tag { align-self: flex-start; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+.rem-tag.today { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
+.rem-tag.late { background: color-mix(in srgb, var(--bad) 18%, transparent); color: var(--bad); }
+.rem-act { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.rem-act input[type='date'] { width: 150px; min-height: 29px; padding: 0 8px; }
+@media (max-width: 860px) { .rem-row { grid-template-columns: 1fr auto; } .rem-when { grid-column: 1; } .rem-act { grid-column: 1 / -1; justify-content: flex-start; } }
+/* best sellers */
+.tp-filter { margin: -4px 0 8px; } .tp-filter select { max-width: 260px; }
+.tp .tp-rank { width: 26px; color: var(--muted); font-weight: 800; }
+.tp-bar { height: 4px; margin-top: 6px; border-radius: 3px; background: var(--panel-2); overflow: hidden; }
+.tp-bar i { display: block; height: 100%; border-radius: 3px; background: var(--fiber); }
+/* POS: next payment date + price history */
+.next-pay { margin-top: 10px; padding: 10px; border: 1px dashed color-mix(in srgb, var(--warn) 60%, var(--line)); border-radius: 9px; }
+.next-pay label { display: block; font-size: 12.5px; font-weight: 700; margin-bottom: 6px; }
+.next-pay .row { gap: 6px; flex-wrap: wrap; }
+.next-pay input[type='date'] { flex: 1 1 150px; min-width: 140px; }
+.next-pay .chip { border: 1px solid var(--line); background: var(--panel-2); color: var(--text); border-radius: 999px; padding: 3px 10px; font: 600 12px var(--font); cursor: pointer; }
+.next-pay .chip.on { border-color: var(--warn); color: var(--warn); }
+.next-pay small { display: block; margin-top: 6px; color: var(--muted); font-size: 12px; }
+.price-hist { display: block; margin-top: 4px; font-size: 11.5px; color: var(--muted); text-align: right; line-height: 1.35; }
+.price-hist b { color: var(--text); font-weight: 700; }
+.price-hist .ph-label { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; }
+.price-hist .ph-vals { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 3px; margin-top: 2px; }
+.price-hist button { cursor: pointer; padding: 1px 6px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel-2); color: var(--text); font: 700 11.5px var(--font); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.price-hist button:hover { border-color: var(--fiber); color: var(--fiber); }
+.cost-peek small { display: block; color: var(--muted); font-size: 11px; font-weight: 500; }
+.oos-info .kv2 { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; }
+.oos-info table { width: 100%; border-collapse: collapse; margin-top: 6px; } .oos-info td { padding: 5px 4px; border-bottom: 1px solid var(--line); }

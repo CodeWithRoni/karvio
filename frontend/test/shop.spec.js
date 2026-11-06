@@ -232,3 +232,91 @@ test('door button hides and shows the side menu without losing the page', async 
   expect((await page.locator('.rail').boundingBox()).width).toBeGreaterThan(200);
   await expect(page.getByRole('link', { name: /Point Of Sale/ })).toBeVisible();
 });
+
+// Dates are the shop's (server) dates, which may differ from this machine's clock.
+let shopToday;
+const localYmd = (offset = 0) => { const d = new Date(shopToday + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + offset); return d.toISOString().slice(0, 10); };
+
+test('due sale with a next payment date shows a dashboard reminder that switches off when paid', async ({ page, request }) => {
+  shopToday = (await call(request, 'bootstrap')).serverToday;
+  expect(shopToday).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  const cust = await call(request, 'customer.save', { name: 'Reminder Customer', phones: '01799999999' });
+  await page.goto('/#/pos');
+  await page.getByRole('combobox', { name: 'Search product' }).fill('বাংলা কেবল');
+  await page.keyboard.press('Enter');
+  await page.locator('#pos-customer').fill('Reminder Customer');
+  await page.getByRole('option', { name: /Reminder Customer/ }).first().click();
+  // nothing collected: the whole bill is due, so the date picker appears
+  await expect(page.getByLabel('Next payment date', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '1 week' }).click();
+  await expect(page.getByLabel('Next payment date', { exact: true })).toHaveValue(localYmd(7));
+  await page.getByLabel('Next payment date', { exact: true }).fill(localYmd(0));
+  await page.getByRole('button', { name: 'Complete', exact: true }).click();
+  await expect(page.getByRole('dialog')).toContainText('Sale completed');
+  const sale = (await call(request, 'sales.list', {})).rows?.[0] || (await call(request, 'sales.list', {}))[0];
+  const detail = await call(request, 'sale.detail', { id: sale.id });
+  expect(detail.sale.next_payment_date).toBe(localYmd(0));
+
+  await page.goto('/#/');
+  const card = page.locator('.reminders');
+  await expect(card).toContainText('Reminder Customer');
+  await expect(card).toContainText('Payment due today');
+  await expect(card).toContainText(detail.sale.invoice_no);
+  // move it to a later date from the dashboard
+  await card.locator('.rem-row', { hasText: 'Reminder Customer' }).getByRole('button', { name: 'New date' }).click();
+  await card.getByLabel(`New payment date for ${detail.sale.invoice_no}`).fill(localYmd(2));
+  await card.getByRole('button', { name: 'Save' }).click();
+  await expect(page.locator('.rem-row', { hasText: 'Reminder Customer' })).toHaveCount(0);
+  // the date comes back to today, but the customer has paid: no reminder
+  await call(request, 'sale.promise', { id: sale.id, next_payment_date: localYmd(0) });
+  await page.reload();
+  await expect(page.locator('.reminders')).toContainText('Reminder Customer');
+  await call(request, 'customer.payment', { customer_id: cust.id, account_id: cash.id, amount: detail.sale.due });
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  await expect(page.locator('.rem-row', { hasText: 'Reminder Customer' })).toHaveCount(0);
+});
+
+test('POS shows last 3 selling prices, last purchase cost, and prices of an out-of-stock product', async ({ page, request }) => {
+  const p = await call(request, 'product.save', { name: 'History Test Keyboard', unit: 'pcs' });
+  await call(request, 'purchase.create', { items: [{ product_id: p.id, qty: 4, cost: 700, sale_price: 1000 }], payments: [{ account_id: cash.id, amount: 2800 }] });
+  for (const price of [950, 1000, 1050]) await call(request, 'sale.create', { items: [{ product_id: p.id, qty: 1, price }], payments: [{ account_id: cash.id, amount: price }] });
+  await page.goto('/#/pos');
+  await page.getByRole('combobox', { name: 'Search product' }).fill('History Test Keyboard');
+  await page.keyboard.press('Enter');
+  const hist = page.getByLabel('Last selling prices of History Test Keyboard');
+  await expect(hist).toContainText('1,050');
+  await expect(hist).toContainText('1,000');
+  await expect(hist).toContainText('950');
+  await hist.getByRole('button', { name: '950' }).click();
+  await expect(page.getByLabel('Unit price')).toHaveValue('950');
+  // cost peek shows the last purchase price
+  await page.getByLabel('Show cost column').check();
+  await page.getByRole('button', { name: 'Show cost of History Test Keyboard' }).click();
+  await expect(page.locator('.cost-peek')).toContainText('700');
+  await expect(page.locator('.cost-peek')).toContainText('last buy');
+  // sell the last one, then look it up while out of stock
+  await call(request, 'sale.create', { items: [{ product_id: p.id, qty: 1, price: 1000 }], payments: [{ account_id: cash.id, amount: 1000 }] });
+  await page.reload();
+  await page.getByRole('button', { name: 'Remove History Test Keyboard' }).click();
+  await page.getByRole('combobox', { name: 'Search product' }).fill('History Test Keyboard');
+  await page.keyboard.press('Enter');
+  const dlg = page.getByRole('dialog');
+  await expect(dlg).toContainText('out of stock');
+  await expect(dlg).toContainText('Last purchase price');
+  await expect(dlg).toContainText('700');
+  await expect(dlg.locator('table')).toContainText('1,050');
+  await expect(page.locator('.cart tbody tr')).toHaveCount(0);
+});
+
+test('dashboard shows the stock summary and best sellers by product and group', async ({ page }) => {
+  await page.goto('/#/');
+  await expect(page.getByRole('heading', { name: 'Stock summary' })).toBeVisible();
+  await expect(page.locator('.stat', { hasText: 'Total products cost' })).toBeVisible();
+  await expect(page.locator('.stat', { hasText: 'Total products sales price' })).toBeVisible();
+  const tp = page.locator('.top-products');
+  await tp.getByRole('tab', { name: 'Today' }).click();
+  await expect(tp).toContainText('History Test Keyboard');
+  await tp.getByRole('tab', { name: 'Groups' }).click();
+  await expect(tp).toContainText('Top selling product groups');
+});

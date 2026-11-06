@@ -125,6 +125,7 @@ function businessInvoiceHtml(d) {
           <tr><td class="k">Sales Amount</td><td>:</td><td class="r">${esc(m2(total, false))}</td></tr>
           <tr><td class="k">Collected Amount</td><td>:</td><td class="r">${esc(m2(paid + (Number(s.credit_used) || 0), false))}</td></tr>
           <tr><td class="k">Outstanding Amount</td><td>:</td><td class="r">${esc(m2(outstanding, false))}</td></tr>
+          ${s.next_payment_date && s.due > 0 ? `<tr><td class="k">Next Payment Date</td><td>:</td><td class="r">${esc(fdate(s.next_payment_date))}</td></tr>` : ''}
         </table></div>
       <table class="btot">
         <tr><td class="k">TOTAL :</td><td class="r">${esc(m2(s.subtotal, false))}</td></tr>
@@ -163,6 +164,7 @@ export function saleInvoiceHtml(d) {
       <tr><td>Paid</td><td class="r">${esc(money(s.paid, false))}</td></tr>
       ${s.due > 0 ? `<tr><td><b>Due</b></td><td class="r"><b>${esc(money(s.due))}</b></td></tr>` : ''}
       ${d.customer && d.customer.balance !== undefined ? `<tr><td>Total balance due</td><td class="r">${esc(money(d.customer.balance, false))}</td></tr>` : ''}
+      ${s.next_payment_date && s.due > 0 ? `<tr><td>Next payment date</td><td class="r">${esc(fdate(s.next_payment_date))}</td></tr>` : ''}
     </table>
     ${d.returns && d.returns.length ? `<p class="sm">Returns: ${esc(d.returns.map((r) => `${r.return_no} (${money(r.total, false)}, ${r.status})`).join(', '))}</p>` : ''}
     <div class="foot"><span>Printed ${esc(new Date().toLocaleString())}</span><span>Customer signature: ____________________</span></div>${noteHtml()}</div>`;

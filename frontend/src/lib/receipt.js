@@ -73,6 +73,7 @@ export function printReceipt(detail, widthOverride, height = 0) {
     ${sale.credit_used ? `<tr><td>Paid (advance)</td><td class="r">${esc(money(sale.credit_used, false))}</td></tr>` : ''}
     ${sale.due > 0 ? `<tr class="tot"><td>DUE</td><td class="r">${esc(money(sale.due))}</td></tr>` : ''}
     ${customer && customer.balance !== undefined ? `<tr><td>Total balance due</td><td class="r">${esc(money(customer.balance, false))}</td></tr>` : ''}
+    ${sale.next_payment_date && sale.due > 0 ? `<tr><td>Next payment date</td><td class="r">${esc(fdate(sale.next_payment_date))}</td></tr>` : ''}
   </table>
   <hr>
   <div class="c">${esc(s.shop_footer || 'Thank you!')}</div>

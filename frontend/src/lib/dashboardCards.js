@@ -2,6 +2,7 @@
 import { useStore } from './store';
 
 export const DASH_CARDS = [
+  ['reminders', 'Collection reminders (payment dates)'],
   ['sales', 'Sales'], ['sales_returns', 'Sales returns'], ['purchases', 'Purchases'], ['purchase_returns', 'Purchase returns'],
   ['expenses', 'Expenses'], ['gross_profit', 'Gross profit'], ['net_profit', 'Net profit'], ['new_dues', 'New dues on sales'],
   ['receivable', 'Receivable (customer dues)'], ['payable', 'Payable (supplier dues)'],
@@ -10,7 +11,8 @@ export const DASH_CARDS = [
   ['hist_sales_returns', 'History — sales returns'], ['hist_purchases', 'History — purchases'], ['hist_purchase_returns', 'History — purchase returns'],
   ['hist_expenses', 'History — expenses'], ['hist_gross_profit', 'History — gross profit'], ['hist_net_profit', 'History — net profit'],
   ['hist_receivable', 'History — receivable (new customer dues)'], ['hist_payable', 'History — payable (new supplier dues)'],
-  ['balances', 'Live balances (cash, bank, MFS)'], ['chart', 'Last 14 days chart'], ['leaderboard', 'Staff leaderboard / recent invoices'], ['low_stock', 'Low stock list']
+  ['stock_summary', 'Stock summary (products, cost, sales price)'],
+  ['balances', 'Live balances (cash, bank, MFS)'], ['chart', 'Last 14 days chart'], ['leaderboard', 'Staff leaderboard / recent invoices'], ['top_products', 'Top selling products / groups'], ['low_stock', 'Low stock list']
 ];
 
 export function hiddenCards(settings) {

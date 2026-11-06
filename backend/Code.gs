@@ -38,10 +38,10 @@ var SCHEMA = {
   Suppliers:           'id,name,phones,address,opening_balance:n,note,active:b,created_at,link_id',
   Purchases:           'id,invoice_no,date,supplier_id,supplier_name,subtotal:n,discount:n,total:n,paid:n,due:n,note,status,user,created_at,payments,cancel_reason',
   PurchaseItems:       'id,purchase_id,product_id,name,unit,qty:n,cost:n,total:n,serials,valuation',
-  Sales:               'id,invoice_no,date,customer_id,customer_name,subtotal:n,discount:n,total:n,paid:n,credit_used:n,due:n,cost:n,profit:n,note,status,user_id,user_name,created_at,payments,cancel_reason',
+  Sales:               'id,invoice_no,date,customer_id,customer_name,subtotal:n,discount:n,total:n,paid:n,credit_used:n,due:n,cost:n,profit:n,note,status,user_id,user_name,created_at,payments,cancel_reason,next_payment_date',
   SaleItems:           'id,sale_id,product_id,name,unit,qty:n,price:n,cost:n,total:n,serials,warranty_type,warranty_days:n,warranty_expiry',
   SalesReturns:        'id,return_no,date,sale_id,invoice_no,customer_id,customer_name,type,total:n,cost:n,refund:n,refund_account_id,note,status,user,created_at,cancel_reason',
-  SalesReturnItems:    'id,return_id,sale_item_id,product_id,name,qty:n,price:n,cost:n,total:n,serials',
+  SalesReturnItems:    'id,return_id,sale_item_id,product_id,name,qty:n,price:n,cost:n,total:n,serials,valuation',
   PurchaseReturns:     'id,return_no,date,purchase_id,invoice_no,supplier_id,supplier_name,total:n,received:n,account_id,note,status,user,created_at,cancel_reason',
   PurchaseReturnItems: 'id,return_id,purchase_item_id,product_id,name,qty:n,cost:n,total:n,serials',
   Expenses:            'id,date,category,amount:n,account_id,note,user,status,created_at,cancel_reason',
@@ -903,7 +903,7 @@ function bootstrap_(p, user) {
     products: productsList_(user),
     customers: customersList_().filter(function (c) { return c.active; }),
     suppliers: can_(user, 'purchase') || can_(user, 'suppliers') ? suppliersList_().filter(function (s) { return s.active; }) : [],
-    serverTime: now_()
+    serverTime: now_(), serverToday: today_()
   };
 }
 /* ============================================================================
@@ -1090,13 +1090,14 @@ function saleCreate_(p, user) {
   if (paid > total + 0.005) fail_('Paid amount (' + paid + ') exceeds the invoice total (' + total + ')');
   var due = round_(total - paid);
   if (due > 0.005 && !customer) fail_('Attach a customer profile to sell on credit (walk-in sales must be fully paid)');
+  var nextPay = due > 0.005 ? promiseDate_(p.next_payment_date, date) : '';
 
   var inv = nextNo_('seq_sale', getSetting_('invoice_prefix', 'INV-'));
   var profit = round_(total - costTotal);
   var sale = insert_('Sales', {
     invoice_no: inv, date: date, customer_id: customer ? customer.id : '', customer_name: customer ? customer.name : 'Walk-in',
     subtotal: subtotal, discount: discount, total: total, paid: paid, credit_used: creditUsed, due: due, cost: round_(costTotal), profit: profit,
-    note: p.note || '', status: 'active', user_id: user.id, user_name: user.name, created_at: now_(), payments: pays
+    note: p.note || '', status: 'active', user_id: user.id, user_name: user.name, created_at: now_(), payments: pays, next_payment_date: nextPay
   });
   var rows = insertMany_('SaleItems', lines.map(function (l) {
     return { sale_id: sale.id, product_id: l.pr.id, name: l.pr.name, unit: l.pr.unit, qty: l.qty, price: l.price, cost: l.cost, total: l.total, serials: l.serials.join(','), warranty_type: l.wType, warranty_days: l.wDays, warranty_expiry: l.wExp };
@@ -1216,9 +1217,17 @@ function sreturnCreate_(p, user) {
   insertMany_('SalesReturnItems', lines.map(function (l) {
     return { return_id: ret.id, sale_item_id: l.si.id, product_id: l.si.product_id, name: l.si.name, qty: l.qty, price: l.si.price, cost: l.cost, total: l.value, serials: l.serials.join(',') };
   }));
-  var events = [];
-  lines.forEach(function (l) {
-    if (!isService_(l.pr)) update_('Products', l.pr.id, { stock: round_(l.pr.stock + l.qty, 4) });
+  var events = [], retRows = all_('SalesReturnItems').filter(function (x) { return x.return_id === ret.id; });
+  lines.forEach(function (l, li) {
+    if (!isService_(l.pr)) {
+      // Returned goods go back at what they cost when they were sold (the supplier's purchase price),
+      // never at the selling price. Non-serial items blend that cost into the weighted average.
+      var cur = pmap[l.pr.id], oldStock = cur.stock, oldCost = cur.cost_price, newStock = round_(oldStock + l.qty, 4), newCost = oldCost;
+      if (!isSerialProduct_(cur)) newCost = newStock > 0 ? round_((Math.max(oldStock, 0) * oldCost + l.cost) / (Math.max(oldStock, 0) + l.qty), 4) : oldCost;
+      update_('Products', cur.id, { stock: newStock, cost_price: newCost });
+      cur.stock = newStock; cur.cost_price = newCost;
+      if (retRows[li]) update_('SalesReturnItems', retRows[li].id, { valuation: { stock: oldStock, cost: oldCost, after_stock: newStock, after_cost: newCost } });
+    }
     l.serials.forEach(function (s) {
       update_('SerialItems', sidx[l.pr.id + '|' + s].id, { status: 'in_stock', sale_id: '' });
       events.push({ serial: s, product_id: l.pr.id, product_name: l.pr.name, event: 'sale_return', ref_type: 'sreturn', ref_id: ret.id, ref_no: no, party: sale.customer_name, qty: 1, amount: l.si.price, note: 'Returned from ' + sale.invoice_no });
@@ -1496,8 +1505,16 @@ function reverseSreturn_(p, user, reason) {
     parseList_(i.serials).forEach(function (sn) { var rec = sidx[i.product_id + '|' + sn]; if (!rec || rec.status !== 'in_stock') fail_('Cannot cancel: serial ' + sn + ' is no longer in stock'); });
   });
   var events = [];
+  items.slice().reverse().forEach(function (i) {
+    var pr = pmap[i.product_id]; if (isService_(pr)) return;
+    var remaining = round_(pr.stock - i.qty, 4), cost = pr.cost_price, before = null;
+    try { before = typeof i.valuation === 'string' ? JSON.parse(i.valuation || 'null') : i.valuation; } catch (e) {}
+    if (before && Math.abs(pr.stock - before.after_stock) < 1e-9 && Math.abs(cost - before.after_cost) < 0.00005) cost = before.cost;
+    else if (before && !i.serials && remaining > 0) cost = Math.max(0, round_((pr.stock * cost - i.cost) / remaining, 4));
+    update_('Products', pr.id, { stock: remaining, cost_price: cost });
+    pr.stock = remaining; pr.cost_price = cost;
+  });
   items.forEach(function (i) {
-    var pr = pmap[i.product_id]; if (!isService_(pr)) update_('Products', pr.id, { stock: round_(pr.stock - i.qty, 4) });
     parseList_(i.serials).forEach(function (sn) {
       update_('SerialItems', sidx[i.product_id + '|' + sn].id, { status: 'sold', sale_id: r.sale_id });
       events.push({ serial: sn, product_id: i.product_id, product_name: i.name, event: 'return_cancelled', ref_type: 'sreturn', ref_id: r.id, ref_no: r.return_no, party: r.customer_name, qty: 1, amount: 0, note: 'Sales return cancelled: ' + reason });
@@ -1694,6 +1711,96 @@ function itemHistory_(p, user) {
 /* ============================================================================
  *  20. DASHBOARD
  * ========================================================================== */
+/** Next payment date promised on a due sale: '' (none) or yyyy-MM-dd, not before the sale date. */
+function promiseDate_(v, saleDate) {
+  var d = String(v || '').trim().slice(0, 10);
+  if (!d) return '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || isNaN(new Date(d + 'T12:00:00').getTime())) fail_('Next payment date is not a valid date');
+  if (d < saleDate) fail_('Next payment date cannot be before ' + saleDate);
+  return d;
+}
+/** Set / change / clear the promised payment date of a due invoice (from the dashboard reminder). */
+function salePromise_(p, user) {
+  var s = all_('Sales').filter(function (x) { return x.id === p.id; })[0];
+  if (!s || s.status !== 'active') fail_('Invoice not found');
+  if (!s.customer_id) fail_('Only customer invoices have a payment date');
+  if (!can_(user, 'sales.all') && !can_(user, 'customers') && s.user_id !== user.id) fail_('You can only change your own invoices');
+  var t = today_(), d = p.next_payment_date ? promiseDate_(p.next_payment_date, t > s.date ? t : s.date) : '';
+  update_('Sales', s.id, { next_payment_date: d });
+  audit_(user, 'sale_promise', s.invoice_no + ' -> ' + (d || 'cleared'));
+  return { id: s.id, next_payment_date: d };
+}
+/**
+ * Collection reminders: due invoices whose promised payment date is today or already passed.
+ * Customer payments (and returns credited to the account) made after an invoice are applied to the
+ * oldest promised invoices first, so a reminder switches itself off once that invoice is paid,
+ * including when the customer paid before the promised date.
+ */
+function collectionReminders_(sales, today) {
+  var promised = sales.filter(function (s) { return s.customer_id && s.next_payment_date && s.due > 0.005; });
+  if (!promised.length) return [];
+  var bal = customerBalances_(), custs = indexBy_(all_('Customers')), out = [];
+  var byCust = {}; promised.forEach(function (s) { (byCust[s.customer_id] = byCust[s.customer_id] || []).push(s); });
+  var ledger = all_('CustomerLedger').filter(function (l) { return !l.voided && byCust[l.customer_id]; });
+  var saleRow = {}; ledger.forEach(function (l) { if (l.type === 'sale') saleRow[l.ref_id] = l._row; });
+  Object.keys(byCust).forEach(function (cid) {
+    var open = byCust[cid].map(function (s) { return { s: s, row: saleRow[s.id] || 0, left: s.due }; }).sort(function (a, b) { return a.row - b.row; });
+    ledger.filter(function (l) { return l.customer_id === cid && (l.type === 'payment' || l.type === 'sreturn'); }).forEach(function (l) {
+      var amt = round_(l.credit - l.debit); if (amt <= 0) return;
+      open.forEach(function (o) { if (amt <= 0 || o.left <= 0 || o.row > l._row) return; var take = Math.min(o.left, amt); o.left = round_(o.left - take); amt = round_(amt - take); });
+    });
+    var cap = Math.max(bal[cid] || 0, 0), c = custs[cid] || {};
+    open.forEach(function (o) {
+      var left = Math.min(o.left, cap); if (left <= 0.005 || o.s.next_payment_date > today) return;
+      var days = Math.round((new Date(today + 'T12:00:00') - new Date(o.s.next_payment_date + 'T12:00:00')) / 864e5);
+      out.push({ sale_id: o.s.id, invoice_no: o.s.invoice_no, customer_id: cid, customer_name: c.name || o.s.customer_name, phone: parseList_(c.phones || '')[0] || '',
+        date: o.s.date, next_payment_date: o.s.next_payment_date, overdue_days: days, invoice_due: o.s.due, remaining: round_(left), customer_balance: round_(bal[cid] || 0) });
+    });
+  });
+  return out.sort(function (a, b) { return b.overdue_days - a.overdue_days || b.remaining - a.remaining; });
+}
+/** Best sellers by product for today / this month / all time, net of returns, with the product group. */
+function topProducts_(sales, today) {
+  var month = today.slice(0, 7), byId = indexBy_(sales), prods = indexBy_(all_('Products')), cats = indexBy_(all_('Categories'));
+  var retQty = {}, actRet = {};
+  all_('SalesReturns').forEach(function (r) { if (r.status === 'active') actRet[r.id] = 1; });
+  all_('SalesReturnItems').forEach(function (x) { if (actRet[x.return_id]) retQty[x.sale_item_id] = (retQty[x.sale_item_id] || 0) + x.qty; });
+  var per = { today: {}, month: {}, total: {} };
+  all_('SaleItems').forEach(function (i) {
+    var s = byId[i.sale_id]; if (!s) return;
+    var q = i.qty - (retQty[i.id] || 0); if (q <= 1e-9) return;
+    var amt = i.qty ? i.total * q / i.qty : 0, cost = i.qty ? i.cost * q / i.qty : 0, d = String(s.date).slice(0, 10), pr = prods[i.product_id] || {};
+    [['total', true], ['month', d.slice(0, 7) === month], ['today', d === today]].forEach(function (k) {
+      if (!k[1]) return;
+      var g = per[k[0]];
+      var r = g[i.product_id] = g[i.product_id] || { product_id: i.product_id, name: pr.name || i.name, unit: i.unit || pr.unit || 'pcs', group_id: pr.category_id || '', group: (cats[pr.category_id] || {}).name || 'No group', category: (cats[pr.subcategory_id] || {}).name || '', qty: 0, amount: 0, profit: 0, inv: {} };
+      r.qty += q; r.amount += amt; r.profit += amt - cost; r.inv[i.sale_id] = 1;
+    });
+  });
+  var out = {};
+  Object.keys(per).forEach(function (k) {
+    out[k] = Object.keys(per[k]).map(function (id) { var r = per[k][id]; return { product_id: r.product_id, name: r.name, unit: r.unit, group_id: r.group_id, group: r.group, category: r.category, qty: round_(r.qty, 4), amount: round_(r.amount), profit: round_(r.profit), invoices: Object.keys(r.inv).length }; })
+      .sort(function (a, b) { return b.amount - a.amount || b.qty - a.qty; }).slice(0, 300);
+  });
+  return out;
+}
+/** POS price history for one product: last purchase (cost permission only) and the last 3 selling prices. */
+function productHistory_(p, user) {
+  var pr = all_('Products').filter(function (x) { return x.id === p.product_id; })[0]; if (!pr) fail_('Product not found');
+  var out = { product_id: pr.id, stock: pr.stock, last_sales: [] };
+  var actSale = indexBy_(all_('Sales').filter(function (s) { return s.status === 'active'; }));
+  var si = all_('SaleItems').filter(function (i) { return i.product_id === pr.id && actSale[i.sale_id]; });
+  out.last_sales = si.slice(-3).reverse().map(function (i) { var s = actSale[i.sale_id]; return { price: i.price, qty: i.qty, date: s.date, invoice_no: s.invoice_no, customer: s.customer_name }; });
+  if (can_(user, 'cost')) {
+    var actPur = indexBy_(all_('Purchases').filter(function (x) { return x.status === 'active'; }));
+    var pi = all_('PurchaseItems').filter(function (i) { return i.product_id === pr.id && actPur[i.purchase_id]; });
+    var last = pi[pi.length - 1];
+    out.avg_cost = pr.cost_price;
+    out.last_purchase = last ? { cost: last.cost, qty: last.qty, date: actPur[last.purchase_id].date, invoice_no: actPur[last.purchase_id].invoice_no, supplier: actPur[last.purchase_id].supplier_name } : null;
+  }
+  return out;
+}
+
 function dashboard_(p, user) {
   var full = can_(user, 'reports'), showCost = can_(user, 'cost'), today = today_(), month = today.slice(0, 7);
   var inP = { today: function (d) { return d === today; }, month: function (d) { return d.slice(0, 7) === month; }, total: function () { return true; } };
@@ -1768,6 +1875,8 @@ function dashboard_(p, user) {
     series.push(row);
   }
   out.series = series;
+  out.reminders = collectionReminders_(sales, today);
+  out.top_products = topProducts_(sales, today);
   out.recent = sales.slice(-8).reverse().map(function (s) { return { id: s.id, invoice_no: s.invoice_no, customer_name: s.customer_name, total: s.total, due: s.due, date: s.date }; });
 
   var thDef = num_(getSetting_('low_stock_default', '5'));
@@ -1781,6 +1890,16 @@ function dashboard_(p, user) {
   out.receivable = round_(sum_(customersList_(), function (c) { return c.balance > 0 ? c.balance : 0; }));
   out.payable = round_(sum_(suppliersList_(), function (c) { return c.balance > 0 ? c.balance : 0; }));
   out.stock_value = showCost ? round_(sum_(all_('Products'), function (x) { return x.stock * x.cost_price; })) : undefined;
+  var goods = all_('Products').filter(function (x) { return x.active && !isService_(x); }), held = goods.filter(function (x) { return x.stock > 0; });
+  out.stock_summary = {
+    products: goods.length, in_stock: held.length, out_of_stock: goods.length - held.length,
+    sale_value: round_(sum_(held, function (x) { return x.stock * x.sale_price; })),
+    unpriced: held.filter(function (x) { return !(x.sale_price > 0); }).length
+  };
+  if (showCost) {
+    out.stock_summary.cost_value = round_(sum_(held, function (x) { return x.stock * x.cost_price; }));
+    out.stock_summary.expected_profit = round_(out.stock_summary.sale_value - out.stock_summary.cost_value);
+  }
   var claims = all_('WarrantyClaims');
   out.claims = {
     pending: claims.filter(function (c) { return c.status === 'Pending'; }).length,
@@ -1942,6 +2061,8 @@ var ROUTES = {
   'product.delete':   r_('products', productDelete_, true),
   'serials.list':     r_(null, serialsList_),
   'serials.find':     r_(null, serialFind_),
+  'product.history':  r_('pos', productHistory_),
+  'sale.promise':     r_('pos', salePromise_, true),
   'stock.adjust':     r_('products', stockAdjust_, true),
   'master.save':      r_('products', masterSave_, true),
   'master.delete':    r_('products', masterDelete_, true),
