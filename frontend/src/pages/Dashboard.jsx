@@ -119,7 +119,7 @@ export default function Dashboard() {
         </section>
       )}
 
-      {(on('chart') || on('leaderboard')) && <div className={on('chart') && on('leaderboard') ? 'split' : ''} style={{ marginTop: 18 }}>
+      {(on('chart') || on('leaderboard')) && <div className={on('chart') && on('leaderboard') ? 'split even' : ''} style={{ marginTop: 18 }}>
         {on('chart') && <div className="card">
           <div className="card-head"><h2>Last 14 days</h2><span className="muted">Hover a bar for the amount</span></div>
           <div className="bars">

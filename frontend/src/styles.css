@@ -134,6 +134,9 @@ input[type='checkbox'] { width: auto; min-height: 0; accent-color: var(--fiber);
 .g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .split { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr); gap: 14px; align-items: start; }
+.split > .card + .card { margin-top: 0; }
+.split.even { align-items: stretch; }
+.split.even > .card { display: flex; flex-direction: column; }
 .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .row.end { justify-content: flex-end; }
 .spacer { flex: 1; }
