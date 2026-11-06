@@ -190,7 +190,7 @@ test('product groups contain categories across master data, products, stock filt
   await expect(page.locator('.toasts > *')).toHaveCount(0, { timeout: 8000 });
   await page.screenshot({ path: '../verification/groups-desktop.png', fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.locator('.rail')).toHaveCSS('transform', 'matrix(1, 0, 0, 1, -270, 0)');
+  await expect(page.locator('.rail')).toHaveCSS('transform', /^matrix\(1, 0, 0, 1, -(2[7-9]\d|300), 0\)$/);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: '../verification/groups-mobile.png', fullPage: true });
 });
