@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from '../lib/store';
-import { api, getApiConfig, setApiConfig, testConnection } from '../lib/api';
+import { api, getApiConfig, setApiConfig, testConnection, isOffline, getToken } from '../lib/api';
 import { DEFAULT_API_URL } from '../config';
 import { fdatetime } from '../lib/format';
 import DataTable from '../components/DataTable';
@@ -11,8 +11,10 @@ import { PRESETS, matchPreset } from '../lib/smsPresets';
 
 export default function Settings() {
   const can = useStore((s) => s.can);
-  const [tab, setTab] = useState(can('settings') ? 'shop' : 'api');
-  const tabs = [...(can('settings') ? [['shop', 'Shop'], ['invoice', 'Invoice'], ['dashboard', 'Dashboard'], ['sms', 'SMS gateway']] : []), ['api', 'API connection'], ['me', 'My password']];
+  const offline = isOffline();
+  const admin = useStore((s) => s.user?.role === 'admin');
+  const [tab, setTab] = useState(can('settings') ? 'shop' : offline ? 'me' : 'api');
+  const tabs = [...(can('settings') ? [['shop', 'Shop'], ['invoice', 'Invoice'], ['dashboard', 'Dashboard'], ...(!offline ? [['sms', 'SMS gateway']] : [])] : []), ...(offline ? admin ? [['local', 'Offline data & backup']] : [] : [['api', 'API connection']]), ['me', 'My password']];
   return (
     <>
       <PageHead title="Settings"><Tabs tabs={tabs} value={tab} onChange={setTab} /></PageHead>
@@ -21,9 +23,34 @@ export default function Settings() {
       {tab === 'dashboard' && <DashboardSettings />}
       {tab === 'sms' && <SmsSettings />}
       {tab === 'api' && <ApiSettings />}
+      {tab === 'local' && <OfflineSettings />}
       {tab === 'me' && <MyPassword />}
     </>
   );
+}
+
+function OfflineSettings() {
+  const [info, setInfo] = useState(null);
+  const [error, setError] = useState('');
+  const [busy, run] = useAction();
+  const unwrap = (response) => { if (!response.ok) throw new Error(response.error); return response.data; };
+  useEffect(() => { window.shopERP.storageInfo(getToken()).then((r) => setInfo(unwrap(r))).catch((e) => setError(e.message)); }, []);
+  const backup = async () => {
+    const result = await run(async () => unwrap(await window.shopERP.exportBackup(getToken())));
+    if (!result.canceled) useStore.getState().toast('Backup saved');
+  };
+  const restore = async () => {
+    const result = await run(async () => unwrap(await window.shopERP.restoreBackup(getToken())));
+    if (!result.canceled) { await useStore.getState().logout(); useStore.getState().toast('Backup restored. Sign in again.'); }
+  };
+  return <div className="card form">
+    <h2 className="wide">Saved on this computer</h2>
+    <p className="muted wide">Sales, stock, customers and accounts are saved automatically. Your data stays here when the app closes. A previous copy and daily backups are kept as well.</p>
+    {error && <div className="errbox wide">{error}</div>}
+    {info && <><Field label="Data file" wide><input readOnly value={info.dataFile} /></Field><Field label="Automatic backups" wide><input readOnly value={info.backupDir} /></Field></>}
+    <div className="wide row"><Btn kind="primary" busy={busy} onClick={backup}>Save backup</Btn><Btn busy={busy} onClick={restore}>Restore backup</Btn><Btn onClick={() => run(async () => unwrap(await window.shopERP.openDataFolder(getToken())))}>Open data folder</Btn></div>
+    <p className="muted wide">Keep an extra backup on another drive. SMS delivery needs an internet connection and is unavailable in this offline app.</p>
+  </div>;
 }
 
 function useSettingsForm(keys) {
@@ -246,8 +273,9 @@ function MyPassword() {
   const [busy, run] = useAction();
   const save = async () => {
     if (f.new_password !== f.confirm) return useStore.getState().toast('New passwords do not match', 'err');
-    await run(() => api('password.change', f), 'Password changed');
-    setF({ old_password: '', new_password: '', confirm: '' });
+    await run(() => api('password.change', f));
+    await useStore.getState().logout();
+    useStore.getState().toast('Password changed. Sign in again.');
   };
   return (
     <div className="card form" style={{ maxWidth: 480 }}>

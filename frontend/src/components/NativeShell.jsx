@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { useStore } from '../lib/store';
+import { isOffline } from '../lib/api';
 import { DoorIcon } from './Layout';
 
 const isAndroid = () => Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
@@ -79,7 +80,7 @@ export function NativeShell() {
         <div className="exit-grip" aria-hidden="true" />
         <div className="exit-door" aria-hidden="true"><DoorIcon open={!leaving} size={34} /></div>
         <h2 id="exit-title">Exit Karvio?</h2>
-        <p id="exit-text">{greeting()}{name ? `, ${name}` : ''}! {shop ? <><b>{shop}</b> stays </> : 'Your shop stays '}saved online — everything you have saved will be here when you come back.</p>
+        <p id="exit-text">{greeting()}{name ? `, ${name}` : ''}! {shop ? <><b>{shop}</b> stays </> : 'Your shop stays '}saved {isOffline() ? 'on this computer' : 'online'} — everything you have saved will be here when you come back.</p>
         <div className="exit-actions">
           <button type="button" ref={stayRef} className="btn btn-ghost" onClick={() => setAsk(false)}>Stay</button>
           <button type="button" className="btn btn-danger" onClick={exit} disabled={leaving}>{leaving ? 'Closing…' : 'Exit'}</button>

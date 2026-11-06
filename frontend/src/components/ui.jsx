@@ -44,12 +44,17 @@ export function useApi(action, payload, deps = [], { skip = false, refreshMs = 0
 /** Wrap an async action with a busy flag and toast on error / success. */
 export function useAction() {
   const [busy, setBusy] = useState(false);
+  const pending = useRef(null);
   const toast = useStore((s) => s.toast);
   const run = async (fn, okMsg) => {
+    // State updates render later; a ref closes the gap between two rapid events.
+    if (pending.current) return pending.current;
     setBusy(true);
-    try { const r = await fn(); if (okMsg) toast(okMsg); return r; }
+    const work = Promise.resolve().then(fn);
+    pending.current = work;
+    try { const r = await work; if (okMsg) toast(okMsg); return r; }
     catch (e) { if (!e.quiet) toast(e.message, 'err'); throw e; } // quiet = the user chose to stop
-    finally { setBusy(false); }
+    finally { pending.current = null; setBusy(false); }
   };
   return [busy, run];
 }
@@ -70,10 +75,13 @@ export function useConfirm() {
 }
 
 export function useHotkeys(map, deps = []) {
+  const current = useRef(map);
+  current.current = map;
   useEffect(() => {
     const h = (e) => {
       const k = (e.ctrlKey || e.metaKey ? 'mod+' : '') + (e.altKey ? 'alt+' : '') + e.key.toLowerCase();
-      const fn = map[k] || map[e.key];
+      // Use the latest checkout state even when a caller omits a dependency.
+      const fn = current.current[k] || current.current[e.key];
       if (fn) { e.preventDefault(); fn(e); }
     };
     window.addEventListener('keydown', h);
@@ -86,7 +94,7 @@ export function useHotkeys(map, deps = []) {
 
 export function Btn({ kind = 'ghost', size, busy, children, className = '', ...p }) {
   return (
-    <button className={`btn btn-${kind} ${size ? 'btn-' + size : ''} ${className}`} disabled={busy || p.disabled} {...p}>
+    <button {...p} className={`btn btn-${kind} ${size ? 'btn-' + size : ''} ${className}`} disabled={!!(busy || p.disabled)}>
       {busy && <span className="spin" aria-hidden />}
       {children}
     </button>

@@ -1,9 +1,10 @@
 // Copies the Karvio icon set (branding/) into the generated Capacitor projects.
 // Usage: node scripts/native-icons.mjs android | ios
 import { cpSync, existsSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const root = new URL('..', import.meta.url).pathname;
+const root = fileURLToPath(new URL('..', import.meta.url));
 const which = process.argv[2];
 
 if (which === 'android') {
@@ -19,6 +20,7 @@ if (which === 'android') {
 } else if (which === 'ios') {
   const set = join(root, 'ios/App/App/Assets.xcassets/AppIcon.appiconset');
   if (!existsSync(join(root, 'ios/App'))) throw new Error('Run "npx cap add ios" first');
+  if (!resolve(set).startsWith(resolve(root, 'ios/App') + sep)) throw new Error('Icon target is outside the generated iOS project');
   rmSync(set, { recursive: true, force: true });
   cpSync(join(root, 'branding/ios/AppIcon.appiconset'), set, { recursive: true });
   console.log('iOS app icon set to Karvio');

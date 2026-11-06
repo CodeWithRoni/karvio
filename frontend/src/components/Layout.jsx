@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { Btn } from './ui';
+import { isOffline } from '../lib/api';
 
 // Karvio app mark (files in public/, so they work on GitHub Pages, desktop and mobile builds).
 export const Logo = ({ size = 28 }) => (
@@ -92,7 +93,7 @@ export default function Layout() {
             <b className="brand-name" title={settings.shop_name || 'Karvio'} style={{ fontSize: nameSize(settings.shop_name || 'Karvio') }}>{settings.shop_name || 'Karvio'}</b>
             <button type="button" className="door-btn" onClick={() => (open ? setOpen(false) : toggleHidden())} title="Hide the menu" aria-label="Hide the menu"><DoorIcon open size={16} /></button>
           </div>
-          <small className="brand-sub">Karvio · Shop management & POS</small>
+          <small className="brand-sub">{isOffline() ? 'Offline · saved on this PC' : 'Karvio · Shop management & POS'}</small>
         </div>
         <nav className="nav">
           {groups.map((g) => (

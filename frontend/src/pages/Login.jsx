@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../lib/store';
-import { getApiConfig, setApiConfig, testConnection, endpoint } from '../lib/api';
+import { getApiConfig, setApiConfig, testConnection, endpoint, isOffline } from '../lib/api';
 import { Btn, Field } from '../components/ui';
 
 export default function Login() {
@@ -48,13 +48,13 @@ export default function Login() {
         ) : (
           <>
             <h1>Sign in</h1>
-            <p className="muted">{ok || 'Use the account your admin created for you.'}</p>
+            <p className="muted">{isOffline() ? 'Offline — your data is saved on this computer.' : ok || 'Use the account your admin created for you.'}</p>
             <form onSubmit={submit}>
               <Field label="Username"><input value={f.username} onChange={(e) => setF({ ...f, username: e.target.value })} autoComplete="username" autoFocus required /></Field>
               <Field label="Password"><input type="password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} autoComplete="current-password" required /></Field>
               {err && <div className="errbox">{err}</div>}
               <Btn kind="primary" size="lg" busy={busy} type="submit">Sign in</Btn>
-              <button type="button" className="link" onClick={() => setShowApi(true)}>Change API connection</button>
+              {!isOffline() && <button type="button" className="link" onClick={() => setShowApi(true)}>Change API connection</button>}
             </form>
           </>
         )}

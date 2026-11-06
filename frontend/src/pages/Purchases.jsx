@@ -141,6 +141,7 @@ function NewPurchase({ onDone }) {
   const [tried, setTried] = useState(false);
   const [needSupplier, setNeedSupplier] = useState(false);
   const [busy, run] = useAction();
+  const saving = useRef(false);
   const supplierRef = useRef();
   const tableRef = useRef();
   const pmap = Object.fromEntries(products.map((p) => [p.id, p]));
@@ -213,6 +214,7 @@ function NewPurchase({ onDone }) {
   const firstBad = lines.find((l) => Object.values(bad(l)).some(Boolean));
 
   const save = async () => {
+    if (saving.current) return;
     setTried(true);
     if (!supplier) { setNeedSupplier(true); supplierRef.current?.focus(); return toast('Select a supplier first', 'err'); }
     if (firstBad) {
@@ -225,18 +227,23 @@ function NewPurchase({ onDone }) {
       supplier_id: supplier, date, discount: Number(discount) || 0, note, supplier_invoice: supInv.trim(), payments: cleanPays(pays),
       items: lines.map((l) => ({ product_id: l.product_id, qty: Number(l.qty), cost: Number(l.cost), sale_price: l.sale === '' ? '' : Number(l.sale), wholesale_price: l.whole === '' ? '' : Number(l.whole), serials: l.serials.join('\n') }))
     };
-    await run(async () => {
-      try { return await api('purchase.create', payload); }
-      catch (e) {
-        // the same supplier invoice was entered before: probably a double entry — ask first
-        if (!/^DUPLICATE_SUPPLIER_INVOICE:/.test(e.message)) throw e;
-        const yes = await ask({ title: 'Supplier invoice already entered', message: `${e.message.replace(/^DUPLICATE_SUPPLIER_INVOICE:\s*/, '')} Save this purchase anyway?`, confirmLabel: 'Save anyway', cancelLabel: 'Go back' });
-        if (!yes) { const stop = new Error('Not saved'); stop.quiet = true; throw stop; }
-        return api('purchase.create', { ...payload, allow_duplicate_invoice: true });
-      }
-    }, due > 0 ? `Purchase saved — ${money(due)} added to ${sup.name}'s payable` : 'Purchase saved — stock updated');
-    await refresh('products', 'suppliers');
-    onDone();
+    saving.current = true;
+    try {
+      await run(async () => {
+        try { return await api('purchase.create', payload); }
+        catch (e) {
+          // the same supplier invoice was entered before: probably a double entry — ask first
+          if (!/^DUPLICATE_SUPPLIER_INVOICE:/.test(e.message)) throw e;
+          const yes = await ask({ title: 'Supplier invoice already entered', message: `${e.message.replace(/^DUPLICATE_SUPPLIER_INVOICE:\s*/, '')} Save this purchase anyway?`, confirmLabel: 'Save anyway', cancelLabel: 'Go back' });
+          if (!yes) { const stop = new Error('Not saved'); stop.quiet = true; throw stop; }
+          return api('purchase.create', { ...payload, allow_duplicate_invoice: true });
+        }
+      }, due > 0 ? `Purchase saved — ${money(due)} added to ${sup.name}'s payable` : 'Purchase saved — stock updated');
+      // Once committed, leave the form even if the following list refresh fails.
+      // Keeping it editable would invite a second purchase after a successful save.
+      onDone();
+      await refresh('products', 'suppliers').catch(() => toast('Purchase saved. Reload the page to refresh stock and supplier balances.', 'err'));
+    } finally { saving.current = false; }
   };
   const blockSearch = () => { setNeedSupplier(true); supplierRef.current?.focus(); };
 

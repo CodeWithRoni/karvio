@@ -14,6 +14,8 @@ export default function DataTable({ columns, rows, loading, title = 'Export', ex
   const [sel, setSel] = useState(() => new Set());
   useEffect(() => { setSel(new Set()); }, [rows]);
   const [sort, setSort] = useState(null);
+  const sortColumn = sort && columns.find((c) => c.key === sort.key && !c.noSort);
+  useEffect(() => { if (sort && !sortColumn) setSort(null); }, [sort, sortColumn]);
   const [page, setPage] = useState(0);
   const [exporting, setExporting] = useState(false);
   const download = async (fn) => {
@@ -30,8 +32,8 @@ export default function DataTable({ columns, rows, loading, title = 'Export', ex
       const ql = q.toLowerCase();
       r = r.filter((row) => columns.some((c) => String(c.value ? c.value(row) : row[c.key] ?? '').toLowerCase().includes(ql)));
     }
-    if (sort) {
-      const c = columns.find((x) => x.key === sort.key);
+    if (sortColumn) {
+      const c = sortColumn;
       const get = (row) => (c.value ? c.value(row) : row[c.key]);
       const numeric = c.type === 'money' || c.type === 'num';
       r = [...r].sort((a, b) => {
@@ -41,7 +43,7 @@ export default function DataTable({ columns, rows, loading, title = 'Export', ex
       });
     }
     return r;
-  }, [rows, q, sort, columns]);
+  }, [rows, q, sort, sortColumn, columns]);
 
   const totals = useMemo(() => {
     if (totalsProp !== undefined) return totalsProp;

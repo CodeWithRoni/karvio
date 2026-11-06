@@ -36,6 +36,7 @@ export default function POS() {
   const [hist, setHist] = useState({}); // product_id -> { last_sales, last_purchase, avg_cost } (POS price history)
   const [oos, setOos] = useState(null); // out-of-stock product being looked at
   const [busy, run] = useAction();
+  const checkingOut = useRef(false);
   const searchRef = useRef();
   const discRef = useRef();
 
@@ -121,7 +122,7 @@ export default function POS() {
   const smsReady = gatewayOn && !!customer && !!phone;
 
   const checkout = async (print) => {
-    if (!cart.length || busy) return;
+    if (!cart.length || busy || checkingOut.current) return;
     if (problems.length) return toast(problems[0], 'err');
     // Collected more than the bill (cash change): only send what the invoice needs.
     let payList = cleanPays(pays);
@@ -129,21 +130,24 @@ export default function POS() {
       let excess = change;
       payList = [...payList].reverse().map((p) => { const cut = Math.min(p.amount, excess); excess = round2(excess - cut); return { ...p, amount: round2(p.amount - cut) }; }).reverse().filter((p) => p.amount > 0);
     }
-    const res = await run(() => api('sale.create', {
-      customer_id: customerId, discount: disc, note, send_sms: smsReady && sendSms, credit_used: credit,
-      next_payment_date: due > 0.004 ? nextPay : '',
-      items: cart.map((l) => ({ product_id: l.product_id, qty: Number(l.qty), price: Number(l.price), serials: l.serials, warranty_days: l.warranty_days === '' ? 0 : l.warranty_days })),
-      payments: payList
-    }));
-    if (print) {
-      // Complete & print: straight to the print dialog, no summary window.
-      printInvoice(res);
-      toast(`${res.sale.invoice_no} saved${change > 0 ? ` — return change ${money(change)}` : ''}${res.sms && !res.sms.ok ? ' (SMS failed)' : ''}`, 'ok');
-      searchRef.current?.focus();
-    } else setDone({ ...res, change });
-    reset();
-    setHist({});
-    refresh('products', 'customers');
+    checkingOut.current = true;
+    try {
+      const res = await run(() => api('sale.create', {
+        customer_id: customerId, discount: disc, note, send_sms: smsReady && sendSms, credit_used: credit,
+        next_payment_date: due > 0.004 ? nextPay : '',
+        items: cart.map((l) => ({ product_id: l.product_id, qty: Number(l.qty), price: Number(l.price), serials: l.serials, warranty_days: l.warranty_days === '' ? 0 : l.warranty_days })),
+        payments: payList
+      }));
+      if (print) {
+        // Complete & print: straight to the print dialog, no summary window.
+        printInvoice(res);
+        toast(`${res.sale.invoice_no} saved${change > 0 ? ` — return change ${money(change)}` : ''}${res.sms && !res.sms.ok ? ' (SMS failed)' : ''}`, 'ok');
+        searchRef.current?.focus();
+      } else setDone({ ...res, change });
+      reset();
+      setHist({});
+      refresh('products', 'customers').catch(() => toast('Sale saved. Reload the page to refresh stock and customer balances.', 'err'));
+    } finally { checkingOut.current = false; }
   };
 
   useHotkeys({
@@ -153,7 +157,7 @@ export default function POS() {
     F9: () => checkout(false),
     F10: () => checkout(true),
     'mod+delete': () => cart.length && confirm('Clear the cart?') && reset()
-  }, [cart, pays, customerId, discount, useCredit, note, sendSms, busy, tier]);
+  }, [cart, pays, customerId, discount, useCredit, note, sendSms, busy, tier, nextPay]);
 
   return (
     <div className="pos">
