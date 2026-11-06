@@ -126,7 +126,7 @@ input[type='checkbox'] { width: auto; min-height: 0; accent-color: var(--fiber);
 .door-btn { flex: none; display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border-radius: 7px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); cursor: pointer; transition: background .15s, border-color .15s, color .15s; }
 .door-btn:hover { border-color: var(--fiber); color: var(--fiber); }
 /* hide / show without re-flowing the menu text (that caused the "jump from below" glitch) */
-.shell.nav-hidden { grid-template-columns: 0 1fr; }
+.shell.nav-hidden { grid-template-columns: minmax(0, 1fr); } /* rail is display:none, so main must be the only column */
 .shell.nav-hidden .rail { display: none; }
 .shell:not(.nav-hidden) .rail { animation: rail-in .2s ease-out; }
 @keyframes rail-in { from { opacity: 0; transform: translateX(-14px); } to { opacity: 1; transform: none; } }

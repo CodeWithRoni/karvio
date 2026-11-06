@@ -207,3 +207,28 @@ test('price manager filters products and saves retail and wholesale prices', asy
   const after = (await call(request, 'products.list')).find((x) => x.id === p.id);
   expect([after.sale_price, after.wholesale_price]).toEqual([12345, 11000]);
 });
+
+test('door button hides and shows the side menu without losing the page', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.goto('/#/');
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  await page.getByLabel('Hide the menu').click();
+  await expect(page.locator('.rail')).toBeHidden();
+  // the page must still fill the window and show its content
+  const box = await page.locator('.main').boundingBox();
+  expect(box.width).toBeGreaterThan(1300);
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  await expect(page.getByText('Sales history')).toBeVisible();
+  // remembered after a reload
+  await page.reload();
+  await expect(page.getByLabel('Show the menu')).toBeVisible();
+  expect((await page.locator('.main').boundingBox()).width).toBeGreaterThan(1300);
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  // other pages work while hidden
+  await page.goto('/#/pos');
+  await expect(page.getByPlaceholder(/Search Product With Serial/)).toBeVisible();
+  await page.getByLabel('Show the menu').click();
+  await expect(page.locator('.rail')).toBeVisible();
+  expect((await page.locator('.rail').boundingBox()).width).toBeGreaterThan(200);
+  await expect(page.getByRole('link', { name: /Point Of Sale/ })).toBeVisible();
+});
