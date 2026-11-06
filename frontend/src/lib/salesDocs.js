@@ -5,7 +5,7 @@ import { printHtml, esc, shopContacts } from './export';
 import { pdfPages } from './purchaseDocs';
 
 const css = `
-  .sdoc{font:12px/1.45 'Manrope','Hind Siliguri',system-ui,sans-serif;color:#111;background:#fff}
+  .sdoc{font:12px/1.45 'Manrope','Hind Siliguri',system-ui,sans-serif;color:#111;background:#fff;padding:0 2px}
   .sdoc *{box-sizing:border-box}
   .sdoc .top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #0d1b2a;padding-bottom:10px;margin-bottom:12px}
   .sdoc h1{margin:0;font-size:20px}.sdoc h2{margin:0;font-size:21px;letter-spacing:.04em;color:#0d1b2a;text-align:right}
@@ -57,7 +57,7 @@ export function amountInWords(v) {
   return `${words}${ps ? ` and ${w99(ps)} Paisa` : ''} Only`;
 }
 const bizCss = `
-  .bdoc{font:12.5px/1.4 'Times New Roman',Times,'Hind Siliguri',serif;color:#000;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .bdoc{font:12.5px/1.4 'Times New Roman',Times,'Hind Siliguri',serif;color:#000;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact;padding:0 2px}
   .bdoc *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .bdoc *{box-sizing:border-box}
   .bdoc .bh{text-align:center;margin-bottom:8px}.bdoc .bh h1{margin:0 0 4px;font-size:30px;font-weight:700}.bdoc .bh div{font-size:11.5px}
