@@ -28,6 +28,7 @@ jobs:
         working-directory: frontend
         run: |
           npm ci
+          npm test
           npm run build
           touch dist/.nojekyll
       - name: Publish dist to the gh-pages branch
