@@ -172,8 +172,10 @@ async function componentChecks() {
 
 function iconChecks() {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'karvio-icon-path-'));
-  // A space and Bengali path reproduce encoded-URL and Windows-drive failures.
-  const project = path.join(temp, 'space বাংলা', 'frontend');
+  // A space and Bengali path reproduce encoded-URL failures. On the Windows builder node.exe crashed
+  // (0xC0000409, no output) when started on this Bengali path inside the 8.3 temp folder, so Windows keeps
+  // the space and drive letter with an ASCII name. The script itself runs on the Linux / macOS builders.
+  const project = path.join(temp, process.platform === 'win32' ? 'space folder' : 'space বাংলা', 'frontend');
   try {
     fs.mkdirSync(path.join(project, 'scripts'), { recursive: true });
     fs.copyFileSync(path.join(root, 'scripts/native-icons.mjs'), path.join(project, 'scripts/native-icons.mjs'));
