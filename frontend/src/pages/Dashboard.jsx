@@ -123,30 +123,31 @@ export default function Dashboard() {
         </section>
       )}
 
-      {(on('chart') || on('leaderboard')) && <div className={on('chart') && on('leaderboard') ? 'split even' : ''} style={{ marginTop: 18 }}>
-        {on('chart') && <div className="card">
-          <div className="card-head"><h2>Last 14 days</h2><span className="muted">Hover a bar for the amount</span></div>
-          <div className="bars">
-            {d.series.map((x, i) => (
-              <div className="b" key={x.date}>
-                <div className={`bar ${i === d.series.length - 1 ? 'today' : ''}`} style={{ height: `${(x.sales / max) * 100}%` }} data-v={`${money(x.sales)} · ${x.invoices} inv`} />
-                <small>{x.date.slice(8)}</small>
-              </div>
-            ))}
-          </div>
-          {!d.limited && (
-            <div className="kv" style={{ marginTop: 16 }}>
-              {d.stock_value !== undefined && <div><span>Stock value at cost</span><b>{money(d.stock_value)}</b></div>}
-              <div><span>Warranty: pending / at vendor / ready</span><b>{d.claims.pending} / {d.claims.vendor} / {d.claims.ready}</b></div>
+      {on('chart') && <div className="card" style={{ marginTop: 18 }}>
+        <div className="card-head"><h2>Last 14 days</h2><span className="muted">Hover a bar for the amount</span></div>
+        <div className="bars">
+          {d.series.map((x, i) => (
+            <div className="b" key={x.date}>
+              <div className={`bar ${i === d.series.length - 1 ? 'today' : ''}`} style={{ height: `${(x.sales / max) * 100}%` }} data-v={`${money(x.sales)} · ${x.invoices} inv`} />
+              <small>{x.date.slice(8)}</small>
             </div>
-          )}
-        </div>}
+          ))}
+        </div>
+        {!d.limited && (
+          <div className="kv" style={{ marginTop: 16 }}>
+            {d.stock_value !== undefined && <div><span>Stock value at cost</span><b>{money(d.stock_value)}</b></div>}
+            <div><span>Warranty: pending / at vendor / ready</span><b>{d.claims.pending} / {d.claims.vendor} / {d.claims.ready}</b></div>
+          </div>
+        )}
+      </div>}
 
+      {/* Leaderboard, best sellers and low stock side by side: three equal cards per row (stacks on small screens). */}
+      {(on('leaderboard') || (on('top_products') && d.top_products) || on('low_stock')) && <div className="dash-trio">
         {!on('leaderboard') ? null : d.leaderboard ? (
           <div className="card">
             <div className="card-head"><h2>Staff leaderboard</h2><Tabs tabs={[['today', 'Today'], ['month', 'Month'], ['total', 'All']]} value={lb} onChange={setLb} /></div>
             {d.leaderboard[lb].length ? (
-              <table className="lb">
+              <div className="trio-body"><table className="lb">
                 <tbody>
                   {d.leaderboard[lb].map((r, i) => (
                     <tr key={r.name}>
@@ -156,7 +157,7 @@ export default function Dashboard() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
             ) : <Empty title="No sales in this period" />}
           </div>
         ) : (
@@ -165,19 +166,19 @@ export default function Dashboard() {
             {d.recent.length ? d.recent.map((s) => <div key={s.id} className="row" style={{ padding: '6px 0' }}><Link to={`/sales/${s.id}`}>{s.invoice_no}</Link><span className="muted">{s.customer_name}</span><span className="spacer" /><b className="num">{money(s.total, false)}</b></div>) : <Empty title="No sales yet today" />}
           </div>
         )}
-      </div>}
 
-      {on('top_products') && d.top_products && <div style={{ marginTop: 14 }}><TopProducts data={d.top_products} showProfit={can('cost') && !d.limited} /></div>}
+        {on('top_products') && d.top_products && <TopProducts data={d.top_products} showProfit={can('cost') && !d.limited} />}
 
-      {on('low_stock') && <div className="card" style={{ marginTop: 14 }}>
-        <div className="card-head"><h2>Low stock</h2><Link to="/stock?low=1" className="link">Open stock explorer</Link></div>
-        {d.low_stock.length ? (
-          <div className="dt-scroll"><table className="lb"><tbody>
-            {d.low_stock.map((p) => (
-              <tr key={p.id}><td>{p.name}</td><td className="r num" style={{ color: p.stock <= 0 ? 'var(--bad)' : 'var(--warn)', fontWeight: 800 }}>{qty(p.stock, p.unit)}</td><td className="r muted">alert at {qty(p.threshold, p.unit)}</td></tr>
-            ))}
-          </tbody></table></div>
-        ) : <Empty title="Stock levels look healthy" />}
+        {on('low_stock') && <div className="card">
+          <div className="card-head"><h2>Low stock</h2><Link to="/stock?low=1" className="link">Open stock explorer</Link></div>
+          {d.low_stock.length ? (
+            <div className="dt-scroll trio-body"><table className="lb"><tbody>
+              {d.low_stock.map((p) => (
+                <tr key={p.id}><td>{p.name}</td><td className="r num" style={{ color: p.stock <= 0 ? 'var(--bad)' : 'var(--warn)', fontWeight: 800 }}>{qty(p.stock, p.unit)}</td><td className="r muted">alert at {qty(p.threshold, p.unit)}</td></tr>
+              ))}
+            </tbody></table></div>
+          ) : <Empty title="Stock levels look healthy" />}
+        </div>}
       </div>}
     </>
   );

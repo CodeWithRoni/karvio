@@ -121,7 +121,7 @@ export function TopProducts({ data, showProfit }) {
         </div>
       )}
       {view === 'products' ? (shown.length ? (
-        <table className="lb tp">
+        <div className="trio-body"><table className="lb tp">
           <tbody>{shown.map((r, i) => (
             <tr key={r.product_id}>
               <td className="tp-rank">{i + 1}</td>
@@ -130,10 +130,10 @@ export function TopProducts({ data, showProfit }) {
               <td className="r num"><b>{fqty(r.qty, r.unit)}</b><div className="muted" style={{ fontSize: 12 }}>{money(r.amount, false)}</div></td>
             </tr>
           ))}</tbody>
-        </table>
+        </table></div>
       ) : <Empty title={per === 'today' ? 'No sales yet today' : 'No sales in this period'} />)
         : (groups.length ? (
-          <table className="lb tp">
+          <div className="trio-body"><table className="lb tp">
             <tbody>{groups.map((g, i) => (
               <tr key={g.id}>
                 <td className="tp-rank">{i + 1}</td>
@@ -142,7 +142,7 @@ export function TopProducts({ data, showProfit }) {
                 <td className="r num"><b>{money(g.amount, false)}</b><div className="muted" style={{ fontSize: 12 }}>{Math.round(g.qty * 100) / 100} units</div></td>
               </tr>
             ))}</tbody>
-          </table>
+          </table></div>
         ) : <Empty title={per === 'today' ? 'No sales yet today' : 'No sales in this period'} />)}
     </div>
   );

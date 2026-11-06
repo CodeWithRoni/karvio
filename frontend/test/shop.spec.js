@@ -384,3 +384,22 @@ test('SMS preset box keeps showing the chosen provider, also after saving and re
   await expect(box().locator('option:checked')).toHaveText('Custom settings (my own)');
   await expect(listed()).toHaveCount(6); // the custom label is not offered as a choice
 });
+
+test('dashboard shows leaderboard, top selling and low stock as three equal cards in one row', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.goto('/#/');
+  const cards = page.locator('.dash-trio > .card');
+  await expect(cards).toHaveCount(3);
+  await expect(cards.nth(0)).toContainText('Staff leaderboard');
+  await expect(cards.nth(1)).toContainText('Top selling');
+  await expect(cards.nth(2)).toContainText('Low stock');
+  const boxes = await cards.evaluateAll((cs) => cs.map((c) => c.getBoundingClientRect().toJSON()));
+  expect(new Set(boxes.map((b) => Math.round(b.top))).size).toBe(1); // same row
+  expect(new Set(boxes.map((b) => Math.round(b.height))).size).toBe(1); // same height
+  for (const b of boxes) expect(Math.abs(b.width - boxes[0].width)).toBeLessThan(2); // same width
+  // phones: one card per row, nothing sticks out sideways
+  await page.setViewportSize({ width: 390, height: 844 });
+  const narrow = await cards.evaluateAll((cs) => cs.map((c) => c.getBoundingClientRect().toJSON()));
+  expect(narrow[1].top).toBeGreaterThan(narrow[0].bottom - 1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
