@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { money, monthStart, today } from '../lib/format';
 import DataTable from '../components/DataTable';
 import { useApi, PageHead, Modal, Btn, Field, useAction, Select, DateRange, ErrorBox, Badge } from '../components/ui';
+import { ReverseDialog } from '../components/widgets';
 
 const TYPES = [['cash', 'Cash'], ['mfs', 'Mobile banking (bKash, Nagad, Rocket…)'], ['bank', 'Bank account']];
 
@@ -88,6 +89,8 @@ function EntryForm({ initial, accounts, onClose, onDone }) {
 function Ledger({ account, onClose }) {
   const [range, setRange] = useState({ from: monthStart(), to: today() });
   const l = useApi('account.ledger', { account_id: account.id, ...range });
+  const can = useStore((s) => s.can);
+  const [rev, setRev] = useState(null);
   return (
     <Modal open onClose={onClose} size="lg" title={`${account.name} — transactions`}>
       <div className="row" style={{ marginBottom: 12 }}>
@@ -99,8 +102,11 @@ function Ledger({ account, onClose }) {
         columns={[
           { key: 'date', label: 'Date', type: 'date' }, { key: 'ref_type', label: 'Source' }, { key: 'note', label: 'Details', className: 'clip' },
           { key: 'in', label: 'In', type: 'money', sum: true }, { key: 'out', label: 'Out', type: 'money', sum: true },
-          { key: 'balance', label: 'Balance', type: 'money' }, { key: 'user', label: 'By' }
+          { key: 'balance', label: 'Balance', type: 'money' }, { key: 'user', label: 'By' },
+          // Deposits, withdrawals and transfers have no document of their own, so they are cancelled here.
+          ...(can('cancel') ? [{ key: 'act', label: '', noSort: true, noExport: true, render: (r) => (r.ref_type === 'manual' || r.ref_type === 'transfer') && <Btn size="sm" kind="danger" onClick={(e) => { e.stopPropagation(); setRev({ type: 'account', id: r.id, label: r.ref_type === 'transfer' ? 'this transfer (both accounts)' : 'this entry' }); }}>Cancel</Btn> }] : [])
         ]} />
+      <ReverseDialog open={!!rev} {...(rev || {})} onClose={() => setRev(null)} onDone={() => { setRev(null); l.reload(); }} />
     </Modal>
   );
 }

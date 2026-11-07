@@ -16,7 +16,7 @@ export default function Settings() {
   const admin = useStore((s) => s.user?.role === 'admin');
   const owner = useStore((s) => s.user?.owner === true); // the Administrator account only — not every admin
   const [tab, setTab] = useState(can('settings') ? 'shop' : offline ? 'me' : 'api');
-  const tabs = [...(can('settings') ? [['shop', 'Shop'], ['invoice', 'Invoice'], ['dashboard', 'Dashboard'], ...(!offline ? [['sms', 'SMS gateway']] : [])] : []), ...(offline ? admin ? [['local', 'Offline data & backup']] : [] : [['api', 'API connection']]), ['me', 'My password'], ...(owner ? [['database', 'Database']] : [])];
+  const tabs = [...(can('settings') ? [['shop', 'Shop'], ['invoice', 'Invoice'], ['dashboard', 'Dashboard'], ...(!offline ? [['sms', 'SMS gateway']] : [])] : []), ...(offline ? admin ? [['local', 'Offline data & backup']] : [] : [['api', 'API connection']]), ...(admin && can('settings') ? [['books', 'Close books']] : []), ['me', 'My password'], ...(owner ? [['database', 'Database']] : [])];
   return (
     <>
       <PageHead title="Settings"><Tabs tabs={tabs} value={tab} onChange={setTab} /></PageHead>
@@ -26,6 +26,7 @@ export default function Settings() {
       {tab === 'sms' && <SmsSettings />}
       {tab === 'api' && <ApiSettings />}
       {tab === 'local' && <OfflineSettings />}
+      {tab === 'books' && admin && <BooksSettings />}
       {tab === 'me' && <MyPassword />}
       {tab === 'database' && owner && <DatabaseTab Reset={DatabaseReset} />}
     </>
@@ -84,6 +85,24 @@ function ShopSettings() {
       <Field label="Default low-stock alert"><input type="number" {...bind('low_stock_default')} /></Field>
 
       <div className="wide row end"><Btn kind="primary" busy={busy} onClick={save}>Save settings</Btn></div>
+    </div>
+  );
+}
+
+/* ---------------- Close books: nothing dated on or before this day can be entered or cancelled ---------------- */
+function BooksSettings() {
+  const { f, setF, save, busy } = useSettingsForm(['books_locked_until']);
+  const d = new Date(); d.setDate(d.getDate() - 1);
+  const yesterday = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return (
+    <div className="card form">
+      <Field label="Books closed up to" wide hint="After you have checked a month, close it: purchases, payments, expenses and account entries dated on or before this day can no longer be added, and nothing from then can be cancelled. Leave empty to keep every day open.">
+        <input type="date" max={yesterday} value={f.books_locked_until || ''} onChange={(e) => setF({ ...f, books_locked_until: e.target.value })} />
+      </Field>
+      <div className="wide row end">
+        {f.books_locked_until && <Btn onClick={() => setF({ ...f, books_locked_until: '' })}>Reopen all days</Btn>}
+        <Btn kind="primary" busy={busy} onClick={save}>Save</Btn>
+      </div>
     </div>
   );
 }

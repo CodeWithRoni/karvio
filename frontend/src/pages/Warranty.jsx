@@ -90,12 +90,21 @@ function ClaimDetail({ claim, onClose, onDone }) {
   const [vendor, setVendor] = useState(claim.vendor || '');
   const [note, setNote] = useState('');
   const [busy, run] = useAction();
-  const save = async () => { await run(() => api('claim.update', { id: claim.id, status, vendor, note }), `Claim marked ${status}`); onDone(); };
+  const [newSerial, setNewSerial] = useState('');
+  const [vendorSerial, setVendorSerial] = useState('');
+  const rep = (() => { try { return typeof claim.replacement === 'string' ? JSON.parse(claim.replacement || 'null') : claim.replacement || null; } catch { return null; } })();
+  const closed = claim.status === 'Delivered' || claim.status === 'Rejected';
+  const replacing = status === 'Replaced' && claim.status !== 'Replaced';
+  // A serial item is replaced by a unit from stock: pick which serial the customer gets.
+  const inStock = useApi('serials.list', { product_id: claim.product_id, status: 'in_stock' }, [], { skip: !replacing || !claim.serial });
+  const allowed = closed ? [claim.status] : claim.status === 'Replaced' ? ['Replaced', 'Delivered'] : STATUSES;
+  const save = async () => { await run(() => api('claim.update', { id: claim.id, status, vendor, note, replacement_serial: newSerial }), `Claim marked ${status}`); onDone(); };
+  const restock = async () => { await run(() => api('claim.restock', { id: claim.id, serial: vendorSerial }), 'Vendor unit put back in stock'); onDone(); };
   return (
     <Modal open onClose={onClose} size="md" title={`Claim ${claim.claim_no}`}
       footer={<><Btn onClick={() => printClaimSlip(claim)}>Print slip</Btn>
         <div className="seg"><button onClick={() => excelClaims([claim], `claim-${claim.claim_no}.xlsx`)}>Excel</button><button onClick={() => pdfClaims([claim], `claim-${claim.claim_no}.pdf`)}>PDF</button><button onClick={() => printClaims([claim])}>Print A4</button></div>
-        <span className="spacer" /><Btn onClick={onClose}>Close</Btn><Btn kind="primary" busy={busy} onClick={save} disabled={status === claim.status && !note && vendor === claim.vendor}>Update claim</Btn></>}>
+        <span className="spacer" /><Btn onClick={onClose}>Close</Btn><Btn kind="primary" busy={busy} onClick={save} disabled={(status === claim.status && !note && vendor === claim.vendor) || (replacing && claim.serial && !newSerial)}>Update claim</Btn></>}>
       <div className="kv">
         <div><span>Product</span><b>{claim.product_name}</b></div><div><span>Serial</span><b>{claim.serial || '—'}</b></div>
         <div><span>Invoice</span><b>{claim.invoice_no}</b></div><div><span>Customer</span><b>{claim.customer_name} {claim.phone}</b></div>
@@ -106,10 +115,29 @@ function ClaimDetail({ claim, onClose, onDone }) {
         {claim.log.map((l, i) => <li key={i} data-k="warranty"><div className="t-head"><b>{l.status}</b><span className="t-meta">{fdatetime(l.ts)} · {l.user}</span></div>{l.note && <div>{l.note}</div>}</li>)}
       </ul>
       <div className="form" style={{ marginTop: 6 }}>
-        <Field label="New status"><select value={status} onChange={(e) => setStatus(e.target.value)}>{STATUSES.map((s) => <option key={s}>{s}</option>)}</select></Field>
+        <Field label="New status"><select value={status} onChange={(e) => setStatus(e.target.value)} disabled={closed}>{allowed.map((s) => <option key={s}>{s}</option>)}</select></Field>
+        {replacing && claim.serial && (
+          <Field label="Replacement serial (from stock)" hint="This unit is sold to the customer on the same invoice; the faulty one is kept for the vendor.">
+            <select value={newSerial} onChange={(e) => setNewSerial(e.target.value)}>
+              <option value="">{inStock.loading ? 'Loading…' : (inStock.data || []).length ? 'Choose a serial' : 'No unit in stock'}</option>
+              {(inStock.data || []).map((s) => <option key={s.serial} value={s.serial}>{s.serial}</option>)}
+            </select>
+          </Field>
+        )}
+        {replacing && !claim.serial && <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>One unit of {claim.product_name} leaves stock as the replacement.</p>}
         <Field label="Vendor / service centre"><input value={vendor} onChange={(e) => setVendor(e.target.value)} placeholder="e.g. Smart Technologies" /></Field>
-        <Field label="Note" wide><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Replacement serial ABC123" /></Field>
+        <Field label="Note" wide><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Vendor reference" /></Field>
       </div>
+      {rep && (rep.kind === 'serial' || rep.kind === 'unit') && (
+        <div className="form" style={{ marginTop: 10 }}>
+          {rep.restocked
+            ? <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>Vendor unit is back in stock{rep.restock_serial ? ` (${rep.restock_serial})` : ''}.</p>
+            : <>
+              {rep.kind === 'serial' && <Field label="Serial of the unit the vendor sent" hint={`Use ${rep.faulty} if the vendor repaired and returned the same unit.`}><input value={vendorSerial} onChange={(e) => setVendorSerial(e.target.value)} /></Field>}
+              <Field label="Vendor sent a working unit?"><Btn busy={busy} onClick={restock} disabled={rep.kind === 'serial' && !vendorSerial.trim()}>Put it back in stock</Btn></Field>
+            </>}
+        </div>
+      )}
     </Modal>
   );
 }

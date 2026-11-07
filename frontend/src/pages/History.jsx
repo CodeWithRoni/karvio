@@ -104,7 +104,7 @@ export default function History() {
                           {r.qty !== undefined && type !== 'claim' && <span>Qty {fqty(r.qty)}</span>}
                           {r.items && (res.kind === 'sale_invoice' || res.kind === 'purchase_invoice') && <span>{r.items}</span>}
                           {r.supplier_invoice && <span><span className="hc-k">Supplier invoice</span> <b>{r.supplier_invoice}</b></span>}
-                          {r.whole && r.paid !== undefined && <span>Paid {money(r.paid, false)}{r.due > 0 ? <> · <b className="hc-due">Due {money(r.due, false)}</b></> : ''}</span>}
+                          {r.whole && r.paid !== undefined && <span>Paid {money(r.paid, false)}{(r.due_now ?? r.due) > 0 ? <> · <b className="hc-due">Due {money(r.due_now ?? r.due, false)}</b></> : ''}</span>}
                           {r.refund > 0 && <span>Refunded {money(r.refund, false)}</span>}
                           {r.invoice_no && type !== 'claim' && <span>from <DocNo type={type === 'sreturn' ? 'sale' : 'purchase'} id={r.invoice_no} no={r.invoice_no} /></span>}
                           {type === 'claim' && r.invoice_no && <span>Invoice <DocNo type="sale" id={r.invoice_no} no={r.invoice_no} /></span>}

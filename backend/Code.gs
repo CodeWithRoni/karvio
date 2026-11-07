@@ -48,7 +48,7 @@ var SCHEMA = {
   Expenses:            'id,date,category,amount:n,account_id,note,user,status,created_at,cancel_reason',
   CustomerLedger:      'id,date,customer_id,type,ref_id,ref_no,debit:n,credit:n,note,voided:b',
   SupplierLedger:      'id,date,supplier_id,type,ref_id,ref_no,debit:n,credit:n,note,voided:b',
-  WarrantyClaims:      'id,claim_no,date,serial,sale_id,invoice_no,product_id,product_name,customer_id,customer_name,phone,issue,expiry,in_warranty:b,status,vendor,log,delivered_date,updated_at',
+  WarrantyClaims:      'id,claim_no,date,serial,sale_id,invoice_no,product_id,product_name,customer_id,customer_name,phone,issue,expiry,in_warranty:b,status,vendor,log,delivered_date,updated_at,replacement',
   ItemEvents:          'id,ts,serial,product_id,product_name,event,ref_type,ref_id,ref_no,party,qty:n,amount:n,note,user',
   SmsLog:              'id,ts,phone,message,status,response',
   InvoiceLinks:        'id,token_hash,sale_id,created_at,expires_at',
@@ -235,6 +235,11 @@ function readJournal_() {
   if (textDigest_(text) !== meta.digest) fail_('Recovery required: transaction journal checksum mismatch');
   return { sh: sh, meta: meta, plan: JSON.parse(text) };
 }
+/** True when no transaction is in progress or waiting for recovery (read without the lock). */
+function journalClean_() {
+  try { var raw = privateSheet_(JOURNAL_SHEET).getRange(1, 1).getValues()[0][0]; return !raw || JSON.parse(raw).state === 'EMPTY'; }
+  catch (e) { return false; }
+}
 function journalState_(sh, meta) { sh.getRange(1, 1).setValue(JSON.stringify(meta)); flush_(); }
 function applyPlan_(plan, side) {
   // Row plans are independent (deletions are tombstones), so contiguous rows can be batched.
@@ -257,7 +262,8 @@ function findReceipt_(key) {
   var keys = sh.getRange(1, 1, last, 2).getValues();
   for (var i = keys.length - 1; i >= 0; i--) if (keys[i][0] === key && keys[i][1] === 'complete') {
     var meta = JSON.parse(sh.getRange(i + 1, 3).getValues()[0][0]);
-    var text = sh.getRange(meta.start, 3, meta.parts, 1).getValues().map(function (r) { return String(r[0]).slice(2); }).join('');
+    // The parts sit right above their footer; old receipts are pruned from the top, so never trust meta.start.
+    var text = sh.getRange(i + 1 - meta.parts, 3, meta.parts, 1).getValues().map(function (r) { return String(r[0]).slice(2); }).join('');
     if (textDigest_(text) !== meta.digest) fail_('Recovery required: saved request receipt is incomplete');
     return { meta: meta, data: JSON.parse(text) };
   }
@@ -270,8 +276,33 @@ function saveReceipt_(plan, result, replace) {
   var text = JSON.stringify(result), parts = chunks_(text), sh = privateSheet_(RECEIPT_SHEET), start = sh.getLastRow() + 1;
   ensureRows_(sh, start + parts.length);
   sh.getRange(start, 1, parts.length, 3).setValues(parts.map(function (part) { return [plan.request.key, 'part', 'J:' + part]; })); flush_();
-  var meta = Object.assign({}, plan.request, { start: start, parts: parts.length, digest: textDigest_(text), transaction: plan.id });
+  var meta = Object.assign({}, plan.request, { start: start, parts: parts.length, digest: textDigest_(text), transaction: plan.id, saved_at: Date.now() });
   sh.getRange(start + parts.length, 1, 1, 3).setValues([[plan.request.key, 'complete', JSON.stringify(meta)]]); flush_();
+}
+/**
+ * Request receipts only protect retries of a request that was just sent, so keep RECEIPT_KEEP_DAYS of them.
+ * Receipts are appended in time order: the old ones are one block at the top of the sheet.
+ * Receipts from before saved_at existed are removed RECEIPT_KEEP_DAYS after the first prune.
+ */
+var RECEIPT_KEEP_DAYS = 7;
+function pruneReceipts_() {
+  var props = PropertiesService.getScriptProperties(), nowMs = Date.now(), cutoff = nowMs - RECEIPT_KEEP_DAYS * 864e5;
+  var legacySince = Number(props.getProperty('receipts_legacy_since') || 0);
+  if (!legacySince) { props.setProperty('receipts_legacy_since', String(nowMs)); legacySince = nowMs; }
+  var sh = privateSheet_(RECEIPT_SHEET), last = sh.getLastRow();
+  if (!last) return 0;
+  var rows = sh.getRange(1, 1, last, 3).getValues(), cut = 0;
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i][1] !== 'complete') continue;
+    var meta = null; try { meta = JSON.parse(rows[i][2]); } catch (e) {}
+    var at = meta && meta.saved_at ? Number(meta.saved_at) : legacySince;
+    if (at >= cutoff) break;
+    cut = i + 1;
+  }
+  if (!cut) return 0;
+  if (sh.deleteRows) sh.deleteRows(1, cut); else for (var k = 0; k < cut; k++) sh.deleteRow(1);
+  flush_();
+  return cut;
 }
 function recoverJournal_() {
   var j = readJournal_();
@@ -334,9 +365,11 @@ function remove_(name, id) {
   delete _mem[name];
 }
 
-function withLock_(fn, write, request) {
+function withLock_(fn, write, request, waitMs) {
   var lock = LockService.getScriptLock();
-  lock.waitLock(28000);
+  // Public requests wait only briefly, so a flood of them cannot keep the shop's own saves waiting.
+  if (waitMs && lock.tryLock) { if (!lock.tryLock(waitMs)) { var busy = new Error('Karvio is busy right now. Please try again in a moment.'); busy.retryable = true; throw busy; } }
+  else lock.waitLock(28000);
   var plan = null, staged = null, result, committed = false;
   try {
     try { recoverJournal_(); } catch (e) { throw retryError_('Recovery required before continuing: ' + e.message); }
@@ -362,6 +395,7 @@ function withLock_(fn, write, request) {
     // A committed journal itself is a durable receipt until its append-only copy succeeds.
     try { saveReceipt_(plan, result, false); } catch (receiptError) { return result; }
     try { journalState_(privateSheet_(JOURNAL_SHEET), { state: 'EMPTY' }); } catch (clearError) { return result; }
+    dailyReceiptPrune_();
     staged.sms.forEach(function (job) {
       try {
         var delivered = sendSms_(job.phone, job.message, job.logMessage);
@@ -441,7 +475,7 @@ function setupDatabase() {
 
   if (!all_('Users').length) {
     var salt = uid_();
-    insert_('Users', { name: 'Administrator', username: 'admin', salt: salt, password_hash: hash_(salt, 'admin123'), role: 'admin', active: true, created_at: now_() });
+    insert_('Users', { name: 'Administrator', username: 'admin', salt: salt, password_hash: pwHash_(salt, 'admin123'), role: 'admin', active: true, created_at: now_() });
   }
   if (!all_('Accounts').length) {
     insert_('Accounts', { name: 'Cash', type: 'cash', number: '', opening_balance: 0, active: true, created_at: now_() });
@@ -481,7 +515,8 @@ function resetAdminPassword() {
     var u = all_('Users').filter(function (x) { return x.username === 'admin'; })[0];
     if (!u) fail_('No admin user found');
     var salt = uid_();
-    update_('Users', u.id, { salt: salt, password_hash: hash_(salt, 'admin123'), active: true });
+    update_('Users', u.id, { salt: salt, password_hash: pwHash_(salt, 'admin123'), active: true });
+    clearLoginFails_('admin');
     return 'Admin password reset to admin123';
   }, true);
 }
@@ -493,6 +528,39 @@ function hash_(salt, pw) {
   var d = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, salt + '|' + pw, Utilities.Charset.UTF_8);
   return d.map(function (b) { return ('0' + (b & 0xff).toString(16)).slice(-2); }).join('');
 }
+/** Passwords: salted SHA-256 repeated PW_ROUNDS times, stored as v2$rounds$hex. Old single-round hashes still verify. */
+var PW_ROUNDS = 2000;
+function pwHash_(salt, pw, rounds) {
+  rounds = rounds || PW_ROUNDS;
+  var h = hash_(salt, String(pw == null ? '' : pw));
+  for (var i = 1; i < rounds; i++) h = hash_(salt, h);
+  return 'v2$' + rounds + '$' + h;
+}
+function pwCheck_(u, pw) {
+  if (!u || !u.password_hash) return false;
+  var stored = String(u.password_hash), m = stored.match(/^v2\$(\d+)\$/);
+  var calc = m ? pwHash_(u.salt, pw, Number(m[1])) : hash_(u.salt, String(pw == null ? '' : pw));
+  if (calc.length !== stored.length) return false;
+  var diff = 0; for (var i = 0; i < calc.length; i++) diff |= calc.charCodeAt(i) ^ stored.charCodeAt(i);
+  return diff === 0;
+}
+/** Failed sign-ins: after LOGIN_MAX_FAILS wrong passwords for one username, it is locked for LOGIN_LOCK_SECONDS. */
+var LOGIN_MAX_FAILS = 5, LOGIN_LOCK_SECONDS = 900;
+function loginKey_(name) { return 'login_fail_' + hash_('karvio-login', String(name || '').toLowerCase()).slice(0, 32); }
+function loginAllowed_(name) {
+  try {
+    var r = JSON.parse(CacheService.getScriptCache().get(loginKey_(name)) || 'null');
+    if (r && r.n >= LOGIN_MAX_FAILS) fail_('Too many wrong passwords. Try again in ' + Math.max(1, Math.ceil((r.until - Date.now()) / 60000)) + ' minute(s).');
+  } catch (e) { if (/Too many/.test(e.message)) throw e; }
+}
+function loginFailed_(name) {
+  try {
+    var cache = CacheService.getScriptCache(), key = loginKey_(name), r = JSON.parse(cache.get(key) || 'null') || { n: 0 };
+    r.n++; r.until = Date.now() + LOGIN_LOCK_SECONDS * 1000;
+    cache.put(key, JSON.stringify(r), LOGIN_LOCK_SECONDS);
+  } catch (e) {}
+}
+function clearLoginFails_(name) { try { CacheService.getScriptCache().remove(loginKey_(name)); } catch (e) {} }
 function pubUser_(u) {
   return { id: u.id, name: u.name, username: u.username, role: u.role, active: u.active, owner: isOwner_(u),
     access_limit: !!u.access_limit, access_from: u.access_from || '', access_to: u.access_to || '', access_days: u.access_days || '' };
@@ -580,7 +648,11 @@ function authUser_(token) {
 function login_(p) {
   var name = String(p.username || '').trim().toLowerCase();
   var u = all_('Users').filter(function (x) { return x.username.toLowerCase() === name; })[0];
-  if (!u || !u.active || hash_(u.salt, String(p.password || '')) !== u.password_hash) fail_('Invalid username or password');
+  loginAllowed_(name);
+  if (!u || !u.active || !pwCheck_(u, p.password)) { loginFailed_(name); fail_('Invalid username or password'); }
+  clearLoginFails_(name);
+  // Older accounts used a single SHA-256; upgrade them on the first correct sign-in.
+  if (!/^v2\$/.test(String(u.password_hash))) update_('Users', u.id, { password_hash: pwHash_(u.salt, String(p.password || '')) });
   if (!accessAllowed_(u)) fail_(accessDenied_(u)); // checked after the password, so the hours are only shown to the right person
   var token = Utilities.getUuid() + Utilities.getUuid();
   CacheService.getScriptCache().put('tok_' + token, JSON.stringify({ id: u.id, credential: hash_('karvio-session', u.salt + '|' + u.password_hash) }), SESSION_TTL);
@@ -589,10 +661,10 @@ function login_(p) {
 function logout_(p, user, token) { try { CacheService.getScriptCache().remove('tok_' + token); } catch (e) {} return true; }
 
 function changePassword_(p, user) {
-  if (hash_(user.salt, String(p.old_password || '')) !== user.password_hash) fail_('Current password is incorrect');
+  if (!pwCheck_(user, p.old_password)) fail_('Current password is incorrect');
   if (String(p.new_password || '').length < 6) fail_('New password must be at least 6 characters');
   var salt = uid_();
-  update_('Users', user.id, { salt: salt, password_hash: hash_(salt, p.new_password) });
+  update_('Users', user.id, { salt: salt, password_hash: pwHash_(salt, p.new_password) });
   return true;
 }
 
@@ -600,9 +672,9 @@ function changePassword_(p, user) {
 function confirmAdmin_(user, password) {
   if (user.role !== 'admin') {
     var admins = all_('Users').filter(function (u) { return u.role === 'admin' && u.active; });
-    var ok = admins.some(function (a) { return hash_(a.salt, String(password || '')) === a.password_hash; });
+    var ok = admins.some(function (a) { return pwCheck_(a, password); });
     if (!ok) fail_('Admin authorization failed — enter a valid admin password');
-  } else if (hash_(user.salt, String(password || '')) !== user.password_hash) {
+  } else if (!pwCheck_(user, password)) {
     fail_('Admin authorization failed — incorrect password');
   }
 }
@@ -651,6 +723,20 @@ function supplierBalances_() { return partyBalances_('SupplierLedger', 'supplier
 
 function acctTxn_(accId, dir, amount, refType, refId, note, user, date) {
   return insert_('AccountTxns', { date: date || today_(), account_id: accId, direction: dir, amount: round_(amount), ref_type: refType, ref_id: refId, note: note || '', user: user.name, voided: false });
+}
+/** Business dates: YYYY-MM-DD, not in the future, and not inside the closed books period. */
+function lockedUntil_() { var v = String(getSetting_('books_locked_until', '') || '').slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : ''; }
+function isDate_(d) { return /^\d{4}-\d{2}-\d{2}$/.test(d) && !isNaN(new Date(d + 'T12:00:00Z').getTime()) && new Date(d + 'T12:00:00Z').toISOString().slice(0, 10) === d; }
+function lockCheck_(d, what) {
+  var l = lockedUntil_();
+  if (l && String(d || '').slice(0, 10) <= l) fail_('The books are closed up to ' + l + ', so ' + what + ' dated ' + String(d).slice(0, 10) + ' cannot be entered or changed. An admin can reopen them in Settings.');
+}
+function bookDate_(v, what) {
+  var t = today_(), d = v === undefined || v === null || String(v).trim() === '' ? t : String(v).trim().slice(0, 10);
+  if (!isDate_(d)) fail_('The ' + what + ' date is not a valid date (use YYYY-MM-DD)');
+  if (d > t) fail_('The ' + what + ' date cannot be in the future');
+  lockCheck_(d, what);
+  return d;
 }
 function voidRefs_(table, refId, refType) {
   all_(table).forEach(function (r) {
@@ -889,16 +975,25 @@ function stockAdjust_(p, user) {
   if (isService_(pr)) fail_(pr.name + ' is a service (no inventory), so it has no stock to adjust');
   if (pr.has_warranty && pr.warranty_type === 'serial') fail_('Serial-tracked items must be adjusted through purchases / returns');
   var newStock = num_(p.new_stock); if (newStock < 0) fail_('Stock cannot be negative');
-  var diff = round_(newStock - pr.stock, 4);
+  if (!isDecimalUnit_(pr.unit) && newStock % 1 !== 0) fail_('Stock of ' + pr.name + ' must be a whole number');
+  var diff = round_(newStock - pr.stock, 4), oldStock = pr.stock;
+  if (Math.abs(diff) < 1e-9) fail_('The stock is already ' + newStock);
+  // The value at average cost: a shortage (lost, damaged) is a loss, a surplus a gain; both count in net profit.
+  var value = round_(diff * num_(pr.cost_price));
   update_('Products', pr.id, { stock: newStock });
-  evBatch_(user, [{ product_id: pr.id, product_name: pr.name, event: 'stock_adjust', ref_type: 'adjust', qty: diff, note: p.note || 'Manual stock adjustment' }]);
-  audit_(user, 'stock_adjust', { product: pr.name, from: pr.stock, to: newStock });
+  evBatch_(user, [{ product_id: pr.id, product_name: pr.name, event: 'stock_adjust', ref_type: 'adjust', qty: diff, amount: value, note: p.note || 'Manual stock adjustment' }]);
+  audit_(user, 'stock_adjust', { product: pr.name, from: oldStock, to: newStock, value: value, note: p.note || '' });
   return true;
 }
 
 /* ============================================================================
  *  7. CUSTOMERS & SUPPLIERS
  * ========================================================================== */
+/** Changing an opening balance rewrites every later balance, so each change is written to the audit log. */
+function auditOpening_(user, kind, rec, from, to) {
+  if (Math.abs(num_(from) - num_(to)) < 0.005) return;
+  audit_(user, kind + '_opening_balance', { id: rec.id, name: rec.name, from: round_(num_(from)), to: round_(num_(to)) });
+}
 function joinList_(v, sep) { return (Array.isArray(v) ? v : String(v || '').split(sep)).map(function (x) { return String(x).trim(); }).filter(Boolean).join(sep); }
 
 function customersList_() {
@@ -921,21 +1016,35 @@ function customerSave_(p, user) {
     need_(user, 'customers');
     row.opening_balance = num_(p.opening_balance);
     if (p.active !== undefined) row.active = p.active === true || p.active === 'true';
+    var oldOpening = current.opening_balance;
     var upd = update_('Customers', p.id, row);
+    auditOpening_(user, 'customer', upd, oldOpening, row.opening_balance);
     var comb = combined;
     if (comb && !upd.link_id) need_(user, 'suppliers');
     if (comb !== undefined || upd.link_id) return syncCombined_('customer', upd, comb === undefined ? !!upd.link_id : comb);
     return upd;
   }
   row.opening_balance = can_(user, 'customers') ? num_(p.opening_balance) : 0;
+  var dupC = !p.allow_duplicate_phone && customerByPhone_(phones);
+  if (dupC) fail_('DUPLICATE_PHONE: this phone number already belongs to customer ' + dupC.name);
   row.active = true; row.created_at = now_();
   var ins = insert_('Customers', row);
+  auditOpening_(user, 'customer', ins, 0, row.opening_balance);
   if (combined) return syncCombined_('customer', ins, true);
   return ins;
+}
+/** Phone numbers compare by their last 10 digits, so 01712…, +8801712… and 8801712… are the same number. */
+function phoneKey_(ph) { var d = String(ph || '').replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : d; }
+function customerByPhone_(phones, exceptId) {
+  var want = {}; parseList_(phones).forEach(function (ph) { var k = phoneKey_(ph); if (k.length >= 6) want[k] = 1; });
+  if (!Object.keys(want).length) return null;
+  return all_('Customers').filter(function (c) { return c.id !== exceptId && c.active && parseList_(c.phones).some(function (ph) { return want[phoneKey_(ph)]; }); })[0] || null;
 }
 function customerQuickAdd_(p, user) {
   if (!String(p.name || '').trim()) fail_('Customer name is required');
   if (!String(p.phone || '').trim()) fail_('Phone is required');
+  var same = customerByPhone_(p.phone);
+  if (same) fail_('DUPLICATE_PHONE: ' + String(p.phone).trim() + ' already belongs to customer ' + same.name + '. Select that customer instead.');
   var c = insert_('Customers', { name: String(p.name).trim(), phones: String(p.phone).trim(), addresses: String(p.address || '').trim(), opening_balance: 0, note: '', active: true, created_at: now_() });
   var o = Object.assign({}, c); delete o._row; o.balance = 0; return o;
 }
@@ -974,12 +1083,16 @@ function supplierSave_(p, user) {
   if (combined) need_(user, 'customers');
   if (p.id) {
     if (p.active !== undefined) row.active = p.active === true || p.active === 'true';
+    var curS = all_('Suppliers').filter(function (x) { return x.id === p.id; })[0]; if (!curS) fail_('Supplier record not found');
+    var oldS = curS.opening_balance;
     var upd = update_('Suppliers', p.id, row);
+    auditOpening_(user, 'supplier', upd, oldS, row.opening_balance);
     if (combined !== undefined || upd.link_id) return syncCombined_('supplier', upd, combined === undefined ? !!upd.link_id : combined);
     return upd;
   }
   row.active = true; row.created_at = now_();
   var ins = insert_('Suppliers', row);
+  auditOpening_(user, 'supplier', ins, 0, row.opening_balance);
   return combined ? syncCombined_('supplier', ins, true) : ins;
 }
 
@@ -994,14 +1107,23 @@ function accountSave_(p, user) {
   var name = String(p.name || '').trim(); if (!name) fail_('Account name is required');
   var type = ['cash', 'bank', 'mfs'].indexOf(p.type) >= 0 ? p.type : 'bank';
   var row = { name: name, type: type, number: p.number || '', opening_balance: num_(p.opening_balance) };
-  if (p.id) { if (p.active !== undefined) row.active = p.active === true || p.active === 'true'; return update_('Accounts', p.id, row); }
+  if (p.id) {
+    if (p.active !== undefined) row.active = p.active === true || p.active === 'true';
+    var curA = all_('Accounts').filter(function (x) { return x.id === p.id; })[0]; if (!curA) fail_('Account not found');
+    var oldA = curA.opening_balance, updA = update_('Accounts', p.id, row);
+    auditOpening_(user, 'account', updA, oldA, row.opening_balance);
+    return updA;
+  }
   row.active = true; row.created_at = now_();
-  return insert_('Accounts', row);
+  var insA = insert_('Accounts', row);
+  auditOpening_(user, 'account', insA, 0, row.opening_balance);
+  return insA;
 }
 function accountEntry_(p, user) { // owner deposit / withdrawal / transfer
   var amt = round_(p.amount); if (amt <= 0) fail_('Amount must be greater than 0');
   var accs = indexBy_(all_('Accounts'));
-  var date = p.date || today_();
+  var date = bookDate_(p.date, 'account entry');
+  audit_(user, 'account_' + (p.kind || 'deposit'), { amount: amt, from: p.account_id, to: p.to_account_id || '', note: p.note || '' });
   if (p.kind === 'transfer') {
     if (!accs[p.account_id] || !accs[p.to_account_id]) fail_('Select both accounts');
     if (p.account_id === p.to_account_id) fail_('Choose two different accounts');
@@ -1036,6 +1158,13 @@ function userSave_(p, user) {
   if (['admin', 'manager', 'sales'].indexOf(p.role) < 0) fail_('Invalid role');
   all_('Users').forEach(function (u) { if (u.id !== p.id && u.username.toLowerCase() === username) fail_('Username already taken'); });
   var target = p.id ? all_('Users').filter(function (u) { return u.id === p.id; })[0] : null;
+  if (p.id && !target) fail_('User not found');
+  // Only an admin can make, edit or promote admins; staff with the users permission manage staff accounts only.
+  if (user.role !== 'admin') {
+    if (p.role === 'admin') fail_('Only an admin can give the admin role');
+    if (target && target.role === 'admin') fail_('Only an admin can change an admin account');
+    if (target && target.id === user.id && p.role !== target.role) fail_('You cannot change your own role');
+  }
   if (target && isOwner_(target)) {
     if (!isOwner_(user)) fail_('Only the Administrator can change the Administrator account');
     if (username !== OWNER_USERNAME) fail_('The Administrator account keeps the username "admin"');
@@ -1053,15 +1182,17 @@ function userSave_(p, user) {
     row.access_limit = true; row.access_from = from.length === 4 ? '0' + from : from; row.access_to = to.length === 4 ? '0' + to : to; row.access_days = days.join(',');
   } else { row.access_limit = false; row.access_from = ''; row.access_to = ''; row.access_days = ''; }
   if (p.id) {
-    if (p.id === user.id && (!row.active || row.role !== 'admin')) fail_('You cannot disable or demote your own account');
-    if (p.password) { if (String(p.password).length < 6) fail_('Password must be at least 6 characters'); row.salt = uid_(); row.password_hash = hash_(row.salt, p.password); }
+    if (p.id === user.id && !row.active) fail_('You cannot disable your own account');
+    if (p.id === user.id && user.role === 'admin' && row.role !== 'admin') fail_('You cannot demote your own account');
+    if (p.password) { if (String(p.password).length < 6) fail_('Password must be at least 6 characters'); row.salt = uid_(); row.password_hash = pwHash_(row.salt, p.password); }
     return pubUser_(update_('Users', p.id, row));
   }
   if (String(p.password || '').length < 6) fail_('Password must be at least 6 characters');
-  row.salt = uid_(); row.password_hash = hash_(row.salt, p.password); row.created_at = now_();
+  row.salt = uid_(); row.password_hash = pwHash_(row.salt, p.password); row.created_at = now_();
   return pubUser_(insert_('Users', row));
 }
 function rolePermsSave_(p, user) {
+  if (user.role !== 'admin') fail_('Only an admin can change what each role may do');
   var cfg = {};
   ['manager', 'sales'].forEach(function (r) { cfg[r] = (p[r] || []).filter(function (x) { return PERMS[x]; }); });
   setSetting_('role_perms', JSON.stringify(cfg));
@@ -1113,6 +1244,7 @@ function databaseInfo_(p, user) {
   return {
     tables: tables, total: sum_(tables, function (t) { return t.rows; }),
     last_backup: getSetting_('last_backup_at', ''), last_restore: getSetting_('last_restore_at', ''),
+    daily_backup: getSetting_('backup_daily', 'false') === 'true', backup_keep_days: Number(getSetting_('backup_keep_days', '30')) || 30, last_daily_backup: getSetting_('last_daily_backup_at', ''), backup_folder: BACKUP_FOLDER,
     offline: typeof ss_().copy !== 'function'
   };
 }
@@ -1167,7 +1299,7 @@ function checkBackup_(b) {
 }
 function databaseRestore_(p, user) {
   if (!isOwner_(user)) fail_('Only the Administrator account can restore the database');
-  if (hash_(user.salt, String(p.password || '')) !== user.password_hash) fail_('Incorrect password — nothing was restored');
+  if (!pwCheck_(user, p.password)) fail_('Incorrect password — nothing was restored');
   if (String(p.confirm || '').trim() !== RESTORE_WORD) fail_('Type RESTORE to confirm — nothing was restored');
   var b; try { b = JSON.parse(String(p.backup_text || '')); } catch (e) { fail_('This is not a Karvio database backup file'); }
   var plan = checkBackup_(b);
@@ -1195,9 +1327,49 @@ function databaseRestore_(p, user) {
   var counts = {}; Object.keys(plan).forEach(function (k) { counts[k] = plan[k].length; });
   return { safety: safety, backup_created_at: b.created_at, shop_name: b.shop_name, counts: counts, signed_out: !stillSignedIn, restored_at: restoredAt };
 }
+/* ---- Automatic daily Google Drive backup (online only). A time trigger runs dailyBackup() every night;
+ *      copies go to the Drive folder "Karvio backups" and copies older than backup_keep_days are moved to the trash. ---- */
+var BACKUP_FOLDER = 'Karvio backups', BACKUP_PREFIX = 'Karvio daily backup ';
+function backupFolder_() {
+  var it = DriveApp.getFoldersByName(BACKUP_FOLDER);
+  return it.hasNext() ? it.next() : DriveApp.createFolder(BACKUP_FOLDER);
+}
+function backupTriggers_() { return ScriptApp.getProjectTriggers().filter(function (tr) { return tr.getHandlerFunction() === 'dailyBackup'; }); }
+/** Run by the nightly trigger (or from the Apps Script editor). Takes the lock and finishes any interrupted save first. */
+function dailyBackup() {
+  return withLock_(function () {
+    var ss = ss_(), stamp = now_().replace('T', ' ');
+    var copy = ss.copy(BACKUP_PREFIX + stamp);
+    var file = DriveApp.getFileById(copy.getId()), folder = backupFolder_();
+    if (file.moveTo) file.moveTo(folder); else { folder.addFile(file); DriveApp.getRootFolder().removeFile(file); }
+    var keep = Math.max(1, Math.round(num_(getSetting_('backup_keep_days', '30')) || 30)), cutoff = Date.now() - keep * 864e5, removed = 0;
+    var files = folder.getFiles();
+    while (files.hasNext()) {
+      var f = files.next();
+      if (f.getName().indexOf(BACKUP_PREFIX) === 0 && f.getDateCreated().getTime() < cutoff) { f.setTrashed(true); removed++; }
+    }
+    setSetting_('last_daily_backup_at', now_());
+    return { name: copy.getName(), removed: removed };
+  }, false);
+}
+/** Administrator: turn the nightly Drive backup on or off and choose how many days of copies to keep. */
+function backupSchedule_(p, user) {
+  if (!isOwner_(user)) fail_('Only the Administrator account can change automatic backups');
+  if (typeof ss_().copy !== 'function') fail_('Automatic Drive backups are for the online (Google Sheets) version. The offline app keeps its own daily copies in the backups folder.');
+  var keep = Math.round(num_(p.keep_days || 30));
+  if (keep < 1 || keep > 365) fail_('Keep backups for 1 to 365 days');
+  var on = p.enabled === true || p.enabled === 'true';
+  backupTriggers_().forEach(function (tr) { ScriptApp.deleteTrigger(tr); });
+  if (on) ScriptApp.newTrigger('dailyBackup').timeBased().everyDays(1).atHour(Math.min(Math.max(Math.round(num_(p.hour === undefined ? 2 : p.hour)), 0), 23)).create();
+  setSetting_('backup_daily', on ? 'true' : 'false');
+  setSetting_('backup_keep_days', String(keep));
+  audit_(user, 'backup_schedule', { enabled: on, keep_days: keep });
+  flush_();
+  return { enabled: on, keep_days: keep, folder: BACKUP_FOLDER, last: getSetting_('last_daily_backup_at', '') };
+}
 function databaseReset_(p, user) {
   if (!isOwner_(user)) fail_('Only the Administrator account can reset the database');
-  if (hash_(user.salt, String(p.password || '')) !== user.password_hash) fail_('Incorrect password — nothing was reset');
+  if (!pwCheck_(user, p.password)) fail_('Incorrect password — nothing was reset');
   if (String(p.confirm || '').trim() !== RESET_WORD) fail_('Type RESET to confirm — nothing was reset');
   var keepUsers = p.keep_users === true, keepSettings = p.keep_settings === true;
   var ss = ss_(), stamp = now_().replace('T', ' ');
@@ -1242,8 +1414,16 @@ function settingsSave_(p, user) {
   var allowed = ['shop_name', 'shop_phone', 'shop_tel', 'shop_email', 'shop_web', 'shop_social', 'shop_address', 'shop_footer', 'currency', 'invoice_prefix', 'receipt_width', 'low_stock_default', 'expense_categories',
     'sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_headers',
     'dashboard_hidden', 'invoice_template', 'invoice_paper', 'invoice_custom_width', 'invoice_custom_height', 'invoice_note',
-    'sms_invoice_link', 'invoice_link_base'];
+    'sms_invoice_link', 'invoice_link_base', 'books_locked_until'];
   var vals = p.values || {};
+  if (vals.books_locked_until !== undefined && String(vals.books_locked_until || '') !== lockedUntil_()) {
+    if (user.role !== 'admin') fail_('Only an admin can close or reopen the books');
+    var lk = String(vals.books_locked_until || '').trim().slice(0, 10);
+    if (lk && !isDate_(lk)) fail_('Books closed up to: not a valid date (use YYYY-MM-DD)');
+    if (lk && lk >= today_()) fail_('The books can only be closed up to yesterday');
+    vals.books_locked_until = lk;
+    audit_(user, 'books_lock', { from: lockedUntil_(), to: lk });
+  }
   Object.keys(vals).forEach(function (k) {
     if (allowed.indexOf(k) < 0) return;
     var v = vals[k];
@@ -1409,6 +1589,15 @@ function dailyLinkCleanup_() {
     props.setProperty('links_cleaned', day);
   } catch (e) {}
 }
+/** Once a day, after a save has fully committed: remove old request receipts. */
+function dailyReceiptPrune_() {
+  try {
+    var props = PropertiesService.getScriptProperties(), day = today_();
+    if (props.getProperty('receipts_pruned') === day) return;
+    pruneReceipts_();
+    props.setProperty('receipts_pruned', day);
+  } catch (e) {}
+}
 /** Staff: make (or re-make) a customer link for an invoice, e.g. to share on WhatsApp. */
 function saleLink_(p, user) {
   var s = all_('Sales').filter(function (x) { return x.id === p.id; })[0];
@@ -1559,7 +1748,7 @@ function purchaseCreate_(p, user) {
   if (!items.length) fail_('Add at least one item');
   var supplier = p.supplier_id ? all_('Suppliers').filter(function (s) { return s.id === p.supplier_id; })[0] : null;
   if (p.supplier_id && !supplier) fail_('Supplier not found');
-  var date = p.date || today_(), sidx = serialIndex_(), seen = {}, lines = [], subtotal = 0;
+  var date = bookDate_(p.date, 'purchase'), sidx = serialIndex_(), seen = {}, lines = [], subtotal = 0;
 
   items.forEach(function (it) {
     var pr = pmap[it.product_id]; if (!pr) fail_('Product not found');
@@ -1802,6 +1991,7 @@ function saleDetail_(p, user) {
   var retIds = {}; returns.forEach(function (r) { if (r.status === 'active') retIds[r.id] = 1; });
   all_('SalesReturnItems').forEach(function (x) { if (retIds[x.return_id]) retQty[x.sale_item_id] = (retQty[x.sale_item_id] || 0) + x.qty; });
   var itemsOut = items.map(function (i) { var o = Object.assign({}, i); delete o._row; o.returned_qty = retQty[i.id] || 0; return o; });
+  s = Object.assign({}, s, { due_now: saleOpenDues_()[s.id] || 0 }); // copy: rows come from the shared per-request cache
   var out = { sale: s, items: itemsOut, customer: customer, returns: returns };
   if (customer) { out.customer = Object.assign({}, customer); out.customer.balance = customerBalances_()[customer.id] || 0; }
   if (!user || !can_(user, 'cost')) { out.sale = stripCost_(s, user || { role: 'sales' }); out.items = stripCost_(itemsOut, user || { role: 'sales' }); }
@@ -1811,18 +2001,18 @@ function saleDetail_(p, user) {
 function salesList_(p, user) {
   var q = String(p.q || '').toLowerCase(), items = {};
   all_('SaleItems').forEach(function (i) { (items[i.sale_id] = items[i.sale_id] || []).push(i.name + ' x' + i.qty + (i.serials ? ' [' + i.serials + ']' : '')); });
-  var own = !can_(user, 'sales.all');
+  var own = !can_(user, 'sales.all'), dueNow = saleOpenDues_();
   var rows = all_('Sales').filter(function (x) {
     if (own && x.user_id !== user.id) return false;
     if (!inRange_(x.date, p.from, p.to)) return false;
     if (p.status && x.status !== p.status) return false;
     if (p.customer_id && x.customer_id !== p.customer_id) return false;
     if (p.user_id && x.user_id !== p.user_id) return false;
-    if (p.only_due && !(x.due > 0.005)) return false;
+    if (p.only_due && !(dueNow[x.id] > 0.005)) return false;
     if (q && (x.invoice_no + ' ' + x.customer_name + ' ' + x.user_name + ' ' + (items[x.id] || []).join(' ')).toLowerCase().indexOf(q) < 0) return false;
     return true;
   }).sort(function (a, b) { return b._row - a._row; }).slice(0, num_(p.limit) || 500);
-  var out = rows.map(function (x) { var o = Object.assign({}, x); delete o._row; o.items_text = (items[x.id] || []).join(', '); return o; });
+  var out = rows.map(function (x) { var o = Object.assign({}, x); delete o._row; o.items_text = (items[x.id] || []).join(', '); o.due_now = dueNow[x.id] || 0; return o; });
   return stripCost_(out, user);
 }
 
@@ -1865,14 +2055,18 @@ function sreturnCreate_(p, user) {
   if (!lines.length) fail_('Select at least one item to return');
   total = round_(total);
 
+  // The returned value first clears what is still owed on this invoice; only the rest can go back as cash.
+  var maxCash = sale.customer_id ? round_(Math.max(total - (saleOpenDues_()[sale.id] || 0), 0)) : total;
   var rf = p.refund || {}, refund = 0, accId = '';
   if (rf.mode === 'adjust') {
     if (!sale.customer_id) fail_('Walk-in invoices must be refunded from an account');
   } else {
-    accId = rf.account_id; refund = round_(rf.amount === undefined ? total : rf.amount);
-    if (!all_('Accounts').some(function (a) { return a.id === accId && a.active; })) fail_('Select the account used for the refund');
+    accId = rf.account_id; refund = round_(rf.amount === undefined ? maxCash : rf.amount);
+    if (refund > 0.005 && !all_('Accounts').some(function (a) { return a.id === accId && a.active; })) fail_('Select the account used for the refund');
     if (refund < 0 || refund > total + 0.005) fail_('Refund must be between 0 and ' + total);
+    if (refund > maxCash + 0.005) fail_('Cash refund can be at most ' + maxCash + ': ' + round_(total - maxCash) + ' of this return only clears the unpaid due on invoice ' + sale.invoice_no);
     if (!sale.customer_id && Math.abs(refund - total) > 0.005) fail_('Walk-in returns must be refunded in full');
+    if (refund <= 0.005) accId = '';
   }
 
   var no = nextNo_('seq_sreturn', 'SR-'), date = today_();
@@ -2015,7 +2209,7 @@ function customerPayment_(p, user) {
   var amt = round_(p.amount); if (amt <= 0) fail_('Amount must be greater than 0');
   var acc = all_('Accounts').filter(function (a) { return a.id === p.account_id && a.active; })[0]; if (!acc) fail_('Select an account');
   var pay = p.direction === 'pay'; // pay = we hand money to the customer (refund of advance)
-  var ref = uid_(), date = p.date || today_(), no = nextNo_('seq_cpay', 'CP-');
+  var ref = uid_(), date = bookDate_(p.date, 'payment'), no = nextNo_('seq_cpay', 'CP-');
   acctTxn_(acc.id, pay ? 'out' : 'in', amt, 'cpay', ref, (pay ? 'Paid to ' : 'Collection from ') + c.name, user, date);
   var row = insert_('CustomerLedger', { date: date, customer_id: c.id, type: pay ? 'refund' : 'payment', ref_id: ref, ref_no: no, debit: pay ? amt : 0, credit: pay ? 0 : amt, note: (p.note || '') + ' [' + acc.name + ']', voided: false });
   audit_(user, 'customer_payment', { customer: c.name, amount: amt });
@@ -2027,7 +2221,7 @@ function supplierPayment_(p, user) {
   var amt = round_(p.amount); if (amt <= 0) fail_('Amount must be greater than 0');
   var acc = all_('Accounts').filter(function (a) { return a.id === p.account_id && a.active; })[0]; if (!acc) fail_('Select an account');
   var recv = p.direction === 'receive';
-  var ref = uid_(), date = p.date || today_(), no = nextNo_('seq_spay', 'SP-');
+  var ref = uid_(), date = bookDate_(p.date, 'payment'), no = nextNo_('seq_spay', 'SP-');
   acctTxn_(acc.id, recv ? 'in' : 'out', amt, 'spay', ref, (recv ? 'Received from ' : 'Paid to ') + s.name, user, date);
   var row = insert_('SupplierLedger', { date: date, supplier_id: s.id, type: recv ? 'refund' : 'payment', ref_id: ref, ref_no: no, debit: recv ? 0 : amt, credit: recv ? amt : 0, note: (p.note || '') + ' [' + acc.name + ']', voided: false });
   audit_(user, 'supplier_payment', { supplier: s.name, amount: amt });
@@ -2073,7 +2267,7 @@ function expenseCreate_(p, user) {
   var amt = round_(p.amount); if (amt <= 0) fail_('Amount must be greater than 0');
   var cat = String(p.category || '').trim(); if (!cat) fail_('Select an expense category');
   var acc = all_('Accounts').filter(function (a) { return a.id === p.account_id && a.active; })[0]; if (!acc) fail_('Select the account used for payment');
-  var date = p.date || today_();
+  var date = bookDate_(p.date, 'expense');
   var e = insert_('Expenses', { date: date, category: cat, amount: amt, account_id: acc.id, note: p.note || '', user: user.name, status: 'active', created_at: now_() });
   acctTxn_(acc.id, 'out', amt, 'expense', e.id, 'Expense: ' + cat + (p.note ? ' — ' + p.note : ''), user, date);
   return e;
@@ -2092,8 +2286,11 @@ function reverse_(p, user) {
   need_(user, 'cancel');
   confirmAdmin_(user, p.password);
   var reason = String(p.reason || '').trim(); if (!reason) fail_('Enter a reason for the cancellation');
-  var fn = { sale: reverseSale_, purchase: reversePurchase_, sreturn: reverseSreturn_, preturn: reversePreturn_, cpay: reversePayment_, spay: reversePayment_, expense: reverseExpense_ }[p.type];
+  var fn = { sale: reverseSale_, purchase: reversePurchase_, sreturn: reverseSreturn_, preturn: reversePreturn_, cpay: reversePayment_, spay: reversePayment_, expense: reverseExpense_, account: reverseAccountEntry_ }[p.type];
   if (!fn) fail_('Unknown transaction type');
+  var docTable = { sale: 'Sales', purchase: 'Purchases', sreturn: 'SalesReturns', preturn: 'PurchaseReturns', cpay: 'CustomerLedger', spay: 'SupplierLedger', expense: 'Expenses', account: 'AccountTxns' }[p.type];
+  var doc = all_(docTable).filter(function (x) { return x.id === p.id; })[0];
+  if (doc && doc.date) lockCheck_(doc.date, 'a transaction');
   var r = fn(p, user, reason);
   syncSerialCost_(null);
   audit_(user, 'reverse_' + p.type, { id: p.id, reason: reason });
@@ -2263,6 +2460,14 @@ function reversePayment_(p, user, reason) {
   voidRefs_('AccountTxns', row.ref_id, refType); voidRefs_(table, row.ref_id);
   return true;
 }
+/** Owner deposit / withdrawal / transfer between accounts (a transfer is cancelled on both sides). */
+function reverseAccountEntry_(p, user, reason) {
+  var t = all_('AccountTxns').filter(function (x) { return x.id === p.id; })[0];
+  if (!t || t.voided) fail_('Account entry not found or already cancelled');
+  if (t.ref_type !== 'manual' && t.ref_type !== 'transfer') fail_('Only deposits, withdrawals and transfers can be cancelled here; cancel the sale, purchase, payment or expense itself');
+  voidRefs_('AccountTxns', t.ref_id, t.ref_type);
+  return true;
+}
 function reverseExpense_(p, user, reason) {
   var e = all_('Expenses').filter(function (x) { return x.id === p.id; })[0];
   if (!e) fail_('Expense not found'); if (e.status !== 'active') fail_('Expense already cancelled');
@@ -2313,8 +2518,17 @@ function warrantyLookup_(p) {
 function claimCreate_(p, user) {
   var sale = all_('Sales').filter(function (s) { return s.id === p.sale_id; })[0]; if (!sale) fail_('Invoice not found');
   var si = all_('SaleItems').filter(function (i) { return i.id === p.sale_item_id && i.sale_id === sale.id; })[0]; if (!si) fail_('Invoice line not found');
+  if (sale.status !== 'active') fail_('Invoice ' + sale.invoice_no + ' is cancelled, so its items have no warranty');
   var serial = String(p.serial || '').trim();
   if (parseList_(si.serials).length && parseList_(si.serials).indexOf(serial) < 0) fail_('Select the serial number being claimed');
+  if (serial) {
+    var unit = serialIndex_()[si.product_id + '|' + serial];
+    if (!unit || unit.status !== 'sold' || unit.sale_id !== sale.id) fail_('Serial ' + serial + ' was returned or is no longer sold on this invoice');
+  } else {
+    var actRet = {}; all_('SalesReturns').forEach(function (r) { if (r.sale_id === sale.id && r.status === 'active') actRet[r.id] = 1; });
+    var back = sum_(all_('SalesReturnItems').filter(function (x) { return actRet[x.return_id] && x.sale_item_id === si.id; }), function (x) { return x.qty; });
+    if (back >= si.qty - 1e-9) fail_(si.name + ' on invoice ' + sale.invoice_no + ' was returned, so it has no warranty');
+  }
   if (all_('WarrantyClaims').some(function (c) { return c.sale_id === sale.id && c.product_id === si.product_id && c.serial === serial && c.status !== 'Delivered' && c.status !== 'Rejected'; }))
     fail_('An open claim already exists for this item');
   var cust = sale.customer_id ? all_('Customers').filter(function (c) { return c.id === sale.customer_id; })[0] : null;
@@ -2332,13 +2546,86 @@ function claimCreate_(p, user) {
 function claimUpdate_(p, user) {
   var c = all_('WarrantyClaims').filter(function (x) { return x.id === p.id; })[0]; if (!c) fail_('Claim not found');
   if (CLAIM_STATUSES.indexOf(p.status) < 0) fail_('Invalid status');
+  if ((c.status === 'Delivered' || c.status === 'Rejected') && p.status !== c.status) fail_('This claim is already ' + c.status + ' and closed');
+  if (c.status === 'Replaced' && p.status !== 'Replaced' && p.status !== 'Delivered') fail_('The item was already replaced; the claim can only be delivered now');
   var log = []; try { log = JSON.parse(c.log || '[]'); } catch (e) {}
-  log.push({ ts: now_(), status: p.status, note: p.note || '', user: user.name });
-  var patch = { status: p.status, log: log, updated_at: now_() };
+  var patch = { status: p.status, updated_at: now_() }, note = p.note || '', events = [];
+  if (p.status === 'Replaced' && c.status !== 'Replaced') {
+    var rep = claimReplace_(c, p, user);
+    patch.replacement = rep.record; events = rep.events;
+    note = (note ? note + ' · ' : '') + rep.text;
+  }
+  log.push({ ts: now_(), status: p.status, note: note, user: user.name });
+  patch.log = log;
   if (p.vendor !== undefined && p.vendor !== null) patch.vendor = p.vendor;
   if (p.status === 'Delivered') patch.delivered_date = today_();
   var r = update_('WarrantyClaims', c.id, patch);
-  evBatch_(user, [{ serial: c.serial, product_id: c.product_id, product_name: c.product_name, event: 'warranty_' + p.status.toLowerCase().replace(/\s+/g, '_'), ref_type: 'claim', ref_id: c.id, ref_no: c.claim_no, party: p.vendor || c.vendor || c.customer_name, qty: 1, amount: 0, note: p.note || p.status }]);
+  evBatch_(user, [{ serial: c.serial, product_id: c.product_id, product_name: c.product_name, event: 'warranty_' + p.status.toLowerCase().replace(/\s+/g, '_'), ref_type: 'claim', ref_id: c.id, ref_no: c.claim_no, party: p.vendor || c.vendor || c.customer_name, qty: 1, amount: 0, note: note || p.status }].concat(events));
+  return r;
+}
+/**
+ * The customer gets a new unit from stock. Serial items: the chosen in-stock serial is sold on the original
+ * invoice in place of the faulty one (which is kept as "faulty" for the vendor). Other items: one unit leaves stock.
+ * The stock value goes down by the new unit's cost until the vendor's unit is put back with claim.restock.
+ */
+function claimReplace_(c, p, user) {
+  var pr = all_('Products').filter(function (x) { return x.id === c.product_id; })[0]; if (!pr) fail_('Product not found');
+  if (isService_(pr)) return { record: { kind: 'service' }, events: [], text: 'Service repeated (no stock)' };
+  var sale = all_('Sales').filter(function (s) { return s.id === c.sale_id; })[0];
+  if (!sale || sale.status !== 'active') fail_('The invoice of this claim is cancelled');
+  if (isSerialProduct_(pr) && c.serial) {
+    var sidx = serialIndex_(), want = String(p.replacement_serial || '').trim();
+    if (!want) fail_('Choose the serial number of the replacement unit given to the customer');
+    var nu = sidx[pr.id + '|' + want], old = sidx[pr.id + '|' + c.serial];
+    if (!nu || nu.status !== 'in_stock') fail_('Serial ' + want + ' is not in stock for ' + pr.name);
+    if (!old || old.status !== 'sold' || old.sale_id !== sale.id) fail_('The claimed serial ' + c.serial + ' is no longer sold on invoice ' + sale.invoice_no);
+    var si = all_('SaleItems').filter(function (i) { return i.sale_id === sale.id && i.product_id === pr.id && parseList_(i.serials).indexOf(c.serial) >= 0; })[0];
+    if (!si) fail_('Invoice line of serial ' + c.serial + ' not found');
+    update_('SaleItems', si.id, { serials: parseList_(si.serials).map(function (s) { return s === c.serial ? want : s; }).join(',') });
+    update_('SerialItems', nu.id, { status: 'sold', sale_id: sale.id });
+    update_('SerialItems', old.id, { status: 'faulty', sale_id: sale.id });
+    update_('Products', pr.id, { stock: round_(pr.stock - 1, 4) });
+    syncSerialCost_([pr.id]);
+    return {
+      record: { kind: 'serial', given: want, faulty: c.serial, cost: num_(nu.cost), restocked: false },
+      events: [{ serial: want, product_id: pr.id, product_name: pr.name, event: 'warranty_replacement_out', ref_type: 'claim', ref_id: c.id, ref_no: c.claim_no, party: c.customer_name, qty: 1, amount: 0, note: 'Given in place of ' + c.serial + ' (' + sale.invoice_no + ')' }],
+      text: 'Replacement ' + want + ' given; faulty ' + c.serial + ' kept for the vendor'
+    };
+  }
+  if (pr.stock < 1 - 1e-9) fail_('No ' + pr.name + ' in stock to give as a replacement');
+  var cost = num_(pr.cost_price);
+  update_('Products', pr.id, { stock: round_(pr.stock - 1, 4) });
+  return {
+    record: { kind: 'unit', cost: cost, restocked: false },
+    events: [{ serial: '', product_id: pr.id, product_name: pr.name, event: 'warranty_replacement_out', ref_type: 'claim', ref_id: c.id, ref_no: c.claim_no, party: c.customer_name, qty: -1, amount: 0, note: 'Replacement unit given from stock' }],
+    text: 'Replacement unit given from stock'
+  };
+}
+/** The vendor sent a working unit for a replaced claim: it goes back into stock at the cost of the unit given away. */
+function claimRestock_(p, user) {
+  var c = all_('WarrantyClaims').filter(function (x) { return x.id === p.id; })[0]; if (!c) fail_('Claim not found');
+  var rep = valuation_(c.replacement);
+  if (!rep || (rep.kind !== 'serial' && rep.kind !== 'unit')) fail_('This claim has no replacement given from stock');
+  if (rep.restocked) fail_('The vendor unit for this claim is already back in stock');
+  var pr = all_('Products').filter(function (x) { return x.id === c.product_id; })[0]; if (!pr) fail_('Product not found');
+  var serial = '';
+  if (rep.kind === 'serial') {
+    serial = String(p.serial || '').trim(); if (!serial) fail_('Enter the serial number of the unit the vendor sent');
+    var sidx = serialIndex_(), ex = sidx[pr.id + '|' + serial];
+    if (ex && ex.id && serial !== rep.faulty && ex.status !== 'returned_supplier') fail_('Serial already exists: ' + serial);
+    if (serial === rep.faulty) update_('SerialItems', ex.id, { status: 'in_stock', sale_id: '', cost: rep.cost }); // repaired and returned
+    else insert_('SerialItems', { product_id: pr.id, serial: serial, purchase_id: '', sale_id: '', status: 'in_stock', cost: rep.cost, created_at: now_() });
+    delete _mem.__serialIdx;
+  }
+  var stock = round_(pr.stock + 1, 4);
+  update_('Products', pr.id, { stock: stock, cost_price: rep.kind === 'unit' && stock > 0 ? round_((Math.max(pr.stock, 0) * num_(pr.cost_price) + rep.cost) / (Math.max(pr.stock, 0) + 1), 4) : pr.cost_price });
+  if (rep.kind === 'serial') syncSerialCost_([pr.id]);
+  rep.restocked = true; rep.restock_serial = serial; rep.restocked_at = now_();
+  var log = []; try { log = JSON.parse(c.log || '[]'); } catch (e) {}
+  log.push({ ts: now_(), status: c.status, note: 'Vendor unit back in stock' + (serial ? ' (' + serial + ')' : ''), user: user.name });
+  var r = update_('WarrantyClaims', c.id, { replacement: rep, log: log, updated_at: now_() });
+  evBatch_(user, [{ serial: serial, product_id: pr.id, product_name: pr.name, event: 'warranty_restock', ref_type: 'claim', ref_id: c.id, ref_no: c.claim_no, party: c.vendor || '', qty: 1, amount: 0, note: 'Unit from vendor put back in stock' }]);
+  audit_(user, 'claim_restock', c.claim_no);
   return r;
 }
 function claimsList_(p) {
@@ -2371,7 +2658,7 @@ function itemHistory_(p, user) {
     return ownSale(sale);
   }
   function cleanEv(e) {
-    var costEvent = e.ref_type === 'purchase' || e.ref_type === 'preturn' || e.event === 'purchase' || e.event === 'purchase_return';
+    var costEvent = e.ref_type === 'purchase' || e.ref_type === 'preturn' || e.event === 'purchase' || e.event === 'purchase_return' || e.event === 'stock_adjust';
     return { id: e.id, ts: e.ts, event: e.event, serial: e.serial, product_name: e.product_name, ref_no: e.ref_no, ref_type: e.ref_type, ref_id: e.ref_id, party: e.party, qty: e.qty, amount: !costEvent || can_(user, 'cost') ? e.amount : undefined, note: e.note, user: e.user };
   }
   function sortEv(list) { return list.filter(visibleEv).sort(function (a, b) { return a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0; }); }
@@ -2605,7 +2892,7 @@ function historyDoc_(type, d, lines, cx, whole) {
   var q = round_(sum_(lines, function (i) { return i.qty; }), 3), amt = round_(sum_(lines, function (i) { return i.total; }));
   var names = []; lines.forEach(function (i) { if (names.indexOf(i.name) < 0) names.push(i.name); });
   var o = { type: type, id: d.id, date: d.date, status: d.status, qty: q, items: names.slice(0, 3).join(', ') + (names.length > 3 ? ' +' + (names.length - 3) + ' more' : ''), whole: !!whole, _r: d._row };
-  if (type === 'sale') { o.no = d.invoice_no; o.party = d.customer_name || 'Walk-in'; o.amount = whole ? d.total : amt; if (whole) { o.paid = d.paid; o.due = d.due; } o.staff = d.user_name || ''; }
+  if (type === 'sale') { o.no = d.invoice_no; o.party = d.customer_name || 'Walk-in'; o.amount = whole ? d.total : amt; if (whole) { o.paid = d.paid; o.due = d.due; o.due_now = saleOpenDues_()[d.id] || 0; } o.staff = d.user_name || ''; }
   if (type === 'purchase') { o.no = d.invoice_no; o.party = d.supplier_name || '—'; o.supplier_invoice = d.supplier_invoice || ''; if (cx.money) { o.amount = whole ? d.total : amt; if (whole) { o.paid = d.paid; o.due = d.due; } } }
   if (type === 'sreturn') { o.no = d.return_no; o.party = d.customer_name || 'Walk-in'; o.invoice_no = d.invoice_no; o.kind = d.type; o.amount = whole ? d.total : amt; o.refund = d.refund; }
   if (type === 'preturn') { o.no = d.return_no; o.party = d.supplier_name || '—'; o.invoice_no = d.invoice_no; if (cx.money) { o.amount = whole ? d.total : amt; o.received = d.received; } }
@@ -2700,8 +2987,65 @@ function collectionReminders_(sales, today) {
   });
   return out.sort(function (a, b) { return b.overdue_days - a.overdue_days || b.remaining - a.remaining; });
 }
+/**
+ * What is still owed on each invoice now (Sales.due is the due at the time of sale and never changes).
+ * Each customer's ledger is replayed in order: a sales return credits its own invoice first; payments,
+ * returns and advances then settle the oldest debt first (opening balance, then invoices by date of entry).
+ * The open amounts minus any unapplied advance always equal the customer's ledger balance.
+ * Returns { sale_id: amount still due } for every invoice; cancelled invoices are 0.
+ */
+function saleOpenDues_() {
+  if (!_txn && _mem.__openDues) return _mem.__openDues;
+  var out = {}, active = {}, returnSale = {}, state = {}, custs = indexBy_(all_('Customers'));
+  all_('Sales').forEach(function (s) {
+    if (s.status !== 'active') { out[s.id] = 0; return; }
+    active[s.id] = s;
+    out[s.id] = s.customer_id ? 0 : round_(Math.max(num_(s.due), 0)); // walk-in invoices have no ledger
+  });
+  all_('SalesReturns').forEach(function (r) { returnSale[r.id] = r.sale_id; });
+  var st = function (cid) {
+    if (state[cid]) return state[cid];
+    var opening = num_((custs[cid] || {}).opening_balance);
+    return state[cid] = { pool: Math.max(-opening, 0), open: opening > 0 ? [{ id: '', left: round_(opening) }] : [] };
+  };
+  var settle = function (x) {
+    x.open.forEach(function (o) {
+      if (x.pool <= 0.0001 || o.left <= 0) return;
+      var take = Math.min(o.left, x.pool); o.left = round_(o.left - take); x.pool = round_(x.pool - take);
+    });
+  };
+  all_('CustomerLedger').filter(function (l) { return !l.voided; }).sort(function (a, b) { return a._row - b._row; }).forEach(function (l) {
+    var x = st(l.customer_id);
+    if (l.type === 'sale') {
+      var s = active[l.ref_id]; if (!s) return;
+      x.pool = round_(Math.max(x.pool - num_(s.credit_used), 0)); // advance already spent on this invoice
+      x.open.push({ id: s.id, left: round_(Math.max(num_(s.due), 0)) });
+      settle(x);
+      return;
+    }
+    var amt = round_(num_(l.credit) - num_(l.debit));
+    if (amt > 0) {
+      if (l.type === 'sreturn') {
+        var own = x.open.filter(function (o) { return o.id && o.id === returnSale[l.ref_id]; })[0];
+        if (own) { var take = Math.min(own.left, amt); own.left = round_(own.left - take); amt = round_(amt - take); }
+      }
+      x.pool = round_(x.pool + amt);
+      settle(x);
+    } else if (amt < 0) { // money paid out to the customer: first from their advance, otherwise new debt
+      var fromPool = Math.min(x.pool, -amt);
+      x.pool = round_(x.pool - fromPool);
+      if (-amt - fromPool > 0.0001) x.open.push({ id: '', left: round_(-amt - fromPool) });
+    }
+  });
+  var seen = {};
+  Object.keys(state).forEach(function (cid) { state[cid].open.forEach(function (o) { if (o.id) { out[o.id] = round_(o.left); seen[o.id] = 1; } }); });
+  // An invoice with no ledger entry (e.g. its customer row was deleted) keeps its recorded due.
+  Object.keys(active).forEach(function (id) { if (active[id].customer_id && !seen[id]) out[id] = round_(Math.max(num_(active[id].due), 0)); });
+  if (!_txn) _mem.__openDues = out;
+  return out;
+}
 /** Best sellers by product for today / this month / all time, net of returns, with the product group. */
-function topProducts_(sales, today) {
+function topProducts_(sales, today, showCost) {
   var month = today.slice(0, 7), byId = indexBy_(sales), prods = indexBy_(all_('Products')), cats = indexBy_(all_('Categories'));
   var retQty = {}, actRet = {};
   all_('SalesReturns').forEach(function (r) { if (r.status === 'active') actRet[r.id] = 1; });
@@ -2721,7 +3065,8 @@ function topProducts_(sales, today) {
   var out = {};
   Object.keys(per).forEach(function (k) {
     out[k] = Object.keys(per[k]).map(function (id) { var r = per[k][id]; return { product_id: r.product_id, name: r.name, unit: r.unit, group_id: r.group_id, group: r.group, category: r.category, qty: round_(r.qty, 4), amount: round_(r.amount), profit: round_(r.profit), invoices: Object.keys(r.inv).length }; })
-      .sort(function (a, b) { return b.amount - a.amount || b.qty - a.qty; }).slice(0, 300);
+      .sort(function (a, b) { return b.amount - a.amount || b.qty - a.qty; }).slice(0, 300)
+      .map(function (r) { if (!showCost) delete r.profit; return r; });
   });
   return out;
 }
@@ -2742,6 +3087,17 @@ function productHistory_(p, user) {
   return out;
 }
 
+/** Value of manual stock adjustments in the date range (negative = stock lost). Keyed by day or month if `key` is given. */
+function stockAdjustValue_(from, to, key) {
+  var by = {}, total = 0;
+  all_('ItemEvents').forEach(function (e) {
+    if (e.event !== 'stock_adjust') return;
+    var d = String(e.ts || '').slice(0, 10); if (!inRange_(d, from, to)) return;
+    var v = num_(e.amount); total += v;
+    if (key) by[key(d)] = (by[key(d)] || 0) + v;
+  });
+  return key ? by : round_(total);
+}
 /* ---- Profit: gross = sales − cost of goods − profit on returned goods; net = gross − expenses ---- */
 function profitSummary_(from, to) {
   var inR = function (x) { return x.status === 'active' && inRange_(x.date, from, to); };
@@ -2756,7 +3112,8 @@ function profitSummary_(from, to) {
   };
   o.net_sales = round_(sales - returns);
   o.gross = round_(o.sales_profit - o.returns_profit);
-  o.net = round_(o.gross - o.expenses);
+  o.stock_adjust = stockAdjustValue_(from, to); // negative = stock written off
+  o.net = round_(o.gross - o.expenses + o.stock_adjust);
   o.margin = o.net_sales > 0 ? round_(o.gross / o.net_sales * 100, 1) : 0;
   o.net_margin = o.net_sales > 0 ? round_(o.net / o.net_sales * 100, 1) : 0;
   return o;
@@ -2775,9 +3132,12 @@ function profitReport_(p, user) {
   sales.forEach(function (s) { var r = row(key(s.date)); r.invoices++; r.sales += s.total; r.cost += s.cost; r.gross += s.profit; });
   rets.forEach(function (x) { var r = row(key(x.date)); r.returns += x.total; r.returns_profit += x.total - x.cost; r.gross -= x.total - x.cost; });
   exps.forEach(function (x) { row(key(x.date)).expenses += x.amount; });
+  var adj = stockAdjustValue_(from, to, key);
+  Object.keys(adj).forEach(function (k) { row(k); });
   var timeline = Object.keys(tl).sort().map(function (k) {
     var r = tl[k]; ['sales', 'cost', 'returns', 'returns_profit', 'gross', 'expenses'].forEach(function (f) { r[f] = round_(r[f]); });
-    r.net = round_(r.gross - r.expenses); return r;
+    r.stock_adjust = round_(adj[k] || 0);
+    r.net = round_(r.gross - r.expenses + r.stock_adjust); return r;
   });
 
   // Per product: item profit before invoice discounts, less profit on returned units.
@@ -2829,7 +3189,8 @@ function dashboard_(p, user) {
     c.expenses = round_(sum_(ex, function (x) { return x.amount; }));
     if (showCost) {
       c.gross_profit = round_(sum_(s, function (x) { return x.profit; }) - sum_(sr, function (x) { return x.total - x.cost; }));
-      c.net_profit = round_(c.gross_profit - c.expenses);
+      c.stock_adjust = period === 'total' ? stockAdjustValue_('', '') : period === 'today' ? stockAdjustValue_(today, today) : stockAdjustValue_(month + '-01', today);
+      c.net_profit = round_(c.gross_profit - c.expenses + c.stock_adjust);
     }
     return c;
   }
@@ -2865,7 +3226,7 @@ function dashboard_(p, user) {
       row.expenses = { amount: round_(sum_(ex, function (x) { return x.amount; })), count: ex.length };
       if (row.profit !== undefined) {
         row.gross_profit = { amount: row.profit, count: s.length };
-        row.net_profit = { amount: round_(row.profit - row.expenses.amount), count: ex.length };
+        row.net_profit = { amount: round_(row.profit - row.expenses.amount + stockAdjustValue_(r[2], r[3])), count: ex.length };
       }
       var sd = s.filter(function (x) { return x.due > 0; }), pd = pu.filter(function (x) { return x.due > 0; });
       row.receivable = { amount: round_(sum_(sd, function (x) { return x.due; })), count: sd.length };
@@ -2891,7 +3252,7 @@ function dashboard_(p, user) {
   }
   out.series = series;
   out.reminders = collectionReminders_(sales, today);
-  out.top_products = topProducts_(sales, today);
+  out.top_products = topProducts_(sales, today, showCost);
   out.recent = sales.slice(-8).reverse().map(function (s) { return { id: s.id, invoice_no: s.invoice_no, customer_name: s.customer_name, total: s.total, due: s.due, date: s.date }; });
 
   var thDef = num_(getSetting_('low_stock_default', '5'));
@@ -2947,7 +3308,18 @@ function finishReport_(title, columns, rows, extra) {
   }
   return Object.assign({ title: title, columns: columns, rows: rows, totals: totals }, extra || {});
 }
+/** Reports for staff without the cost permission never carry cost or profit, not even in hidden fields. */
 function reports_(p, user) {
+  var rep = reportsRaw_(p, user);
+  if (can_(user, 'cost')) return rep;
+  var hidden = ['cost', 'profit', 'cost_price', 'wholesale_price', 'returns_cost', 'stock_adjust'];
+  var clean = function (o) { if (!o || typeof o !== 'object') return o; var c = Object.assign({}, o); hidden.forEach(function (k) { delete c[k]; }); return c; };
+  rep.columns = (rep.columns || []).filter(function (c) { return hidden.indexOf(c.key) < 0; });
+  rep.rows = (rep.rows || []).map(clean);
+  if (rep.totals) rep.totals = clean(rep.totals);
+  return rep;
+}
+function reportsRaw_(p, user) {
   var from = p.from || '', to = p.to || '', group = p.group || 'invoice', cost = can_(user, 'cost');
   var status = p.status || 'active', okStatus = function (s) { return status === 'all' || s === status; };
   var period = (from || to) ? ' (' + (from || '…') + ' → ' + (to || '…') + ')' : '';
@@ -2957,20 +3329,21 @@ function reports_(p, user) {
     var sl = all_('Sales').filter(function (s) { return inRange_(s.date, from, to) && okStatus(s.status) && (!p.customer_id || s.customer_id === p.customer_id) && (!p.user_id || s.user_id === p.user_id); });
     if (group === 'invoice') {
       var items = {}; all_('SaleItems').forEach(function (i) { (items[i.sale_id] = items[i.sale_id] || []).push(i.name + ' x' + i.qty); });
-      var cols = [col_('date', 'Date', 'date'), col_('invoice_no', 'Invoice'), col_('customer_name', 'Customer'), col_('items', 'Items'), col_('subtotal', 'Subtotal', 'money', 1), col_('discount', 'Discount', 'money', 1), col_('total', 'Total', 'money', 1), col_('paid', 'Paid', 'money', 1), col_('due', 'Due', 'money', 1)];
+      var cols = [col_('date', 'Date', 'date'), col_('invoice_no', 'Invoice'), col_('customer_name', 'Customer'), col_('items', 'Items'), col_('subtotal', 'Subtotal', 'money', 1), col_('discount', 'Discount', 'money', 1), col_('total', 'Total', 'money', 1), col_('paid', 'Paid', 'money', 1), col_('due', 'Due at sale', 'money', 1), col_('due_now', 'Due now', 'money', 1)];
       if (cost) cols.push(col_('profit', 'Profit', 'money', 1));
       cols.push(col_('user_name', 'Staff'), col_('status', 'Status'));
-      var rows = sl.sort(function (a, b) { return a._row - b._row; }).map(function (s) { var o = Object.assign({}, s); o.items = (items[s.id] || []).join(', '); return o; });
+      var dn = saleOpenDues_();
+      var rows = sl.sort(function (a, b) { return a._row - b._row; }).map(function (s) { var o = Object.assign({}, s); o.items = (items[s.id] || []).join(', '); o.due_now = dn[s.id] || 0; return o; });
       var rep = finishReport_('Sales Report — Invoice-wise' + period, cols, rows);
       if (rep.totals) { var act = rows.filter(function (r) { return r.status === 'active'; }); Object.keys(rep.totals).forEach(function (k) { rep.totals[k] = round_(sum_(act, function (r) { return r[k]; })); }); }
       return rep;
     }
-    var g = {};
+    var g = {}, dn2 = saleOpenDues_();
     sl.filter(function (s) { return s.status === 'active'; }).forEach(function (s) {
-      var k = bucket_(s.date, group), r = g[k] = g[k] || { period: k, invoices: 0, subtotal: 0, discount: 0, total: 0, paid: 0, due: 0, profit: 0 };
-      r.invoices++; r.subtotal += s.subtotal; r.discount += s.discount; r.total += s.total; r.paid += s.paid; r.due += s.due; r.profit += s.profit;
+      var k = bucket_(s.date, group), r = g[k] = g[k] || { period: k, invoices: 0, subtotal: 0, discount: 0, total: 0, paid: 0, due: 0, due_now: 0, profit: 0 };
+      r.invoices++; r.subtotal += s.subtotal; r.discount += s.discount; r.total += s.total; r.paid += s.paid; r.due += s.due; r.due_now += dn2[s.id] || 0; r.profit += s.profit;
     });
-    var cols2 = [col_('period', group === 'daily' ? 'Date' : group === 'monthly' ? 'Month' : 'Year'), col_('invoices', 'Invoices', 'num', 1), col_('subtotal', 'Subtotal', 'money', 1), col_('discount', 'Discount', 'money', 1), col_('total', 'Total Sales', 'money', 1), col_('paid', 'Collected', 'money', 1), col_('due', 'Due', 'money', 1)];
+    var cols2 = [col_('period', group === 'daily' ? 'Date' : group === 'monthly' ? 'Month' : 'Year'), col_('invoices', 'Invoices', 'num', 1), col_('subtotal', 'Subtotal', 'money', 1), col_('discount', 'Discount', 'money', 1), col_('total', 'Total Sales', 'money', 1), col_('paid', 'Collected', 'money', 1), col_('due', 'Due at sale', 'money', 1), col_('due_now', 'Due now', 'money', 1)];
     if (cost) cols2.push(col_('profit', 'Profit', 'money', 1));
     return finishReport_('Sales Report — ' + group + period, cols2, Object.keys(g).sort().map(function (k) { return g[k]; }));
   }
@@ -3011,8 +3384,10 @@ function reports_(p, user) {
     all_('Purchases').forEach(function (s) { if (s.status === 'active' && inRange_(s.date, from, to)) d_(s.date).purchases += s.total; });
     all_('PurchaseReturns').forEach(function (s) { if (s.status === 'active' && inRange_(s.date, from, to)) d_(s.date).purchase_returns += s.total; });
     all_('Expenses').forEach(function (s) { if (s.status === 'active' && inRange_(s.date, from, to)) { var r = d_(s.date); r.expenses += s.amount; r.profit -= s.amount; } });
+    var adjD = stockAdjustValue_(from, to, function (d) { return d; });
+    Object.keys(adjD).forEach(function (k) { var r = d_(k); r.stock_adjust = round_(adjD[k]); r.profit += adjD[k]; });
     var dc = [col_('date', 'Date', 'date'), col_('invoices', 'Invoices', 'num', 1), col_('items', 'Items Sold', 'num', 1), col_('sales', 'Sales', 'money', 1), col_('returns', 'Sales Returns', 'money', 1), col_('purchases', 'Purchases', 'money', 1), col_('purchase_returns', 'Purchase Returns', 'money', 1), col_('expenses', 'Expenses', 'money', 1)];
-    if (cost) dc.push(col_('profit', 'Net Profit', 'money', 1));
+    if (cost) dc.push(col_('stock_adjust', 'Stock adjust', 'money', 1), col_('profit', 'Net Profit', 'money', 1));
     return finishReport_('Daily Counts' + period, dc, Object.keys(days).sort().map(function (k) { return days[k]; }));
   }
 
@@ -3065,10 +3440,10 @@ function reports_(p, user) {
 function r_(perm, fn, write) { return { perm: perm, fn: fn, write: !!write }; }
 
 var ROUTES = {
-  ping:               { public: true, fn: function () { return { app: 'Karvio', version: APP_VERSION, time: now_(), apiCapabilities: API_CAPABILITIES }; } },
+  ping:               { public: true, noLock: true, fn: function () { return { app: 'Karvio', version: APP_VERSION, time: now_(), apiCapabilities: API_CAPABILITIES }; } },
   // Expiry cleanup is idempotent housekeeping; a rejected public link must still stay deleted.
   'invoice.public':   { public: true, fn: invoicePublic_, write: false },
-  login:              { public: true, fn: login_, write: false },
+  login:              { public: true, lockIfDirty: true, fn: login_, write: false },
   logout:             r_(null, logout_),
   'password.change':  r_(null, changePassword_, true),
   bootstrap:          r_(null, bootstrap_),
@@ -3118,7 +3493,7 @@ var ROUTES = {
   'sales.details':    r_('pos', function (p, u) { var ids = Array.isArray(p.ids) ? p.ids.slice(0, 200) : []; if (!ids.length) fail_('Select at least one invoice'); return ids.map(function (id) { return saleDetail_({ id: id }, u); }); }),
   'sales.list':       r_('pos', salesList_),
   'sreturn.create':   r_('sales.return', sreturnCreate_, true),
-  'sreturns.list':    r_('sales.return', sreturnsList_),
+  'sreturns.list':    r_('sales.return', function (p, u) { return stripCost_(sreturnsList_(p), u); }),
 
   'expense.create':   r_('expenses', expenseCreate_, true),
   'expense.categories': r_('expenses', expenseCategoriesSave_, true),
@@ -3130,6 +3505,7 @@ var ROUTES = {
   'claim.create':     r_('warranty', claimCreate_, true),
   'claim.update':     r_('warranty', claimUpdate_, true),
   'claims.list':      r_('warranty', claimsList_),
+  'claim.restock':    r_('warranty', claimRestock_, true),
 
   'history':          r_(null, itemHistory_),
   'history.doc':      r_(null, historyDoc_route_),
@@ -3147,6 +3523,7 @@ var ROUTES = {
   'database.info':    r_('settings', databaseInfo_, false),
   'database.export':  r_('settings', databaseExport_, false),
   'database.restore': r_('settings', databaseRestore_, false),
+  'backup.schedule':  r_('settings', backupSchedule_, false),
   'sale.link':        r_('pos', saleLink_, true),
   'sms.test':         r_('settings', smsTest_),
   'sms.log':          r_('settings', smsLog_)
@@ -3175,8 +3552,12 @@ function doPost(e) {
       }
       return route.fn(req.payload || {}, user, req.token);
     };
+    var data;
+    if (route.noLock) data = run();
+    // Sign-in only reads Users; without an unfinished transaction it needs no lock.
+    else if (route.lockIfDirty && journalClean_()) { _mem = {}; data = run(); }
     // Reads acquire the same lock and recover unfinished commits before exposing business data.
-    var data = withLock_(run, route.write, function () { return info; });
+    else data = withLock_(run, route.write, function () { return info; }, route.public ? 5000 : 0);
     return json_({ ok: true, data: data });
   } catch (err) {
     var msg = String(err && err.message ? err.message : err);

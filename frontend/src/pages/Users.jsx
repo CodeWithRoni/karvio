@@ -10,10 +10,11 @@ export default function Users() {
   const list = useApi('users.list', {});
   const [tab, setTab] = useState('users');
   const [edit, setEdit] = useState(null);
+  const isAdmin = useStore((s) => s.user?.role === 'admin');
   return (
     <>
       <PageHead title="Users & roles" sub="Admins can do everything. Choose exactly what managers and sales staff can see and do.">
-        <Tabs tabs={[['users', 'Users'], ['roles', 'Role permissions']]} value={tab} onChange={setTab} />
+        <Tabs tabs={[['users', 'Users'], ...(isAdmin ? [['roles', 'Role permissions']] : [])]} value={tab} onChange={setTab} />
         {tab === 'users' && <Btn kind="primary" onClick={() => setEdit({ name: '', username: '', password: '', role: 'sales', active: true })}>Add user</Btn>}
       </PageHead>
       {tab === 'users' ? (
@@ -77,15 +78,18 @@ function UserForm({ initial, onClose, onDone }) {
   const [f, setF] = useState(initial);
   const [busy, run] = useAction();
   const meOwner = useStore((s) => s.user?.owner === true);
-  const locked = !!initial.owner && !meOwner; // only the Administrator account can change itself
+  const meAdmin = useStore((s) => s.user?.role === 'admin');
+  const meId = useStore((s) => s.user?.id);
+  // only the Administrator account can change itself; staff with the users permission cannot touch admins
+  const locked = (!!initial.owner && !meOwner) || (!meAdmin && initial.role === 'admin');
   const save = async () => { await run(() => api('user.save', f), 'User saved'); onDone(); onClose(); };
   return (
     <Modal open onClose={onClose} size="sm" title={f.id ? `Edit ${f.name}` : 'Add user'} footer={<><Btn onClick={onClose}>Cancel</Btn>{!locked && <Btn kind="primary" busy={busy} onClick={save}>Save user</Btn>}</>}>
-      {locked ? <p className="muted" style={{ margin: 0 }}>This is the <b>Administrator</b> account (username admin). Only the Administrator can change its name or password.</p> : <div className="form">
+      {locked ? <p className="muted" style={{ margin: 0 }}>{initial.owner ? <>This is the <b>Administrator</b> account (username admin). Only the Administrator can change its name or password.</> : 'Only an admin can change an admin account.'}</p> : <div className="form">
         <Field label="Full name" wide><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus /></Field>
         <Field label="Username" wide hint={initial.owner ? 'The Administrator account always keeps the username admin.' : undefined}><input value={f.username} onChange={(e) => setF({ ...f, username: e.target.value })} readOnly={!!initial.owner} autoCapitalize="none" /></Field>
         <Field label={f.id ? 'New password' : 'Password'} wide hint={f.id ? 'Leave blank to keep the current password.' : 'At least 6 characters.'}><input type="password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} autoComplete="new-password" /></Field>
-        <Field label="Role" wide><select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>{Object.entries(ROLE).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
+        <Field label="Role" wide><select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })} disabled={!meAdmin && f.id === meId}>{Object.entries(ROLE).filter(([v]) => meAdmin || v !== 'admin').map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
         {f.id && <label className="check"><input type="checkbox" checked={f.active} onChange={(e) => setF({ ...f, active: e.target.checked })} /> Can sign in</label>}
         {f.role === 'admin' ? <p className="wide muted" style={{ margin: 0, fontSize: 12.5 }}>Admins can sign in at any time (working hours apply to managers and sales staff).</p> : <WorkingHours f={f} setF={setF} />}
       </div>}

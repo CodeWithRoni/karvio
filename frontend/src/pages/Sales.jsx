@@ -44,7 +44,7 @@ export default function Sales() {
               { key: 'items_text', label: 'Items', className: 'clip' },
               { key: 'total', label: 'Total', type: 'money', sum: true },
               { key: 'paid', label: 'Paid', type: 'money', sum: true },
-              { key: 'due', label: 'Due', type: 'money', sum: true },
+              { key: 'due_now', label: 'Due now', type: 'money', sum: true, value: (r) => r.due_now ?? r.due },
               ...(can('cost') ? [{ key: 'profit', label: 'Profit', type: 'money', sum: true }] : []),
               { key: 'user_name', label: 'Staff' },
               { key: 'status', label: 'Status', render: (r) => <Badge tone={statusTone(r.status)}>{r.status}</Badge> }
@@ -128,7 +128,8 @@ function SaleDetail({ id, onClose, onChanged }) {
             <div><span>Served by</span><b>{s.user_name}</b></div>
             <div><span>Total</span><b>{money(s.total)}</b></div>
             <div><span>Paid</span><b>{money(s.paid)}{pays.length ? ` (${pays.map((p) => p.account_name).join(', ')})` : ''}</b></div>
-            <div><span>Due</span><b style={{ color: s.due > 0 ? 'var(--warn)' : undefined }}>{money(s.due)}</b></div>
+            <div><span>Due at sale</span><b>{money(s.due)}</b></div>
+            {s.due_now !== undefined && <div><span>Due now</span><b style={{ color: s.due_now > 0 ? 'var(--warn)' : undefined }}>{money(s.due_now)}</b></div>}
             {s.profit !== undefined && <div><span>Profit</span><b>{money(s.profit)}</b></div>}
           </div>
           <div className="dt" style={{ marginTop: 14 }}><div className="dt-scroll"><table>
@@ -159,7 +160,10 @@ function ReturnForm({ detail, onClose, onDone }) {
   const [busy, run] = useAction();
   const ratio = sale.subtotal > 0 ? sale.total / sale.subtotal : 1;
   const value = round2(lines.reduce((a, l, i) => a + (Number(l.qty) || 0) * items[i].price * ratio, 0));
-  useEffect(() => setAmount(value || ''), [value]);
+  // The return first clears what is still unpaid on this invoice; only the rest can be paid back in cash.
+  const owed = sale.customer_id ? Number(sale.due_now ?? sale.due) || 0 : 0;
+  const maxCash = round2(Math.max(value - owed, 0));
+  useEffect(() => { setAmount(maxCash || (value ? 0 : '')); if (sale.customer_id && value > 0 && maxCash <= 0) setMode('adjust'); }, [value, maxCash]);
   const set = (i, patch) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
 
   const submit = async () => {
@@ -209,7 +213,7 @@ function ReturnForm({ detail, onClose, onDone }) {
         ) : <Field label="Settle as"><input value="Refund money (walk-in sale)" readOnly /></Field>}
         {mode === 'cash' && <>
           <Field label="Refund from"><Select value={acc} onChange={setAcc} options={accounts} allowEmpty={false} /></Field>
-          <Field label="Refund amount" hint={sale.customer_id ? 'Any amount not refunded is credited to the customer.' : ''}><input type="number" min="0" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} disabled={!sale.customer_id} /></Field>
+          <Field label="Refund amount" hint={sale.customer_id ? (owed > 0 ? `${money(Math.min(owed, value))} of this return clears the unpaid due on this invoice, so at most ${money(maxCash)} can be refunded. Anything not refunded is credited to the customer.` : 'Any amount not refunded is credited to the customer.') : ''}><input type="number" min="0" max={maxCash} step="any" value={amount} onChange={(e) => setAmount(e.target.value)} disabled={!sale.customer_id} /></Field>
         </>}
         <Field label="Note" wide><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Reason for return" /></Field>
       </div>

@@ -174,6 +174,9 @@ function AdjustForm({ product, onClose }) {
         <Field label="Current" wide><input value={fqty(product.stock, product.unit)} readOnly /></Field>
         <Field label={`Counted quantity (${product.unit})`} wide><input type="number" step="any" min="0" value={n} onChange={(e) => setN(e.target.value)} onWheel={noWheel} /></Field>
         <Field label="Reason" wide><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. physical count, damaged" /></Field>
+        {product.cost_price !== undefined && Number(n) !== Number(product.stock) && n !== '' && (
+          <p className="muted wide" style={{ margin: 0 }}>{Number(n) < product.stock ? 'Loss' : 'Gain'} at cost: <b>{money(Math.abs((Number(n) - product.stock) * product.cost_price))}</b> — counted in net profit.</p>
+        )}
       </div>
     </Modal>
   );

@@ -158,7 +158,25 @@ export function DatabaseTab({ Reset }) {
         <DatabaseBackup onDone={info.reload} />
         <DatabaseRestore onDone={info.reload} />
       </div>
+      {info.data && !info.data.offline && <DailyBackup info={info.data} onDone={info.reload} />}
       <Reset onDone={info.reload} />
+    </div>
+  );
+}
+
+/** Nightly copy of the Google Sheet to the Drive folder "Karvio backups"; old copies go to the trash. */
+function DailyBackup({ info, onDone }) {
+  const [on, setOn] = useState(!!info.daily_backup);
+  const [keep, setKeep] = useState(info.backup_keep_days || 30);
+  const [busy, run] = useAction();
+  const save = async () => { await run(() => api('backup.schedule', { enabled: on, keep_days: Number(keep) }), on ? 'Daily Drive backup is on' : 'Daily Drive backup is off'); onDone?.(); };
+  return (
+    <div className="card form">
+      <div className="card-head wide"><h2>Automatic daily backup</h2><span className="muted">Google Drive folder “{info.backup_folder || 'Karvio backups'}”</span></div>
+      <Field label="Back up every night"><label className="check"><input type="checkbox" checked={on} onChange={(e) => setOn(e.target.checked)} /> Copy the database to Google Drive at about 2 AM</label></Field>
+      <Field label="Keep copies for (days)" hint="Older copies are moved to the Drive trash."><input type="number" min="1" max="365" value={keep} onChange={(e) => setKeep(e.target.value)} /></Field>
+      <p className="muted wide" style={{ margin: 0 }}>Last automatic backup: {info.last_daily_backup ? fdatetime(info.last_daily_backup) : 'none yet'}</p>
+      <div className="wide row end"><Btn kind="primary" busy={busy} onClick={save}>Save</Btn></div>
     </div>
   );
 }

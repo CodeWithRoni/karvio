@@ -7,6 +7,7 @@ const FORMAT = 'Karvio Offline';
 const LEGACY_FORMATS = ['ShopERP Offline'];
 const LEGACY_FILE = 'shop-erp.json', LEGACY_PREVIOUS = 'shop-erp.previous.json';
 const clone = (value) => JSON.parse(JSON.stringify(value));
+const DAILY_BACKUPS = 30;
 function formatDate(date, timezone = 'Asia/Dhaka', format = 'yyyy-MM-dd') {
   const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(date).map((p) => [p.type, p.value]));
   const day = `${p.year}-${p.month}-${p.day}`;
@@ -99,6 +100,7 @@ class OfflineRuntime {
     });
     vm.runInContext(fs.readFileSync(codePath, 'utf8'), this.context, { filename: 'Code.gs', timeout: 10000 });
     this.context.setupDatabase(); this.context.setSetting_('sms_enabled', 'false'); this.persist();
+    if (this.savedText === undefined) this.savedText = JSON.stringify(this.state);
   }
 
   validateShape(data) {
@@ -117,20 +119,34 @@ class OfflineRuntime {
       if (!fs.existsSync(daily)) fs.copyFileSync(this.file, daily);
     }
     this.state.savedAt = new Date().toISOString();
+    const text = JSON.stringify(this.state);
     const fd = fs.openSync(temp, 'w', 0o600);
-    try { fs.writeFileSync(fd, JSON.stringify(this.state), 'utf8'); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    try { fs.writeFileSync(fd, text, 'utf8'); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
     fs.renameSync(temp, this.file); this.dirty = false;
+    // The saved text is the rollback point, so a request no longer has to copy the whole database first.
+    this.savedText = text;
+    this.pruneBackups();
   }
 
+  /** Keep the newest DAILY_BACKUPS daily copies (YYYY-MM-DD.json); safety copies made before a restore are kept. */
+  pruneBackups() {
+    try {
+      const daily = fs.readdirSync(this.backupDir).filter((f) => /^\d{4}-\d{2}-\d{2}\.json$/.test(f)).sort();
+      daily.slice(0, Math.max(0, daily.length - DAILY_BACKUPS)).forEach((f) => fs.rmSync(path.join(this.backupDir, f), { force: true }));
+    } catch { /* a backup that cannot be removed now is removed next time */ }
+  }
+
+  rollback() { this.state = JSON.parse(this.savedText); this.context._mem = {}; this.dirty = false; }
+
   execute(request) {
-    const previous = clone(this.state); this.dirty = false;
+    this.dirty = false;
     try {
       this.context._mem = {};
       const response = JSON.parse(this.context.doPost({ postData: { contents: JSON.stringify(request) } }).getContent());
-      if (!response.ok) { this.state = previous; this.context._mem = {}; this.dirty = false; return response; }
+      if (!response.ok) { if (this.dirty) this.rollback(); else this.context._mem = {}; return response; }
       this.persist(); return response;
     } catch (error) {
-      this.state = previous; this.context._mem = {}; this.dirty = false;
+      this.rollback();
       return { ok: false, error: `Changes were not saved: ${error.message}` };
     }
   }
