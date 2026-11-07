@@ -2,7 +2,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const crypto = require('node:crypto');
-const FORMAT = 'ShopERP Offline';
+const FORMAT = 'Karvio Offline';
+// Data files and backups made before the rename to Karvio carry the old name; they are still read and restored.
+const LEGACY_FORMATS = ['ShopERP Offline'];
+const LEGACY_FILE = 'shop-erp.json', LEGACY_PREVIOUS = 'shop-erp.previous.json';
 const clone = (value) => JSON.parse(JSON.stringify(value));
 function formatDate(date, timezone = 'Asia/Dhaka', format = 'yyyy-MM-dd') {
   const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(date).map((p) => [p.type, p.value]));
@@ -16,13 +19,17 @@ class OfflineRuntime {
   constructor({ dataDir, codePath, seedSheets } = {}) {
     if (!dataDir || !codePath) throw new Error('Offline data and application paths are required');
     this.dataDir = path.resolve(dataDir);
-    this.file = path.join(this.dataDir, 'shop-erp.json');
+    this.file = path.join(this.dataDir, 'karvio.json');
     this.backupDir = path.join(this.dataDir, 'backups');
-    this.previousFile = path.join(this.dataDir, 'shop-erp.previous.json');
+    this.previousFile = path.join(this.dataDir, 'karvio.previous.json');
     this.cache = new Map(); this.dirty = false;
     fs.mkdirSync(this.backupDir, { recursive: true });
+    // Same folder, so a rename is atomic: the old data file simply takes its new name.
+    if (!fs.existsSync(this.file) && fs.existsSync(path.join(this.dataDir, LEGACY_FILE))) fs.renameSync(path.join(this.dataDir, LEGACY_FILE), this.file);
+    if (!fs.existsSync(this.previousFile) && fs.existsSync(path.join(this.dataDir, LEGACY_PREVIOUS))) fs.renameSync(path.join(this.dataDir, LEGACY_PREVIOUS), this.previousFile);
     this.state = fs.existsSync(this.file) ? JSON.parse(fs.readFileSync(this.file, 'utf8')) : { format: FORMAT, schemaVersion: 1, savedAt: '', properties: {}, sheets: seedSheets ? clone(seedSheets) : {} };
     this.validateShape(this.state);
+    this.state.format = FORMAT; // a legacy file is written back under the new name on the next save
     this.initialSetup = !(this.state.sheets.Users?.rows.length > 1);
     const owner = this;
     class Range {
@@ -95,7 +102,7 @@ class OfflineRuntime {
   }
 
   validateShape(data) {
-    if (data?.format !== FORMAT || data.schemaVersion !== 1 || !data.sheets || !data.properties || typeof data.sheets !== 'object' || Array.isArray(data.sheets) || typeof data.properties !== 'object' || Array.isArray(data.properties)) throw new Error('This is not a valid Karvio offline database');
+    if (!(data?.format === FORMAT || LEGACY_FORMATS.includes(data?.format)) || data.schemaVersion !== 1 || !data.sheets || !data.properties || typeof data.sheets !== 'object' || Array.isArray(data.sheets) || typeof data.properties !== 'object' || Array.isArray(data.properties)) throw new Error('This is not a valid Karvio offline database');
     for (const [name, table] of Object.entries(data.sheets)) {
       if (['__proto__', 'constructor', 'prototype'].includes(name) || !table || !Array.isArray(table.rows) || table.rows.some((row) => !Array.isArray(row) || row.some((v) => v !== null && !['string', 'number', 'boolean'].includes(typeof v)))) throw new Error('The saved database contains an invalid table');
     }
@@ -103,7 +110,7 @@ class OfflineRuntime {
 
   persist() {
     if (!this.dirty && fs.existsSync(this.file)) return;
-    const temp = path.join(this.dataDir, `shop-erp.${process.pid}.tmp`);
+    const temp = path.join(this.dataDir, `karvio.${process.pid}.tmp`);
     if (fs.existsSync(this.file)) {
       fs.copyFileSync(this.file, this.previousFile);
       const daily = path.join(this.backupDir, `${formatDate(new Date())}.json`);
@@ -149,9 +156,9 @@ class OfflineRuntime {
     const safety = path.join(this.backupDir, `before-restore-${Date.now()}.json`);
     fs.copyFileSync(this.file, safety);
     const previous = this.state;
-    try { this.state = clone(next); this.context._mem = {}; this.context.setupDatabase(); this.context.setSetting_('sms_enabled', 'false'); this.dirty = true; this.persist(); this.cache.clear(); }
+    try { this.state = clone(next); this.state.format = FORMAT; this.context._mem = {}; this.context.setupDatabase(); this.context.setSetting_('sms_enabled', 'false'); this.dirty = true; this.persist(); this.cache.clear(); }
     catch (error) { this.state = previous; this.context._mem = {}; this.dirty = false; throw error; }
     return { safetyBackup: safety };
   }
 }
-module.exports = { OfflineRuntime, FORMAT };
+module.exports = { OfflineRuntime, FORMAT, LEGACY_FORMATS };

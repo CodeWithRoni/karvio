@@ -72,7 +72,11 @@ equal(call('products.list').find((p) => p.id === product.id).stock, 5);
 equal(call('customers.list').find((c) => c.id === customer.id).balance, 0);
 equal(call('accounts.list').find((a) => a.id === cash.id).balance, -500);
 const corruptDir = fs.mkdtempSync(path.join(os.tmpdir(), 'karvio-corrupt-test-'));
-const corruptFile = path.join(corruptDir, 'shop-erp.json'); fs.writeFileSync(corruptFile, 'not-json');
+const corruptFile = path.join(corruptDir, 'karvio.json'); fs.writeFileSync(corruptFile, 'not-json');
+assert.throws(() => new OfflineRuntime({ ...options, dataDir: corruptDir })); checks++;
+equal(fs.readFileSync(corruptFile, 'utf8'), 'not-json');
+// a damaged data file from before the rename (shop-erp.json) is also refused and kept as it is, under its new name
+fs.rmSync(corruptFile); fs.writeFileSync(path.join(corruptDir, 'shop-erp.json'), 'not-json');
 assert.throws(() => new OfflineRuntime({ ...options, dataDir: corruptDir })); checks++;
 equal(fs.readFileSync(corruptFile, 'utf8'), 'not-json');
 console.log('Persistent offline database: ' + checks + ' checks passed');

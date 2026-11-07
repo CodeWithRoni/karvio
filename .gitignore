@@ -12,6 +12,8 @@ verification/
 release-offline/
 backups/
 **/shop-erp*.json
+**/karvio.json
+**/karvio.previous.json
 **/*backup*.json
 .env
 .env.*

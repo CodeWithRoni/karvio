@@ -6,7 +6,7 @@ Start with **[UPLOAD_GUIDE-বাংলা.md](UPLOAD_GUIDE-বাংলা.md)*
 
 - Online backend source: `backend/Code.gs` (the single authoritative Apps Script file).
 - Web source: `frontend/src/`; prebuilt static website: `frontend/dist/`.
-- Offline desktop: `frontend/desktop/`, included backend resource, existing `ShopERP Offline` data directory preserved.
+- Offline desktop: `frontend/desktop/`, included backend resource, data in the `Karvio Offline` folder (an older `ShopERP Offline` folder is moved there automatically on first start).
 - Online desktop: explicit `npm run desktop:online`; mobile/Tauri use the online API.
 - Test fixtures use local in-memory Sheets or isolated temporary folders, never production data.
 

@@ -2,7 +2,7 @@
 
 ## Work boundaries
 
-Work locally first. Do not publish, push or write production Google Sheets without the user's explicit upload/update request. Preserve the ShopERP Offline application-data folder. Never distribute actual databases, backups, tokens or credentials. Tests use in-memory mocks or fresh OS temporary directories.
+Work locally first. Do not publish, push or write production Google Sheets without the user's explicit upload/update request. Preserve the Karvio Offline application-data folder (older installs had `ShopERP Offline`; `desktop/data-folder.cjs` moves it on first start). Never distribute actual databases, backups, tokens or credentials. Tests use in-memory mocks or fresh OS temporary directories.
 
 ## Authoritative code
 
@@ -29,7 +29,7 @@ PurchaseReturnItems gains only an append-only valuation column. PurchaseItems us
 
 ## Offline compatibility
 
-Default desktop data path remains ShopERP Offline, even though brand/app title is Karvio. The on-disk format/schemaVersion remains compatible, while business headers migrate by appending fields. Backup restore accepts validated legacy prefixes and missing newly introduced Units/InvoiceLinks; setup repairs/migrates them. Never seed test data into a user's real directory.
+Desktop data path is `Karvio Offline` with data file `karvio.json` (format `Karvio Offline`). An older `ShopERP Offline` folder is renamed on first start (never copied or deleted; if busy, the old folder is used until the next start), `shop-erp.json` is renamed in place, and data files / backups with the old format `ShopERP Offline` are still read and restored (test: backend/test/offline-rename.cjs). The on-disk schemaVersion remains compatible, while business headers migrate by appending fields. Backup restore accepts validated legacy prefixes and missing newly introduced Units/InvoiceLinks; setup repairs/migrates them. Never seed test data into a user's real directory.
 
 ## Verification
 

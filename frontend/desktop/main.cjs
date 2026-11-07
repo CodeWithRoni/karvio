@@ -4,12 +4,13 @@ const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const { OfflineRuntime } = require('./offline-runtime.cjs');
 
-// Keep the established offline data folder across the product rename.
 const online = process.argv.includes('--online');
 app.setName('Karvio');
 app.setAppUserModelId('com.karvio.erp');
+// Offline data lives in "Karvio Offline"; an older "ShopERP Offline" folder is moved there on first start.
+const { offlineDataDir } = require('./data-folder.cjs');
 const dataDir = process.env.KARVIO_DATA_DIR ? path.resolve(process.env.KARVIO_DATA_DIR)
-  : path.join(app.getPath('appData'), online ? 'Karvio Online' : 'ShopERP Offline');
+  : online ? path.join(app.getPath('appData'), 'Karvio Online') : offlineDataDir(app.getPath('appData'));
 fs.mkdirSync(dataDir, { recursive: true });
 app.setPath('userData', dataDir);
 if (!online) {

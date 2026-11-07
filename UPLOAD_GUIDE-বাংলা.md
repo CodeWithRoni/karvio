@@ -53,7 +53,7 @@ npm run desktop
 
 এটি default-এ offline mode চালায়। Internet/API ব্যবহার করে না। নতুন কম্পিউটারে নতুন স্থানীয় database হয়; প্রাথমিক login `admin` / `admin123`। লগইনের পর password বদলান।
 
-আগের ShopERP Offline-এর ডেটা থাকলে **একই application-data folder** ব্যবহার করা হয়। ব্র্যান্ড Karvio হলেও folder বদলানো হয়নি। Windows-এ সেটি `%APPDATA%\ShopERP Offline`। পুরোনো অ্যাপ বন্ধ করে নতুন desktop version চালান। আপনার পুরোনো desktop shortcut এই project folder-এ স্বয়ংক্রিয়ভাবে বদলে দেওয়া হয়নি।
+Offline ডেটা থাকে **Karvio Offline** folder-এ (Windows-এ `%APPDATA%\Karvio Offline`)। আগের `ShopERP Offline` folder থাকলে নতুন Karvio প্রথমবার চালু হওয়ার সময় সেটা নিজে থেকেই `Karvio Offline` নামে সরিয়ে নেয় — কোনো ডেটা মুছে না। পুরোনো অ্যাপ বন্ধ করে নতুন desktop version চালান। আপনার পুরোনো desktop shortcut এই project folder-এ স্বয়ংক্রিয়ভাবে বদলে দেওয়া হয়নি।
 
 Settings → Offline data & backup থেকে backup save/restore করা যায়। পুরোনো offline backup-এর append-only schema upgrade সমর্থিত। Offline mode-এ SMS ও online customer invoice sharing উপলব্ধ নয়। নতুন offline database এবং online Google Sheet-এর মধ্যে স্বয়ংক্রিয় synchronization নেই।
 
