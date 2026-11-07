@@ -29,7 +29,7 @@ const sell = (extra) => Q('sale.create', { customer_id: cus.id, items: [{ produc
 let sale = sell();
 truthy(sale.sms && sale.sms.ok, 'SMS sent');
 const sent = decodeURIComponent(fetchLog[fetchLog.length - 1].url.split('msg=')[1]);
-const m = /View: (https:\\/\\/codewithroni\\.github\\.io\\/shop-erp\\/#\\/i\\/([A-Za-z0-9]{22}))$/.exec(sent);
+const m = /View: (https:\\/\\/codewithroni\\.github\\.io\\/karvio\\/#\\/i\\/([A-Za-z0-9]{22}))$/.exec(sent);
 truthy(m, 'message ends with the link: ' + sent);
 const tok = m[2];
 truthy(sent.length - m[1].length < 80 && m[1].length <= 70, 'link is short (' + m[1].length + ' chars)');
@@ -94,12 +94,12 @@ truthy(!/View:\\s*$/.test(last), 'no dangling "View:" — ' + last);
 Q('settings.save', { values: { sms_invoice_link: 'true', sms_template: 'Thanks {name}! Invoice {invoice}.' } });
 sell();
 last = decodeURIComponent(fetchLog[fetchLog.length - 1].url.split('msg=')[1]);
-truthy(/Invoice INV-\\d+\\. Invoice: https:\\/\\/codewithroni\\.github\\.io\\/shop-erp\\/#\\/i\\/[A-Za-z0-9]{22}$/.test(last), 'link added to a template without {link}: ' + last);
+truthy(/Invoice INV-\\d+\\. Invoice: https:\\/\\/codewithroni\\.github\\.io\\/karvio\\/#\\/i\\/[A-Za-z0-9]{22}$/.test(last), 'link added to a template without {link}: ' + last);
 Q('settings.save', { values: { invoice_link_base: 'https://shop.example.com/app' } });
 const sl = Q('sale.link', { id: sale.sale.id });
 truthy(/^https:\\/\\/shop\\.example\\.com\\/app\\/#\\/i\\/[A-Za-z0-9]{22}$/.test(sl.url) && sl.days === 15, 'own web address used: ' + sl.url);
 Q('settings.save', { values: { invoice_link_base: 'javascript:alert(1)' } });
-truthy(Q('sale.link', { id: sale.sale.id }).url.indexOf('https://codewithroni.github.io/shop-erp/#/i/') === 0, 'unsafe address ignored');
+truthy(Q('sale.link', { id: sale.sale.id }).url.indexOf('https://codewithroni.github.io/karvio/#/i/') === 0, 'unsafe address ignored');
 
 /* ---- staff link button ---- */
 const tok2 = /#\\/i\\/(\\w+)$/.exec(sl.url)[1];

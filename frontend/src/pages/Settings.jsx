@@ -169,7 +169,7 @@ function DashboardSettings() {
   );
 }
 
-const DEFAULT_LINK_BASE = 'https://codewithroni.github.io/shop-erp/';
+const DEFAULT_LINK_BASE = 'https://codewithroni.github.io/karvio/';
 const linkBaseOf = (v) => {
   const b = String(v || '').trim();
   return (/^https?:\/\//i.test(b) ? b : DEFAULT_LINK_BASE).replace(/[#?].*$/, '').replace(/\/*$/, '/');

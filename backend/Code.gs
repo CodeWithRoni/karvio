@@ -1364,7 +1364,7 @@ function sendSaleSms_(sale, lines, customer) {
  *  their rows are deleted (when opened, when a new link is made, and once a day on any save).
  * ========================================================================== */
 var LINK_DAYS = 15;
-var DEFAULT_LINK_BASE = 'https://codewithroni.github.io/shop-erp/';
+var DEFAULT_LINK_BASE = 'https://codewithroni.github.io/karvio/';
 function linkHash_(token) { return hash_('karvio-invoice-link', token); }
 function linkBase_() {
   var b = String(getSetting_('invoice_link_base', '') || DEFAULT_LINK_BASE).trim();

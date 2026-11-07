@@ -142,10 +142,10 @@
       }
     ]
   },
-  "homepage": "https://codewithroni.github.io/shop-erp/",
+  "homepage": "https://codewithroni.github.io/karvio/",
   "repository": {
     "type": "git",
-    "url": "https://github.com/CodeWithRoni/shop-erp.git"
+    "url": "https://github.com/CodeWithRoni/karvio.git"
   },
   "desktopName": "karvio.desktop"
 }

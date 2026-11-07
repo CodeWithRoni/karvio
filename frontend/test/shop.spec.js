@@ -636,7 +636,7 @@ test('working hours: set in Users, refused at sign-in outside them, and signed o
 test('customer invoice link: opens without signing in, downloads a PDF, bad links explain themselves', async ({ request, browser }) => {
   const sale = (await call(request, 'sales.list', {})).find((s) => s.status === 'active');
   const l = await call(request, 'sale.link', { id: sale.id });
-  expect(l.url).toMatch(/^https:\/\/codewithroni\.github\.io\/shop-erp\/#\/i\/[A-Za-z0-9]{22}$/);
+  expect(l.url).toMatch(/^https:\/\/codewithroni\.github\.io\/karvio\/#\/i\/[A-Za-z0-9]{22}$/);
   expect(l.days).toBe(15);
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, acceptDownloads: true });
   const p = await ctx.newPage();
