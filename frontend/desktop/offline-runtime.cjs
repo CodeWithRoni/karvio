@@ -95,7 +95,7 @@ class OfflineRuntime {
   }
 
   validateShape(data) {
-    if (data?.format !== FORMAT || data.schemaVersion !== 1 || !data.sheets || !data.properties || typeof data.sheets !== 'object' || Array.isArray(data.sheets) || typeof data.properties !== 'object' || Array.isArray(data.properties)) throw new Error('This is not a valid ShopERP offline database');
+    if (data?.format !== FORMAT || data.schemaVersion !== 1 || !data.sheets || !data.properties || typeof data.sheets !== 'object' || Array.isArray(data.sheets) || typeof data.properties !== 'object' || Array.isArray(data.properties)) throw new Error('This is not a valid Karvio offline database');
     for (const [name, table] of Object.entries(data.sheets)) {
       if (['__proto__', 'constructor', 'prototype'].includes(name) || !table || !Array.isArray(table.rows) || table.rows.some((row) => !Array.isArray(row) || row.some((v) => v !== null && !['string', 'number', 'boolean'].includes(typeof v)))) throw new Error('The saved database contains an invalid table');
     }

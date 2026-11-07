@@ -324,7 +324,7 @@ function sendSaleSms_(sale, lines, customer) {
   return sendSms_(phone, msg);
 }
 function smsTest_(p, user) {
-  var r = sendSms_(p.phone, 'Test SMS from ' + getSetting_('shop_name') + ' — ShopERP');
+  var r = sendSms_(p.phone, 'Test SMS from ' + getSetting_('shop_name') + ' — Karvio');
   if (!r.ok) fail_('SMS failed: ' + r.response);
   return r;
 }

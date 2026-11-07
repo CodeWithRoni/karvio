@@ -4,7 +4,7 @@ import { DEFAULT_API_URL } from '../config';
 
 const CFG_KEY = 'erp_api_config';
 const TOKEN_KEY = 'erp_token';
-export const isOffline = () => Boolean(globalThis.window?.shopERP?.offline);
+export const isOffline = () => Boolean(globalThis.window?.karvio?.offline);
 const safe = (fn, fallback) => { try { return fn(); } catch { return fallback; } };
 
 export function getApiConfig() {
@@ -70,7 +70,7 @@ export async function api(action, payload = {}, { url, requestId } = {}) {
   // Only idempotent writes get one transport retry. SMS test sends are never retried.
   for (let attempt = 0; attempt < (write && canReplay ? 2 : 1); attempt++) {
     try {
-      if (offline) body = await window.shopERP.request(request);
+      if (offline) body = await window.karvio.request(request);
       else {
         const res = await fetch(target, {
           method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },

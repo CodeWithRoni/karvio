@@ -37,13 +37,13 @@ function OfflineSettings() {
   const [error, setError] = useState('');
   const [busy, run] = useAction();
   const unwrap = (response) => { if (!response.ok) throw new Error(response.error); return response.data; };
-  useEffect(() => { window.shopERP.storageInfo(getToken()).then((r) => setInfo(unwrap(r))).catch((e) => setError(e.message)); }, []);
+  useEffect(() => { window.karvio.storageInfo(getToken()).then((r) => setInfo(unwrap(r))).catch((e) => setError(e.message)); }, []);
   const backup = async () => {
-    const result = await run(async () => unwrap(await window.shopERP.exportBackup(getToken())));
+    const result = await run(async () => unwrap(await window.karvio.exportBackup(getToken())));
     if (!result.canceled) useStore.getState().toast('Backup saved');
   };
   const restore = async () => {
-    const result = await run(async () => unwrap(await window.shopERP.restoreBackup(getToken())));
+    const result = await run(async () => unwrap(await window.karvio.restoreBackup(getToken())));
     if (!result.canceled) { await useStore.getState().logout(); useStore.getState().toast('Backup restored. Sign in again.'); }
   };
   return <div className="card form">
@@ -51,7 +51,7 @@ function OfflineSettings() {
     <p className="muted wide">Sales, stock, customers and accounts are saved automatically. Your data stays here when the app closes. A previous copy and daily backups are kept as well.</p>
     {error && <div className="errbox wide">{error}</div>}
     {info && <><Field label="Data file" wide><input readOnly value={info.dataFile} /></Field><Field label="Automatic backups" wide><input readOnly value={info.backupDir} /></Field></>}
-    <div className="wide row"><Btn kind="primary" busy={busy} onClick={backup}>Save backup</Btn><Btn busy={busy} onClick={restore}>Restore backup</Btn><Btn onClick={() => run(async () => unwrap(await window.shopERP.openDataFolder(getToken())))}>Open data folder</Btn></div>
+    <div className="wide row"><Btn kind="primary" busy={busy} onClick={backup}>Save backup</Btn><Btn busy={busy} onClick={restore}>Restore backup</Btn><Btn onClick={() => run(async () => unwrap(await window.karvio.openDataFolder(getToken())))}>Open data folder</Btn></div>
     <p className="muted wide">Keep an extra backup on another drive. SMS delivery needs an internet connection and is unavailable in this offline app.</p>
   </div>;
 }

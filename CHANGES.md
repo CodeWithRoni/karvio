@@ -2,7 +2,7 @@
 
 See FIXES-1.0.6.md, VERIFICATION.md and UPLOAD_GUIDE-বাংলা.md for this release. The full fourteen-finding review has been addressed; offline Electron support is included.
 
-# ShopERP 1.0.2
+# Karvio 1.0.2 (earlier name: ShopERP)
 
 ## Product groups ও categories
 

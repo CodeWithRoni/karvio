@@ -69,4 +69,4 @@ http.createServer((req, res) => {
     const out = sandbox.doPost({ postData: { contents: body } });
     res.writeHead(200, cors); res.end(out.getContent());
   });
-}).listen(PORT, () => console.log(`Mock ShopERP API on http://localhost:${PORT}  (admin / admin123, data kept in memory)`));
+}).listen(PORT, () => console.log(`Mock Karvio API on http://localhost:${PORT}  (admin / admin123, data kept in memory)`));

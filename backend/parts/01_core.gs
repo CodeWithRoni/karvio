@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- *  ShopERP — Code.gs  (Google Apps Script backend)
+ *  Karvio — Code.gs  (Google Apps Script backend)
  *  Google Sheets = database  |  This Web App = REST / JSON API
  * ============================================================================
  *  FIRST-TIME SETUP
@@ -16,7 +16,7 @@
  */
 
 var APP_VERSION = '1.0.0';
-// Your ShopERP Database spreadsheet. Lets this script also run as a standalone project.
+// Your Karvio Database spreadsheet. Lets this script also run as a standalone project.
 var DEFAULT_SHEET_ID = '1r7WI5GNHtppUCtCu_rZUmvfum92i0HZdK298Z4uZH7w';
 var SESSION_TTL = 21600; // 6 hours (CacheService maximum)
 
@@ -229,7 +229,7 @@ function nextNo_(key, prefix) {
  * ========================================================================== */
 function onOpen() {
   try {
-    SpreadsheetApp.getUi().createMenu('ShopERP')
+    SpreadsheetApp.getUi().createMenu('Karvio')
       .addItem('1. Setup / repair database', 'setupDatabase')
       .addItem('2. Reset admin password to admin123', 'resetAdminPassword')
       .addToUi();
@@ -272,7 +272,7 @@ function setupDatabase() {
     insertMany_('WarrantyPeriods', [7, 30, 90, 180, 300, 900, 1500].map(function (d) { return { label: d + ' days', days: d }; }));
   }
   if (!all_('Categories').length) seedCategories_();
-  return 'ShopERP database is ready. Login: admin / admin123';
+  return 'Karvio database is ready. Login: admin / admin123';
 }
 
 function seedCategories_() {

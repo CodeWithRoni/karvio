@@ -8,5 +8,5 @@ fetch(url, { signal: AbortSignal.timeout(30000) }).then(async (response) => {
   const result = await response.json();
   const version = JSON.parse(fs.readFileSync(path.join(__dirname, '../../frontend/package.json'), 'utf8')).version;
   if (!response.ok || !result.ok || result.data?.version !== version) throw new Error('Unexpected live API version: ' + JSON.stringify(result));
-  console.log('Live ShopERP API verified: ' + result.data.version);
+  console.log('Live Karvio API verified: ' + result.data.version);
 }).catch((e) => { console.error(e.message); process.exitCode = 1; });

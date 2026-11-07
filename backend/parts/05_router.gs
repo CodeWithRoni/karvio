@@ -5,7 +5,7 @@
 function r_(perm, fn, write) { return { perm: perm, fn: fn, write: !!write }; }
 
 var ROUTES = {
-  ping:               { public: true, fn: function () { return { app: 'ShopERP', version: APP_VERSION, time: now_() }; } },
+  ping:               { public: true, fn: function () { return { app: 'Karvio', version: APP_VERSION, time: now_() }; } },
   login:              { public: true, fn: login_, write: false },
   logout:             r_(null, logout_),
   'password.change':  r_(null, changePassword_, true),
@@ -70,7 +70,7 @@ var ROUTES = {
 };
 
 function doGet() {
-  return json_({ ok: true, data: { app: 'ShopERP', version: APP_VERSION, message: 'ShopERP API is running. Send POST requests (text/plain JSON body).' } });
+  return json_({ ok: true, data: { app: 'Karvio', version: APP_VERSION, message: 'Karvio API is running. Send POST requests (text/plain JSON body).' } });
 }
 
 function doPost(e) {

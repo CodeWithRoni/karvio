@@ -8,7 +8,7 @@ const { OfflineRuntime } = require('./offline-runtime.cjs');
 const online = process.argv.includes('--online');
 app.setName('Karvio');
 app.setAppUserModelId('com.karvio.erp');
-const dataDir = process.env.SHOPERP_DATA_DIR ? path.resolve(process.env.SHOPERP_DATA_DIR)
+const dataDir = process.env.KARVIO_DATA_DIR ? path.resolve(process.env.KARVIO_DATA_DIR)
   : path.join(app.getPath('appData'), online ? 'Karvio Online' : 'ShopERP Offline');
 fs.mkdirSync(dataDir, { recursive: true });
 app.setPath('userData', dataDir);
@@ -71,7 +71,7 @@ else {
         mainWindow = new BrowserWindow({ width: 1440, height: 900, minWidth: 1024, minHeight: 640,
           backgroundColor: '#0d1b2a', title: online ? 'Karvio Online' : 'Karvio Offline',
           icon: path.join(__dirname, '..', 'branding', 'linux', '256x256.png'),
-          show: process.env.SHOPERP_TEST_MODE !== '1', webPreferences: {
+          show: process.env.KARVIO_TEST_MODE !== '1', webPreferences: {
             ...(!online ? { preload: path.join(__dirname, 'preload.cjs') } : {}),
             contextIsolation: true, sandbox: true, nodeIntegration: false } });
         mainWindow.loadFile(indexPath);

@@ -33,7 +33,7 @@ Default desktop data path remains ShopERP Offline, even though brand/app title i
 
 ## Verification
 
-frontend/npm test runs original suites plus finance integrity, recovery/access integrity, client reliability, persistence and legacy-upgrade checks. npm run test:e2e runs the main browser suite and five reliability regressions against localhost in-memory fixtures. npm run test:offline-ui runs Electron against a fresh temporary directory; SHOPERP_ELECTRON_EXECUTABLE may select an existing compatible Electron executable.
+frontend/npm test runs original suites plus finance integrity, recovery/access integrity, client reliability, persistence and legacy-upgrade checks. npm run test:e2e runs the main browser suite and five reliability regressions against localhost in-memory fixtures. npm run test:offline-ui runs Electron against a fresh temporary directory; KARVIO_ELECTRON_EXECUTABLE may select an existing compatible Electron executable.
 
 See VERIFICATION.md for the final recorded test counts and packaging checks. Google Apps Script production quotas, external SMS gateway delivery, physical printer hardware and native Mac/Linux/mobile installers are not simulated as real-device runs.
 

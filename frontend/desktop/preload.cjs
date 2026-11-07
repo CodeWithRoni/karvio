@@ -1,5 +1,5 @@
 const { contextBridge, ipcRenderer } = require('electron');
-contextBridge.exposeInMainWorld('shopERP', {
+contextBridge.exposeInMainWorld('karvio', {
   offline: true,
   request: (request) => ipcRenderer.invoke('erp:request', request),
   storageInfo: (token) => ipcRenderer.invoke('erp:storage', token),

@@ -93,7 +93,7 @@ async function clientChecks() {
 
   c = client();
   const localCalls = [];
-  c.context.window.shopERP = { offline: true, request: async (request) => {
+  c.context.window.karvio = { offline: true, request: async (request) => {
     localCalls.push(request);
     if (localCalls.length === 1) throw Error('IPC reply lost');
     return { ok: true, data: 'local-replay' };

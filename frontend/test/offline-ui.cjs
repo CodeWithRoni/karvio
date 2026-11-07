@@ -4,12 +4,12 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const assert = require('node:assert/strict');
-const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'shoperp-offline-ui-'));
+const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'karvio-offline-ui-'));
 let desktop, page;
 const networkRequests = [];
 const launch = async () => {
-  const executablePath = process.env.SHOPERP_PACKAGED_EXE || process.env.SHOPERP_ELECTRON_EXECUTABLE || require('electron');
-  desktop = await _electron.launch({ executablePath, args: process.env.SHOPERP_PACKAGED_EXE ? [] : [path.resolve(__dirname, '..')], env: { ...process.env, SHOPERP_DATA_DIR: dataDir, SHOPERP_TEST_MODE: '1' }, timeout: 30000 });
+  const executablePath = process.env.KARVIO_PACKAGED_EXE || process.env.KARVIO_ELECTRON_EXECUTABLE || require('electron');
+  desktop = await _electron.launch({ executablePath, args: process.env.KARVIO_PACKAGED_EXE ? [] : [path.resolve(__dirname, '..')], env: { ...process.env, KARVIO_DATA_DIR: dataDir, KARVIO_TEST_MODE: '1' }, timeout: 30000 });
   page = await desktop.firstWindow();
   page.on('pageerror', (error) => console.error('Offline window:', error.message));
   page.on('request', (request) => { if (/^https?:/.test(request.url())) networkRequests.push(request.url()); });
@@ -21,7 +21,7 @@ const launch = async () => {
   await expect(page.locator('.page-head h1')).toHaveText('Dashboard');
 };
 const call = (action, payload = {}) => page.evaluate(async ({ action, payload }) => {
-  const r = await window.shopERP.request({ action, payload, token: localStorage.getItem('erp_token') });
+  const r = await window.karvio.request({ action, payload, token: localStorage.getItem('erp_token') });
   if (!r.ok) throw new Error(r.error); return r.data;
 }, { action, payload });
 
