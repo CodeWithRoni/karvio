@@ -11,7 +11,6 @@ import { NativeShell } from './components/NativeShell';
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const POS = lazy(() => import('./pages/POS'));
 const Sales = lazy(() => import('./pages/Sales'));
-const OnlineOrders = lazy(() => import('./pages/OnlineOrders'));
 const PCBuilder = lazy(() => import('./pages/PCBuilder'));
 const Customers = lazy(() => import('./pages/Customers'));
 const Suppliers = lazy(() => import('./pages/Suppliers'));
@@ -64,7 +63,6 @@ export default function App() {
               <Route index element={<Dashboard />} />
               <Route path="pos" element={<Guard perm="pos"><POS /></Guard>} />
               <Route path="sales" element={<Guard perm="pos"><Sales /></Guard>} />
-              <Route path="orders" element={<Guard perm="pos"><OnlineOrders /></Guard>} />
               <Route path="sales/:id" element={<Guard perm="pos"><Sales /></Guard>} />
               <Route path="pc-builder" element={<Guard perm="pos"><PCBuilder /></Guard>} />
               <Route path="customers" element={<Customers />} />

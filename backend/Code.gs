@@ -33,7 +33,7 @@ var SCHEMA = {
   Brands:              'id,name',
   WarrantyPeriods:     'id,label,days:n',
   Units:               'id,name,label,decimal:b',
-  Products:            'id,sku,barcode,name,category_id,subcategory_id,brand_id,unit,roll_length:n,cost_price:n,sale_price:n,wholesale_price:n,stock:n,low_stock:n,has_warranty:b,warranty_type,warranty_days:n,active:b,created_at,service:b,description,web:b,images',
+  Products:            'id,sku,barcode,name,category_id,subcategory_id,brand_id,unit,roll_length:n,cost_price:n,sale_price:n,wholesale_price:n,stock:n,low_stock:n,has_warranty:b,warranty_type,warranty_days:n,active:b,created_at,service:b,description',
   SerialItems:         'id,product_id,serial,purchase_id,sale_id,status,cost:n,created_at',
   Customers:           'id,name,phones,addresses,opening_balance:n,note,active:b,created_at,link_id',
   Suppliers:           'id,name,phones,address,opening_balance:n,note,active:b,created_at,link_id',
@@ -805,8 +805,6 @@ function productSave_(p, user) {
     low_stock: service ? 0 : num_(p.low_stock), service: service, description: String(p.description || '').trim().slice(0, 500), has_warranty: hasW, warranty_type: wType, warranty_days: hasW ? Math.round(num_(p.warranty_days)) : 0,
     active: p.active === undefined ? true : (p.active === true || p.active === 'true')
   };
-  if (p.web !== undefined) row.web = p.web === true || p.web === 'true'; // shown on the online shop
-  shopCatalogClear_();
   if (p.id) {
     // Prices are set in the Price manager and on purchases, never from the product form.
     delete row.cost_price; delete row.sale_price; delete row.wholesale_price;
@@ -834,7 +832,7 @@ function priceUpdate_(p, user) {
     changed.push({ name: pr.name, from: [pr.sale_price, pr.wholesale_price], to: [sale, whole] });
     update_('Products', pr.id, { sale_price: sale, wholesale_price: whole });
   });
-  if (changed.length) { audit_(user, 'price_update', { count: changed.length, items: changed.slice(0, 50) }); shopCatalogClear_(); }
+  if (changed.length) audit_(user, 'price_update', { count: changed.length, items: changed.slice(0, 50) });
   return { updated: changed.length };
 }
 /** EAN-13 check digit for the first 12 digits. */
@@ -1244,8 +1242,7 @@ function settingsSave_(p, user) {
   var allowed = ['shop_name', 'shop_phone', 'shop_tel', 'shop_email', 'shop_web', 'shop_social', 'shop_address', 'shop_footer', 'currency', 'invoice_prefix', 'receipt_width', 'low_stock_default', 'expense_categories',
     'sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_headers',
     'dashboard_hidden', 'invoice_template', 'invoice_paper', 'invoice_custom_width', 'invoice_custom_height', 'invoice_note',
-    'sms_invoice_link', 'invoice_link_base',
-    'shop_enabled', 'shop_cod', 'shop_bkash', 'shop_bkash_number', 'shop_bkash_type', 'shop_delivery_inside', 'shop_delivery_outside', 'shop_inside_label', 'shop_notice', 'shop_site_url'];
+    'sms_invoice_link', 'invoice_link_base'];
   var vals = p.values || {};
   Object.keys(vals).forEach(function (k) {
     if (allowed.indexOf(k) < 0) return;
@@ -1254,7 +1251,6 @@ function settingsSave_(p, user) {
     setSetting_(k, v === undefined || v === null ? '' : v);
   });
   audit_(user, 'settings_save', Object.keys(vals));
-  shopCatalogClear_();
   return settingsGet_(p, user);
 }
 
@@ -2847,327 +2843,6 @@ function reports_(p, user) {
   fail_('Unknown report type');
 }
 /* ============================================================================
- *  21b. ONLINE SHOP  (website: codewithroni.github.io/karvio-shop)
- *  Google Drive folder "Karvio Shop" holds an "Images" folder (product photos, view-by-link)
- *  and the "Karvio Shop Database" spreadsheet (online orders). Stock, prices and sales stay in
- *  the main database: an order becomes a normal sale when staff finish it at the POS.
- *  The public routes never return cost, profit, suppliers, customers or exact stock counts.
- * ========================================================================== */
-var SHOP_SCHEMA = {
-  Orders: 'id,order_no,created_at,status,payment,payment_status,bkash_sender,bkash_trx,customer_name,phone,address,area,note,subtotal:n,delivery:n,total:n,items,client_ref,sale_id,sale_no,customer_id,staff_note,log,updated_at'
-};
-var SHOP_STATUSES = ['new', 'confirmed', 'shipped', 'delivered', 'cancelled'];
-var SHOP_MAX_IMAGES = 6, SHOP_CATALOG_TTL = 120;
-
-function shopCols_(name) { return SHOP_SCHEMA[name].split(',').map(function (s) { var p = s.split(':'); return { k: p[0], t: p[1] || 's' }; }); }
-function shopReady_() { return !!getSetting_('shop_db_id', ''); }
-function shopNeedsGoogle_() { if (typeof DriveApp === 'undefined') fail_('The online shop works with the online (Google) version of Karvio only'); }
-function shopDb_() {
-  if (_mem.__shopdb) return _mem.__shopdb;
-  var id = getSetting_('shop_db_id', '');
-  if (!id) fail_('The online shop is not set up yet');
-  _mem.__shopdb = SpreadsheetApp.openById(id);
-  return _mem.__shopdb;
-}
-function shopSheet_(name) {
-  var db = shopDb_(), sh = db.getSheetByName(name), cs = shopCols_(name);
-  if (!sh) {
-    sh = db.insertSheet(name);
-    sh.getRange(1, 1, 1, cs.length).setValues([cs.map(function (c) { return c.k; })]).setFontWeight('bold').setBackground('#e8eefc');
-    sh.setFrozenRows(1);
-    cs.forEach(function (c, i) { if (c.t === 's') sh.getRange(1, i + 1, sh.getMaxRows(), 1).setNumberFormat('@'); });
-  }
-  return sh;
-}
-function shopRows_(name) {
-  var sh = shopSheet_(name), cs = shopCols_(name), last = sh.getLastRow();
-  if (last < 2) return [];
-  return sh.getRange(2, 1, last - 1, cs.length).getValues().map(function (r, i) {
-    var o = { _row: i + 2 };
-    cs.forEach(function (c, j) { o[c.k] = cast_(r[j], c.t); });
-    return o;
-  }).filter(function (o) { return o.id; });
-}
-function shopRow_(name, o) { return shopCols_(name).map(function (c) { return ser_(o[c.k], c.t); }); }
-function shopInsert_(name, o) {
-  var sh = shopSheet_(name);
-  sh.getRange(sh.getLastRow() + 1, 1, 1, shopCols_(name).length).setValues([shopRow_(name, o)]);
-  return o;
-}
-function shopUpdate_(name, cur, patch) {
-  var o = Object.assign({}, cur, patch); delete o._row;
-  shopSheet_(name).getRange(cur._row, 1, 1, shopCols_(name).length).setValues([shopRow_(name, o)]);
-  o._row = cur._row;
-  return o;
-}
-function jsonOr_(s, d) { try { return s ? JSON.parse(s) : d; } catch (e) { return d; } }
-function shopImageUrl_(id, w) { return 'https://lh3.googleusercontent.com/d/' + id + '=w' + (w || 800); }
-function shopPhone_(s) {
-  var d = String(s || '').replace(/\D/g, '');
-  if (d.indexOf('880') === 0) d = d.slice(2);
-  if (d.length === 10 && d.charAt(0) === '1') d = '0' + d;
-  return /^01[3-9]\d{8}$/.test(d) ? d : '';
-}
-
-/* ---- big values in CacheService (100 KB per key) ---- */
-function cachePutBig_(key, text, ttl) {
-  var c = CacheService.getScriptCache(), size = 90000, n = Math.ceil(text.length / size) || 1;
-  for (var i = 0; i < n; i++) c.put(key + '_' + i, text.slice(i * size, (i + 1) * size), ttl);
-  c.put(key, String(n), ttl);
-}
-function cacheGetBig_(key) {
-  var c = CacheService.getScriptCache(), n = Number(c.get(key) || 0), out = '';
-  if (!n) return null;
-  for (var i = 0; i < n; i++) { var part = c.get(key + '_' + i); if (part === null || part === undefined) return null; out += part; }
-  return out;
-}
-function shopCatalogClear_() { try { CacheService.getScriptCache().remove('shop_catalog'); } catch (e) { /* cache is only a speed-up */ } }
-
-/* ---- public: catalogue ---- */
-function shopInfo_() {
-  var s = settingsMap_(), bkashNo = String(s.shop_bkash_number || '').trim();
-  return {
-    name: s.shop_name || 'Shop', phone: s.shop_phone || '', tel: s.shop_tel || '', email: s.shop_email || '', address: s.shop_address || '',
-    web: s.shop_web || '', social: s.shop_social || '', currency: s.currency || 'Tk', notice: s.shop_notice || '',
-    open: s.shop_enabled === 'true' && shopReady_(),
-    cod: s.shop_cod !== 'false',
-    bkash: { enabled: s.shop_bkash !== 'false' && !!bkashNo, number: bkashNo, type: s.shop_bkash_type === 'merchant' ? 'merchant' : 'personal' },
-    delivery: { inside: num_(s.shop_delivery_inside || 60), outside: num_(s.shop_delivery_outside || 120), inside_label: s.shop_inside_label || 'Inside the city' }
-  };
-}
-function shopCatalogBuild_() {
-  var info = shopInfo_(), out = { shop: info, groups: [], brands: [], products: [], updated_at: now_() };
-  if (!info.open) return out;
-  var cats = indexBy_(all_('Categories')), brands = indexBy_(all_('Brands')), usedC = {}, usedB = {};
-  out.products = all_('Products').filter(function (p) { return p.web && p.active && p.sale_price > 0; }).map(function (p) {
-    var service = isService_(p), low = p.low_stock > 0 ? p.low_stock : 3;
-    if (p.category_id) usedC[p.category_id] = 1; if (p.subcategory_id) usedC[p.subcategory_id] = 1; if (p.brand_id) usedB[p.brand_id] = 1;
-    return {
-      id: p.id, name: p.name, sku: p.sku, group_id: p.category_id || '', category_id: p.subcategory_id || '', brand_id: p.brand_id || '',
-      price: p.sale_price, unit: p.unit || 'pcs', decimal: isDecimalUnit_(p.unit),
-      in_stock: service || p.stock > 0, low_stock: !service && p.stock > 0 && p.stock <= low,
-      warranty_days: p.has_warranty ? p.warranty_days : 0, description: p.description || '',
-      images: parseList_(p.images), created_at: p.created_at
-    };
-  });
-  out.groups = Object.keys(usedC).filter(function (id) { return cats[id] && !cats[id].parent_id; }).map(function (id) {
-    return { id: id, name: cats[id].name, categories: Object.keys(usedC).filter(function (c) { return cats[c] && cats[c].parent_id === id; }).map(function (c) { return { id: c, name: cats[c].name }; }) };
-  }).sort(function (a, b) { return a.name < b.name ? -1 : 1; });
-  out.brands = Object.keys(usedB).filter(function (id) { return brands[id]; }).map(function (id) { return { id: id, name: brands[id].name }; })
-    .sort(function (a, b) { return a.name < b.name ? -1 : 1; });
-  return out;
-}
-function shopCatalog_() {
-  var data = shopCatalogBuild_();
-  try { cachePutBig_('shop_catalog', JSON.stringify(data), SHOP_CATALOG_TTL); } catch (e) { /* cache is only a speed-up */ }
-  return data;
-}
-
-/* ---- public: place and track orders ---- */
-function shopOrderCreate_(p) {
-  var info = shopInfo_();
-  if (!info.open) fail_('The online shop is closed right now. Please call ' + (info.phone || 'the shop') + '.');
-  if (String(p.company || '')) fail_('Order not accepted'); // hidden field: only bots fill it
-  var name = String(p.name || '').trim().replace(/\s+/g, ' ').slice(0, 80), phone = shopPhone_(p.phone);
-  var address = String(p.address || '').trim().slice(0, 300), note = String(p.note || '').trim().slice(0, 300);
-  if (name.length < 2) fail_('Please write your name');
-  if (!phone) fail_('Please give a valid mobile number (01XXXXXXXXX)');
-  if (address.length < 8) fail_('Please write the full delivery address');
-  var area = p.area === 'outside' ? 'outside' : 'inside';
-  var clientRef = String(p.client_ref || '').replace(/[^\w-]/g, '').slice(0, 40);
-  var orders = shopRows_('Orders');
-  if (clientRef) {
-    var again = orders.filter(function (o) { return o.client_ref === clientRef && o.phone === phone; })[0];
-    if (again) return { order_no: again.order_no, total: again.total, status: again.status, payment: again.payment, created_at: again.created_at, repeated: true };
-  }
-  var payment = p.payment === 'bkash' ? 'bkash' : 'cod', sender = '', trx = '';
-  if (payment === 'cod' && !info.cod) fail_('Cash on delivery is not available — please pay with bKash');
-  if (payment === 'bkash') {
-    if (!info.bkash.enabled) fail_('bKash payment is not available right now');
-    sender = shopPhone_(p.bkash_sender); trx = String(p.bkash_trx || '').trim().toUpperCase();
-    if (!sender) fail_('Write the bKash number you paid from');
-    if (!/^[A-Z0-9]{8,12}$/.test(trx)) fail_('Write the bKash Transaction ID (TrxID) from the bKash message');
-    if (orders.some(function (o) { return o.bkash_trx === trx && o.status !== 'cancelled'; })) fail_('This bKash Transaction ID was already used for another order');
-  }
-  // anti-spam: a few orders per number, and a ceiling for the whole shop
-  var cache = CacheService.getScriptCache(), kPhone = 'shop_rl_' + phone, kAll = 'shop_rl_all';
-  var nPhone = Number(cache.get(kPhone) || 0), nAll = Number(cache.get(kAll) || 0);
-  if (nPhone >= 3) fail_('Too many orders from this number. Please wait a little or call the shop.');
-  if (nAll >= 40) fail_('The shop is receiving many orders right now. Please try again in a few minutes.');
-  var items = Array.isArray(p.items) ? p.items.slice(0, 30) : [];
-  if (!items.length) fail_('Your cart is empty');
-  var prods = indexBy_(all_('Products')), seen = {}, lines = [];
-  items.forEach(function (it) {
-    var pr = prods[it.product_id];
-    if (!pr || !pr.web || !pr.active || !(pr.sale_price > 0)) fail_('A product in your cart is no longer sold online. Please refresh the page.');
-    if (seen[pr.id]) fail_('The same product is in the cart twice'); seen[pr.id] = 1;
-    var qty = round_(num_(it.qty), 2), dec = isDecimalUnit_(pr.unit);
-    if (!(qty > 0) || (!dec && qty !== Math.floor(qty)) || qty > (dec ? 1000 : 50)) fail_('Check the quantity of ' + pr.name);
-    if (!isService_(pr) && qty > pr.stock) fail_(pr.stock > 0 ? 'Only ' + (dec ? pr.stock + ' ' + pr.unit : 'a few') + ' of ' + pr.name + ' left. Please lower the quantity.' : pr.name + ' just went out of stock');
-    lines.push({ product_id: pr.id, name: pr.name, sku: pr.sku || '', unit: pr.unit || 'pcs', qty: qty, price: pr.sale_price, total: round_(qty * pr.sale_price) });
-  });
-  var subtotal = round_(sum_(lines, function (l) { return l.total; })), delivery = area === 'outside' ? info.delivery.outside : info.delivery.inside;
-  var maxNo = 0; orders.forEach(function (o) { var m = /(\d+)$/.exec(o.order_no); if (m) maxNo = Math.max(maxNo, Number(m[1])); });
-  var created = now_();
-  var order = {
-    id: uid_(), order_no: 'WO-' + String(maxNo + 1).padStart(6, '0'), created_at: created, status: 'new', payment: payment,
-    payment_status: payment === 'bkash' ? 'unverified' : 'cod', bkash_sender: sender, bkash_trx: trx,
-    customer_name: name, phone: phone, address: address, area: area, note: note, subtotal: subtotal, delivery: delivery, total: round_(subtotal + delivery),
-    items: JSON.stringify(lines), client_ref: clientRef, sale_id: '', sale_no: '', customer_id: '', staff_note: '',
-    log: JSON.stringify([{ at: created, status: 'new', by: 'Customer' }]), updated_at: created
-  };
-  shopInsert_('Orders', order);
-  cache.put(kPhone, String(nPhone + 1), 1800); cache.put(kAll, String(nAll + 1), 600);
-  return { order_no: order.order_no, total: order.total, subtotal: subtotal, delivery: delivery, status: 'new', payment: payment, created_at: created };
-}
-function shopOrderTrack_(p) {
-  if (!shopReady_()) fail_('Order not found');
-  var no = String(p.order_no || '').trim().toUpperCase(), phone = shopPhone_(p.phone);
-  var o = shopRows_('Orders').filter(function (x) { return x.order_no === no && x.phone === phone; })[0];
-  if (!o) fail_('No order found with this number and mobile');
-  return {
-    order_no: o.order_no, created_at: o.created_at, status: o.status, payment: o.payment, payment_status: o.payment_status,
-    customer_name: o.customer_name, address: o.address, items: jsonOr_(o.items, []), subtotal: o.subtotal, delivery: o.delivery, total: o.total, invoice_no: o.sale_no,
-    log: jsonOr_(o.log, []).map(function (l) { return { at: l.at, status: l.status }; })
-  };
-}
-
-/* ---- staff: orders ---- */
-function shopOrderOut_(o) { var x = Object.assign({}, o); delete x._row; delete x.client_ref; x.items = jsonOr_(o.items, []); x.log = jsonOr_(o.log, []); return x; }
-function webOrdersList_(p) {
-  if (!shopReady_()) return { ready: false, orders: [], counts: {} };
-  var rows = shopRows_('Orders'), counts = {};
-  SHOP_STATUSES.forEach(function (s) { counts[s] = 0; });
-  rows.forEach(function (o) { counts[o.status] = (counts[o.status] || 0) + 1; });
-  var st = String(p.status || '');
-  var list = rows.filter(function (o) { return !st || o.status === st; }).sort(function (a, b) { return a.created_at < b.created_at ? 1 : -1; });
-  return { ready: true, orders: list.slice(0, 500).map(shopOrderOut_), counts: counts };
-}
-function webOrderFind_(id) { var o = shopRows_('Orders').filter(function (x) { return x.id === id; })[0]; if (!o) fail_('Order not found'); return o; }
-function webOrderUpdate_(p, user) {
-  var o = webOrderFind_(p.id), patch = {}, log = jsonOr_(o.log, []), now = now_();
-  if (p.status !== undefined && p.status !== o.status) {
-    var to = String(p.status);
-    if (SHOP_STATUSES.indexOf(to) < 0) fail_('Unknown order status');
-    if (o.status === 'cancelled' || o.status === 'delivered') fail_('This order is ' + o.status + ' and cannot change');
-    if ((to === 'shipped' || to === 'delivered') && !o.sale_id) fail_('Finish the sale at the POS first (Open in POS), then mark it ' + to);
-    if (to === 'confirmed' && !o.sale_id) fail_('An order is confirmed when its sale is made — use Open in POS');
-    if (to === 'new') fail_('An order cannot go back to New');
-    patch.status = to; log.push({ at: now, status: to, by: user.name });
-  }
-  if (p.payment_status !== undefined && o.payment === 'bkash') {
-    if (['unverified', 'verified', 'invalid'].indexOf(p.payment_status) < 0) fail_('Unknown payment status');
-    if (p.payment_status !== o.payment_status) { patch.payment_status = p.payment_status; log.push({ at: now, status: 'bKash ' + p.payment_status, by: user.name }); }
-  }
-  if (p.staff_note !== undefined) patch.staff_note = String(p.staff_note || '').slice(0, 300);
-  if (!Object.keys(patch).length) return shopOrderOut_(o);
-  patch.log = JSON.stringify(log.slice(-50)); patch.updated_at = now;
-  var out = shopUpdate_('Orders', o, patch);
-  audit_(user, 'web_order_update', { order: o.order_no, status: patch.status || '', payment: patch.payment_status || '' });
-  return shopOrderOut_(out);
-}
-/** After the POS sale: tie the invoice to the order (also usable by hand with an invoice number). */
-function webOrderLink_(p, user) {
-  var o = webOrderFind_(p.id);
-  if (o.status === 'cancelled') fail_('This order was cancelled');
-  if (o.sale_id) fail_('This order already has invoice ' + o.sale_no);
-  var no = String(p.invoice_no || '').trim().toUpperCase();
-  var sale = all_('Sales').filter(function (s) { return p.sale_id ? s.id === p.sale_id : s.invoice_no.toUpperCase() === no; })[0];
-  if (!sale) fail_('Invoice not found');
-  if (sale.status !== 'active') fail_('That invoice was cancelled');
-  if (shopRows_('Orders').some(function (x) { return x.sale_id === sale.id; })) fail_('Invoice ' + sale.invoice_no + ' is already linked to another order');
-  var log = jsonOr_(o.log, []), now = now_();
-  log.push({ at: now, status: 'confirmed', by: user.name, note: sale.invoice_no });
-  var out = shopUpdate_('Orders', o, { sale_id: sale.id, sale_no: sale.invoice_no, customer_id: sale.customer_id || '', status: o.status === 'new' ? 'confirmed' : o.status, log: JSON.stringify(log.slice(-50)), updated_at: now });
-  audit_(user, 'web_order_link', { order: o.order_no, invoice: sale.invoice_no });
-  return shopOrderOut_(out);
-}
-
-/* ---- admin: Drive folder, images ---- */
-function shopFolder_() {
-  shopNeedsGoogle_();
-  var id = getSetting_('shop_folder_id', '');
-  if (!id) fail_('Set up the online shop first (Settings → Online shop)');
-  return DriveApp.getFolderById(id);
-}
-function shopAdmin_(p, user) {
-  var s = settingsMap_(), ready = shopReady_();
-  var orders = ready ? shopRows_('Orders') : [];
-  return {
-    ready: ready, google: typeof DriveApp !== 'undefined',
-    folder_url: s.shop_folder_id ? 'https://drive.google.com/drive/folders/' + s.shop_folder_id : '',
-    images_url: s.shop_images_folder_id ? 'https://drive.google.com/drive/folders/' + s.shop_images_folder_id : '',
-    db_url: s.shop_db_id ? 'https://docs.google.com/spreadsheets/d/' + s.shop_db_id : '',
-    delivery_product_id: s.shop_delivery_product_id || '',
-    web_products: all_('Products').filter(function (x) { return x.web && x.active; }).length,
-    orders: orders.length, new_orders: orders.filter(function (o) { return o.status === 'new'; }).length
-  };
-}
-/** Creates (or repairs) Drive › Karvio Shop › Images + Karvio Shop Database, and the "Delivery charge" item. Safe to run again. */
-function shopSetup_(p, user) {
-  if (user.role !== 'admin') fail_('Only an admin can set up the online shop');
-  shopNeedsGoogle_();
-  var folder = null, images = null, db = null;
-  try { if (getSetting_('shop_folder_id', '')) folder = DriveApp.getFolderById(getSetting_('shop_folder_id', '')); } catch (e) { folder = null; }
-  if (!folder) folder = DriveApp.createFolder('Karvio Shop');
-  try { if (getSetting_('shop_images_folder_id', '')) images = DriveApp.getFolderById(getSetting_('shop_images_folder_id', '')); } catch (e) { images = null; }
-  if (!images) images = folder.createFolder('Images');
-  try { if (getSetting_('shop_db_id', '')) db = SpreadsheetApp.openById(getSetting_('shop_db_id', '')); } catch (e) { db = null; }
-  if (!db) {
-    db = SpreadsheetApp.create('Karvio Shop Database');
-    DriveApp.getFileById(db.getId()).moveTo(folder);
-  }
-  setSetting_('shop_folder_id', folder.getId());
-  setSetting_('shop_images_folder_id', images.getId());
-  setSetting_('shop_db_id', db.getId());
-  _mem.__shopdb = db;
-  shopSheet_('Orders');
-  db.getSheets().forEach(function (sh) { if (sh.getName && sh.getName() !== 'Orders' && sh.getLastRow() === 0 && db.getSheets().length > 1) db.deleteSheet(sh); });
-  // "Delivery charge": a service item the POS uses for the delivery line of an online order.
-  var dp = all_('Products').filter(function (x) { return x.id === getSetting_('shop_delivery_product_id', ''); })[0]
-    || all_('Products').filter(function (x) { return nameKey_(x.name) === nameKey_('Delivery charge'); })[0];
-  if (!dp) dp = insert_('Products', { sku: '', barcode: '', name: 'Delivery charge', category_id: '', subcategory_id: '', brand_id: '', unit: 'pcs', roll_length: 0, cost_price: 0, sale_price: num_(getSetting_('shop_delivery_inside', '60')) || 60, wholesale_price: 0, stock: 0, low_stock: 0, has_warranty: false, warranty_type: '', warranty_days: 0, active: true, created_at: now_(), service: true, description: 'Delivery for online orders', web: false, images: '' });
-  setSetting_('shop_delivery_product_id', dp.id);
-  audit_(user, 'shop_setup', { folder: folder.getId(), db: db.getId() });
-  flush_();
-  return shopAdmin_(p, user);
-}
-function productImageUpload_(p, user) {
-  shopNeedsGoogle_();
-  var pr = all_('Products').filter(function (x) { return x.id === p.id; })[0];
-  if (!pr) fail_('Product not found');
-  var list = parseList_(pr.images);
-  if (list.length >= SHOP_MAX_IMAGES) fail_('A product can have up to ' + SHOP_MAX_IMAGES + ' pictures');
-  var data = String(p.data || ''), m = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(data);
-  if (!m) fail_('Send a JPG, PNG or WebP picture');
-  if (m[2].length > 4 * 1024 * 1024) fail_('Picture is too large (keep it under 3 MB)');
-  var folder = DriveApp.getFolderById(getSetting_('shop_images_folder_id', '') || fail_('Set up the online shop first (Settings → Online shop)'));
-  var ext = m[1] === 'image/png' ? 'png' : m[1] === 'image/webp' ? 'webp' : 'jpg';
-  var file = folder.createFile(Utilities.newBlob(Utilities.base64Decode(m[2]), m[1], (pr.sku || pr.name).replace(/[^\w.-]+/g, '-').slice(0, 60) + '-' + Date.now() + '.' + ext));
-  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-  list.push(file.getId());
-  var out = update_('Products', pr.id, { images: list.join(',') });
-  shopCatalogClear_();
-  audit_(user, 'product_image_add', { product: pr.name });
-  return out;
-}
-/** Reorder or remove pictures. `images` must be the product's own pictures; removed ones go to the Drive bin. */
-function productImagesSet_(p, user) {
-  shopNeedsGoogle_();
-  var pr = all_('Products').filter(function (x) { return x.id === p.id; })[0];
-  if (!pr) fail_('Product not found');
-  var cur = parseList_(pr.images), next = (Array.isArray(p.images) ? p.images : []).map(String);
-  next.forEach(function (id) { if (cur.indexOf(id) < 0) fail_('Unknown picture'); });
-  if (next.length !== next.filter(function (x, i) { return next.indexOf(x) === i; }).length) fail_('Same picture twice');
-  var out = update_('Products', pr.id, { images: next.join(',') });
-  cur.filter(function (id) { return next.indexOf(id) < 0; }).forEach(function (id) {
-    try { DriveApp.getFileById(id).setTrashed(true); } catch (e) { /* already gone */ }
-  });
-  shopCatalogClear_();
-  return out;
-}
-
-/* ============================================================================
  *  22. API ROUTER
  *      r(perm, handler, isWrite)   perm = null → any signed-in user
  * ========================================================================== */
@@ -3252,17 +2927,6 @@ var ROUTES = {
   'settings.save':    r_('settings', settingsSave_, true),
   // Not journaled (it empties every table); runs under the script lock after recovery. Administrator account only.
   'database.reset':   r_('settings', databaseReset_, false),
-  // Online shop (public routes are used by the shop website and never return cost or customer data)
-  'shop.catalog':     { public: true, fn: shopCatalog_ },
-  'shop.order.create':{ public: true, fn: shopOrderCreate_ },
-  'shop.order.track': { public: true, fn: shopOrderTrack_ },
-  'shop.admin':       r_('settings', shopAdmin_, false),
-  'shop.setup':       r_('settings', shopSetup_, false),
-  'weborders.list':   r_('pos', webOrdersList_, false),
-  'weborder.update':  r_('pos', webOrderUpdate_, false),
-  'weborder.link':    r_('pos', webOrderLink_, false),
-  'product.image.add':r_('products', productImageUpload_, true),
-  'product.images':   r_('products', productImagesSet_, true),
   'database.info':    r_('settings', databaseInfo_, false),
   'database.export':  r_('settings', databaseExport_, false),
   'database.restore': r_('settings', databaseRestore_, false),
@@ -3281,11 +2945,6 @@ function doPost(e) {
   try {
     var route = ROUTES[req.action];
     if (!route) fail_('Unknown action: ' + req.action);
-    // Shop website visitors: a cached catalogue is answered at once, without waiting for the lock.
-    if (req.action === 'shop.catalog') {
-      var cached = null; try { cached = cacheGetBig_('shop_catalog'); } catch (e) { cached = null; }
-      if (cached) return ContentService.createTextOutput('{"ok":true,"data":' + cached + '}').setMimeType(ContentService.MimeType.JSON);
-    }
     var user = null, info = null;
     var run = function () {
       if (!route.public) { user = authUser_(req.token); need_(user, route.perm); }

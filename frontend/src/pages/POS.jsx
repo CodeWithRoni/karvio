@@ -23,9 +23,7 @@ export default function POS() {
   const setPays = (v) => { setPayTouched(true); setPaysRaw(v); };
   const [useCredit, setUseCredit] = useState(false);
   const [tier, setTier] = useState('retail');
-  // An online order opened from Online Orders: finishing this sale confirms that order.
-  const [webOrder, setWebOrder] = useState(draft?.webOrder || null);
-  const [note, setNote] = useState(draft?.webOrder ? `Online order ${draft.webOrder.order_no}` : '');
+  const [note, setNote] = useState('');
   const [sendSms, setSendSms] = useState(false); // SMS to the customer is off unless switched on for this sale
   const [serialFor, setSerialFor] = useState(null);
   const [quick, setQuick] = useState(null);
@@ -42,7 +40,7 @@ export default function POS() {
   const searchRef = useRef();
   const discRef = useRef();
 
-  useEffect(() => { try { localStorage.setItem(DRAFT, JSON.stringify({ cart, customerId, discount, ...(webOrder ? { webOrder } : {}) })); } catch {} }, [cart, customerId, discount, webOrder]);
+  useEffect(() => { try { localStorage.setItem(DRAFT, JSON.stringify({ cart, customerId, discount })); } catch {} }, [cart, customerId, discount]);
 
   const pmap = useMemo(() => Object.fromEntries(products.map((p) => [p.id, p])), [products]);
   const customer = customers.find((c) => c.id === customerId);
@@ -137,7 +135,7 @@ export default function POS() {
   };
 
   const [confirmUI, ask] = useConfirm();
-  const reset = () => { setNextPay(''); setSendSms(false); setCart([]); setCustomerId(''); setDiscount(''); setPaysRaw(defaultPay()); setPayTouched(false); setUseCredit(false); setNote(''); setWebOrder(null); searchRef.current?.focus(); };
+  const reset = () => { setNextPay(''); setSendSms(false); setCart([]); setCustomerId(''); setDiscount(''); setPaysRaw(defaultPay()); setPayTouched(false); setUseCredit(false); setNote(''); searchRef.current?.focus(); };
 
   const gatewayOn = settings.sms_enabled === 'true';
   const phone = customer?.phones?.split(',')[0]?.trim() || '';
@@ -166,12 +164,6 @@ export default function POS() {
         toast(`${res.sale.invoice_no} saved${change > 0 ? ` — return change ${money(change)}` : ''}${res.sms && !res.sms.ok ? ' (SMS failed)' : ''}`, 'ok');
         searchRef.current?.focus();
       } else setDone({ ...res, change });
-      if (webOrder) {
-        // tie the invoice to the online order; the sale itself is already saved
-        api('weborder.link', { id: webOrder.id, sale_id: res.sale.id })
-          .then(() => toast(`Online order ${webOrder.order_no} confirmed with ${res.sale.invoice_no}`, 'ok'))
-          .catch((e) => toast(`Sale saved, but order ${webOrder.order_no} was not linked (${e.message}). Open Online Orders and link ${res.sale.invoice_no}.`, 'err'));
-      }
       reset();
       setHist({});
       refresh('products', 'customers').catch(() => toast('Sale saved. Reload the page to refresh stock and customer balances.', 'err'));
@@ -185,15 +177,11 @@ export default function POS() {
     F9: () => checkout(false),
     F10: () => checkout(true),
     'mod+delete': () => cart.length && confirm('Clear the cart?') && reset()
-  }, [cart, pays, customerId, discount, useCredit, note, sendSms, busy, tier, nextPay, webOrder]);
+  }, [cart, pays, customerId, discount, useCredit, note, sendSms, busy, tier, nextPay]);
 
   return (
     <div className="pos">
       <div className="pos-left">
-        {webOrder && <div className="webbanner" role="status">
-          <span><b>Online order {webOrder.order_no}</b> — completing this sale confirms the order.{webOrder.payment === 'bkash' ? ` Paid by bKash${webOrder.payment_status === 'verified' ? ' (verified)' : ' (check the TrxID first)'}: take the payment into your bKash account.` : ' Cash on delivery: leave it as due, or take the payment when it is collected.'}</span>
-          <button type="button" onClick={() => { setWebOrder(null); if (note.startsWith('Online order')) setNote(''); }}>Not for this order</button>
-        </div>}
         <div className="row">
           <div style={{ flex: 1 }}><ProductSearch onPick={(p) => add(p)} onCode={addBySerial} placeholder="Search Product With Serial / Name / Model / Brand (F2)" inputRef={searchRef} autoFocus /></div>
           <Tabs tabs={[['retail', 'Retail'], ['wholesale', 'Wholesale']]} value={tier} onChange={setTier} />
