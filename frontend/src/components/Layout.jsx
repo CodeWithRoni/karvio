@@ -32,6 +32,7 @@ export const NAV = [
   { to: '/', label: 'Dashboard', key: '1', end: true },
   { to: '/pos', label: 'Point Of Sale', perm: 'pos', key: '2' },
   { to: '/sales', label: 'Sales & Returns', perm: 'pos', key: '3' },
+  { to: '/orders', label: 'Online Orders', perm: 'pos' },
   { to: '/pc-builder', label: 'PC Builder & Quotes', perm: 'pos' },
   { to: '/customers', label: 'Customers & Dues', key: '4' },
   { group: 'Stock' },

@@ -9,14 +9,16 @@ import { DASH_CARDS, hiddenCards } from '../lib/dashboardCards';
 import { PAPERS, TEMPLATES, printInvoice } from '../lib/receipt';
 import { PRESETS, matchPreset } from '../lib/smsPresets';
 import { DatabaseTab } from '../components/DatabaseTools';
+import OnlineShopSettings from '../components/OnlineShopSettings';
 
 export default function Settings() {
   const can = useStore((s) => s.can);
   const offline = isOffline();
   const admin = useStore((s) => s.user?.role === 'admin');
   const owner = useStore((s) => s.user?.owner === true); // the Administrator account only — not every admin
-  const [tab, setTab] = useState(can('settings') ? 'shop' : offline ? 'me' : 'api');
-  const tabs = [...(can('settings') ? [['shop', 'Shop'], ['invoice', 'Invoice'], ['dashboard', 'Dashboard'], ...(!offline ? [['sms', 'SMS gateway']] : [])] : []), ...(offline ? admin ? [['local', 'Offline data & backup']] : [] : [['api', 'API connection']]), ['me', 'My password'], ...(owner ? [['database', 'Database']] : [])];
+  const tabs = [...(can('settings') ? [['shop', 'Shop'], ['invoice', 'Invoice'], ['dashboard', 'Dashboard'], ...(!offline ? [['sms', 'SMS gateway'], ['online', 'Online shop']] : [])] : []), ...(offline ? admin ? [['local', 'Offline data & backup']] : [] : [['api', 'API connection']]), ['me', 'My password'], ...(owner ? [['database', 'Database']] : [])];
+  const asked = new URLSearchParams(window.location.hash.split('?')[1] || '').get('tab'); // e.g. #/settings?tab=online
+  const [tab, setTab] = useState(tabs.some((t) => t[0] === asked) ? asked : can('settings') ? 'shop' : offline ? 'me' : 'api');
   return (
     <>
       <PageHead title="Settings"><Tabs tabs={tabs} value={tab} onChange={setTab} /></PageHead>
@@ -24,6 +26,7 @@ export default function Settings() {
       {tab === 'invoice' && <InvoiceSettings />}
       {tab === 'dashboard' && <DashboardSettings />}
       {tab === 'sms' && <SmsSettings />}
+      {tab === 'online' && <OnlineShopSettings />}
       {tab === 'api' && <ApiSettings />}
       {tab === 'local' && <OfflineSettings />}
       {tab === 'me' && <MyPassword />}

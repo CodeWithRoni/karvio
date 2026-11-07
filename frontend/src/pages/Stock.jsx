@@ -6,8 +6,9 @@ import { money, qty as fqty, isDecimalUnit } from '../lib/format';
 import DataTable from '../components/DataTable';
 import MasterData from '../components/MasterData';
 import { PageHead, Tabs, Modal, Btn, Field, Badge, Select, useAction, noWheel } from '../components/ui';
+import ProductPictures from '../components/ProductPictures';
 
-const blank = { name: '', sku: '', barcode: '', category_id: '', subcategory_id: '', brand_id: '', unit: 'pcs', roll_length: '', cost_price: '', sale_price: '', wholesale_price: '', low_stock: '', has_warranty: false, warranty_type: 'serial', warranty_days: 0, active: true, service: false, description: '' };
+const blank = { name: '', sku: '', barcode: '', category_id: '', subcategory_id: '', brand_id: '', unit: 'pcs', roll_length: '', cost_price: '', sale_price: '', wholesale_price: '', low_stock: '', has_warranty: false, warranty_type: 'serial', warranty_days: 0, active: true, service: false, description: '', web: false, images: '' };
 // Auto name = Product group + Category + Brand + Model, e.g. "Networking Router TP-Link Archer C6".
 export const nameKey = (s) => String(s || '').trim().replace(/\s+/g, ' ').toLowerCase();
 
@@ -81,7 +82,7 @@ function ProductForm({ initial, onClose }) {
   const { categories, brands, warrantyPeriods, units, products, refresh, can } = useStore();
   const catName = (id) => categories.find((c) => c.id === id)?.name || '';
   const autoName = (x) => [catName(x.category_id), catName(x.subcategory_id), brands.find((b) => b.id === x.brand_id)?.name, String(x.sku || '').trim()].filter(Boolean).join(' ');
-  const [f, setF] = useState({ ...initial, service: initial.service === true || initial.service === 'true' });
+  const [f, setF] = useState({ ...initial, service: initial.service === true || initial.service === 'true', web: initial.web === true || initial.web === 'true' });
   // The name follows group → category → brand → model until the user types their own name.
   const [auto, setAuto] = useState(() => !initial.id || !initial.name || initial.name === autoName(initial));
   const setPart = (patch) => setF((cur) => { const next = { ...cur, ...patch }; return auto ? { ...next, name: autoName(next) } : next; });
@@ -94,7 +95,7 @@ function ProductForm({ initial, onClose }) {
   const save = async () => {
     if (dup) return useStore.getState().toast(`"${dup.name}" already exists`, 'err');
     // Prices are not part of the product form: cost comes from purchases, retail / wholesale from the Price manager.
-    const { cost_price, sale_price, wholesale_price, ...data } = f;
+    const { cost_price, sale_price, wholesale_price, images, ...data } = f; // pictures are saved on their own
     await run(() => api('product.save', data), isNew ? 'Product added — set its price when you purchase it, or in Price manager' : 'Product updated');
     await refresh('products'); onClose();
   };
@@ -129,6 +130,13 @@ function ProductForm({ initial, onClose }) {
           <Field label="Short description" wide hint={`${String(f.description || '').length}/500 — e.g. Dual-band AC1200, 4 antennas, 1 year warranty.`}>
             <textarea value={f.description || ''} maxLength={500} rows={3} onChange={s('description')} placeholder="A few words about this product (optional)" aria-label="Short description" />
           </Field>
+        </div>
+
+        <div className="wide card product-web" style={{ background: 'var(--panel-2)' }}>
+          <label className="check"><input type="checkbox" checked={!!f.web} onChange={s('web')} /> Show on the online shop</label>
+          <p className="muted" style={{ margin: '6px 0 10px', fontSize: 12.5 }}>Shown with its retail price and pictures; customers see only “In stock” or “Out of stock”, never your cost or stock count.</p>
+          {isNew ? <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>Save the product first, then open it again to add pictures.</p>
+            : <ProductPictures product={f} onChange={() => refresh('products').catch(() => {})} />}
         </div>
 
         <div className="wide card" style={{ background: 'var(--panel-2)' }}>

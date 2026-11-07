@@ -72,6 +72,7 @@ export const useStore = create((set, get) => ({
       products: () => api('products.list').then((products) => set({ products })),
       customers: () => api('customers.list').then((c) => set({ customers: c.filter((x) => x.active) })),
       suppliers: () => (get().can('suppliers') || get().can('purchase')) && api('suppliers.list').then((s) => set({ suppliers: s.filter((x) => x.active) })),
+      settings: () => api('settings.get').then((settings) => set({ settings })),
       all: () => get().boot()
     };
     await Promise.all((keys.length ? keys : ['all']).map((k) => jobs[k] && jobs[k]()));
