@@ -53,6 +53,37 @@ export function purchaseInvoiceHtml(d) {
 export function printPurchases(list) {
   return printHtml(`<style>@page{size:A4;margin:12mm}body{margin:0}${css}.pinv+.pinv{page-break-before:always;break-before:page}</style>${list.map(purchaseInvoiceHtml).join('')}`);
 }
+const page = (block) => `<style>@page{size:A4;margin:12mm}body{margin:0}${css}</style>${block}`;
+/** One purchase invoice as the full document printPurchases prints. */
+export const purchaseDocHtml = (d) => page(purchaseInvoiceHtml(d));
+
+/** A purchase return (goods sent back to the supplier). d = { ret, items, supplier } from history.doc (type preturn) */
+export function purchaseReturnHtml(d) {
+  const s = useStore.getState().settings, r = d.ret, sup = d.supplier || {};
+  const rows = d.items.map((i, n) => {
+    const sers = splitList(String(i.serials || '').replace(/\n/g, ','));
+    return `<tr><td>${n + 1}</td><td><b>${esc(i.name)}</b>${sers.length ? `<div class="sn">S/N (${sers.length}): ${esc(sers.join(', '))}</div>` : ''}</td>
+      <td class="r">${esc(qty(i.qty))}</td><td class="r">${esc(money(i.cost, false))}</td><td class="r">${esc(money(i.total, false))}</td></tr>`;
+  }).join('');
+  const adjusted = Number(r.total) - Number(r.received || 0);
+  return `<div class="pinv">
+    <div class="top"><div><h1>${esc(s.shop_name || 'Karvio')}</h1><div>${esc(s.shop_address || '')}</div><div>${shopContacts(s)}</div></div>
+      <div><h2>PURCHASE RETURN</h2><div style="text-align:right"><b>${esc(r.return_no)}</b><br>Date: ${esc(fdate(r.date))}<br><span class="sm">Entered ${esc(fdatetime(r.created_at))} by ${esc(r.user || '')}</span></div></div></div>
+    ${r.status === 'cancelled' ? `<div class="cx">CANCELLED — ${esc(r.cancel_reason || '')}</div>` : ''}
+    <div class="meta">
+      <div class="box"><b class="t">Returned to supplier</b><b>${esc(sup.name || r.supplier_name || '—')}</b>${sup.phones ? `<div>Phone: ${esc(splitList(sup.phones).join(', '))}</div>` : ''}${sup.address ? `<div>${esc(sup.address)}</div>` : ''}</div>
+      <div class="box"><b class="t">Original purchase</b><b>${esc(r.invoice_no || '—')}</b>${r.note ? `<div class="sm">Note: ${esc(r.note)}</div>` : ''}</div>
+    </div>
+    <table><thead><tr><th style="width:28px">#</th><th>Product / serial numbers</th><th class="r" style="width:60px">Qty</th><th class="r" style="width:92px">Purchase price</th><th class="r" style="width:96px">Value</th></tr></thead><tbody>${rows}</tbody></table>
+    <table class="tot">
+      <tr class="g"><td>Return value</td><td class="r">${esc(money(r.total))}</td></tr>
+      <tr><td>Received from supplier${r.account ? ` (${esc(r.account)})` : ''}</td><td class="r">${esc(money(r.received || 0, false))}</td></tr>
+      ${adjusted > 0.004 ? `<tr><td>Adjusted to supplier balance</td><td class="r">${esc(money(adjusted, false))}</td></tr>` : ''}
+    </table>
+    <div class="foot"><span>Printed ${esc(new Date().toLocaleString())}</span><span>Received by: ____________________</span></div>
+  </div>`;
+}
+export const purchaseReturnDocHtml = (d) => page(purchaseReturnHtml(d));
 
 /** Render each HTML block on its own A4 page(s) and download a PDF. Bengali text renders correctly. */
 export async function pdfPages(blocks, styles, filename) {

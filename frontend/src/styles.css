@@ -904,3 +904,49 @@ body::before { content: ''; position: fixed; top: 0; left: 0; right: 0; height: 
 .db-preview-head small { display: block; color: var(--muted); font-size: 12px; }
 .db-badge { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
 .db-badge.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); }
+
+/* ---------- Advance Search: one card each for product, purchases, sales, returns and warranty ---------- */
+.hcards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: stretch; }
+@media (max-width: 1180px) { .hcards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .hcards { grid-template-columns: minmax(0, 1fr); } }
+.hcards > .card + .card { margin-top: 0; }
+.hcard { --k: var(--aqua); display: flex; flex-direction: column; min-width: 0; padding: 14px 14px 12px; border-top: 3px solid var(--k); }
+.hcard[data-k='purchase'] { --k: var(--ok); } .hcard[data-k='sale'] { --k: var(--fiber); } .hcard[data-k='sreturn'] { --k: var(--warn); }
+.hcard[data-k='preturn'] { --k: #fb923c; } .hcard[data-k='claim'] { --k: var(--violet); }
+.hc-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.hc-head h2 { font-size: 15px; margin: 0; }
+.hc-count { margin-left: auto; font: 700 12px var(--font); color: var(--k); background: color-mix(in srgb, var(--k) 14%, transparent); border-radius: 999px; padding: 2px 9px; }
+.hc-note { margin: -4px 0 8px; font-size: 12px; color: var(--muted); }
+.hc-none { margin: 6px 0; color: var(--muted); font-size: 13px; }
+.hc-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; max-height: 360px; }
+.hc-row { padding: 9px 2px; border-top: 1px solid var(--line); }
+.hc-row:first-child { border-top: 0; padding-top: 2px; }
+.hc-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.hc-top .num { font-size: 14px; }
+.hc-no, .hc-pname { font: 700 14px var(--font); color: var(--k); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--k) 45%, transparent); }
+.hc-no:hover, .hc-pname:hover { text-decoration-color: currentColor; }
+.hc-pname { color: var(--text); text-align: left; }
+.hc-no-off { font-size: 14px; }
+.hc-meta .hc-no, .t-meta .hc-no { font-size: 12.5px; font-weight: 700; }
+.timeline .hc-no { --k: var(--aqua); }
+.hc-party { margin-top: 2px; font-weight: 600; overflow-wrap: anywhere; }
+.hc-meta { display: flex; flex-wrap: wrap; gap: 3px 12px; margin-top: 3px; font-size: 12.5px; color: var(--muted); }
+.hc-meta b { color: var(--text); }
+.hc-meta .hc-due { color: var(--bad); }
+.hc-k { color: var(--muted); font-weight: 600; }
+.hc-prod h3 { margin: 0 0 6px; font-size: 16px; overflow-wrap: anywhere; }
+.hc-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.hc-kv { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px 14px; }
+.hc-serial { display: grid; gap: 6px; padding: 10px 12px; margin-bottom: 12px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); }
+.hc-serial > div > span:first-child { display: inline-block; min-width: 96px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.hc-sn { font-family: Consolas, ui-monospace, monospace; font-size: 14px; }
+.hc-desc { font-size: 12.5px; margin: 10px 0 0; }
+.hc-sgrid { margin-top: 12px; max-height: 150px; }
+.hc-sers { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.hc-sers button { font: 600 11.5px Consolas, ui-monospace, monospace; padding: 3px 7px; border-radius: 5px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); cursor: pointer; }
+.hc-sers button:hover { border-color: var(--k); }
+.hc-choose ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+.hc-choose li button { width: 100%; text-align: left; display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); color: var(--text); font: inherit; cursor: pointer; }
+.hc-choose li button:hover { border-color: var(--fiber); }
+.hc-choose li .muted { font-size: 12.5px; }
+.doc-frame { display: block; width: 100%; height: min(74vh, 1100px); border: 1px solid var(--line); border-radius: 8px; background: #dfe5ec; }

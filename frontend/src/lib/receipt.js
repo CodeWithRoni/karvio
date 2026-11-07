@@ -19,14 +19,25 @@ export function printInvoice(detail, paperOverride) {
   const paper = paperOverride || s.invoice_paper || String(s.receipt_width || 80);
   if (paper === 'a4' || paper === 'a5') return import('./salesDocs').then((m) => m.printSales([detail], paper));
   if (paper !== 'custom') return printReceipt(detail, Number(paper) || 80);
-  const w = Math.min(Math.max(Number(s.invoice_custom_width) || 80, 40), 216);
-  const h = Number(s.invoice_custom_height) > 0 ? Math.min(Math.max(Number(s.invoice_custom_height), 40), 1000) : 0;
+  const [w, h] = customPaper(s);
   return printReceipt(detail, w, h);
+}
+const customPaper = (s) => [Math.min(Math.max(Number(s.invoice_custom_width) || 80, 40), 216),
+  Number(s.invoice_custom_height) > 0 ? Math.min(Math.max(Number(s.invoice_custom_height), 40), 1000) : 0];
+/** The same invoice printInvoice prints, as HTML for an on-screen view: { html, paper: 'a4' | 'a5' | 'receipt' }. */
+export async function invoiceHtml(detail) {
+  const s = useStore.getState().settings;
+  const paper = s.invoice_paper || String(s.receipt_width || 80);
+  if (paper === 'a4' || paper === 'a5') { const m = await import('./salesDocs'); return { html: m.saleDocHtml(detail, paper), paper }; }
+  if (paper !== 'custom') return { html: receiptHtml(detail, Number(paper) || 80), paper: 'receipt' };
+  const [w, h] = customPaper(s);
+  return { html: receiptHtml(detail, w, h), paper: 'receipt' };
 }
 
 /** detail = response of sale.detail / sale.create  ({sale, items, customer}) */
 /** `height` in mm fixes the page height (custom paper); 0 = page grows with the invoice. */
-export function printReceipt(detail, widthOverride, height = 0) {
+export function printReceipt(detail, widthOverride, height = 0) { return printHtml(receiptHtml(detail, widthOverride, height)); }
+export function receiptHtml(detail, widthOverride, height = 0) {
   const s = useStore.getState().settings;
   const w = Number(widthOverride || s.receipt_width || 80);
   const paper = w <= 60 ? w - 10 : w - 8; // printable width in mm
@@ -43,7 +54,7 @@ export function printReceipt(detail, widthOverride, height = 0) {
       ${i.warranty_expiry ? `<tr><td colspan="3" class="sm">Warranty: ${esc(i.warranty_days)} days (till ${esc(fdate(i.warranty_expiry))})${i.warranty_type === 'invoice' ? ' — keep this receipt' : ''}</td></tr>` : ''}`;
   }).join('');
   const font = tpl === 'minimal' ? "system-ui,'Hind Siliguri',sans-serif" : "'Courier New','Hind Siliguri',ui-monospace,monospace";
-  printHtml(`
+  return `
   <style>
     @page{size:${w}mm ${height ? height + 'mm' : 'auto'};margin:0}
     body{margin:0;font:${fs}px/1.35 ${font};color:#000;width:${paper}mm;padding:3mm ${(w - paper) / 2}mm}
@@ -79,7 +90,7 @@ export function printReceipt(detail, widthOverride, height = 0) {
   <div class="c">${esc(s.shop_footer || 'Thank you!')}</div>
   <div class="c sm">Goods sold are subject to warranty terms.</div>
   ${note ? `<div class="note"><b>Note:</b> ${esc(note)}</div>` : ''}
-  </div>`);
+  </div>`;
 }
 
 function safeJson(s, d) { try { return JSON.parse(s); } catch { return d; } }

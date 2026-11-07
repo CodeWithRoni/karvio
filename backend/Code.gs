@@ -2355,8 +2355,14 @@ function claimsList_(p) {
  *  19. ITEM HISTORY EXPLORER (serial / barcode / invoice life-cycle)
  * ========================================================================== */
 function itemHistory_(p, user) {
+  // a product picked from the "which product?" list
+  if (p.product_id) {
+    var picked = all_('Products').filter(function (x) { return x.id === p.product_id; })[0];
+    if (!picked) fail_('Product not found');
+    p = { q: picked.name, exact_product: picked.id };
+  }
   var q = String(p.q || '').trim(); if (!q) fail_('Enter a serial number, barcode or invoice number');
-  var ql = q.toLowerCase(), events = all_('ItemEvents'), res = { query: q, kind: 'none', summary: null, items: [], timeline: [], claims: [], returns: [] };
+  var ql = q.toLowerCase(), events = all_('ItemEvents'), res = { query: q, kind: 'none', summary: null, items: [], timeline: [], claims: [], returns: [], cards: null };
   var pmap = indexBy_(all_('Products')), sales = indexBy_(all_('Sales')), purs = indexBy_(all_('Purchases'));
   var returnsById = indexBy_(all_('SalesReturns'));
   function ownSale(s) { return !s || can_(user, 'sales.all') || s.user_id === user.id; }
@@ -2371,7 +2377,7 @@ function itemHistory_(p, user) {
   function sortEv(list) { return list.filter(visibleEv).sort(function (a, b) { return a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0; }); }
 
   // 1) Serial number
-  var serialRecs = all_('SerialItems').filter(function (s) { return s.serial.toLowerCase() === ql && s.status !== 'cancelled'; });
+  var serialRecs = p.exact_product ? [] : all_('SerialItems').filter(function (s) { return s.serial.toLowerCase() === ql && s.status !== 'cancelled'; });
   if (serialRecs.length) {
     res.kind = 'serial';
     var rec = serialRecs[serialRecs.length - 1], pr = pmap[rec.product_id] || {};
@@ -2389,11 +2395,12 @@ function itemHistory_(p, user) {
     var ids = {}; serialRecs.forEach(function (s) { ids[s.product_id] = 1; });
     res.timeline = sortEv(events.filter(function (e) { return e.serial.toLowerCase() === ql; }).map(cleanEv));
     res.claims = all_('WarrantyClaims').filter(function (c) { return c.serial.toLowerCase() === ql && ownSale(sales[c.sale_id]); }).map(function (c) { var o = Object.assign({}, c); delete o._row; try { o.log = JSON.parse(c.log || '[]'); } catch (e) { o.log = []; } return o; });
+    res.cards = historyCards_('serial', { serial: ql, product: pr, summary: res.summary }, user);
     return res;
   }
 
   // 2) Invoice (sale or purchase)
-  var sl = all_('Sales').filter(function (s) { return s.invoice_no.toLowerCase() === ql; })[0];
+  var sl = p.exact_product ? null : all_('Sales').filter(function (s) { return s.invoice_no.toLowerCase() === ql; })[0];
   if (sl) {
     if (!can_(user, 'sales.all') && sl.user_id !== user.id) fail_('Permission denied: this invoice belongs to another user');
     res.kind = 'sale_invoice';
@@ -2404,10 +2411,11 @@ function itemHistory_(p, user) {
     res.timeline = sortEv(events.filter(function (e) { return e.ref_id === sl.id || (e.serial && sers[e.serial]); }).map(cleanEv));
     res.returns = all_('SalesReturns').filter(function (r) { return r.sale_id === sl.id; }).map(function (r) { return { return_no: r.return_no, date: r.date, total: r.total, status: r.status }; });
     res.claims = all_('WarrantyClaims').filter(function (c) { return c.sale_id === sl.id; }).map(function (c) { return { claim_no: c.claim_no, serial: c.serial, product_name: c.product_name, status: c.status, date: c.date, log: (function () { try { return JSON.parse(c.log || '[]'); } catch (e) { return []; } })() }; });
+    res.cards = historyCards_('sale', { sale: sl, items: its }, user);
     return res;
   }
   // our purchase number, or the supplier's own invoice number (newest match)
-  var pu = all_('Purchases').filter(function (s) { return s.invoice_no.toLowerCase() === ql; })[0]
+  var pu = p.exact_product ? null : all_('Purchases').filter(function (s) { return s.invoice_no.toLowerCase() === ql; })[0]
     || all_('Purchases').filter(function (s) { return s.supplier_invoice && s.supplier_invoice.toLowerCase() === ql; }).sort(function (a, b) { return (b.status === 'active') - (a.status === 'active') || b._row - a._row; })[0];
   if (pu) {
     if (!can_(user, 'purchase')) fail_('Permission denied: purchase invoice history');
@@ -2417,11 +2425,25 @@ function itemHistory_(p, user) {
     res.items = pits.map(function (i) { return { name: i.name, qty: i.qty, cost: can_(user, 'cost') ? i.cost : undefined, serials: i.serials }; });
     var ps = {}; pits.forEach(function (i) { parseList_(i.serials).forEach(function (s) { ps[s] = 1; }); });
     res.timeline = sortEv(events.filter(function (e) { return e.ref_id === pu.id || (e.serial && ps[e.serial]); }).map(cleanEv));
+    res.cards = historyCards_('purchase', { purchase: pu, items: pits }, user);
     return res;
   }
 
   // 3) Product barcode / SKU / exact name
-  var prod = all_('Products').filter(function (x) { return (x.barcode && x.barcode.toLowerCase() === ql) || (x.sku && x.sku.toLowerCase() === ql) || x.name.toLowerCase() === ql; })[0];
+  var prod = p.exact_product ? all_('Products').filter(function (x) { return x.id === p.exact_product; })[0]
+    : all_('Products').filter(function (x) { return (x.barcode && x.barcode.toLowerCase() === ql) || (x.sku && x.sku.toLowerCase() === ql) || x.name.toLowerCase() === ql; })[0];
+  // 4) part of a product name / model / barcode: one match opens it, several ask "which product?"
+  if (!prod) {
+    var like = all_('Products').filter(function (x) { return [x.name, x.sku, x.barcode].join(' ').toLowerCase().indexOf(ql) >= 0; })
+      .sort(function (a, b) { return (b.active === true) - (a.active === true) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0); });
+    if (like.length === 1) prod = like[0];
+    else if (like.length > 1) {
+      res.kind = 'choose';
+      res.total = like.length;
+      res.items = like.slice(0, 40).map(function (x) { return { id: x.id, name: x.name, sku: x.sku || '', barcode: x.barcode || '', stock: x.stock, unit: x.unit, service: isService_(x), active: x.active !== false }; });
+      return res;
+    }
+  }
   if (prod) {
     res.kind = 'product';
     var srs = all_('SerialItems').filter(function (s) { return s.product_id === prod.id && s.status !== 'cancelled'; });
@@ -2429,9 +2451,203 @@ function itemHistory_(p, user) {
     res.summary = { product: prod.name, barcode: prod.barcode, sku: prod.sku, stock: prod.stock, unit: prod.unit, serials_in_stock: counts.in_stock || 0, serials_sold: counts.sold || 0, serials_returned_supplier: counts.returned_supplier || 0 };
     res.items = srs.slice(-300).map(function (s) { return { serial: s.serial, status: s.status, sale_invoice: s.sale_id && ownSale(sales[s.sale_id]) && sales[s.sale_id] ? sales[s.sale_id].invoice_no : '', purchase_invoice: purs[s.purchase_id] ? purs[s.purchase_id].invoice_no : '' }; });
     res.timeline = sortEv(events.filter(function (e) { return e.product_id === prod.id; }).slice(-300).map(cleanEv));
+    res.cards = historyCards_('product', { product: prod }, user);
     return res;
   }
   return res;
+}
+
+/* ---- Advance Search cards: the product, where it was bought, who bought it, sales returns, purchase returns and
+ *      warranty claims — each a list of documents (newest first) the user may open. Same privacy as the timeline:
+ *      other staff's sales stay hidden without "View sales made by other staff", and purchase money needs the
+ *      Purchases or Cost permission. ---- */
+var HISTORY_CARD_MAX = 100;
+function historyCards_(kind, x, user) {
+  var cx = {
+    money: can_(user, 'cost') || can_(user, 'purchase'),
+    cost: can_(user, 'cost'),
+    sales: indexBy_(all_('Sales')), purs: indexBy_(all_('Purchases')), pmap: indexBy_(all_('Products')),
+    cats: indexBy_(all_('Categories')), brands: indexBy_(all_('Brands')),
+    own: function (s) { return !s || can_(user, 'sales.all') || s.user_id === user.id; }
+  };
+  var lower = function (list) { return parseList_(list).map(function (v) { return v.toLowerCase(); }); };
+  var serialProduct = function (pr) { return !!pr && !isService_(pr) && pr.has_warranty && pr.warranty_type === 'serial'; };
+  // which lines of a document belong to what was searched
+  var match;
+  var cards = { products: [], purchases: null, sales: null, sreturns: null, preturns: null, claims: null, notes: {} };
+
+  if (kind === 'serial') {
+    match = function (i) { return lower(i.serials).indexOf(x.serial) >= 0; };
+    cards.products = [historyProduct_(x.product, cx, x.summary)];
+  } else if (kind === 'product') {
+    match = function (i) { return i.product_id === x.product.id; };
+    cards.products = [historyProduct_(x.product, cx)];
+  } else if (kind === 'sale' || kind === 'purchase') {
+    var sers = {}, plain = {}, doc = kind === 'sale' ? x.sale : x.purchase;
+    x.items.forEach(function (i) {
+      var ls = lower(i.serials);
+      if (ls.length) ls.forEach(function (v) { sers[v] = 1; }); else plain[i.product_id] = 1;
+    });
+    cards.products = x.items.map(function (i) {
+      var pr = cx.pmap[i.product_id], o = historyProduct_(pr || { id: i.product_id, name: i.name, unit: i.unit }, cx);
+      o.line = { name: i.name, qty: i.qty, unit: i.unit, serials: i.serials || '' };
+      if (kind === 'sale') { o.line.price = i.price; o.line.total = i.total; o.line.warranty_expiry = i.warranty_expiry || ''; o.line.warranty_days = i.warranty_days || 0; }
+      else if (cx.money) { o.line.cost = i.cost; o.line.total = i.total; }
+      return o;
+    });
+    // a serial is followed exactly; other products only by date (after the purchase / before the sale)
+    match = function (i, date) {
+      var ls = lower(i.serials);
+      if (ls.length) return ls.some(function (v) { return sers[v]; });
+      return !!plain[i.product_id] && (kind === 'purchase' ? date >= doc.date : date <= doc.date);
+    };
+    cards.plain = Object.keys(plain).length > 0;
+  }
+  // a line with serial numbers counts only the serials that belong here (1 router of a line of 3), at its unit price
+  var sel = kind === 'serial' ? function (v) { return v === x.serial; } : kind === 'product' ? null : function (v) { return !!sers[v]; };
+  var part = function (i) {
+    var ls = lower(i.serials); if (!sel || !ls.length) return i;
+    var n = ls.filter(sel).length; if (n === ls.length) return i;
+    var o = Object.assign({}, i); o.qty = n; o.total = i.qty ? round_(i.total / i.qty * n) : 0; return o;
+  };
+
+  /* ---- purchases ---- */
+  var purRows = {};
+  if (kind === 'purchase') purRows[x.purchase.id] = historyDoc_('purchase', x.purchase, x.items, cx, true);
+  else if (kind === 'sale') {
+    // serials: the purchase they came from; other products: the last purchase on or before the sale date
+    var lastBuy = {};
+    all_('PurchaseItems').forEach(function (i) {
+      var pu = cx.purs[i.purchase_id]; if (!pu || pu.status !== 'active') return;
+      var ls = lower(i.serials);
+      if (ls.length) {
+        if (ls.some(function (v) { return sers[v]; })) (purRows[pu.id] = purRows[pu.id] || { pu: pu, items: [] }).items.push(part(i));
+      } else if (plain[i.product_id] && pu.date <= x.sale.date) {
+        var cur = lastBuy[i.product_id];
+        if (!cur || pu.date > cur.pu.date || (pu.date === cur.pu.date && pu._row > cur.pu._row)) lastBuy[i.product_id] = { pu: pu, item: i };
+      }
+    });
+    // counted as what this invoice sold (not what that purchase bought), at that purchase's price
+    var soldQty = {}; x.items.forEach(function (i) { if (!lower(i.serials).length) soldQty[i.product_id] = (soldQty[i.product_id] || 0) + i.qty; });
+    Object.keys(lastBuy).forEach(function (pid) {
+      var b = lastBuy[pid], it = Object.assign({}, b.item); it.qty = soldQty[pid]; it.total = round_(b.item.cost * soldQty[pid]);
+      (purRows[b.pu.id] = purRows[b.pu.id] || { pu: b.pu, items: [] }).items.push(it); purRows[b.pu.id].last = true;
+    });
+    Object.keys(purRows).forEach(function (id) { var r = purRows[id]; var o = historyDoc_('purchase', r.pu, r.items, cx, false); if (r.last) o.last = true; purRows[id] = o; });
+  } else {
+    var pi = {};
+    all_('PurchaseItems').forEach(function (i) { var pu = cx.purs[i.purchase_id]; if (pu && match(i, pu.date)) (pi[pu.id] = pi[pu.id] || []).push(part(i)); });
+    Object.keys(pi).forEach(function (id) { purRows[id] = historyDoc_('purchase', cx.purs[id], pi[id], cx, false); });
+  }
+  cards.purchases = historyList_(Object.keys(purRows).map(function (k) { return purRows[k]; }));
+
+  /* ---- sales ---- */
+  var saleRows = [];
+  if (kind === 'sale') saleRows.push(historyDoc_('sale', x.sale, x.items, cx, true));
+  else {
+    var si = {};
+    all_('SaleItems').forEach(function (i) { var sa = cx.sales[i.sale_id]; if (sa && cx.own(sa) && match(i, sa.date)) (si[sa.id] = si[sa.id] || []).push(part(i)); });
+    Object.keys(si).forEach(function (id) { saleRows.push(historyDoc_('sale', cx.sales[id], si[id], cx, false)); });
+  }
+  cards.sales = historyList_(saleRows);
+
+  /* ---- sales returns ---- */
+  var srets = indexBy_(all_('SalesReturns')), sr = {};
+  all_('SalesReturnItems').forEach(function (i) {
+    var r = srets[i.return_id]; if (!r || !cx.own(cx.sales[r.sale_id])) return;
+    if (kind === 'sale' ? r.sale_id === x.sale.id : match(i, r.date)) (sr[r.id] = sr[r.id] || []).push(kind === 'sale' ? i : part(i));
+  });
+  cards.sreturns = historyList_(Object.keys(sr).map(function (id) { return historyDoc_('sreturn', srets[id], sr[id], cx, kind === 'sale'); }));
+
+  /* ---- purchase returns ---- */
+  var prets = indexBy_(all_('PurchaseReturns')), pr2 = {};
+  all_('PurchaseReturnItems').forEach(function (i) {
+    var r = prets[i.return_id]; if (!r) return;
+    if (kind === 'purchase' ? r.purchase_id === x.purchase.id : kind === 'sale' ? lower(i.serials).some(function (v) { return sers[v]; }) : match(i, r.date)) (pr2[r.id] = pr2[r.id] || []).push(kind === 'purchase' ? i : part(i));
+  });
+  cards.preturns = historyList_(Object.keys(pr2).map(function (id) { return historyDoc_('preturn', prets[id], pr2[id], cx, kind === 'purchase'); }));
+
+  /* ---- warranty claims ---- */
+  cards.claims = historyList_(all_('WarrantyClaims').filter(function (c) {
+    if (!cx.own(cx.sales[c.sale_id])) return false;
+    if (kind === 'serial') return String(c.serial || '').toLowerCase() === x.serial;
+    if (kind === 'product') return c.product_id === x.product.id;
+    if (kind === 'sale') return c.sale_id === x.sale.id;
+    var cs = String(c.serial || '').toLowerCase();
+    return cs ? !!sers[cs] : !!plain[c.product_id] && c.date >= x.purchase.date;
+  }).map(function (c) {
+    return { type: 'claim', id: c.id, no: c.claim_no, date: c.date, party: c.customer_name, product: c.product_name, serial: c.serial, status: c.status, in_warranty: c.in_warranty === true, invoice_no: c.invoice_no, _r: c._row };
+  }));
+
+  // what the date-based lists mean, shown on the card
+  if (cards.plain && kind === 'purchase') cards.notes.sales = cards.notes.sreturns = 'Products without serial numbers: sales since this purchase';
+  if (cards.plain && kind === 'sale') cards.notes.purchases = 'Products without serial numbers: the last purchase before this sale';
+  delete cards.plain;
+  return cards;
+}
+/** One product for the Product card. */
+function historyProduct_(pr, cx, serialInfo) {
+  var o = { id: pr.id, name: pr.name, sku: pr.sku || '', barcode: pr.barcode || '', unit: pr.unit || 'pcs', stock: pr.stock, service: isService_(pr),
+    brand: cx.brands[pr.brand_id] ? cx.brands[pr.brand_id].name : '', group: cx.cats[pr.category_id] ? cx.cats[pr.category_id].name : '',
+    category: cx.cats[pr.subcategory_id] ? cx.cats[pr.subcategory_id].name : '', sale_price: pr.sale_price, active: pr.active !== false,
+    has_warranty: !!pr.has_warranty, warranty_type: pr.warranty_type || '', warranty_days: pr.warranty_days || 0, description: pr.description || '' };
+  if (cx.cost) { o.cost_price = pr.cost_price; o.wholesale_price = pr.wholesale_price; }
+  if (pr.has_warranty && pr.warranty_type === 'serial' && pr.created_at !== undefined) {
+    var c = { in_stock: 0, sold: 0, returned_supplier: 0 };
+    all_('SerialItems').forEach(function (x) { if (x.product_id === pr.id && c.hasOwnProperty(x.status)) c[x.status]++; });
+    o.serials = c;
+  }
+  if (serialInfo) o.serial = serialInfo;
+  return o;
+}
+/** One document row: a sale, purchase, sales return or purchase return, with only the lines that matter here. */
+function historyDoc_(type, d, lines, cx, whole) {
+  var q = round_(sum_(lines, function (i) { return i.qty; }), 3), amt = round_(sum_(lines, function (i) { return i.total; }));
+  var names = []; lines.forEach(function (i) { if (names.indexOf(i.name) < 0) names.push(i.name); });
+  var o = { type: type, id: d.id, date: d.date, status: d.status, qty: q, items: names.slice(0, 3).join(', ') + (names.length > 3 ? ' +' + (names.length - 3) + ' more' : ''), whole: !!whole, _r: d._row };
+  if (type === 'sale') { o.no = d.invoice_no; o.party = d.customer_name || 'Walk-in'; o.amount = whole ? d.total : amt; if (whole) { o.paid = d.paid; o.due = d.due; } o.staff = d.user_name || ''; }
+  if (type === 'purchase') { o.no = d.invoice_no; o.party = d.supplier_name || '—'; o.supplier_invoice = d.supplier_invoice || ''; if (cx.money) { o.amount = whole ? d.total : amt; if (whole) { o.paid = d.paid; o.due = d.due; } } }
+  if (type === 'sreturn') { o.no = d.return_no; o.party = d.customer_name || 'Walk-in'; o.invoice_no = d.invoice_no; o.kind = d.type; o.amount = whole ? d.total : amt; o.refund = d.refund; }
+  if (type === 'preturn') { o.no = d.return_no; o.party = d.supplier_name || '—'; o.invoice_no = d.invoice_no; if (cx.money) { o.amount = whole ? d.total : amt; o.received = d.received; } }
+  return o;
+}
+function historyList_(rows) {
+  rows.sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : (b._r || 0) - (a._r || 0); });
+  return { total: rows.length, rows: rows.slice(0, HISTORY_CARD_MAX).map(function (r) { var o = Object.assign({}, r); delete o._r; return o; }) };
+}
+
+/** A full document from Advance Search: sale / purchase invoice, sales / purchase return or warranty claim. */
+function historyDoc_route_(p, user) {
+  var t = p.type, id = String(p.id || '');
+  if (t === 'sale') { need_(user, 'pos'); return { type: t, detail: saleDetail_({ id: id }, user) }; }
+  if (t === 'purchase') { need_(user, 'purchase'); return { type: t, detail: purchaseDetail_({ id: id }) }; }
+  if (t === 'sreturn') {
+    need_(user, 'sales.return');
+    var r = all_('SalesReturns').filter(function (x) { return x.id === id || x.return_no === id; })[0]; if (!r) fail_('Sales return not found');
+    var sale = all_('Sales').filter(function (x) { return x.id === r.sale_id; })[0];
+    if (sale && !can_(user, 'sales.all') && sale.user_id !== user.id) fail_('Permission denied: this return belongs to another user');
+    var acc = r.refund_account_id ? all_('Accounts').filter(function (a) { return a.id === r.refund_account_id; })[0] : null;
+    var cust = r.customer_id ? all_('Customers').filter(function (c) { return c.id === r.customer_id; })[0] : null;
+    var ro = Object.assign({}, r); delete ro._row; ro.refund_account = acc ? acc.name : '';
+    return { type: t, detail: { ret: stripCost_(ro, user), items: stripCost_(all_('SalesReturnItems').filter(function (i) { return i.return_id === r.id; }).map(function (i) { var o = Object.assign({}, i); delete o._row; delete o.valuation; return o; }), user),
+      customer: cust ? { name: cust.name, phones: cust.phones, addresses: cust.addresses } : null } };
+  }
+  if (t === 'preturn') {
+    need_(user, 'purchase');
+    var pr = all_('PurchaseReturns').filter(function (x) { return x.id === id || x.return_no === id; })[0]; if (!pr) fail_('Purchase return not found');
+    var acc2 = pr.account_id ? all_('Accounts').filter(function (a) { return a.id === pr.account_id; })[0] : null;
+    var sup = pr.supplier_id ? all_('Suppliers').filter(function (x) { return x.id === pr.supplier_id; })[0] : null;
+    var po = Object.assign({}, pr); delete po._row; po.account = acc2 ? acc2.name : '';
+    return { type: t, detail: { ret: po, items: all_('PurchaseReturnItems').filter(function (i) { return i.return_id === pr.id; }).map(function (i) { var o = Object.assign({}, i); delete o._row; delete o.valuation; return o; }),
+      supplier: sup ? { name: sup.name, phones: sup.phones, address: sup.address } : null } };
+  }
+  if (t === 'claim') {
+    need_(user, 'warranty');
+    var c = all_('WarrantyClaims').filter(function (x) { return x.id === id || x.claim_no === id; })[0]; if (!c) fail_('Warranty claim not found');
+    var co = Object.assign({}, c); delete co._row; try { co.log = JSON.parse(c.log || '[]'); } catch (e) { co.log = []; }
+    return { type: t, detail: co };
+  }
+  fail_('Unknown document type');
 }
 /* ============================================================================
  *  20. DASHBOARD
@@ -2916,6 +3132,7 @@ var ROUTES = {
   'claims.list':      r_('warranty', claimsList_),
 
   'history':          r_(null, itemHistory_),
+  'history.doc':      r_(null, historyDoc_route_),
   'dashboard':        r_(null, dashboard_),
   'reports':          r_('reports', reports_),
   'profit.report':    r_('reports', profitReport_),

@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { api } from '../lib/api';
+import { useStore } from '../lib/store';
 import { money, fdate, fdatetime, qty as fqty } from '../lib/format';
 import { PageHead, Btn, Badge, statusTone, Empty, ErrorBox, Loading } from '../components/ui';
+import DocViewer, { DOC_PERM } from '../components/DocViewer';
 
 const EV = {
   purchase: ['Purchased from supplier', 'purchase'], sale: ['Sold', 'sale'], sale_return: ['Returned by customer', 'return'],
@@ -10,113 +12,182 @@ const EV = {
 };
 const evLabel = (e) => EV[e]?.[0] || (e.startsWith('warranty_') ? 'Warranty: ' + e.slice(9).replace(/_/g, ' ') : e);
 const evKind = (e) => EV[e]?.[1] || (e.startsWith('warranty') ? 'warranty' : 'sale');
+// timeline references that open a document
+const REF_DOC = { sale: 'sale', purchase: 'purchase', sreturn: 'sreturn', preturn: 'preturn', claim: 'claim' };
+const wText = (d) => (!d ? '' : d % 365 === 0 ? `${d / 365} year${d === 365 ? '' : 's'}` : d % 30 === 0 ? `${d / 30} month${d === 30 ? '' : 's'}` : `${d} days`);
+
+// the cards after the product card, in this order
+const CARDS = [
+  ['purchases', 'Purchased from', 'purchase', 'No purchase found'],
+  ['sales', 'Sold to', 'sale', 'Not sold yet'],
+  ['sreturns', 'Sales returns', 'sreturn', 'No sales return'],
+  ['preturns', 'Purchase returns', 'preturn', 'No purchase return'],
+  ['claims', 'Warranty claims', 'claim', 'No warranty claim']
+];
 
 export default function History() {
+  const can = useStore((s) => s.can);
   const [q, setQ] = useState('');
   const [res, setRes] = useState(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
-  const go = async (e, val) => {
-    e?.preventDefault();
-    const term = (val ?? q).trim(); if (!term) return;
+  const [doc, setDoc] = useState(null); // the document open in the viewer
+  const find = async (payload) => {
     setLoading(true); setErr('');
-    try { setRes(await api('history', { q: term })); } catch (e2) { setErr(e2.message); }
+    try { setRes(await api('history', payload)); } catch (e2) { setErr(e2.message); }
     setLoading(false);
   };
-  const s = res?.summary;
+  const go = (e, val) => {
+    e?.preventDefault();
+    const term = (val ?? q).trim(); if (!term) return;
+    if (val !== undefined) setQ(val);
+    find({ q: term });
+  };
+  const pickProduct = (p) => { setQ(p.name); find({ product_id: p.id }); };
+  const open = (type, id, no) => setDoc({ type, id, no });
+  const canOpen = (type) => !!DOC_PERM[type] && can(DOC_PERM[type]);
+  const DocNo = ({ type, id, no }) => (canOpen(type) && id
+    ? <button type="button" className="hc-no" onClick={() => open(type, id, no)} title={`Open ${no}`}>{no}</button>
+    : <b className="hc-no-off">{no}</b>);
+  const c = res?.cards;
 
   return (
     <>
-      <PageHead title="Advance Search" sub="Scan a serial number, product barcode or invoice number to see its complete life cycle." />
+      <PageHead title="Advance Search" sub="Search a serial number, product (name, model or barcode), invoice or purchase number to see its complete life cycle." />
       <form className="row" onSubmit={go} style={{ marginBottom: 16 }}>
-        <div className="psearch" style={{ flex: 1 }}><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Serial / IMEI, barcode, INV-000123, PUR-000045 or supplier invoice" autoFocus /></div>
+        <div className="psearch" style={{ flex: 1 }}><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Serial / IMEI, product name, model, barcode, INV-000123, PUR-000045 or supplier invoice" aria-label="Search" autoFocus /></div>
         <Btn kind="primary" size="lg" busy={loading} type="submit">Search</Btn>
       </form>
       <ErrorBox error={err} />
       {loading && <Loading label="Tracing history" />}
-      {res && res.kind === 'none' && <Empty title={`Nothing found for “${res.query}”`}>Serials must match exactly. Try the invoice number printed on the receipt.</Empty>}
+      {res && res.kind === 'none' && <Empty title={`Nothing found for “${res.query}”`}>Serials must match exactly. Try part of the product name, the model, or the invoice number printed on the receipt.</Empty>}
 
-      {res && res.kind === 'serial' && (
-        <div className="split">
-          <div className="card">
-            <div className="card-head"><h2>Timeline for {s.serial}</h2><Badge tone={statusTone(s.status)}>{s.status.replace('_', ' ')}</Badge></div>
-            <Timeline items={res.timeline} />
-          </div>
-          <div className="grid">
-            <div className="card">
-              <h2 style={{ marginBottom: 12 }}>{s.product}</h2>
-              <div className="kv">
-                <div><span>Purchased</span><b>{fdate(s.purchase_date)}</b></div>
-                <div><span>Purchase invoice</span><b><a href="#" onClick={(e) => { e.preventDefault(); setQ(s.purchase_invoice); go(null, s.purchase_invoice); }}>{s.purchase_invoice}</a></b></div>
-                <div><span>Supplier</span><b>{s.supplier || '—'}</b></div>
-                {s.cost !== undefined && <div><span>Cost</span><b>{money(s.cost)}</b></div>}
-                <div><span>Days in inventory</span><b>{s.days_in_inventory}</b></div>
-                {s.sale_invoice && <>
-                  <div><span>Sold</span><b>{fdate(s.sale_date)}</b></div>
-                  <div><span>Sale invoice</span><b><a href="#" onClick={(e) => { e.preventDefault(); setQ(s.sale_invoice); go(null, s.sale_invoice); }}>{s.sale_invoice}</a></b></div>
-                  <div><span>Customer</span><b>{s.customer}</b></div>
-                  <div><span>Sale price</span><b>{money(s.sale_price)}</b></div>
-                </>}
-                {s.warranty_expiry && <div><span>Warranty</span><b><Badge tone={s.in_warranty ? 'ok' : 'bad'}>{s.in_warranty ? `${s.days_left} days left` : 'Expired'}</Badge> till {fdate(s.warranty_expiry)}</b></div>}
-              </div>
-            </div>
-            {res.claims.length > 0 && <div className="card"><h2 style={{ marginBottom: 10 }}>Warranty claims</h2>{res.claims.map((c) => <div key={c.id} className="row" style={{ padding: '4px 0' }}><b>{c.claim_no}</b><span className="muted">{fdate(c.date)}</span><span className="spacer" /><Badge tone={statusTone(c.status)}>{c.status}</Badge></div>)}</div>}
-          </div>
+      {res && res.kind === 'choose' && (
+        <div className="card hc-choose">
+          <div className="card-head"><h2>Which product?</h2><span className="muted">{res.total > res.items.length ? `First ${res.items.length} of ${res.total} — type more to narrow down` : `${res.total} products match “${res.query}”`}</span></div>
+          <ul>{res.items.map((p) => (
+            <li key={p.id}><button type="button" onClick={() => pickProduct(p)}>
+              <b>{p.name}</b><span className="muted">{[p.sku && `Model ${p.sku}`, p.barcode, p.service ? 'Service' : `${fqty(p.stock, p.unit)} in stock`, !p.active && 'hidden'].filter(Boolean).join(' · ')}</span>
+            </button></li>
+          ))}</ul>
         </div>
       )}
 
-      {res && (res.kind === 'sale_invoice' || res.kind === 'purchase_invoice') && (
-        <div className="split">
-          <div className="card"><div className="card-head"><h2>Timeline</h2></div><Timeline items={res.timeline} /></div>
-          <div className="grid">
-            <div className="card">
-              <div className="card-head"><h2>{res.kind === 'sale_invoice' ? 'Sale' : 'Purchase'} {s.invoice}</h2><Badge tone={statusTone(s.status)}>{s.status}</Badge></div>
-              <div className="kv">
-                <div><span>Date</span><b>{fdate(s.date)}</b></div>
-                <div><span>{res.kind === 'sale_invoice' ? 'Customer' : 'Supplier'}</span><b>{s.customer || s.supplier || '—'}</b></div>
-                {s.supplier_invoice && <div><span>Supplier invoice</span><b>{s.supplier_invoice}</b></div>}
-                <div><span>Total</span><b>{money(s.total)}</b></div><div><span>Due</span><b>{money(s.due)}</b></div>
-              </div>
-              <table style={{ marginTop: 12 }}><tbody>{res.items.map((i, k) => (
-                <tr key={k}><td style={{ padding: '5px 0' }}>{i.name}{i.serials && <div className="muted" style={{ fontSize: 12 }}>
-                  {i.serials.split(',').map((sn) => <a key={sn} href="#" style={{ marginRight: 8 }} onClick={(e) => { e.preventDefault(); setQ(sn); go(null, sn); }}>{sn}</a>)}</div>}
-                  {i.warranty_expiry && <Badge tone="violet">warranty till {fdate(i.warranty_expiry)}</Badge>}</td>
-                  <td className="r num">{fqty(i.qty)}</td></tr>
-              ))}</tbody></table>
-            </div>
-            {res.returns?.length > 0 && <div className="card"><h2 style={{ marginBottom: 8 }}>Returns</h2>{res.returns.map((r) => <div key={r.return_no} className="row"><b>{r.return_no}</b><span className="muted">{fdate(r.date)}</span><span className="spacer" />{money(r.total, false)} <Badge tone={statusTone(r.status)}>{r.status}</Badge></div>)}</div>}
-            {res.claims?.length > 0 && <div className="card"><h2 style={{ marginBottom: 8 }}>Warranty claims</h2>{res.claims.map((c) => <div key={c.claim_no} className="row"><b>{c.claim_no}</b><span>{c.product_name} {c.serial}</span><span className="spacer" /><Badge tone={statusTone(c.status)}>{c.status}</Badge></div>)}</div>}
+      {c && (
+        <>
+          <div className="hcards">
+            <section className="card hcard" data-k="product" aria-label={c.products.length > 1 ? 'Products' : 'Product'}>
+              <div className="hc-head"><h2>{c.products.length > 1 ? 'Products' : 'Product'}</h2>{c.products.length > 1 && <span className="hc-count">{c.products.length}</span>}</div>
+              {c.products.length === 1 && !c.products[0].line
+                ? <ProductInfo p={c.products[0]} serials={res.kind === 'product' ? res.items : []} onSerial={(sn) => go(null, sn)} />
+                : <ul className="hc-list">{c.products.map((p, k) => <LineInfo key={k} p={p} kind={res.kind} onProduct={() => pickProduct(p)} onSerial={(sn) => go(null, sn)} />)}</ul>}
+            </section>
+            {CARDS.map(([key, title, type, none]) => {
+              const card = c[key] || { rows: [], total: 0 };
+              return (
+                <section key={key} className="card hcard" data-k={type} aria-label={title}>
+                  <div className="hc-head"><h2>{title}</h2><span className="hc-count">{card.total > card.rows.length ? `${card.rows.length} of ${card.total}` : card.total}</span></div>
+                  {c.notes?.[key] && <p className="hc-note">{c.notes[key]}</p>}
+                  {card.rows.length ? (
+                    <ul className="hc-list">{card.rows.map((r) => (
+                      <li key={r.type + r.id} className="hc-row">
+                        <div className="hc-top">
+                          <DocNo type={r.type} id={r.id} no={r.no} />
+                          <span className="muted">{fdate(r.date)}</span>
+                          {r.status && r.status !== 'active' && <Badge tone={statusTone(r.status)}>{r.status}</Badge>}
+                          {r.kind === 'exchange' && <Badge tone="info">exchange</Badge>}
+                          <span className="spacer" />
+                          {r.amount !== undefined && <b className="num">{money(r.amount, false)}</b>}
+                        </div>
+                        <div className="hc-party">{r.party}{type === 'claim' && r.product ? <span className="muted"> · {r.product}{r.serial ? ` · S/N ${r.serial}` : ''}</span> : null}</div>
+                        <div className="hc-meta">
+                          {r.qty !== undefined && type !== 'claim' && <span>Qty {fqty(r.qty)}</span>}
+                          {r.items && (res.kind === 'sale_invoice' || res.kind === 'purchase_invoice') && <span>{r.items}</span>}
+                          {r.supplier_invoice && <span><span className="hc-k">Supplier invoice</span> <b>{r.supplier_invoice}</b></span>}
+                          {r.whole && r.paid !== undefined && <span>Paid {money(r.paid, false)}{r.due > 0 ? <> · <b className="hc-due">Due {money(r.due, false)}</b></> : ''}</span>}
+                          {r.refund > 0 && <span>Refunded {money(r.refund, false)}</span>}
+                          {r.invoice_no && type !== 'claim' && <span>from <DocNo type={type === 'sreturn' ? 'sale' : 'purchase'} id={r.invoice_no} no={r.invoice_no} /></span>}
+                          {type === 'claim' && r.invoice_no && <span>Invoice <DocNo type="sale" id={r.invoice_no} no={r.invoice_no} /></span>}
+                          {type === 'claim' && <span>{r.in_warranty ? 'In warranty' : 'Out of warranty'}</span>}
+                          {r.last && <span className="hc-k">last purchase before this sale</span>}
+                          {r.staff && <span className="muted">by {r.staff}</span>}
+                        </div>
+                      </li>
+                    ))}</ul>
+                  ) : <p className="hc-none">{none}</p>}
+                </section>
+              );
+            })}
           </div>
-        </div>
-      )}
-
-      {res && res.kind === 'product' && (
-        <div className="split">
-          <div className="card"><div className="card-head"><h2>Movement history</h2><span className="muted">latest 300 events</span></div><Timeline items={[...res.timeline].reverse()} /></div>
-          <div className="card">
-            <h2 style={{ marginBottom: 12 }}>{s.product}</h2>
-            <div className="kv">
-              <div><span>In stock</span><b>{fqty(s.stock, s.unit)}</b></div><div><span>Barcode</span><b>{s.barcode || '—'}</b></div>
-              <div><span>Serials in stock</span><b>{s.serials_in_stock}</b></div><div><span>Serials sold</span><b>{s.serials_sold}</b></div>
-            </div>
-            {res.items.length > 0 && <div className="serial-grid" style={{ marginTop: 14, maxHeight: 340 }}>{res.items.map((i) => (
-              <button key={i.serial} type="button" className={i.status === 'in_stock' ? '' : 'on'} title={i.status} onClick={() => { setQ(i.serial); go(null, i.serial); }}>{i.serial}</button>
-            ))}</div>}
-            {res.items.length > 0 && <p className="muted" style={{ fontSize: 12 }}>Highlighted serials have left stock. Click any serial for its timeline.</p>}
+          <div className="card" style={{ marginTop: 16 }}>
+            <div className="card-head"><h2>{res.kind === 'product' ? 'Movement history' : 'Timeline'}</h2>{res.kind === 'product' && <span className="muted">latest 300 events</span>}</div>
+            <Timeline items={res.kind === 'product' ? [...res.timeline].reverse() : res.timeline} DocNo={DocNo} />
           </div>
-        </div>
+        </>
       )}
+      {doc && <DocViewer doc={doc} onClose={() => setDoc(null)} />}
     </>
   );
 }
 
-function Timeline({ items }) {
+/** One product: details, and for a serial its warranty and status; for a serial product its serial numbers. */
+function ProductInfo({ p, serials, onSerial }) {
+  const sn = p.serial;
+  return (
+    <div className="hc-prod">
+      <h3>{p.name}</h3>
+      <div className="hc-tags">{p.brand && <Badge tone="info">{p.brand}</Badge>}{p.group && <Badge>{p.group}{p.category ? ` › ${p.category}` : ''}</Badge>}{p.service && <Badge tone="violet">Service</Badge>}{!p.active && <Badge tone="bad">hidden</Badge>}</div>
+      {sn && (
+        <div className="hc-serial">
+          <div><span>Serial</span><b className="hc-sn">{sn.serial}</b> <Badge tone={statusTone(sn.status)}>{String(sn.status).replace('_', ' ')}</Badge></div>
+          {sn.warranty_expiry ? <div><span>Warranty</span><b><Badge tone={sn.in_warranty ? 'ok' : 'bad'}>{sn.in_warranty ? `${sn.days_left} days left` : 'Expired'}</Badge> till {fdate(sn.warranty_expiry)}</b></div> : null}
+          <div><span>Days in stock</span><b>{sn.days_in_inventory}</b></div>
+        </div>
+      )}
+      <div className="kv hc-kv">
+        {p.sku && <div><span>Model</span><b>{p.sku}</b></div>}
+        {p.barcode && <div><span>Barcode</span><b>{p.barcode}</b></div>}
+        {!p.service && <div><span>In stock</span><b>{fqty(p.stock, p.unit)}</b></div>}
+        <div><span>Retail price</span><b>{money(p.sale_price)}</b></div>
+        {p.wholesale_price > 0 && <div><span>Wholesale price</span><b>{money(p.wholesale_price)}</b></div>}
+        {p.cost_price !== undefined && !p.service && <div><span>Average cost</span><b>{money(p.cost_price)}</b></div>}
+        <div><span>Warranty</span><b>{p.has_warranty ? `${wText(p.warranty_days)} · ${p.warranty_type === 'serial' ? 'by serial' : 'keep the invoice'}` : 'No warranty'}</b></div>
+        {p.serials && <div><span>Serials</span><b>{p.serials.in_stock} in stock · {p.serials.sold} sold{p.serials.returned_supplier ? ` · ${p.serials.returned_supplier} back to supplier` : ''}</b></div>}
+      </div>
+      {p.description && <p className="muted hc-desc">{p.description}</p>}
+      {serials.length > 0 && <>
+        <div className="serial-grid hc-sgrid">{serials.map((i) => <button key={i.serial} type="button" className={i.status === 'in_stock' ? '' : 'on'} title={i.status} onClick={() => onSerial(i.serial)}>{i.serial}</button>)}</div>
+        <p className="muted" style={{ fontSize: 12, margin: '6px 0 0' }}>Highlighted serials have left stock. Click a serial for its own history.</p>
+      </>}
+    </div>
+  );
+}
+
+/** One line of the searched invoice in the Products card. */
+function LineInfo({ p, kind, onProduct, onSerial }) {
+  const l = p.line, sers = String(l.serials || '').split(',').map((x) => x.trim()).filter(Boolean);
+  return (
+    <li className="hc-row">
+      <div className="hc-top"><button type="button" className="hc-pname" onClick={onProduct} title="See this product's history">{l.name}</button><span className="spacer" />{l.total !== undefined && <b className="num">{money(l.total, false)}</b>}</div>
+      <div className="hc-meta">
+        <span>Qty {fqty(l.qty, l.unit)}</span>
+        {l.price !== undefined && <span>× {money(l.price, false)}</span>}
+        {l.cost !== undefined && <span>× {money(l.cost, false)}</span>}
+        {[p.brand, p.sku && `Model ${p.sku}`].filter(Boolean).map((t) => <span key={t} className="muted">{t}</span>)}
+        {kind === 'sale_invoice' && l.warranty_expiry && <span><Badge tone="violet">warranty till {fdate(l.warranty_expiry)}</Badge></span>}
+      </div>
+      {sers.length > 0 && <div className="hc-sers">{sers.map((sn) => <button key={sn} type="button" onClick={() => onSerial(sn)}>{sn}</button>)}</div>}
+    </li>
+  );
+}
+
+function Timeline({ items, DocNo }) {
   if (!items.length) return <Empty title="No events recorded" />;
   return (
     <ul className="timeline">
       {items.map((e) => (
         <li key={e.id} data-k={evKind(e.event)}>
-          <div className="t-head"><b>{evLabel(e.event)}</b><span className="t-meta">{fdatetime(e.ts)} · {e.ref_no} · by {e.user}</span></div>
+          <div className="t-head"><b>{evLabel(e.event)}</b><span className="t-meta">{fdatetime(e.ts)} · {REF_DOC[e.ref_type] && e.ref_no ? <DocNo type={REF_DOC[e.ref_type]} id={e.ref_id} no={e.ref_no} /> : e.ref_no} · by {e.user}</span></div>
           <div>{[e.party, e.serial ? `S/N ${e.serial}` : e.product_name, e.qty && e.qty !== 1 ? `qty ${fqty(e.qty)}` : '', e.amount ? money(e.amount) : ''].filter(Boolean).join(' — ')}</div>
           {e.note && <div className="t-meta">{e.note}</div>}
         </li>

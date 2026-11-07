@@ -170,6 +170,8 @@ export function saleInvoiceHtml(d) {
     <div class="foot"><span>Printed ${esc(new Date().toLocaleString())}</span><span>Customer signature: ____________________</span></div>${noteHtml()}</div>`;
 }
 export const printSales = (list, paper) => printHtml(wrap(list.map(saleInvoiceHtml), paper, isBiz()));
+/** One sale invoice as the full document printSales prints (A4 / A5, with the chosen template). */
+export const saleDocHtml = (d, paper = 'a4') => wrap([saleInvoiceHtml(d)], paper, isBiz());
 export const pdfSales = (list, filename) => pdfPages(list.map(saleInvoiceHtml), css + tplCss + (isBiz() ? bizCss : ''), filename);
 export async function excelSales(list, filename) {
   const XLSX = await import('xlsx');
@@ -200,6 +202,33 @@ export function claimHtml(c) {
     <div class="foot"><span>Printed ${esc(new Date().toLocaleString())}</span><span>Customer signature: ____________________</span></div></div>`;
 }
 export const printClaims = (list) => printHtml(wrap(list.map(claimHtml)));
+export const claimDocHtml = (c) => wrap([claimHtml(c)]);
+
+/* ---------------- Sales return / exchange ---------------- */
+/** d = { ret, items, customer } from history.doc (type sreturn) */
+export function salesReturnHtml(d) {
+  const r = d.ret, c = d.customer || {};
+  const rows = d.items.map((i, n) => {
+    const sn = sers(i.serials);
+    return `<tr><td>${n + 1}</td><td><b>${esc(i.name)}</b>${sn.length ? `<div class="sn">S/N: ${esc(sn.join(', '))}</div>` : ''}</td>
+      <td class="r">${esc(qty(i.qty))}</td><td class="r">${esc(money(i.price, false))}</td><td class="r">${esc(money(i.total, false))}</td></tr>`;
+  }).join('');
+  const title = r.type === 'exchange' ? 'EXCHANGE' : 'SALES RETURN';
+  return `<div class="sdoc">${head(title, `<b>${esc(r.return_no)}</b><br>${esc(fdatetime(r.created_at || r.date))}<br><span class="sm">By ${esc(r.user || '')}</span>`)}
+    ${r.status === 'cancelled' ? `<div class="cx">CANCELLED — ${esc(r.cancel_reason || '')}</div>` : ''}
+    <div class="meta">
+      <div class="box"><b class="t">Customer</b><b>${esc(r.customer_name || 'Walk-in')}</b>${c.phones ? `<div>Phone: ${esc(splitList(c.phones).join(', '))}</div>` : ''}${c.addresses ? `<div>${esc(String(c.addresses).split('|').join('; '))}</div>` : ''}</div>
+      <div class="box"><b class="t">Original invoice</b><b>${esc(r.invoice_no || '—')}</b><div>${r.type === 'exchange' ? 'Exchange — value kept as customer credit' : 'Return'}</div>${r.note ? `<div class="sm">Note: ${esc(r.note)}</div>` : ''}</div>
+    </div>
+    <table><thead><tr><th style="width:28px">#</th><th>Product / serial</th><th class="r" style="width:60px">Qty</th><th class="r" style="width:90px">Price</th><th class="r" style="width:96px">Value</th></tr></thead><tbody>${rows}</tbody></table>
+    <table class="tot">
+      <tr class="g"><td>Return value</td><td class="r">${esc(money(r.total))}</td></tr>
+      <tr><td>Refunded${r.refund_account ? ` (${esc(r.refund_account)})` : ''}</td><td class="r">${esc(money(r.refund || 0, false))}</td></tr>
+      ${Number(r.total) - Number(r.refund || 0) > 0.004 ? `<tr><td>Adjusted to customer balance</td><td class="r">${esc(money(Number(r.total) - Number(r.refund || 0), false))}</td></tr>` : ''}
+    </table>
+    <div class="foot"><span>Printed ${esc(new Date().toLocaleString())}</span><span>Customer signature: ____________________</span></div></div>`;
+}
+export const salesReturnDocHtml = (d) => wrap([salesReturnHtml(d)]);
 export const pdfClaims = (list, filename) => pdfPages(list.map(claimHtml), css, filename);
 export async function excelClaims(list, filename) {
   const XLSX = await import('xlsx');
