@@ -1,0 +1,58 @@
+# Temporary: update SheetJS (xlsx) from its official CDN and run every test, including the browser suite in Edge.
+name: Maintenance — xlsx update and full tests
+
+on:
+  push:
+    branches: [fix/sale-due-now]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install
+        working-directory: frontend
+        run: npm ci
+      - name: Update xlsx to the patched SheetJS release
+        working-directory: frontend
+        run: |
+          npm install --save https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
+          npm ls xlsx
+          npm audit --omit=dev || true
+      - name: Commit the updated lockfile
+        run: |
+          if ! git diff --quiet -- frontend/package.json frontend/package-lock.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add frontend/package.json frontend/package-lock.json
+            git commit -m "Update xlsx to SheetJS 0.20.3 from cdn.sheetjs.com (prototype pollution and ReDoS fixes)"
+            git push
+          fi
+      - name: Unit and integration tests
+        working-directory: frontend
+        run: npm test
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+      - name: Install Microsoft Edge for Playwright
+        working-directory: frontend
+        run: npx playwright install --with-deps msedge
+      - name: Browser tests (Edge)
+        working-directory: frontend
+        run: npm run test:e2e -- --reporter=line
+      - name: Keep the browser test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            frontend/test-results
+            frontend/playwright-report
+          retention-days: 7
