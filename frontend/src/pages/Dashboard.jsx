@@ -58,11 +58,11 @@ export default function Dashboard() {
         {on('new_dues') && <Stat label="New dues on sales" value={money(c.due)} tone={c.due ? 'warn' : ''} />}
         {!d.limited && <>
           {on('receivable') && <Link to="/customers" className="stat stat-link" title="Open customer dues">
-            <span>Receivable</span><b style={{ color: d.receivable > 0 ? 'var(--warn)' : undefined }}>{money(d.receivable)}</b><small>Total customer dues</small>
+            <span>Receivable</span><b style={{ color: d.receivable > 0 ? 'var(--warn)' : undefined }}>{money(d.receivable)}</b><small>All time · total customer dues</small>
           </Link>}
           {!on('payable') ? null : can('suppliers')
-            ? <Link to="/suppliers" className="stat stat-link" title="Open supplier balances"><span>Payable</span><b style={{ color: d.payable > 0 ? 'var(--bad)' : undefined }}>{money(d.payable)}</b><small>Total you owe suppliers</small></Link>
-            : <Stat label="Payable" value={money(d.payable)} sub="Total you owe suppliers" />}
+            ? <Link to="/suppliers" className="stat stat-link" title="Open supplier balances"><span>Payable</span><b style={{ color: d.payable > 0 ? 'var(--bad)' : undefined }}>{money(d.payable)}</b><small>All time · total you owe suppliers</small></Link>
+            : <Stat label="Payable" value={money(d.payable)} sub="All time · total you owe suppliers" />}
         </>}
       </div>
 

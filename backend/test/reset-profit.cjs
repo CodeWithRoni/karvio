@@ -150,6 +150,25 @@ login('roni', 'roni123'); checks++;
 const p3 = Q('product.save', { name: 'Cable' });
 Q('purchase.create', { supplier_id: Q('supplier.save', { name: 'S2' }).id, items: [{ product_id: p3.id, qty: 1, cost: 10, sale_price: 20 }], payments: [] });
 same(Q('sale.create', { items: [{ product_id: p3.id, qty: 1, price: 20 }], payments: [{ account_id: Q('bootstrap', {}).accounts[0].id, amount: 20 }] }).sale.invoice_no, 'INV-000001', 'numbering restarts even when settings are kept');
+
+/* ---------- dashboard Receivable / Payable are all-time totals, not today's ---------- */
+{
+  const cash3 = Q('bootstrap', {}).accounts[0];
+  const cu = Q('customer.save', { name: 'Old Due Customer', phones: '01700000001' });
+  const su = Q('supplier.save', { name: 'Old Due Supplier' });
+  const it = Q('product.save', { name: 'Due item' });
+  const pu = Q('purchase.create', { supplier_id: su.id, items: [{ product_id: it.id, qty: 5, cost: 100, sale_price: 150 }], payments: [] });
+  const sa = Q('sale.create', { customer_id: cu.id, items: [{ product_id: it.id, qty: 2, price: 150 }], payments: [{ account_id: cash3.id, amount: 100 }] });
+  // move both to last year, as if the dues were made long ago
+  const backdate = (sheet, id, col) => { const sh = book.getSheetByName(sheet); sh.rows.forEach((r) => { if (r[0] === id || r[4] === id) r[col] = '2025-01-15'; }); };
+  backdate('Sales', sa.sale.id, 2); backdate('Purchases', pu.purchase ? pu.purchase.id : pu.id, 2);
+  backdate('CustomerLedger', sa.sale.id, 1); backdate('SupplierLedger', pu.purchase ? pu.purchase.id : pu.id, 1);
+  vm.runInContext('_mem = {}', sandbox);
+  const dd = Q('dashboard', {});
+  same(dd.receivable, 200, 'receivable counts a due from last year');
+  same(dd.payable, 510, 'payable counts a due from last year (500) plus the unpaid 10 from earlier today');
+  same([dd.today.sales, dd.month.sales], [20, 20], 'while Today / This month only show this period');
+}
 console.log('Profit, dashboard profit card and database reset: ' + checks + ' checks passed');
 `;
 eval(harness + scenario);
