@@ -1,3 +1,42 @@
+# Karvio 1.1.0
+
+## টাকা ও হিসাব
+
+- Invoice এ এখন "Due at sale" (বিক্রির সময়ের বাকি) আর "Due now" (এখনকার বাকি) দুটোই দেখায়। Customer payment, return আর advance বর্তমান বাকি থেকে কাটা হয়। "শুধু বাকি" তালিকা আর sales report এও "Due now" আছে।
+- বাকিতে বেচা জিনিস ফেরত এলে ফেরতের মূল্য আগে ওই invoice এর বাকি শোধ করে। নগদ ফেরত দেওয়া যায় শুধু customer যতটুকু আসলে দিয়েছে ততটুকু।
+- Stock adjust এ কমানো বা বাড়ানো মাল কেনা দামে net profit এ যোগ বা বিয়োগ হয় (Profit page, dashboard, daily report)।
+- Deposit, withdrawal আর transfer এখন account ledger থেকে বাতিল করা যায়। Transfer বাতিল করলে দুই account থেকেই বাতিল হয়।
+- Customer, supplier আর account এর opening balance বদলালে আগের আর নতুন অঙ্ক audit log এ ওঠে।
+
+## তারিখ ও মাস বন্ধ
+
+- ভুল বা ভবিষ্যতের তারিখ save হয় না।
+- Settings → Close books (শুধু admin): নির্দিষ্ট দিন পর্যন্ত হিসাব বন্ধ করা যায়। বন্ধ দিনের entry বা cancel হয় না।
+
+## নিরাপত্তা
+
+- Admin বানানো, admin account বদলানো আর role permission বদলানো এখন শুধু admin পারে।
+- `cost` permission না থাকলে report, return তালিকা আর top products এ cost বা profit পাঠানো হয় না।
+- Password hash এখন ২০০০ বার করা হয়; পুরোনো hash প্রথম login এ নিজে থেকে নতুন হয়। একই username এ ৫ বার ভুল password দিলে ১৫ মিনিট বন্ধ।
+- `ping` আর `login` script lock ছাড়া চলে; বাইরের public request lock এর জন্য সর্বোচ্চ ৫ সেকেন্ড অপেক্ষা করে।
+- একই phone নম্বরে দ্বিতীয় customer বানানো যায় না (যেকোনো format এ)।
+- jsPDF 4, jspdf-autotable 5, SheetJS (xlsx) 0.20.3 — পুরোনো library এর নিরাপত্তা সমস্যা ঠিক।
+
+## Warranty
+
+- Cancel হওয়া invoice বা ফেরত আসা জিনিসে claim নেওয়া যায় না।
+- "Replaced" করলে stock থেকে একটা unit কমে; serial হলে invoice এ নতুন serial বসে, নষ্টটা "faulty" থাকে। Supplier ভালো unit পাঠালে "Put it back in stock" দিয়ে stock এ ফেরত।
+
+## Backup ও গতি
+
+- Settings → Database → Automatic daily backup: রোজ রাতে Google Drive এর "Karvio backups" folder এ copy, পুরোনো copy নিজে থেকে trash এ।
+- পুরোনো request receipt রোজ মুছে যায়, তাই sale save দীর্ঘদিন পরেও দ্রুত থাকে।
+- Offline app: প্রতিটা request এ পুরো database copy হয় না; রোজকার backup এর শেষ ৩০টা থাকে।
+
+## Deploy
+
+নতুন `backend/Code.gs` দিয়ে Apps Script editor থেকে একবার `setupDatabase` চালান (Drive আর trigger এর নতুন permission Allow করুন), তারপর web app এর নতুন version deploy করুন।
+
 # Karvio 1.0.6
 
 See FIXES-1.0.6.md, VERIFICATION.md and UPLOAD_GUIDE-বাংলা.md for this release. The full fourteen-finding review has been addressed; offline Electron support is included.
