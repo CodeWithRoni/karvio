@@ -194,12 +194,12 @@ export function labelsCss(L, o, screen = false) {
   .shop,.nm,.meta,.code,.pr,.line{flex:none}
   .shop{font-size:${round(f * 0.92)}pt;font-weight:800;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-bottom:.3mm;border-bottom:0.2mm solid #000;margin-bottom:.4mm}
   .nm{font-size:${f}pt;font-weight:700;display:-webkit-box;-webkit-line-clamp:${L.h <= 22 ? 1 : 2};-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
-  .meta{font-size:${round(f * 0.82)}pt;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#222}
+  .meta{font-size:${round(f * 0.95)}pt;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#000}
   .bcw{flex:1 1 0;min-height:${L.h <= 22 ? 3.5 : 5}mm;display:flex;justify-content:center;margin-top:.5mm;overflow:hidden}
   .bc{height:100%;display:block;flex:none;shape-rendering:crispEdges}
-  .code{font-size:${round(f * 0.86)}pt;letter-spacing:.12em;font-family:'Consolas','Courier New',monospace;margin-top:.2mm}
+  .code{font-size:${round(f * 1)}pt;font-weight:600;letter-spacing:.12em;font-family:'Consolas','Courier New',monospace;margin-top:.2mm}
   .pr{font-size:${round(f * 1.45)}pt;font-weight:800;margin-top:.2mm;white-space:nowrap}
-  .pr small{font-size:${round(f * 0.8)}pt;font-weight:600}
+  .pr small{font-size:${round(f * 0.95)}pt;font-weight:700}
   .pr.both{display:flex;justify-content:center;align-items:baseline;gap:1.5mm;font-size:${round(f * 1.15)}pt;overflow:hidden}
   .pr .ws{font-size:${round(f * 0.85)}pt;font-weight:700}
   .line{font-size:${round(f * 0.8)}pt;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:.2mm}
