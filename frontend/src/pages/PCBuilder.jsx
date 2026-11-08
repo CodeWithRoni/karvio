@@ -17,7 +17,7 @@ const loadSaved = () => { try { return JSON.parse(localStorage.getItem(SAVED)) |
 const newLines = () => SLOTS.map(([g]) => ({ group: g, product_id: '', name: '', qty: 1, price: '' }));
 
 export default function PCBuilder() {
-  const { products, categories, brands } = useStore();
+  const { products, categories, brands, warrantyPeriods } = useStore();
   const nav = useNavigate();
   const [lines, setLines] = useState(newLines);
   const [meta, setMeta] = useState({ customer: '', phone: '', title: 'Custom PC build', discount: '', note: '', validDays: 7 });
@@ -46,13 +46,19 @@ export default function PCBuilder() {
   const upd = (i, patch) => setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const pick = (i, id) => {
     const p = products.find((x) => x.id === id);
-    upd(i, p ? { product_id: p.id, name: p.name, price: p.sale_price, warranty: p.has_warranty ? `${p.warranty_days} days` : '', manual: false } : { product_id: '', name: '', price: '', warranty: '', manual: false });
+    upd(i, p ? { product_id: p.id, name: p.name, price: p.sale_price, warranty: p.has_warranty && Number(p.warranty_days) > 0 ? `${p.warranty_days} days` : '', manual: false } : { product_id: '', name: '', price: '', warranty: '', manual: false });
   };
   // A part typed by hand (not in stock, or not in Karvio yet): it goes on the quote with the price typed beside it.
   const typeManual = (i, text) => {
     const l = lines[i];
     if (!text) { upd(i, { manual: false, name: '', product_id: '', warranty: '', ...(l.manual ? { price: '' } : {}) }); return; }
-    upd(i, { manual: true, name: text, product_id: '', warranty: '', ...(l.manual ? {} : { price: '' }) });
+    upd(i, { manual: true, name: text, product_id: '', ...(l.manual ? {} : { price: '', warranty: '' }) });
+  };
+  // Warranty shown on the quote, per line: the product's own period, the shop's warranty periods, or none.
+  const warrantyDays = (l) => { const m = String(l.warranty || '').match(/^(\d+)\s*days?$/i); return m ? Number(m[1]) : 0; };
+  const warrantyOptions = (l) => {
+    const p = l.product_id && pmap[l.product_id];
+    return [...new Set([...(warrantyPeriods || []).map((w) => Number(w.days)), p && p.has_warranty ? Number(p.warranty_days) : 0, warrantyDays(l), 0])].filter((d) => d >= 0).sort((a, b) => a - b);
   };
   const filled = lines.filter((l) => (l.product_id || (l.manual && String(l.name).trim())) && l.name && Number(l.qty) > 0);
   const sub = filled.reduce((a, l) => a + l.qty * (Number(l.price) || 0), 0);
@@ -104,6 +110,9 @@ export default function PCBuilder() {
                   {bad ? <small className="pcb-warn">Not compatible with the selected {l.group === 'RAM' ? (board?.ddr ? 'motherboard' : 'processor') : 'processor'} — choose another</small> : h && <small className="pcb-hint">{h}</small>}
                   <input className="pcb-manual" value={l.manual ? l.name : ''} onChange={(e) => typeManual(i, e.target.value)} placeholder="Or type a part that is not in stock…" aria-label={`${l.group} typed by hand`} />
                 </div>
+                <select value={warrantyDays(l)} onChange={(e) => upd(i, { warranty: Number(e.target.value) > 0 ? `${Number(e.target.value)} days` : '' })} aria-label={`${l.group} warranty`} title="Warranty shown on the quote">
+                  {warrantyOptions(l).map((d) => <option key={d} value={d}>{d ? `${d} days warranty` : 'No warranty'}</option>)}
+                </select>
                 <input type="number" min="0" value={l.qty} onChange={(e) => upd(i, { qty: e.target.value })} onWheel={noWheel} aria-label="Qty" />
                 <input type="number" min="0" step="any" value={l.price} onChange={(e) => upd(i, { price: e.target.value })} placeholder="Price" aria-label="Price" />
                 <b className="r num">{l.name ? money((Number(l.qty) || 0) * (Number(l.price) || 0), false) : ''}</b>

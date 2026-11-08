@@ -327,9 +327,9 @@ table { width: 100%; border-collapse: collapse; }
 .auth-card form { display: flex; flex-direction: column; gap: 12px; margin-top: 18px; }
 
 /* PC builder */
-.pcb-row { display: grid; grid-template-columns: 150px minmax(0, 1fr) 70px 110px 110px 28px; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+.pcb-row { display: grid; grid-template-columns: 150px minmax(0, 1fr) 150px 70px 110px 110px 28px; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
 .pcb-row .g { font-weight: 700; font-size: 13px; }
-.pcb-row input { min-height: 34px; }
+.pcb-row input, .pcb-row > select { min-height: 34px; }
 
 /* ---------- responsive ---------- */
 @media (max-width: 1100px) {

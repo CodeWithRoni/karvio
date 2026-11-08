@@ -64,6 +64,22 @@ test('a part typed by hand goes on the quote but not to the POS', async ({ page 
   await cpu.getByLabel('Processor typed by hand').fill('Ryzen 7 7700 (order)');
   await cpu.getByLabel('Price').fill('30000');
 
+  // Warranty per line: the shop's warranty periods (or none); it stays while the typed name changes,
+  // and it is printed in the Warranty column of the quotation and kept in a saved quote.
+  await expect(m.getByLabel('Mouse warranty')).toHaveValue('0');
+  await expect(cpu.getByLabel('Processor warranty').locator('option')).toContainText(['No warranty', '300 days warranty', '900 days warranty']);
+  await cpu.getByLabel('Processor warranty').selectOption('900');
+  await cpu.getByLabel('Processor typed by hand').fill('Ryzen 7 7700 (on order)');
+  await expect(cpu.getByLabel('Processor warranty')).toHaveValue('900');
+  await page.getByRole('button', { name: 'Print / PDF quote' }).click();
+  await expect.poll(() => page.evaluate(() => document.querySelector('iframe:last-of-type')?.contentDocument?.body?.innerText || '')).toContain('Ryzen 7 7700 (on order)');
+  const printed = await page.evaluate(() => [...document.querySelector('iframe:last-of-type').contentDocument.querySelectorAll('tbody tr')].map((tr) => [...tr.children].map((td) => td.innerText.trim())));
+  expect(printed.find((r) => r[1].includes('Ryzen 7 7700'))[2]).toBe('900 days');
+  expect(printed.find((r) => r[1].includes('PCB Test Mouse'))[2]).toBe('—');
+  await page.getByRole('button', { name: 'Save quote' }).click();
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('erp_quotes'))[0].lines.find((l) => l.group === 'Processor'));
+  expect([saved.name, saved.warranty]).toEqual(['Ryzen 7 7700 (on order)', '900 days']);
+
   // Send to POS: only the stocked mouse goes; the typed processor is reported.
   await page.getByRole('button', { name: 'Send to POS' }).click();
   await expect(page.locator('.toast').last()).toContainText('1 typed part was not sent to the POS');
