@@ -30,7 +30,7 @@ const WRITES = new Set([
   'customer.save', 'customer.quickAdd', 'customer.delete', 'customer.payment',
   'supplier.save', 'supplier.delete', 'supplier.payment', 'account.save', 'account.entry',
   'purchase.create', 'preturn.create', 'sale.create', 'sreturn.create', 'expense.create',
-  'expense.categories', 'reverse', 'claim.create', 'claim.update', 'claim.restock', 'user.save',
+  'expense.categories', 'reverse', 'claim.create', 'claim.update', 'claim.restock', 'repair.save', 'repair.status', 'repair.deliver', 'repair.cancel', 'user.save',
   'rolePerms.save', 'settings.save', 'sale.link'
 ]);
 const pendingWrites = new Map();

@@ -46,9 +46,15 @@ export default function PCBuilder() {
   const upd = (i, patch) => setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const pick = (i, id) => {
     const p = products.find((x) => x.id === id);
-    upd(i, p ? { product_id: p.id, name: p.name, price: p.sale_price, warranty: p.has_warranty ? `${p.warranty_days} days` : '' } : { product_id: '', name: '', price: '', warranty: '' });
+    upd(i, p ? { product_id: p.id, name: p.name, price: p.sale_price, warranty: p.has_warranty ? `${p.warranty_days} days` : '', manual: false } : { product_id: '', name: '', price: '', warranty: '', manual: false });
   };
-  const filled = lines.filter((l) => l.product_id && l.name && Number(l.qty) > 0);
+  // A part typed by hand (not in stock, or not in Karvio yet): it goes on the quote with the price typed beside it.
+  const typeManual = (i, text) => {
+    const l = lines[i];
+    if (!text) { upd(i, { manual: false, name: '', product_id: '', warranty: '', ...(l.manual ? { price: '' } : {}) }); return; }
+    upd(i, { manual: true, name: text, product_id: '', warranty: '', ...(l.manual ? {} : { price: '' }) });
+  };
+  const filled = lines.filter((l) => (l.product_id || (l.manual && String(l.name).trim())) && l.name && Number(l.qty) > 0);
   const sub = filled.reduce((a, l) => a + l.qty * (Number(l.price) || 0), 0);
   const total = sub - (Number(meta.discount) || 0);
 
@@ -61,6 +67,8 @@ export default function PCBuilder() {
   };
   const toPos = () => {
     const inStock = filled.filter((l) => l.product_id);
+    const typed = filled.length - inStock.length;
+    if (typed) useStore.getState().toast(`${typed} typed part${typed > 1 ? 's were' : ' was'} not sent to the POS — only products in stock can be sold there`);
     try { localStorage.setItem('erp_pos_draft', JSON.stringify({ cart: inStock.map((l) => { const p = products.find((x) => x.id === l.product_id); return { product_id: l.product_id, qty: Number(l.qty), price: Number(l.price), serials: [], warranty_days: p?.has_warranty ? p.warranty_days : '' }; }), customerId: '', discount: meta.discount })); } catch {}
     nav('/pos');
   };
@@ -94,6 +102,7 @@ export default function PCBuilder() {
                     {bad && <option value={cur.id}>{cur.name} (not compatible)</option>}
                   </select>
                   {bad ? <small className="pcb-warn">Not compatible with the selected {l.group === 'RAM' ? (board?.ddr ? 'motherboard' : 'processor') : 'processor'} — choose another</small> : h && <small className="pcb-hint">{h}</small>}
+                  <input className="pcb-manual" value={l.manual ? l.name : ''} onChange={(e) => typeManual(i, e.target.value)} placeholder="Or type a part that is not in stock…" aria-label={`${l.group} typed by hand`} />
                 </div>
                 <input type="number" min="0" value={l.qty} onChange={(e) => upd(i, { qty: e.target.value })} onWheel={noWheel} aria-label="Qty" />
                 <input type="number" min="0" step="any" value={l.price} onChange={(e) => upd(i, { price: e.target.value })} placeholder="Price" aria-label="Price" />

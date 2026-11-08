@@ -52,7 +52,8 @@ var SCHEMA = {
   ItemEvents:          'id,ts,serial,product_id,product_name,event,ref_type,ref_id,ref_no,party,qty:n,amount:n,note,user',
   SmsLog:              'id,ts,phone,message,status,response',
   InvoiceLinks:        'id,token_hash,sale_id,created_at,expires_at',
-  AuditLog:            'id,ts,user,action,detail'
+  AuditLog:            'id,ts,user,action,detail',
+  Repairs:             'id,job_no,date,customer_id,customer_name,phone,device,serial,problem,accessories,technician_id,technician_name,estimate:n,charge:n,advance:n,parts,status,note,sale_id,invoice_no,ready_date,delivered_date,cancel_reason,log,user,created_at,updated_at'
 };
 
 /* ---------------------------------------------------------------------------
@@ -70,13 +71,14 @@ var PERMS = {
   'accounts':     'Bank / MFS / cash accounts',
   'expenses':     'Daily expenses',
   'warranty':     'Warranty claims',
+  'repairs':      'Repair jobs (job cards, parts, delivery)',
   'reports':      'Reports hub & full dashboard',
   'cancel':       'Cancel / reverse transactions',
   'users':        'User management',
   'settings':     'System settings'
 };
 var DEFAULT_ROLE_PERMS = {
-  manager: ['pos','sales.all','sales.return','purchase','products','cost','customers','suppliers','accounts','expenses','warranty','reports'],
+  manager: ['pos','sales.all','sales.return','purchase','products','cost','customers','suppliers','accounts','expenses','warranty','repairs','reports'],
   sales:   ['pos','warranty']
 };
 
@@ -467,7 +469,8 @@ function setupDatabase() {
     sms_url: 'https://bulksmsbd.net/api/smsapi?api_key={api_key}&type=text&number={number}&senderid={sender_id}&message={message}',
     sms_body: '', sms_body_type: 'form', sms_api_key: '', sms_sender_id: '', sms_number_format: 'intl', sms_headers: '',
     sms_template: 'Dear {name}, thank you for shopping at {shop}. Items: {items}. Invoice {invoice}, Total {total}, Paid {paid}, Due {due}. View: {link}',
-    sms_invoice_link: 'true', invoice_link_base: DEFAULT_LINK_BASE
+    sms_invoice_link: 'true', invoice_link_base: DEFAULT_LINK_BASE,
+    sms_repair_template: 'Dear {name}, your {device} (Job {job}) is ready at {shop}. Charge {total}, Advance {advance}, Due {due}.'
   };
   Object.keys(defaults).forEach(function (k) { if (getSetting_(k, null) === null) setSetting_(k, defaults[k]); });
   // getSetting_ returns '' for blanks; make sure all keys exist
@@ -1412,7 +1415,7 @@ function expenseCategoriesSave_(p, user) {
 }
 function settingsSave_(p, user) {
   var allowed = ['shop_name', 'shop_phone', 'shop_tel', 'shop_email', 'shop_web', 'shop_social', 'shop_address', 'shop_footer', 'currency', 'invoice_prefix', 'receipt_width', 'low_stock_default', 'expense_categories',
-    'sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_headers',
+    'sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_repair_template', 'sms_headers',
     'dashboard_hidden', 'invoice_template', 'invoice_paper', 'invoice_custom_width', 'invoice_custom_height', 'invoice_note',
     'sms_invoice_link', 'invoice_link_base', 'books_locked_until'];
   var vals = p.values || {};
@@ -1639,6 +1642,210 @@ function smsTest_(p, user) {
   return r;
 }
 function smsLog_() { return all_('SmsLog').slice(-100).reverse().map(function (x) { var o = Object.assign({}, x); delete o._row; return o; }); }
+
+/* ============================================================================
+ *  10b. REPAIR JOBS
+ *  A job card for a device left at the shop: Received → Ready → Delivered (or Cancelled).
+ *  Money goes through the existing books, so stock, serials, accounts, profit and dues stay right:
+ *    · an advance is a customer payment (it waits on the customer's account as credit);
+ *    · delivery creates a normal sale invoice: the parts used (from stock) plus the repair charge
+ *      as the service product "Repair service"; the advance is used on it as customer credit;
+ *    · cancelling can pay the advance back, or leave it on the customer's account.
+ * ========================================================================== */
+var REPAIR_STATUSES = ['Received', 'Ready', 'Delivered', 'Cancelled'];
+var REPAIR_SERVICE_NAME = 'Repair service';
+function repairRow_(id) {
+  var r = all_('Repairs').filter(function (x) { return x.id === id; })[0];
+  if (!r) fail_('Repair job not found');
+  return r;
+}
+function repairParts_(r) { try { var a = typeof r.parts === 'string' ? JSON.parse(r.parts || '[]') : r.parts; return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+function repairLog_(r) { try { var a = typeof r.log === 'string' ? JSON.parse(r.log || '[]') : r.log; return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+function repairOut_(r, sales) {
+  var o = Object.assign({}, r); delete o._row;
+  o.parts = repairParts_(r); o.log = repairLog_(r);
+  o.parts_total = round_(sum_(o.parts, function (x) { return num_(x.qty) * num_(x.price); }));
+  o.total = round_(o.parts_total + num_(r.charge));
+  o.due = round_(Math.max(o.total - num_(r.advance), 0));
+  if (r.sale_id && sales) { var s = sales[r.sale_id]; o.sale_status = s ? s.status : ''; }
+  return o;
+}
+/** The parts list as stored on the job: real products in stock, the price typed, serials for serial items. */
+function repairPartsClean_(list) {
+  var pmap = indexBy_(all_('Products')), sidx = serialIndex_(), seen = {};
+  return (list || []).map(function (it) {
+    var pr = pmap[it.product_id]; if (!pr || !pr.active) fail_('Part not found or inactive');
+    var qty = num_(it.qty); if (qty <= 0) fail_('Invalid quantity for ' + pr.name);
+    if (!isDecimalUnit_(pr.unit) && qty % 1 !== 0) fail_('Quantity for ' + pr.name + ' must be a whole number');
+    var price = round_(it.price); if (price < 0) fail_('Invalid price for ' + pr.name);
+    var sers = [];
+    if (isSerialProduct_(pr)) {
+      sers = splitSerials_(it.serials);
+      if (sers.length !== qty) fail_('Select ' + qty + ' serial number(s) for ' + pr.name);
+      sers.forEach(function (s) {
+        var k = pr.id + '|' + s;
+        if (!sidx[k] || sidx[k].status !== 'in_stock') fail_('Serial ' + s + ' is not in stock for ' + pr.name);
+        if (seen[k]) fail_('Duplicate serial ' + s); seen[k] = 1;
+      });
+    } else if (!isService_(pr) && pr.stock < qty - 1e-9) fail_('Only ' + pr.stock + ' ' + pr.unit + ' of ' + pr.name + ' in stock');
+    return { product_id: pr.id, name: pr.name, unit: pr.unit, qty: qty, price: price, serials: sers.join(',') };
+  });
+}
+function repairCustomer_(p, user) {
+  if (p.customer_id) {
+    var c = all_('Customers').filter(function (x) { return x.id === p.customer_id && x.active; })[0];
+    if (!c) fail_('Customer not found');
+    return c;
+  }
+  var name = String(p.customer_name || '').trim(), phone = String(p.phone || '').trim();
+  if (!name) fail_('Customer name is required');
+  if (!phone) fail_('Customer phone is required');
+  var same = customerByPhone_(phone);
+  if (same) return same; // the same phone number is the same customer
+  return insert_('Customers', { name: name, phones: phone, addresses: '', opening_balance: 0, note: '', active: true, created_at: now_() });
+}
+function repairTechnician_(id) {
+  if (!id) return null;
+  var u = all_('Users').filter(function (x) { return x.id === id && x.active; })[0];
+  if (!u) fail_('Technician not found');
+  return u;
+}
+function repairAdvance_(r, amount, accountId, user, customer) {
+  var amt = round_(amount); if (amt <= 0) return 0;
+  customerPayment_({ customer_id: customer.id, amount: amt, account_id: accountId, note: 'Repair advance ' + r.job_no }, user);
+  return amt;
+}
+/** Staff and accounts the repair page needs (also for staff without the users or accounts permissions). */
+function repairsMeta_() {
+  return {
+    technicians: all_('Users').filter(function (u) { return u.active; }).map(function (u) { return { id: u.id, name: u.name }; }),
+    accounts: all_('Accounts').filter(function (a) { return a.active; }).map(function (a) { return { id: a.id, name: a.name, type: a.type }; }),
+    statuses: REPAIR_STATUSES
+  };
+}
+function repairsList_(p) {
+  var q = String(p.q || '').toLowerCase(), sales = indexBy_(all_('Sales'));
+  return all_('Repairs').filter(function (r) {
+    if (p.status && r.status !== p.status) return false;
+    if (p.technician_id && r.technician_id !== p.technician_id) return false;
+    if (!inRange_(r.date, p.from, p.to)) return false;
+    if (q && [r.job_no, r.customer_name, r.phone, r.device, r.serial, r.problem, r.invoice_no].join(' ').toLowerCase().indexOf(q) < 0) return false;
+    return true;
+  }).sort(function (a, b) { return b._row - a._row; }).map(function (r) { return repairOut_(r, sales); });
+}
+function repairGet_(p) { return repairOut_(repairRow_(p.id), indexBy_(all_('Sales'))); }
+/** New job card, or changes to an open one (customer is fixed once the job exists). */
+function repairSave_(p, user) {
+  if (p.id) { var open = repairRow_(p.id); if (open.status !== 'Received' && open.status !== 'Ready') fail_('Job ' + open.job_no + ' is ' + open.status + ' and can no longer be changed'); }
+  var device = String(p.device || '').trim(), problem = String(p.problem || '').trim();
+  if (!device) fail_('Device is required');
+  if (!problem) fail_('Problem is required');
+  var tech = repairTechnician_(p.technician_id);
+  var charge = round_(p.charge); if (charge < 0) fail_('Repair charge cannot be negative');
+  var estimate = round_(p.estimate); if (estimate < 0) fail_('Estimate cannot be negative');
+  var parts = repairPartsClean_(p.parts);
+  var fields = {
+    device: device, serial: String(p.serial || '').trim(), problem: problem, accessories: String(p.accessories || '').trim(),
+    technician_id: tech ? tech.id : '', technician_name: tech ? tech.name : '', estimate: estimate, charge: charge,
+    parts: parts, note: String(p.note || '').trim(), updated_at: now_()
+  };
+  var addAmt = round_(p.advance), log;
+  if (p.id) {
+    var r = repairRow_(p.id);
+    if (r.status !== 'Received' && r.status !== 'Ready') fail_('Job ' + r.job_no + ' is ' + r.status + ' and can no longer be changed');
+    var cust = all_('Customers').filter(function (c) { return c.id === r.customer_id; })[0]; if (!cust) fail_('Customer of this job not found');
+    log = repairLog_(r);
+    var note = [];
+    if (r.technician_id !== fields.technician_id) note.push('Technician: ' + (fields.technician_name || 'none'));
+    var got = repairAdvance_(r, addAmt, p.account_id, user, cust);
+    if (got) { fields.advance = round_(num_(r.advance) + got); note.push('Advance +' + got); }
+    log.push({ ts: now_(), status: r.status, note: note.join(' · ') || 'Job updated', user: user.name });
+    fields.log = log;
+    var upd = update_('Repairs', r.id, fields);
+    audit_(user, 'repair_update', r.job_no);
+    return repairOut_(upd);
+  }
+  var customer = repairCustomer_(p, user);
+  var row = Object.assign({
+    job_no: nextNo_('seq_repair', 'JOB-'), date: today_(), customer_id: customer.id, customer_name: customer.name,
+    phone: parseList_(customer.phones)[0] || String(p.phone || '').trim(), advance: 0, status: 'Received',
+    sale_id: '', invoice_no: '', ready_date: '', delivered_date: '', cancel_reason: '', user: user.name, created_at: now_()
+  }, fields);
+  row.log = [{ ts: now_(), status: 'Received', note: 'Device received' + (row.technician_name ? ' · Technician: ' + row.technician_name : ''), user: user.name }];
+  var ins = insert_('Repairs', row);
+  var adv = repairAdvance_(ins, addAmt, p.account_id, user, customer);
+  if (adv) {
+    var lg = repairLog_(ins); lg.push({ ts: now_(), status: 'Received', note: 'Advance ' + adv, user: user.name });
+    ins = update_('Repairs', ins.id, { advance: adv, log: lg });
+  }
+  audit_(user, 'repair_create', ins.job_no);
+  return repairOut_(ins);
+}
+/** Received ⇄ Ready. Ready can send the customer an SMS. */
+function repairStatus_(p, user) {
+  var r = repairRow_(p.id);
+  if (p.status !== 'Received' && p.status !== 'Ready') fail_('Use Deliver or Cancel for that');
+  if (r.status !== 'Received' && r.status !== 'Ready') fail_('Job ' + r.job_no + ' is ' + r.status);
+  if (r.status === p.status) fail_('Job ' + r.job_no + ' is already ' + r.status);
+  var log = repairLog_(r);
+  log.push({ ts: now_(), status: p.status, note: String(p.note || '').trim() || (p.status === 'Ready' ? 'Repair finished' : 'Back to work'), user: user.name });
+  var upd = update_('Repairs', r.id, { status: p.status, ready_date: p.status === 'Ready' ? today_() : '', log: log, updated_at: now_() });
+  audit_(user, 'repair_' + p.status.toLowerCase(), r.job_no);
+  var out = repairOut_(upd), sms = null;
+  if (p.status === 'Ready' && p.send_sms !== false && getSetting_('sms_enabled', 'false') === 'true' && r.phone) {
+    var msg = smsMessage_('sms_repair_template', { name: r.customer_name, device: r.device, job: r.job_no, shop: getSetting_('shop_name'), total: out.total, advance: num_(r.advance), due: out.due });
+    if (String(msg).trim()) { try { sms = sendSms_(r.phone, msg); } catch (e) { sms = { ok: false, status: 'failed', response: String(e.message || e) }; } }
+  }
+  out.sms = sms;
+  return out;
+}
+/** The one service product that carries repair charges on invoices (made the first time it is needed). */
+function repairServiceProduct_() {
+  var pr = all_('Products').filter(function (x) { return isService_(x) && x.name === REPAIR_SERVICE_NAME; })[0];
+  if (pr) { if (!pr.active) pr = update_('Products', pr.id, { active: true }); return pr; }
+  return insert_('Products', { sku: '', barcode: '', name: REPAIR_SERVICE_NAME, category_id: '', subcategory_id: '', brand_id: '', unit: 'pcs', roll_length: 0, cost_price: 0, sale_price: 0, wholesale_price: 0, stock: 0, low_stock: 0, has_warranty: false, warranty_type: '', warranty_days: 0, active: true, created_at: now_(), service: true, description: 'Charges for repair jobs' });
+}
+/** Hand the device back: a sale invoice for the parts and the charge; the advance is used as credit. */
+function repairDeliver_(p, user) {
+  var r = repairRow_(p.id);
+  if (r.status !== 'Received' && r.status !== 'Ready') fail_('Job ' + r.job_no + ' is ' + r.status);
+  var cust = all_('Customers').filter(function (c) { return c.id === r.customer_id; })[0]; if (!cust) fail_('Customer of this job not found');
+  var parts = repairParts_(r), items = parts.map(function (x) { return { product_id: x.product_id, qty: x.qty, price: x.price, serials: x.serials }; });
+  if (num_(r.charge) > 0) items.push({ product_id: repairServiceProduct_().id, qty: 1, price: num_(r.charge) });
+  var sale = null, log = repairLog_(r);
+  if (items.length) {
+    var total = round_(sum_(items, function (x) { return num_(x.qty) * num_(x.price); }));
+    var discount = Math.min(Math.max(round_(p.discount), 0), total);
+    var avail = Math.max(-(customerBalances_()[cust.id] || 0), 0);
+    var credit = round_(Math.min(num_(r.advance), avail, total - discount));
+    sale = saleCreate_({
+      customer_id: cust.id, items: items, discount: discount, payments: p.payments || [], credit_used: credit,
+      next_payment_date: p.next_payment_date, note: 'Repair ' + r.job_no + ' · ' + r.device, send_sms: false
+    }, user);
+  }
+  log.push({ ts: now_(), status: 'Delivered', note: sale ? 'Invoice ' + sale.sale.invoice_no : 'Delivered without charge', user: user.name });
+  var upd = update_('Repairs', r.id, { status: 'Delivered', delivered_date: today_(), sale_id: sale ? sale.sale.id : '', invoice_no: sale ? sale.sale.invoice_no : '', log: log, updated_at: now_() });
+  audit_(user, 'repair_deliver', r.job_no);
+  var out = repairOut_(upd, indexBy_(all_('Sales')));
+  out.sale = sale ? sale.sale : null;
+  out.invoice = sale; // the full invoice (items, customer) for printing, also for staff without the POS permission
+  return out;
+}
+/** Cancel an open job. The advance is paid back from an account, or stays on the customer's account as credit. */
+function repairCancel_(p, user) {
+  var r = repairRow_(p.id);
+  if (r.status !== 'Received' && r.status !== 'Ready') fail_('Job ' + r.job_no + ' is ' + r.status);
+  var reason = String(p.reason || '').trim(); if (!reason) fail_('Write why the job is cancelled');
+  var log = repairLog_(r), note = reason;
+  if (num_(r.advance) > 0 && p.refund_account_id) {
+    customerPayment_({ customer_id: r.customer_id, amount: num_(r.advance), account_id: p.refund_account_id, direction: 'pay', note: 'Repair advance returned ' + r.job_no }, user);
+    note += ' · Advance ' + num_(r.advance) + ' returned';
+  } else if (num_(r.advance) > 0) note += ' · Advance ' + num_(r.advance) + ' kept on the customer account';
+  log.push({ ts: now_(), status: 'Cancelled', note: note, user: user.name });
+  var upd = update_('Repairs', r.id, { status: 'Cancelled', cancel_reason: reason, log: log, updated_at: now_() });
+  audit_(user, 'repair_cancel', { job: r.job_no, reason: reason });
+  return repairOut_(upd);
+}
 
 /* ============================================================================
  *  11. BOOTSTRAP  (one call loads everything the UI needs)
@@ -3506,6 +3713,13 @@ var ROUTES = {
   'claim.update':     r_('warranty', claimUpdate_, true),
   'claims.list':      r_('warranty', claimsList_),
   'claim.restock':    r_('warranty', claimRestock_, true),
+  'repairs.meta':     r_('repairs', repairsMeta_),
+  'repairs.list':     r_('repairs', repairsList_),
+  'repair.get':       r_('repairs', repairGet_),
+  'repair.save':      r_('repairs', repairSave_, true),
+  'repair.status':    r_('repairs', repairStatus_, true),
+  'repair.deliver':   r_('repairs', repairDeliver_, true),
+  'repair.cancel':    r_('repairs', repairCancel_, true),
 
   'history':          r_(null, itemHistory_),
   'history.doc':      r_(null, historyDoc_route_),

@@ -201,7 +201,7 @@ export function smsParts(text) {
 }
 
 function SmsSettings() {
-  const { f, setF, bind, save, busy } = useSettingsForm(['sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_headers', 'sms_invoice_link', 'invoice_link_base']);
+  const { f, setF, bind, save, busy } = useSettingsForm(['sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_repair_template', 'sms_headers', 'sms_invoice_link', 'invoice_link_base']);
   const linkOn = f.sms_invoice_link !== 'false'; // on unless switched off
   const [phone, setPhone] = useState('');
   const preset = matchPreset(f);
@@ -243,6 +243,7 @@ function SmsSettings() {
         <Field label="API key"><input type="password" {...bind('sms_api_key')} autoComplete="off" /></Field>
         <Field label="Sender ID"><input {...bind('sms_sender_id')} /></Field>
         <Field label="Message template" wide hint="Placeholders: {name} {shop} {items} {invoice} {total} {paid} {due} {date} {link}"><textarea {...bind('sms_template')} /></Field>
+        <Field label="Repair ready message" wide hint="Sent when a repair job is marked Ready. Placeholders: {name} {device} {job} {shop} {total} {advance} {due}"><textarea {...bind('sms_repair_template')} /></Field>
         <div className="wide sms-link">
           <label className="check"><input type="checkbox" checked={linkOn} onChange={(e) => setF({ ...f, sms_invoice_link: String(e.target.checked) })} /> <b>Add a link to the invoice</b></label>
           <p className="muted" style={{ margin: '4px 0 0', fontSize: 12.5 }}>The customer taps it to see (and download) only their own invoice. Each link works for <b>15 days</b>, then it is deleted from your sheet. Put <code>{'{link}'}</code> in the template to choose where it goes — otherwise it is added at the end.</p>

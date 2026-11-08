@@ -34,6 +34,7 @@ export const NAV = [
   { to: '/sales', label: 'Sales & Returns', perm: 'pos', key: '3' },
   { to: '/pc-builder', label: 'PC Builder & Quotes', perm: 'pos' },
   { to: '/customers', label: 'Customers & Dues', key: '4' },
+  { to: '/repairs', label: 'Repairs', perm: 'repairs' },
   { group: 'Stock' },
   { to: '/stock', label: 'Products & Stock', key: '5' },
   { to: '/barcodes', label: 'Barcode Labels' },
