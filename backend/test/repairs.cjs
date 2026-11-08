@@ -25,21 +25,34 @@ const accBal = (id) => Q('accounts.list', {}).find((a) => a.id === id).balance;
 const custBal = (id) => Q('customers.list', {}).find((c) => c.id === id).balance;
 const stockOf = (id) => Q('products.list', {}).find((p) => p.id === id).stock;
 
-/* ---------- permission ---------- */
+/* ---------- permission and the Technician role ---------- */
 same(Object.keys(Q('bootstrap', {}).permLabels).includes('repairs'), true, 'Repairs is a permission');
-Q('user.save', { name: 'Tanvir', username: 'tanvir', password: 'tanvir1', role: 'sales' });
+Q('user.save', { name: 'Sumon', username: 'sumon', password: 'sumon12', role: 'sales' });
+truthy(/Permission denied/.test(QF('repairs.list', {}, login('sumon', 'sumon12').token)), 'sales staff need the repairs permission');
+truthy(/mobile number/.test(QF('user.save', { name: 'Tanvir', username: 'tanvir', password: 'tanvir1', role: 'technician' })), 'a technician needs a phone number');
+const tUser = Q('user.save', { name: 'Tanvir', username: 'tanvir', password: 'tanvir1', role: 'technician', phone: '01700000091' });
+same([tUser.role, tUser.phone], ['technician', '01700000091'], 'technician with a phone');
 const tanvir = login('tanvir', 'tanvir1');
-truthy(/Permission denied/.test(QF('repairs.list', {}, tanvir.token)), 'sales staff need the repairs permission');
-Q('rolePerms.save', { manager: ['repairs'], sales: ['pos', 'repairs'] });
+same(tanvir.perms, ['repairs'], 'a technician can use Repairs by default');
+Q('rolePerms.save', { manager: ['repairs'], sales: ['pos'] });
+same(Q('bootstrap', {}, tanvir.token).perms, ['repairs'], 'saving the other roles keeps the technician default');
+Q('rolePerms.save', { manager: ['repairs'], sales: ['pos'], technician: ['repairs', 'warranty'] });
+same(Q('bootstrap', {}, tanvir.token).perms, ['repairs', 'warranty'], 'technician permissions can be changed');
+Q('rolePerms.save', { manager: ['repairs'], sales: ['pos'], technician: ['repairs'] });
+Q('user.save', { name: 'Rakib', username: 'rakib', password: 'rakib12', role: 'technician', phone: '+880 1700-000092' });
 const meta = Q('repairs.meta', {}, tanvir.token);
-truthy(meta.technicians.some((u) => u.name === 'Tanvir') && meta.accounts.length === 2, 'technicians and accounts for the page');
-same(meta.statuses, ['Received', 'Ready', 'Delivered', 'Cancelled'], 'simple statuses');
+let pre = null; const j3pre = () => pre || (pre = Q('repair.save', { customer_name: 'Pre', phone: '01811000077', device: 'Pre', problem: 'Pre' }));
+same(meta.technicians.map((u) => [u.name, u.phone]), [['Tanvir', '01700000091'], ['Rakib', '+880 1700-000092']], 'only technicians, with their numbers');
+same(meta.accounts.length, 2, 'accounts for the page');
+same(meta.statuses, ['Received', 'Completed', 'Failed', 'Delivered', 'Cancelled'], 'statuses');
 
 /* ---------- 1. job card with a new customer and an advance ---------- */
 truthy(/Device is required/.test(QF('repair.save', { customer_name: 'Rafi', phone: '01811000001', problem: 'No display' })), 'device required');
 truthy(/Problem is required/.test(QF('repair.save', { customer_name: 'Rafi', phone: '01811000001', device: 'HP laptop' })), 'problem required');
 truthy(/phone is required/.test(QF('repair.save', { customer_name: 'Rafi', device: 'HP laptop', problem: 'No display' })), 'phone required');
 truthy(/Technician not found/.test(QF('repair.save', { customer_name: 'Rafi', phone: '01811000001', device: 'HP laptop', problem: 'x', technician_id: 'nope' })), 'technician must be a user');
+const adminU = Q('users.list', {}).find((u) => u.username === 'admin');
+truthy(/is not a Technician/.test(QF('repair.save', { customer_name: 'Rafi', phone: '01811000001', device: 'HP laptop', problem: 'x', technician_id: adminU.id })), 'only Technician-role users are assigned');
 const cash0 = accBal(cash.id);
 const tech = Q('users.list', {}).find((u) => u.username === 'tanvir');
 const j1 = Q('repair.save', { customer_name: 'Rafi', phone: '01811000001', device: 'HP laptop', serial: 'CND123', problem: 'No display', accessories: 'Charger', estimate: 3000, advance: 500, account_id: cash.id, technician_id: tech.id }, tanvir.token);
@@ -56,27 +69,55 @@ same([j2.customer_id, j2.job_no], [rafi.id, 'JOB-000002'], 'same customer by pho
 truthy(/not in stock/.test(QF('repair.save', { ...j1, parts: [{ product_id: ram.id, qty: 1, price: 2600, serials: 'R9' }] })), 'serial part must be in stock');
 truthy(/Select 1 serial/.test(QF('repair.save', { ...j1, parts: [{ product_id: ram.id, qty: 1, price: 2600 }] })), 'serial part needs its serial');
 truthy(/Only 10 pcs/.test(QF('repair.save', { ...j1, parts: [{ product_id: paste.id, qty: 11, price: 150 }] })), 'not more than in stock');
-const admin = Q('users.list', {}).find((u) => u.username === 'admin');
-const j1b = Q('repair.save', { ...j1, technician_id: admin.id, charge: 1000, parts: [{ product_id: ram.id, qty: 1, price: 2600, serials: 'R1' }, { product_id: paste.id, qty: 1, price: 150 }], advance: 200, account_id: bkash.id });
-same([j1b.charge, j1b.parts_total, j1b.total, j1b.advance, j1b.due, j1b.technician_name], [1000, 2750, 3750, 700, 3050, 'Administrator'], 'parts, charge and advance add up');
-truthy(j1b.log.some((l) => /Technician: Administrator/.test(l.note) && /Advance \\+200/.test(l.note)), 'changes are logged');
+const rakib = Q('users.list', {}).find((u) => u.username === 'rakib');
+const j1b = Q('repair.save', { ...j1, technician_id: rakib.id, charge: 1000, parts: [{ product_id: ram.id, qty: 1, price: 2600, serials: 'R1' }, { product_id: paste.id, qty: 1, price: 150 }], advance: 200, account_id: bkash.id });
+same([j1b.charge, j1b.parts_total, j1b.total, j1b.advance, j1b.due, j1b.technician_name], [1000, 2750, 3750, 700, 3050, 'Rakib'], 'parts, charge and advance add up');
+truthy(j1b.log.some((l) => /Technician: Rakib/.test(l.note) && /Advance \\+200/.test(l.note)), 'changes are logged');
+same(j1b.tech_sms, null, 'no SMS while SMS is switched off');
 same([stockOf(ram.id), stockOf(paste.id)], [2, 10], 'parts leave stock only on delivery');
-same(Q('repairs.list', { technician_id: admin.id }).map((r) => r.job_no), ['JOB-000001'], 'filter by technician');
+same(Q('repairs.list', { technician_id: rakib.id }).map((r) => r.job_no), ['JOB-000001'], 'filter by technician');
 same(Q('repairs.list', { q: 'printer' }).map((r) => r.job_no), ['JOB-000002'], 'search');
 
-/* ---------- 3. Ready sends the SMS ---------- */
+/* ---------- 3. Completed sends the customer SMS; a new technician gets the job by SMS ---------- */
 Q('settings.save', { values: { shop_name: 'Computer Plus', sms_enabled: 'true', sms_method: 'GET', sms_url: 'https://gw.example/send?to={number}&msg={message}' } });
 const sent = []; const realFetch = sandbox.UrlFetchApp.fetch;
 sandbox.UrlFetchApp.fetch = (url) => { sent.push(decodeURIComponent(url)); return { getResponseCode: () => 200, getContentText: () => 'SMS SUBMITTED: ID - 1' }; };
-const ready = Q('repair.status', { id: j1.id, status: 'Ready' });
-same([ready.status, ready.ready_date === sandbox.today_(), ready.sms && ready.sms.ok], ['Ready', true, true], 'Ready with SMS');
+const ready = Q('repair.status', { id: j1.id, status: 'Completed' }, tanvir.token);
+same([ready.status, ready.ready_date === sandbox.today_(), ready.sms && ready.sms.ok, ready.result_by], ['Completed', true, true, 'Tanvir'], 'Completed with SMS');
 truthy(sent.length === 1 && sent[0].includes('8801811000001') && sent[0].includes('HP laptop (Job JOB-000001) is ready at Computer Plus. Charge 3750, Advance 700, Due 3050'), 'the SMS text');
 same(Q('repair.status', { id: j1.id, status: 'Received', note: 'Fan noise' }).status, 'Received', 'back to work');
-Q('repair.status', { id: j1.id, status: 'Ready', send_sms: false });
+Q('repair.status', { id: j1.id, status: 'Completed', send_sms: false });
 same(sent.length, 1, 'no SMS when switched off for this job');
+const jt = Q('repair.save', { customer_id: rafi.id, device: 'Monitor', problem: 'No power', technician_id: tUser.id });
+truthy(jt.tech_sms && jt.tech_sms.ok && sent.length === 2 && sent[1].includes('8801700000091') && sent[1].includes('Tanvir, new repair job ' + jt.job_no + ' for you: Monitor - No power. Customer Rafi 01811000001. Computer Plus'), 'the technician gets the job by SMS');
+Q('repair.save', { ...jt, technician_id: tUser.id, note: 'same technician' });
+same(sent.length, 2, 'no SMS again for the same technician');
+const jt2 = Q('repair.save', { ...jt, technician_id: rakib.id });
+truthy(jt2.tech_sms.ok && sent.length === 3 && sent[2].includes('8801700000092') && sent[2].startsWith('https://gw.example/send?to=8801700000092&msg=Rakib, new repair job'), 'a new technician gets it too');
+const jtFailed = Q('repair.status', { id: jt.id, status: 'Failed', note: 'Board burnt, no spare' }, login('rakib', 'rakib12').token);
+same([jtFailed.status, jtFailed.result_note, sent.length], ['Failed', 'Board burnt, no spare', 3], 'Failed with the report, no customer SMS');
 sandbox.UrlFetchApp.fetch = realFetch;
 Q('settings.save', { values: { sms_enabled: 'false' } });
 truthy(/Deliver or Cancel/.test(QF('repair.status', { id: j1.id, status: 'Delivered' })), 'delivery has its own step');
+truthy(/Write why the repair failed/.test(QF('repair.status', { id: j3pre().id, status: 'Failed' })), 'Failed needs the report');
+
+/* ---------- 3b. admin dashboard alerts ---------- */
+const alerts = () => Q('dashboard', {}).repair_alerts.map((a) => [a.job_no, a.status, a.result_note, a.technician_name]);
+same(alerts(), [[jt.job_no, 'Failed', 'Board burnt, no spare', 'Rakib'], ['JOB-000001', 'Completed', '', 'Rakib']], 'Completed and Failed jobs alert the admins');
+truthy(Q('dashboard', {}, tanvir.token).repair_alerts === undefined, 'only admins get the alerts');
+Q('user.save', { name: 'Second Admin', username: 'boss2', password: 'boss222', role: 'admin' });
+same(Q('dashboard', {}, login('boss2', 'boss222').token).repair_alerts.length, 2, 'every admin sees them');
+truthy(/Only an admin/.test(QF('repair.seen', { id: jt.id }, tanvir.token)), 'only admins mark them seen');
+same(Q('repair.seen', { id: jt.id }).alert_seen_by, 'Administrator', 'seen');
+same(alerts().map((a) => a[0]), ['JOB-000001'], 'a seen alert is gone for all admins');
+same(Q('repair.status', { id: jt.id, status: 'Received', note: 'Spare found' }).status, 'Received', 'back to work');
+Q('repair.status', { id: jt.id, status: 'Completed' });
+same(alerts().map((a) => a[0]), [jt.job_no, 'JOB-000001'], 'a new result alerts again');
+
+/* old jobs saved as "Ready" read as Completed */
+run("(function(){ var r = all_('Repairs').filter(function(x){return x.id==='" + jt.id + "'})[0]; update_('Repairs', r.id, { status: 'Ready', alert_seen: true }); })(); _mem = {};");
+same([Q('repair.get', { id: jt.id }).status, Q('repairs.list', { status: 'Completed' }).some((r) => r.id === jt.id)], ['Completed', true], 'legacy Ready is Completed');
+same(Q('repair.cancel', { id: jt.id, reason: 'Customer took it back' }).status, 'Cancelled', 'and can be closed');
 
 /* ---------- 4. delivery: one invoice, advance used, the rest paid ---------- */
 const c1 = accBal(cash.id), profit0 = Q('profit.report', {}).summary.gross;
@@ -92,6 +133,7 @@ same(Q('products.list', {}).filter((p) => p.name === 'Repair service').map((p) =
 truthy(/Delivered and can no longer/.test(QF('repair.save', { ...d1 })), 'a delivered job is closed');
 truthy(/Delivered/.test(QF('repair.cancel', { id: j1.id, reason: 'x' })), 'cannot cancel after delivery');
 same(Q('repairs.list', { status: 'Delivered' })[0].sale_status, 'active', 'list shows the invoice status');
+same(Q('dashboard', {}).repair_alerts.length, 0, 'delivering the job removes its alert');
 
 /* ---------- 5. delivery with a balance left as due ---------- */
 const j3 = Q('repair.save', { customer_id: rafi.id, device: 'Desktop PC', problem: 'Windows', charge: 800 });

@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 // Repairs page: new job with a new customer, a part from stock and an advance; mark ready; deliver with an invoice; cancel.
 const endpoint = 'http://localhost:8787';
-let token, paste, cash;
+let token, paste, cash, tech;
 async function call(request, action, payload = {}) {
   const r = await request.post(endpoint, { data: { action, payload, token } });
   const body = await r.json();
@@ -13,6 +13,8 @@ test.beforeAll(async ({ request }) => {
   token = (await call(request, 'login', { username: 'admin', password: 'admin123' })).token;
   const boot = await call(request, 'bootstrap');
   cash = boot.accounts[0];
+  tech = (await call(request, 'users.list')).find((u) => u.username === 'e2etech')
+    || await call(request, 'user.save', { name: 'E2E Tech', username: 'e2etech', password: 'e2etech1', role: 'technician', phone: '01700000555' });
   paste = boot.products.find((p) => p.barcode === 'RPR-PASTE-1');
   if (!paste) {
     paste = await call(request, 'product.save', { name: 'RPR Thermal paste', barcode: 'RPR-PASTE-1', sale_price: 150 });
@@ -26,7 +28,7 @@ test.beforeEach(async ({ page }) => {
   }, { endpoint, token });
 });
 
-test('repair job: receive, mark ready, deliver with an invoice', async ({ page, request }) => {
+test('repair job: receive, mark completed, deliver with an invoice', async ({ page, request }) => {
   const errors = []; page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/#/customers');
   // the menu item sits right under Customers & Dues (wait for the menu first)
@@ -47,7 +49,9 @@ test('repair job: receive, mark ready, deliver with an invoice', async ({ page, 
   await dlg.getByLabel('Device').fill('Dell Inspiron laptop');
   await dlg.getByLabel('Problem').fill('Overheating and shutdown');
   await dlg.getByLabel('Received with').fill('Charger');
-  await dlg.getByLabel('Technician').selectOption({ label: 'Administrator' });
+  await expect(dlg.getByLabel('Technician').locator('option')).toHaveText(['Not assigned', 'E2E Tech']); // only Technician-role users
+  await dlg.getByLabel('Technician').selectOption({ label: 'E2E Tech' });
+  await expect(dlg.getByText('Mobile: 01700000555')).toBeVisible();
   await dlg.getByLabel('Repair charge').fill('700');
   await dlg.getByRole('combobox', { name: 'Search product' }).fill('RPR Thermal');
   await dlg.getByRole('option', { name: /RPR Thermal paste/ }).click();
@@ -61,14 +65,17 @@ test('repair job: receive, mark ready, deliver with an invoice', async ({ page, 
   await expect(det).toContainText('Repair Test Customer');
   await expect(det).toContainText('Received');
   await expect(det.locator('.kv')).toContainText('Technician');
-  await expect(det.locator('.kv')).toContainText('Administrator');
+  await expect(det.locator('.kv')).toContainText('E2E Tech');
   await expect(det.locator('.kv')).toContainText('550'); // due = 850 − 300
   const jobNo = (await det.getAttribute('aria-label')).replace('Repair job ', '');
   expect((await call(request, 'accounts.list')).find((a) => a.id === cash.id).balance).toBeCloseTo(cash0 + 300, 2);
   expect((await call(request, 'products.list')).find((p) => p.id === paste.id).stock).toBe(stock0); // not yet taken
 
-  await det.getByRole('button', { name: 'Mark ready' }).click();
-  await expect(det.locator('.kv')).toContainText('Ready');
+  await expect(det.getByRole('button', { name: 'Mark failed' })).toBeDisabled(); // needs the report
+  await det.getByLabel('Technician report').fill('Cleaned fan, new paste, tested 1 hour');
+  await det.getByRole('button', { name: 'Mark completed' }).click();
+  await expect(det.locator('.kv')).toContainText('Completed');
+  await expect(det.locator('.kv')).toContainText('Cleaned fan, new paste, tested 1 hour');
 
   await det.getByRole('button', { name: 'Deliver', exact: true }).click();
   const dv = page.getByRole('dialog', { name: `Deliver ${jobNo}` });
@@ -108,4 +115,46 @@ test('repair job: cancel and give the advance back', async ({ page, request }) =
   await c.getByRole('button', { name: 'Cancel job' }).click();
   await expect(page.getByRole('dialog', { name: `Repair job ${made.job_no}` }).locator('.kv')).toContainText('Cancelled');
   expect((await call(request, 'accounts.list')).find((a) => a.id === cash.id).balance).toBeCloseTo(cash0 - 200, 2);
+});
+
+test('technician role with a mobile number in Users & Roles', async ({ page, request }) => {
+  await page.goto('/#/users');
+  await page.getByRole('button', { name: 'Add user' }).click();
+  const dlg = page.getByRole('dialog', { name: 'Add user' });
+  await expect(dlg.getByLabel('Mobile number')).toHaveCount(0);
+  await dlg.getByLabel('Role').selectOption('technician');
+  await dlg.getByLabel('Full name').fill('Tech From UI');
+  await dlg.getByLabel('Username').fill('techui');
+  await dlg.getByLabel('Password').fill('techui1');
+  await dlg.getByRole('button', { name: 'Save user' }).click();
+  await expect(page.locator('.toast').last()).toContainText('mobile number');
+  await dlg.getByLabel('Mobile number').fill('01700000666');
+  await dlg.getByRole('button', { name: 'Save user' }).click();
+  await expect(page.locator('table')).toContainText('01700000666');
+  const u = (await call(request, 'users.list')).find((x) => x.username === 'techui');
+  expect([u.role, u.phone]).toEqual(['technician', '01700000666']);
+  await page.getByRole('tab', { name: 'Role permissions' }).click();
+  await expect(page.getByRole('columnheader', { name: 'Technician' })).toBeVisible();
+  await expect(page.getByLabel(/Repair jobs.*for technician/)).toBeChecked();
+});
+
+test('failed repair: the admin dashboard shows the result until Seen', async ({ page, request }) => {
+  const job = await call(request, 'repair.save', { customer_name: 'Alert Test', phone: '01555000333', device: 'Gaming PC', problem: 'No POST', technician_id: tech.id });
+  await page.goto(`/#/repairs/${job.id}`);
+  const det = page.getByRole('dialog', { name: `Repair job ${job.job_no}` });
+  await det.getByLabel('Technician report').fill('Motherboard dead, no spare');
+  await det.getByRole('button', { name: 'Mark failed' }).click();
+  await expect(det.locator('.kv')).toContainText('Failed');
+  await page.goto('/#/');
+  const card = page.getByRole('region', { name: 'Repair alerts' });
+  const row = card.locator('.rem-row', { hasText: job.job_no });
+  await expect(row).toContainText('Repair failed');
+  await expect(row).toContainText('Motherboard dead, no spare');
+  await expect(row).toContainText('E2E Tech');
+  await row.getByRole('link', { name: 'Open job' }).click();
+  await expect(page.getByRole('dialog', { name: `Repair job ${job.job_no}` })).toBeVisible();
+  await page.goto('/#/');
+  await card.locator('.rem-row', { hasText: job.job_no }).getByRole('button', { name: 'Seen' }).click();
+  await expect(page.locator('.rem-row', { hasText: job.job_no })).toHaveCount(0);
+  expect((await call(request, 'dashboard')).repair_alerts.some((a) => a.id === job.id)).toBe(false);
 });
