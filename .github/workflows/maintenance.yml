@@ -1,0 +1,67 @@
+# Temporary: run every test (unit, build, Edge browser suite, offline desktop UI, dependency audit) for this branch.
+name: Maintenance — full tests
+
+on:
+  push:
+    branches: [test/full-review]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install
+        working-directory: frontend
+        run: npm ci
+      - name: Unit and integration tests
+        working-directory: frontend
+        run: npm test
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+      - name: Install Microsoft Edge for Playwright
+        working-directory: frontend
+        run: npx playwright install --with-deps msedge
+      - name: Browser tests (Edge)
+        working-directory: frontend
+        run: npm run test:e2e -- --reporter=line
+      - name: Offline desktop UI test (Electron)
+        if: always()
+        working-directory: frontend
+        run: xvfb-run -a npm run test:offline-ui
+      - name: Live API version check (read-only)
+        if: always()
+        working-directory: frontend
+        run: npm run verify:live
+      - name: Dependency audit
+        if: always()
+        working-directory: frontend
+        run: npm audit --omit=dev || true
+      - name: Keep the browser test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            frontend/test-results
+            frontend/playwright-report
+          retention-days: 7
+  offline-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install
+        working-directory: frontend
+        run: npm ci
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+      - name: Offline desktop UI test (Electron on Windows)
+        working-directory: frontend
+        run: npm run test:offline-ui
