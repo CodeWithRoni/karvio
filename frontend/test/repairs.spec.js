@@ -29,7 +29,8 @@ test.beforeEach(async ({ page }) => {
 test('repair job: receive, mark ready, deliver with an invoice', async ({ page, request }) => {
   const errors = []; page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/#/customers');
-  // the menu item sits right under Customers & Dues
+  // the menu item sits right under Customers & Dues (wait for the menu first)
+  await expect(page.locator('nav a', { hasText: 'Repairs' })).toBeVisible();
   const links = await page.locator('nav a').allTextContents();
   const i = links.findIndex((t) => t.includes('Customers & Dues'));
   expect(links[i + 1]).toContain('Repairs');
