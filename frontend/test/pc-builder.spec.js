@@ -47,13 +47,13 @@ test('a part typed by hand goes on the quote but not to the POS', async ({ page 
 
   // Choosing a product from the list replaces the typed text, and typing replaces the product.
   const m = row('Mouse');
-  await m.getByRole('combobox').selectOption(mouse.id);
+  await m.getByLabel('Mouse product').selectOption(mouse.id);
   await expect(m.getByLabel('Price')).toHaveValue('650');
   await expect(m.getByLabel('Mouse typed by hand')).toHaveValue('');
   await m.getByLabel('Mouse typed by hand').fill('Logitech G502');
-  await expect(m.getByRole('combobox')).toHaveValue('');
+  await expect(m.getByLabel('Mouse product')).toHaveValue('');
   await expect(m.getByLabel('Price')).toHaveValue('');
-  await m.getByRole('combobox').selectOption(mouse.id);
+  await m.getByLabel('Mouse product').selectOption(mouse.id);
   await expect(m.getByLabel('Mouse typed by hand')).toHaveValue('');
   await expect(page.locator('.totals')).toContainText('2 parts');
   await expect(page.locator('.totals .grand')).toContainText('30,650');
