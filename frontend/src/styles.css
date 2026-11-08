@@ -675,6 +675,8 @@ small.margin.bad { color: var(--bad); }
 .rem-tag { align-self: flex-start; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
 .rem-tag.today { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
 .rem-tag.late { background: color-mix(in srgb, var(--bad) 18%, transparent); color: var(--bad); }
+.rem-row.done { border-left: 3px solid var(--ok); }
+.rem-tag.done { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
 .rem-act { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 .rem-act input[type='date'] { width: 150px; min-height: 29px; padding: 0 8px; }
 @media (max-width: 860px) { .rem-row { grid-template-columns: 1fr auto; } .rem-when { grid-column: 1; } .rem-act { grid-column: 1 / -1; justify-content: flex-start; } }

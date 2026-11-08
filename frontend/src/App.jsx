@@ -76,6 +76,7 @@ export default function App() {
               <Route path="purchases" element={<Guard perm="purchase"><Purchases /></Guard>} />
               <Route path="warranty" element={<Guard perm="warranty"><Warranty /></Guard>} />
               <Route path="repairs" element={<Guard perm="repairs"><Repairs /></Guard>} />
+              <Route path="repairs/:id" element={<Guard perm="repairs"><Repairs /></Guard>} />
               <Route path="history" element={<History />} />
               <Route path="accounts" element={<Guard perm="accounts"><Accounts /></Guard>} />
               <Route path="profit" element={<Guard perm={['reports', 'cost']}><Profit /></Guard>} />

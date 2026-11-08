@@ -5,7 +5,7 @@ import { money, qty, fdate } from '../lib/format';
 import { useApi, PageHead, Tabs, Loading, ErrorBox, Btn, Empty } from '../components/ui';
 import LiveClock from '../components/LiveClock';
 import { useCardOn } from '../lib/dashboardCards';
-import { CollectionReminders, StockSummary, TopProducts } from '../components/DashboardExtras';
+import { CollectionReminders, RepairAlerts, StockSummary, TopProducts } from '../components/DashboardExtras';
 
 function Stat({ label, value, sub, tone }) {
   return <div className={`stat ${tone || ''}`}><span>{label}</span><b>{value}</b>{sub && <small>{sub}</small>}</div>;
@@ -45,6 +45,7 @@ export default function Dashboard() {
 
       {error && <ErrorBox error={`Could not update the dashboard. Showing the last loaded balances. ${error}`} onRetry={reload} />}
       {on('reminders') && <CollectionReminders list={d.reminders} onChanged={reload} />}
+      {d.repair_alerts && <RepairAlerts list={d.repair_alerts} onChanged={reload} />}
       <div className="stats">
         {on('sales') && <Stat label="Sales" value={money(c.sales)} sub={`${c.invoices} invoices`} />}
         {!d.limited && <>

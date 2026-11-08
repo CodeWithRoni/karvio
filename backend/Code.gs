@@ -25,7 +25,7 @@ var API_CAPABILITIES = { idempotency: true, durableRecovery: true, credentialSes
  *  SHEET SCHEMA  —  "column" or "column:type"   (types: s=text, n=number, b=boolean)
  * ------------------------------------------------------------------------- */
 var SCHEMA = {
-  Users:               'id,name,username,password_hash,salt,role,active:b,created_at,access_limit:b,access_from,access_to,access_days',
+  Users:               'id,name,username,password_hash,salt,role,active:b,created_at,access_limit:b,access_from,access_to,access_days,phone',
   Settings:            'key,value',
   Accounts:            'id,name,type,number,opening_balance:n,active:b,created_at',
   AccountTxns:         'id,date,account_id,direction,amount:n,ref_type,ref_id,note,user,voided:b',
@@ -53,7 +53,7 @@ var SCHEMA = {
   SmsLog:              'id,ts,phone,message,status,response',
   InvoiceLinks:        'id,token_hash,sale_id,created_at,expires_at',
   AuditLog:            'id,ts,user,action,detail',
-  Repairs:             'id,job_no,date,customer_id,customer_name,phone,device,serial,problem,accessories,technician_id,technician_name,estimate:n,charge:n,advance:n,parts,status,note,sale_id,invoice_no,ready_date,delivered_date,cancel_reason,log,user,created_at,updated_at'
+  Repairs:             'id,job_no,date,customer_id,customer_name,phone,device,serial,problem,accessories,technician_id,technician_name,estimate:n,charge:n,advance:n,parts,status,note,sale_id,invoice_no,ready_date,delivered_date,cancel_reason,log,user,created_at,updated_at,result_note,result_by,result_at,alert_seen:b,alert_seen_by'
 };
 
 /* ---------------------------------------------------------------------------
@@ -79,8 +79,10 @@ var PERMS = {
 };
 var DEFAULT_ROLE_PERMS = {
   manager: ['pos','sales.all','sales.return','purchase','products','cost','customers','suppliers','accounts','expenses','warranty','repairs','reports'],
-  sales:   ['pos','warranty']
+  sales:   ['pos','warranty'],
+  technician: ['repairs']
 };
+var STAFF_ROLES = ['manager', 'sales', 'technician'];
 
 /* ============================================================================
  *  1. DATABASE LAYER
@@ -470,7 +472,8 @@ function setupDatabase() {
     sms_body: '', sms_body_type: 'form', sms_api_key: '', sms_sender_id: '', sms_number_format: 'intl', sms_headers: '',
     sms_template: 'Dear {name}, thank you for shopping at {shop}. Items: {items}. Invoice {invoice}, Total {total}, Paid {paid}, Due {due}. View: {link}',
     sms_invoice_link: 'true', invoice_link_base: DEFAULT_LINK_BASE,
-    sms_repair_template: 'Dear {name}, your {device} (Job {job}) is ready at {shop}. Charge {total}, Advance {advance}, Due {due}.'
+    sms_repair_template: 'Dear {name}, your {device} (Job {job}) is ready at {shop}. Charge {total}, Advance {advance}, Due {due}.',
+    sms_technician_template: '{technician}, new repair job {job} for you: {device} - {problem}. Customer {name} {phone}. {shop}'
   };
   Object.keys(defaults).forEach(function (k) { if (getSetting_(k, null) === null) setSetting_(k, defaults[k]); });
   // getSetting_ returns '' for blanks; make sure all keys exist
@@ -565,7 +568,7 @@ function loginFailed_(name) {
 }
 function clearLoginFails_(name) { try { CacheService.getScriptCache().remove(loginKey_(name)); } catch (e) {} }
 function pubUser_(u) {
-  return { id: u.id, name: u.name, username: u.username, role: u.role, active: u.active, owner: isOwner_(u),
+  return { id: u.id, name: u.name, username: u.username, role: u.role, active: u.active, owner: isOwner_(u), phone: u.phone || '',
     access_limit: !!u.access_limit, access_from: u.access_from || '', access_to: u.access_to || '', access_days: u.access_days || '' };
 }
 /** The built-in Administrator account (username "admin", made by setup). Only this account may reset the database;
@@ -623,7 +626,10 @@ function accessDenied_(u) {
 function rolePerms_() {
   var cfg = null;
   try { cfg = JSON.parse(getSetting_('role_perms', 'null')); } catch (e) {}
-  return cfg || DEFAULT_ROLE_PERMS;
+  if (!cfg) return DEFAULT_ROLE_PERMS;
+  // A role added after the permissions were saved (e.g. technician) starts with its defaults.
+  STAFF_ROLES.forEach(function (r) { if (!Array.isArray(cfg[r])) cfg[r] = DEFAULT_ROLE_PERMS[r] || []; });
+  return cfg;
 }
 function permsFor_(role) { return role === 'admin' ? ['*'] : (rolePerms_()[role] || []); }
 function can_(user, perm) {
@@ -1158,7 +1164,7 @@ function usersList_() { return all_('Users').map(pubUser_); }
 function userSave_(p, user) {
   var username = String(p.username || '').trim().toLowerCase();
   if (!username || !String(p.name || '').trim()) fail_('Name and username are required');
-  if (['admin', 'manager', 'sales'].indexOf(p.role) < 0) fail_('Invalid role');
+  if (['admin'].concat(STAFF_ROLES).indexOf(p.role) < 0) fail_('Invalid role');
   all_('Users').forEach(function (u) { if (u.id !== p.id && u.username.toLowerCase() === username) fail_('Username already taken'); });
   var target = p.id ? all_('Users').filter(function (u) { return u.id === p.id; })[0] : null;
   if (p.id && !target) fail_('User not found');
@@ -1172,7 +1178,9 @@ function userSave_(p, user) {
     if (!isOwner_(user)) fail_('Only the Administrator can change the Administrator account');
     if (username !== OWNER_USERNAME) fail_('The Administrator account keeps the username "admin"');
   } else if (username === OWNER_USERNAME) fail_('The username "admin" is reserved for the Administrator account');
-  var row = { name: String(p.name).trim(), username: username, role: p.role, active: p.active === undefined ? true : (p.active === true || p.active === 'true') };
+  var row = { name: String(p.name).trim(), username: username, role: p.role, active: p.active === undefined ? true : (p.active === true || p.active === 'true'), phone: String(p.phone || '').trim() };
+  // A technician gets repair jobs by SMS, so the number is needed.
+  if (row.role === 'technician' && phoneKey_(row.phone).length < 10) fail_('Enter the technician\'s mobile number (it gets the repair job SMS)');
   // working hours (staff only; admins are never limited)
   var lim = p.access_limit === true || p.access_limit === 'true';
   if (lim && row.role !== 'admin') {
@@ -1197,7 +1205,7 @@ function userSave_(p, user) {
 function rolePermsSave_(p, user) {
   if (user.role !== 'admin') fail_('Only an admin can change what each role may do');
   var cfg = {};
-  ['manager', 'sales'].forEach(function (r) { cfg[r] = (p[r] || []).filter(function (x) { return PERMS[x]; }); });
+  STAFF_ROLES.forEach(function (r) { cfg[r] = (Array.isArray(p[r]) ? p[r] : (DEFAULT_ROLE_PERMS[r] || [])).filter(function (x) { return PERMS[x]; }); });
   setSetting_('role_perms', JSON.stringify(cfg));
   return cfg;
 }
@@ -1415,7 +1423,7 @@ function expenseCategoriesSave_(p, user) {
 }
 function settingsSave_(p, user) {
   var allowed = ['shop_name', 'shop_phone', 'shop_tel', 'shop_email', 'shop_web', 'shop_social', 'shop_address', 'shop_footer', 'currency', 'invoice_prefix', 'receipt_width', 'low_stock_default', 'expense_categories',
-    'sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_repair_template', 'sms_headers',
+    'sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_repair_template', 'sms_technician_template', 'sms_headers',
     'dashboard_hidden', 'invoice_template', 'invoice_paper', 'invoice_custom_width', 'invoice_custom_height', 'invoice_note',
     'sms_invoice_link', 'invoice_link_base', 'books_locked_until'];
   var vals = p.values || {};
@@ -1645,15 +1653,21 @@ function smsLog_() { return all_('SmsLog').slice(-100).reverse().map(function (x
 
 /* ============================================================================
  *  10b. REPAIR JOBS
- *  A job card for a device left at the shop: Received → Ready → Delivered (or Cancelled).
+ *  A job card for a device left at the shop: Received → Completed or Failed → Delivered (or Cancelled).
+ *  The technician (a user with the Technician role) gets an SMS when given a job; Completed / Failed
+ *  shows an alert on every admin's dashboard until one of them presses Seen.
  *  Money goes through the existing books, so stock, serials, accounts, profit and dues stay right:
  *    · an advance is a customer payment (it waits on the customer's account as credit);
  *    · delivery creates a normal sale invoice: the parts used (from stock) plus the repair charge
  *      as the service product "Repair service"; the advance is used on it as customer credit;
  *    · cancelling can pay the advance back, or leave it on the customer's account.
  * ========================================================================== */
-var REPAIR_STATUSES = ['Received', 'Ready', 'Delivered', 'Cancelled'];
+var REPAIR_STATUSES = ['Received', 'Completed', 'Failed', 'Delivered', 'Cancelled'];
+var REPAIR_OPEN = ['Received', 'Completed', 'Failed'];
 var REPAIR_SERVICE_NAME = 'Repair service';
+/** Jobs saved before "Ready" was renamed read as "Completed". */
+function repairStatusOf_(r) { return r.status === 'Ready' ? 'Completed' : r.status; }
+function repairOpen_(r) { return REPAIR_OPEN.indexOf(repairStatusOf_(r)) >= 0; }
 function repairRow_(id) {
   var r = all_('Repairs').filter(function (x) { return x.id === id; })[0];
   if (!r) fail_('Repair job not found');
@@ -1663,7 +1677,8 @@ function repairParts_(r) { try { var a = typeof r.parts === 'string' ? JSON.pars
 function repairLog_(r) { try { var a = typeof r.log === 'string' ? JSON.parse(r.log || '[]') : r.log; return Array.isArray(a) ? a : []; } catch (e) { return []; } }
 function repairOut_(r, sales) {
   var o = Object.assign({}, r); delete o._row;
-  o.parts = repairParts_(r); o.log = repairLog_(r);
+  o.status = repairStatusOf_(r);
+  o.parts = repairParts_(r); o.log = repairLog_(r).map(function (l) { return l.status === 'Ready' ? Object.assign({}, l, { status: 'Completed' }) : l; });
   o.parts_total = round_(sum_(o.parts, function (x) { return num_(x.qty) * num_(x.price); }));
   o.total = round_(o.parts_total + num_(r.charge));
   o.due = round_(Math.max(o.total - num_(r.advance), 0));
@@ -1704,11 +1719,21 @@ function repairCustomer_(p, user) {
   if (same) return same; // the same phone number is the same customer
   return insert_('Customers', { name: name, phones: phone, addresses: '', opening_balance: 0, note: '', active: true, created_at: now_() });
 }
-function repairTechnician_(id) {
+function repairTechnician_(id, keepId) {
   if (!id) return null;
   var u = all_('Users').filter(function (x) { return x.id === id && x.active; })[0];
   if (!u) fail_('Technician not found');
+  // A newly chosen technician must have the Technician role (an already assigned person may stay).
+  if (u.role !== 'technician' && u.id !== keepId) fail_(u.name + ' is not a Technician — add technicians in Users & Roles');
   return u;
+}
+/** SMS to the technician who was just given the job (if SMS is on and the technician has a number). */
+function repairTechSms_(r, tech) {
+  if (!tech || getSetting_('sms_enabled', 'false') !== 'true') return null;
+  if (!tech.phone) return { ok: false, status: 'skipped', response: tech.name + ' has no phone number (Users & Roles)' };
+  var msg = smsMessage_('sms_technician_template', { technician: tech.name, job: r.job_no, device: r.device, problem: r.problem, name: r.customer_name, phone: r.phone, shop: getSetting_('shop_name') });
+  if (!String(msg).trim()) return null;
+  try { return sendSms_(tech.phone, msg); } catch (e) { return { ok: false, status: 'failed', response: String(e.message || e) }; }
 }
 function repairAdvance_(r, amount, accountId, user, customer) {
   var amt = round_(amount); if (amt <= 0) return 0;
@@ -1718,7 +1743,7 @@ function repairAdvance_(r, amount, accountId, user, customer) {
 /** Staff and accounts the repair page needs (also for staff without the users or accounts permissions). */
 function repairsMeta_() {
   return {
-    technicians: all_('Users').filter(function (u) { return u.active; }).map(function (u) { return { id: u.id, name: u.name }; }),
+    technicians: all_('Users').filter(function (u) { return u.active && u.role === 'technician'; }).map(function (u) { return { id: u.id, name: u.name, phone: u.phone || '' }; }),
     accounts: all_('Accounts').filter(function (a) { return a.active; }).map(function (a) { return { id: a.id, name: a.name, type: a.type }; }),
     statuses: REPAIR_STATUSES
   };
@@ -1726,7 +1751,7 @@ function repairsMeta_() {
 function repairsList_(p) {
   var q = String(p.q || '').toLowerCase(), sales = indexBy_(all_('Sales'));
   return all_('Repairs').filter(function (r) {
-    if (p.status && r.status !== p.status) return false;
+    if (p.status && repairStatusOf_(r) !== p.status) return false;
     if (p.technician_id && r.technician_id !== p.technician_id) return false;
     if (!inRange_(r.date, p.from, p.to)) return false;
     if (q && [r.job_no, r.customer_name, r.phone, r.device, r.serial, r.problem, r.invoice_no].join(' ').toLowerCase().indexOf(q) < 0) return false;
@@ -1736,11 +1761,12 @@ function repairsList_(p) {
 function repairGet_(p) { return repairOut_(repairRow_(p.id), indexBy_(all_('Sales'))); }
 /** New job card, or changes to an open one (customer is fixed once the job exists). */
 function repairSave_(p, user) {
-  if (p.id) { var open = repairRow_(p.id); if (open.status !== 'Received' && open.status !== 'Ready') fail_('Job ' + open.job_no + ' is ' + open.status + ' and can no longer be changed'); }
+  var open = p.id ? repairRow_(p.id) : null;
+  if (open && !repairOpen_(open)) fail_('Job ' + open.job_no + ' is ' + repairStatusOf_(open) + ' and can no longer be changed');
   var device = String(p.device || '').trim(), problem = String(p.problem || '').trim();
   if (!device) fail_('Device is required');
   if (!problem) fail_('Problem is required');
-  var tech = repairTechnician_(p.technician_id);
+  var tech = repairTechnician_(p.technician_id, open ? open.technician_id : '');
   var charge = round_(p.charge); if (charge < 0) fail_('Repair charge cannot be negative');
   var estimate = round_(p.estimate); if (estimate < 0) fail_('Estimate cannot be negative');
   var parts = repairPartsClean_(p.parts);
@@ -1751,19 +1777,21 @@ function repairSave_(p, user) {
   };
   var addAmt = round_(p.advance), log;
   if (p.id) {
-    var r = repairRow_(p.id);
-    if (r.status !== 'Received' && r.status !== 'Ready') fail_('Job ' + r.job_no + ' is ' + r.status + ' and can no longer be changed');
+    var r = open;
     var cust = all_('Customers').filter(function (c) { return c.id === r.customer_id; })[0]; if (!cust) fail_('Customer of this job not found');
     log = repairLog_(r);
     var note = [];
     if (r.technician_id !== fields.technician_id) note.push('Technician: ' + (fields.technician_name || 'none'));
     var got = repairAdvance_(r, addAmt, p.account_id, user, cust);
     if (got) { fields.advance = round_(num_(r.advance) + got); note.push('Advance +' + got); }
-    log.push({ ts: now_(), status: r.status, note: note.join(' · ') || 'Job updated', user: user.name });
+    var newTech = tech && r.technician_id !== tech.id;
+    log.push({ ts: now_(), status: repairStatusOf_(r), note: note.join(' · ') || 'Job updated', user: user.name });
     fields.log = log;
     var upd = update_('Repairs', r.id, fields);
     audit_(user, 'repair_update', r.job_no);
-    return repairOut_(upd);
+    var outU = repairOut_(upd);
+    outU.tech_sms = newTech && p.send_tech_sms !== false ? repairTechSms_(upd, tech) : null;
+    return outU;
   }
   var customer = repairCustomer_(p, user);
   var row = Object.assign({
@@ -1779,25 +1807,52 @@ function repairSave_(p, user) {
     ins = update_('Repairs', ins.id, { advance: adv, log: lg });
   }
   audit_(user, 'repair_create', ins.job_no);
-  return repairOut_(ins);
+  var outN = repairOut_(ins);
+  outN.tech_sms = tech && p.send_tech_sms !== false ? repairTechSms_(ins, tech) : null;
+  return outN;
 }
-/** Received ⇄ Ready. Ready can send the customer an SMS. */
+/**
+ * The technician's result: Completed (the customer may get an SMS) or Failed (a report is required),
+ * or back to Received. Completed and Failed put an alert on the admins' dashboard until one of them presses Seen.
+ */
 function repairStatus_(p, user) {
-  var r = repairRow_(p.id);
-  if (p.status !== 'Received' && p.status !== 'Ready') fail_('Use Deliver or Cancel for that');
-  if (r.status !== 'Received' && r.status !== 'Ready') fail_('Job ' + r.job_no + ' is ' + r.status);
-  if (r.status === p.status) fail_('Job ' + r.job_no + ' is already ' + r.status);
+  var r = repairRow_(p.id), to = p.status === 'Ready' ? 'Completed' : p.status, from = repairStatusOf_(r);
+  if (['Received', 'Completed', 'Failed'].indexOf(to) < 0) fail_('Use Deliver or Cancel for that');
+  if (!repairOpen_(r)) fail_('Job ' + r.job_no + ' is ' + from);
+  if (from === to) fail_('Job ' + r.job_no + ' is already ' + from);
+  var note = String(p.note || '').trim();
+  if (to === 'Failed' && !note) fail_('Write why the repair failed (the report the admin will see)');
   var log = repairLog_(r);
-  log.push({ ts: now_(), status: p.status, note: String(p.note || '').trim() || (p.status === 'Ready' ? 'Repair finished' : 'Back to work'), user: user.name });
-  var upd = update_('Repairs', r.id, { status: p.status, ready_date: p.status === 'Ready' ? today_() : '', log: log, updated_at: now_() });
-  audit_(user, 'repair_' + p.status.toLowerCase(), r.job_no);
+  log.push({ ts: now_(), status: to, note: note || (to === 'Completed' ? 'Repair completed' : 'Back to work'), user: user.name });
+  var patch = { status: to, log: log, updated_at: now_() };
+  if (to === 'Received') { patch.ready_date = ''; patch.result_note = ''; patch.result_by = ''; patch.result_at = ''; patch.alert_seen = false; patch.alert_seen_by = ''; }
+  else { patch.ready_date = today_(); patch.result_note = note; patch.result_by = user.name; patch.result_at = now_(); patch.alert_seen = false; patch.alert_seen_by = ''; }
+  var upd = update_('Repairs', r.id, patch);
+  audit_(user, 'repair_' + to.toLowerCase(), r.job_no);
   var out = repairOut_(upd), sms = null;
-  if (p.status === 'Ready' && p.send_sms !== false && getSetting_('sms_enabled', 'false') === 'true' && r.phone) {
+  if (to === 'Completed' && p.send_sms !== false && getSetting_('sms_enabled', 'false') === 'true' && r.phone) {
     var msg = smsMessage_('sms_repair_template', { name: r.customer_name, device: r.device, job: r.job_no, shop: getSetting_('shop_name'), total: out.total, advance: num_(r.advance), due: out.due });
     if (String(msg).trim()) { try { sms = sendSms_(r.phone, msg); } catch (e) { sms = { ok: false, status: 'failed', response: String(e.message || e) }; } }
   }
   out.sms = sms;
   return out;
+}
+/** Admins: the dashboard alert for a Completed / Failed job was read. */
+function repairSeen_(p, user) {
+  if (user.role !== 'admin') fail_('Only an admin can mark a repair alert as seen');
+  var r = repairRow_(p.id);
+  var upd = update_('Repairs', r.id, { alert_seen: true, alert_seen_by: user.name });
+  return repairOut_(upd);
+}
+/** Dashboard alerts for admins: jobs the technician marked Completed or Failed that no admin has marked Seen. */
+function repairAlerts_() {
+  return all_('Repairs').filter(function (r) { var s = repairStatusOf_(r); return (s === 'Completed' || s === 'Failed') && !r.alert_seen; })
+    .sort(function (a, b) { return String(b.result_at || b.updated_at).localeCompare(String(a.result_at || a.updated_at)) || String(b.job_no).localeCompare(String(a.job_no)); })
+    .map(function (r) {
+      var o = repairOut_(r);
+      return { id: o.id, job_no: o.job_no, status: o.status, device: o.device, problem: o.problem, customer_name: o.customer_name, phone: o.phone,
+        technician_name: o.technician_name, result_note: o.result_note || '', result_by: o.result_by || '', result_at: o.result_at || o.updated_at, total: o.total, due: o.due };
+    });
 }
 /** The one service product that carries repair charges on invoices (made the first time it is needed). */
 function repairServiceProduct_() {
@@ -1808,7 +1863,7 @@ function repairServiceProduct_() {
 /** Hand the device back: a sale invoice for the parts and the charge; the advance is used as credit. */
 function repairDeliver_(p, user) {
   var r = repairRow_(p.id);
-  if (r.status !== 'Received' && r.status !== 'Ready') fail_('Job ' + r.job_no + ' is ' + r.status);
+  if (!repairOpen_(r)) fail_('Job ' + r.job_no + ' is ' + repairStatusOf_(r));
   var cust = all_('Customers').filter(function (c) { return c.id === r.customer_id; })[0]; if (!cust) fail_('Customer of this job not found');
   var parts = repairParts_(r), items = parts.map(function (x) { return { product_id: x.product_id, qty: x.qty, price: x.price, serials: x.serials }; });
   if (num_(r.charge) > 0) items.push({ product_id: repairServiceProduct_().id, qty: 1, price: num_(r.charge) });
@@ -1834,7 +1889,7 @@ function repairDeliver_(p, user) {
 /** Cancel an open job. The advance is paid back from an account, or stays on the customer's account as credit. */
 function repairCancel_(p, user) {
   var r = repairRow_(p.id);
-  if (r.status !== 'Received' && r.status !== 'Ready') fail_('Job ' + r.job_no + ' is ' + r.status);
+  if (!repairOpen_(r)) fail_('Job ' + r.job_no + ' is ' + repairStatusOf_(r));
   var reason = String(p.reason || '').trim(); if (!reason) fail_('Write why the job is cancelled');
   var log = repairLog_(r), note = reason;
   if (num_(r.advance) > 0 && p.refund_account_id) {
@@ -3459,6 +3514,7 @@ function dashboard_(p, user) {
   }
   out.series = series;
   out.reminders = collectionReminders_(sales, today);
+  if (user.role === 'admin') out.repair_alerts = repairAlerts_();
   out.top_products = topProducts_(sales, today, showCost);
   out.recent = sales.slice(-8).reverse().map(function (s) { return { id: s.id, invoice_no: s.invoice_no, customer_name: s.customer_name, total: s.total, due: s.due, date: s.date }; });
 
@@ -3720,6 +3776,7 @@ var ROUTES = {
   'repair.status':    r_('repairs', repairStatus_, true),
   'repair.deliver':   r_('repairs', repairDeliver_, true),
   'repair.cancel':    r_('repairs', repairCancel_, true),
+  'repair.seen':      r_('repairs', repairSeen_, true),
 
   'history':          r_(null, itemHistory_),
   'history.doc':      r_(null, historyDoc_route_),

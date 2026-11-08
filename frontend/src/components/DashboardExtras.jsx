@@ -66,6 +66,46 @@ export function CollectionReminders({ list, onChanged }) {
   );
 }
 
+/** Admins: repair jobs a technician marked Completed or Failed. Gone after Seen (by any admin), or once delivered / cancelled. */
+export function RepairAlerts({ list, onChanged }) {
+  const toast = useStore((s) => s.toast);
+  const [busy, setBusy] = useState('');
+  if (!list || !list.length) return null;
+  const seen = async (r) => {
+    setBusy(r.id);
+    try { await api('repair.seen', { id: r.id }); toast(`${r.job_no}: marked seen`, 'ok'); onChanged?.(); }
+    catch (e) { toast(e.message, 'err'); } finally { setBusy(''); }
+  };
+  return (
+    <section className="card reminders" aria-label="Repair alerts">
+      <div className="card-head">
+        <h2><span className="rem-bell" aria-hidden="true">🛠️</span> Repair results <span className="rem-count">{list.length}</span></h2>
+        <Link to="/repairs" className="link">Open repairs</Link>
+      </div>
+      <div className="rem-list">
+        {list.map((r) => (
+          <div className={`rem-row ${r.status === 'Failed' ? 'late' : 'done'}`} key={r.id}>
+            <div className="rem-who">
+              <Link to={`/repairs/${r.id}`}><b>{r.job_no} · {r.device}</b></Link>
+              <small>{r.customer_name}{r.phone ? <> · <a href={`tel:${r.phone}`}>{r.phone}</a></> : ''} · Technician: {r.technician_name || r.result_by || '—'}</small>
+              {r.result_note && <small>Report: {r.result_note}</small>}
+            </div>
+            <div className="rem-when">
+              <span className={`rem-tag ${r.status === 'Failed' ? 'late' : 'done'}`}>{r.status === 'Failed' ? 'Repair failed' : 'Repair completed'}</span>
+              <small>{r.result_at ? fdate(r.result_at) : ''}{r.result_by ? ` · by ${r.result_by}` : ''}</small>
+            </div>
+            <div className="rem-amt"><b className="num">{money(r.total)}</b>{r.due > 0 && <small>Due {money(r.due, false)}</small>}</div>
+            <div className="rem-act">
+              <Link className="btn btn-sm btn-primary" to={`/repairs/${r.id}`}>Open job</Link>
+              <Btn size="sm" busy={busy === r.id} onClick={() => seen(r)} title="Hide this alert for all admins">Seen</Btn>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 /** Stock row: products, stock value at cost and at selling price. */
 export function StockSummary({ s }) {
   if (!s) return null;

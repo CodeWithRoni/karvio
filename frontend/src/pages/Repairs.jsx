@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { money, fdate, fdatetime, round2 } from '../lib/format';
 import { printHtml, esc, shopContacts } from '../lib/export';
@@ -8,9 +9,16 @@ import DataTable from '../components/DataTable';
 import { useApi, PageHead, Tabs, Modal, Btn, Field, Badge, useAction, ErrorBox, Select } from '../components/ui';
 import { CustomerPicker, ProductSearch, SerialChooser } from '../components/widgets';
 
-// Repair jobs: Received → Ready → Delivered (or Cancelled).
+// Repair jobs: Received → Completed or Failed → Delivered (or Cancelled).
 // The advance is a customer payment; delivery makes a normal invoice (parts + "Repair service" charge).
-const TONE = { Received: 'warn', Ready: 'info', Delivered: 'ok', Cancelled: 'bad' };
+// The technician gets the job by SMS; Completed / Failed shows an alert on the admins' dashboard.
+const TONE = { Received: 'warn', Completed: 'info', Failed: 'bad', Delivered: 'ok', Cancelled: 'bad' };
+const OPEN = ['Received', 'Completed', 'Failed'];
+const smsNote = (r, who) => {
+  if (!r) return;
+  const toast = useStore.getState().toast;
+  if (r.ok) toast(`SMS sent to ${who}`); else if (r.status !== 'queued') toast(`SMS to ${who}: ${r.status}${r.response ? ` — ${r.response}` : ''}`, 'err');
+};
 const isSerial = (p) => !!p && !p.service && p.has_warranty && p.warranty_type === 'serial';
 const partsTotal = (parts) => round2(parts.reduce((a, x) => a + (Number(x.qty) || 0) * (Number(x.price) || 0), 0));
 
@@ -19,10 +27,18 @@ export default function Repairs() {
   const [tech, setTech] = useState('');
   const meta = useApi('repairs.meta', {});
   const list = useApi('repairs.list', { status: tab === 'open' || tab === 'all' ? '' : tab, technician_id: tech });
-  const rows = (list.data || []).filter((r) => tab !== 'open' || r.status === 'Received' || r.status === 'Ready');
+  const rows = (list.data || []).filter((r) => tab !== 'open' || OPEN.includes(r.status));
   const [form, setForm] = useState(null); // {} = new job, or the job being edited
   const [sel, setSel] = useState(null);
   const done = (job) => { list.reload(); setForm(null); setSel(job || null); };
+  // #/repairs/<id> (from a dashboard alert) opens that job
+  const { id } = useParams();
+  const nav = useNavigate();
+  useEffect(() => {
+    if (!id) return;
+    api('repair.get', { id }).then(setSel).catch((e) => useStore.getState().toast(e.message, 'err'));
+  }, [id]);
+  const closeSel = () => { setSel(null); if (id) nav('/repairs'); };
 
   return (
     <>
@@ -30,7 +46,7 @@ export default function Repairs() {
         <Btn kind="primary" onClick={() => setForm({})} disabled={!meta.data}>New repair job</Btn>
       </PageHead>
       <div className="filters">
-        <Tabs tabs={[['open', 'Open'], ['Received', 'Received'], ['Ready', 'Ready'], ['Delivered', 'Delivered'], ['Cancelled', 'Cancelled'], ['all', 'All']]} value={tab} onChange={setTab} />
+        <Tabs tabs={[['open', 'Open'], ['Received', 'Received'], ['Completed', 'Completed'], ['Failed', 'Failed'], ['Delivered', 'Delivered'], ['Cancelled', 'Cancelled'], ['all', 'All']]} value={tab} onChange={setTab} />
         <Select value={tech} onChange={setTech} options={meta.data?.technicians || []} placeholder="All technicians" aria-label="Technician" />
       </div>
       <ErrorBox error={list.error || meta.error} onRetry={() => { list.reload(); meta.reload(); }} />
@@ -41,11 +57,11 @@ export default function Repairs() {
           { key: 'device', label: 'Device' }, { key: 'problem', label: 'Problem', className: 'clip' },
           { key: 'technician_name', label: 'Technician' },
           { key: 'total', label: 'Total', type: 'money', sum: true }, { key: 'advance', label: 'Advance', type: 'money', sum: true },
-          { key: 'due', label: 'Due', type: 'money', sum: true, value: (r) => (r.status === 'Delivered' || r.status === 'Cancelled' ? 0 : r.due) },
+          { key: 'due', label: 'Due', type: 'money', sum: true, value: (r) => (OPEN.includes(r.status) ? r.due : 0) },
           { key: 'status', label: 'Status', render: (r) => <Badge tone={TONE[r.status]}>{r.status}</Badge> }
         ]} />
       {form && meta.data && <JobForm job={form.id ? form : null} meta={meta.data} onClose={() => setForm(null)} onDone={done} />}
-      {sel && !form && <JobDetail key={`${sel.id}-${sel.status}-${sel.updated_at || ''}`} job={sel} meta={meta.data} onClose={() => setSel(null)} onEdit={() => setForm(sel)} onDone={done} />}
+      {sel && !form && meta.data && <JobDetail key={`${sel.id}-${sel.status}-${sel.updated_at || ''}`} job={sel} meta={meta.data} onClose={closeSel} onEdit={() => setForm(sel)} onDone={done} />}
     </>
   );
 }
@@ -68,6 +84,10 @@ function JobForm({ job, meta, onClose, onDone }) {
     set({ parts: [...f.parts, { product_id: p.id, name: p.name, unit: p.unit, qty: isSerial(p) ? 0 : 1, price: p.sale_price, serials: [] }] });
   };
   const total = round2(partsTotal(f.parts) + (Number(f.charge) || 0));
+  // Technicians come from Users & Roles (role Technician); a person already on the job stays in the list.
+  const techs = job && job.technician_id && !meta.technicians.some((u) => u.id === job.technician_id)
+    ? [...meta.technicians, { id: job.technician_id, name: job.technician_name, phone: '' }] : meta.technicians;
+  const techPhone = (techs.find((u) => u.id === f.technician_id) || {}).phone;
   const customerOk = job || f.customer_id || (f.customer_name.trim() && f.phone.trim());
 
   const save = async (print) => {
@@ -79,6 +99,7 @@ function JobForm({ job, meta, onClose, onDone }) {
       advance: Number(adv.amount) || 0, account_id: adv.account_id
     };
     const r = await run(() => api('repair.save', payload), job ? `Job ${job.job_no} saved` : 'Repair job created');
+    smsNote(r.tech_sms, 'the technician');
     if (!job) useStore.getState().refresh('customers');
     if (print) printJobSlip(r);
     onDone(r);
@@ -111,7 +132,9 @@ function JobForm({ job, meta, onClose, onDone }) {
         <Field label="Serial / model (optional)"><input value={f.serial} onChange={(e) => set({ serial: e.target.value })} /></Field>
         <Field label="Problem" wide><textarea value={f.problem} onChange={(e) => set({ problem: e.target.value })} placeholder="What the customer says is wrong" /></Field>
         <Field label="Received with (accessories)" wide><input value={f.accessories} onChange={(e) => set({ accessories: e.target.value })} placeholder="e.g. Charger, bag, no battery" /></Field>
-        <Field label="Technician"><Select value={f.technician_id} onChange={(v) => set({ technician_id: v })} options={meta.technicians} placeholder="Not assigned" /></Field>
+        <Field label="Technician" hint={!techs.length ? 'Add technicians in Users & Roles (role: Technician).' : f.technician_id ? (techPhone ? `Mobile: ${techPhone} — gets this job by SMS` : 'No mobile number saved for this person') : undefined}>
+          <Select value={f.technician_id} onChange={(v) => set({ technician_id: v })} options={techs} placeholder="Not assigned" />
+        </Field>
         <Field label="Estimate (told to the customer)"><input type="number" min="0" step="any" value={f.estimate} onChange={(e) => set({ estimate: e.target.value })} /></Field>
         <Field label="Repair charge (service)" hint="Parts from stock are added below and billed separately."><input type="number" min="0" step="any" value={f.charge} onChange={(e) => set({ charge: e.target.value })} /></Field>
         <Field label="Note" wide><input value={f.note} onChange={(e) => set({ note: e.target.value })} /></Field>
@@ -159,10 +182,11 @@ function JobDetail({ job, meta, onClose, onEdit, onDone }) {
   const [sms, setSms] = useState(true);
   const [busy, run] = useAction();
   const [step, setStep] = useState(''); // '' | deliver | cancel
-  const open = job.status === 'Received' || job.status === 'Ready';
+  const [report, setReport] = useState('');
+  const open = OPEN.includes(job.status);
   const status = async (to) => {
-    const r = await run(() => api('repair.status', { id: job.id, status: to, send_sms: to === 'Ready' && smsOn ? sms : false }), `Job ${job.job_no} is ${to}`);
-    if (r.sms && !r.sms.ok) useStore.getState().toast(`SMS: ${r.sms.status} — ${r.sms.response || ''}`, 'err');
+    const r = await run(() => api('repair.status', { id: job.id, status: to, note: report, send_sms: to === 'Completed' && smsOn ? sms : false }), `Job ${job.job_no} is ${to}`);
+    smsNote(r.sms, 'the customer');
     onDone(r);
   };
   const invoice = async () => printInvoice(await run(() => api('sale.detail', { id: job.sale_id })));
@@ -177,8 +201,9 @@ function JobDetail({ job, meta, onClose, onEdit, onDone }) {
         <span className="spacer" />
         {open && <Btn kind="danger" onClick={() => setStep('cancel')}>Cancel job</Btn>}
         {open && <Btn onClick={onEdit}>Edit / parts</Btn>}
-        {job.status === 'Received' && <Btn kind="primary" busy={busy} onClick={() => status('Ready')}>Mark ready</Btn>}
-        {job.status === 'Ready' && <Btn busy={busy} onClick={() => status('Received')}>Back to repair</Btn>}
+        {job.status === 'Received' && <Btn kind="danger" busy={busy} onClick={() => status('Failed')} disabled={!report.trim()} title={report.trim() ? '' : 'Write the report first'}>Mark failed</Btn>}
+        {job.status === 'Received' && <Btn kind="primary" busy={busy} onClick={() => status('Completed')}>Mark completed</Btn>}
+        {(job.status === 'Completed' || job.status === 'Failed') && <Btn busy={busy} onClick={() => status('Received')}>Back to repair</Btn>}
         {open && <Btn kind="primary" onClick={() => setStep('deliver')}>Deliver</Btn>}
       </>}>
       <div className="kv">
@@ -198,6 +223,8 @@ function JobDetail({ job, meta, onClose, onEdit, onDone }) {
         {job.invoice_no && <div><span>Invoice</span><b>{job.invoice_no}</b></div>}
         {job.cancel_reason && <div><span>Cancelled because</span><b>{job.cancel_reason}</b></div>}
         {job.note && <div><span>Note</span><b>{job.note}</b></div>}
+        {(job.status === 'Completed' || job.status === 'Failed') && job.result_by && <div><span>{job.status} by</span><b>{job.result_by}{job.result_at ? ` · ${fdatetime(job.result_at)}` : ''}</b></div>}
+        {job.result_note && <div><span>Technician report</span><b>{job.result_note}</b></div>}
       </div>
       {job.parts.length > 0 && (
         <div className="dt" style={{ marginTop: 12 }}><div className="dt-scroll"><table>
@@ -205,7 +232,12 @@ function JobDetail({ job, meta, onClose, onEdit, onDone }) {
           <tbody>{job.parts.map((x) => <tr key={x.product_id}><td>{x.name}</td><td>{x.serials || '—'}</td><td className="r">{x.qty}</td><td className="r num">{money(x.price, false)}</td><td className="r num">{money(x.qty * x.price, false)}</td></tr>)}</tbody>
         </table></div></div>
       )}
-      {job.status === 'Received' && smsOn && <label className="check" style={{ marginTop: 10 }}><input type="checkbox" checked={sms} onChange={(e) => setSms(e.target.checked)} /> Send the customer an SMS when marked ready</label>}
+      {job.status === 'Received' && (
+        <div className="form" style={{ marginTop: 12 }}>
+          <Field label="Technician report" wide hint="Shown to the admins with the result. Needed when the repair failed."><textarea value={report} onChange={(e) => setReport(e.target.value)} placeholder="e.g. Replaced fan and paste, tested 1 hour / Board burnt, no spare available" /></Field>
+        </div>
+      )}
+      {job.status === 'Received' && smsOn && <label className="check" style={{ marginTop: 10 }}><input type="checkbox" checked={sms} onChange={(e) => setSms(e.target.checked)} /> Send the customer an SMS when marked completed</label>}
       <h3 style={{ margin: '14px 0 6px' }}>History</h3>
       {job.log.map((l, i) => <div key={i} className="muted" style={{ fontSize: 13 }}>{fdatetime(l.ts)} · <b>{l.status}</b> · {l.note} · {l.user}</div>)}
     </Modal>
