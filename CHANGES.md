@@ -1,3 +1,32 @@
+# Karvio 1.2.0
+
+## Repairs (নতুন module)
+
+- Customers & Dues এর নিচে নতুন "Repairs" menu: দোকানে আসা repair কাজের job card (job slip print, device, সমস্যা, advance)।
+- Advance টাকা customer এর account এ জমা হয়; delivery তে stock থেকে parts আর "Repair service" নিয়ে invoice হয়, advance বাকি থেকে কাটা যায়।
+- Status: Received → Completed / Failed → Delivered (বা Cancelled)। Completed হলে customer কে SMS যায়; Failed এ যায় না।
+- Failed দিতে technician এর report লিখতে হয়।
+- নতুন "Repairs" permission।
+
+## Technician
+
+- Users & Roles এ নতুন "Technician" role, মোবাইল নম্বরসহ।
+- Repair job এ technician assign করলে তার নম্বরে SMS যায় (Settings → "Technician job message" এ লেখা বদলানো যায়)।
+- কোনো job Completed বা Failed হলে admin এর Dashboard এ alert আসে; "Seen" চাপলে সরে যায়।
+
+## PC Builder ও Quotation
+
+- প্রতিটা part এর নিচে হাতে লিখে part দেওয়ার ঘর (stock এ না থাকলেও)।
+- Quotation বানানোর সময় প্রতিটা part এর warranty বেছে দেওয়া যায়; প্রিন্টে customer দেখতে পায়।
+
+## Barcode label
+
+- Brand/warranty/SKU লাইন, barcode নম্বর আর দামের লেখা বড় ও হালকা bold — প্রিন্টে পরিষ্কার পড়া যায়।
+
+## Deploy
+
+নতুন `backend/Code.gs` দিয়ে Apps Script editor থেকে একবার `setupDatabase` চালান, তারপর web app এর নতুন version deploy করুন।
+
 # Karvio 1.1.0
 
 ## টাকা ও হিসাব
