@@ -100,7 +100,7 @@ export default function PublicInvoice({ token }) {
           <div className="g"><span>Total</span><span>{money(s.total)}</span></div>
           {(s.payments || []).map((p, k) => <div key={k} className="sm"><span>Paid · {p.account_name || 'Payment'}</span><span>{money(p.amount, false)}</span></div>)}
           {Number(s.credit_used) > 0 && <div className="sm"><span>Advance used</span><span>{money(s.credit_used, false)}</span></div>}
-          <div><span>Paid</span><span>{money(Number(s.paid) + (Number(s.credit_used) || 0), false)}</span></div>
+          <div><span>Paid</span><span>{money(s.paid, false)}</span></div>
           {due > 0.004 && <div className="due"><span>Due</span><span>{money(due)}</span></div>}
           {due > 0.004 && s.next_payment_date && <div className="sm"><span>Next payment date</span><span>{fdate(s.next_payment_date)}</span></div>}
         </section>

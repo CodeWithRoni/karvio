@@ -1,4 +1,12 @@
-# Karvio 1.0.6 — maintenance handover
+# Karvio 1.2.0 — maintenance handover
+
+## Local review patch — 11 November 2026 (awaiting approval)
+
+See FIXES-REVIEW.md and VERIFICATION.md. No push/deployment is authorized yet. Online reset/restore now use a full-table before-image plan in the existing transaction journal; PREPARED recovery restores business tables and request receipts, clears appended rows and blocks reads while storage remains unavailable. Offline whole-file persistence is unchanged. Never deploy an older backend that cannot recognize these maintenance snapshots while recovery is pending.
+
+Unconfirmed client write IDs persist as opaque fingerprints and timestamps (no raw request payload/password/token in the pending-write record), scoped to endpoint and user. They survive reload/re-login; after six days automatic replay is blocked because server receipts are retained for seven days. Old backends without idempotency support cannot replay an uncertain write. Do not delete browser storage before reconciling an unconfirmed money transaction.
+
+The dedicated sales.return permission still authorizes the existing global return workflow; this patch does not change that business policy. Product price history no longer exposes other staff invoices without sales.all. Cost sanitization includes serialized replacement data. Full report aggregation is separate from bounded list responses. Restore accepts missing legacy Repairs tables. Dependency major upgrades remain deferred by the user's constraint; npm advisories are not claimed resolved.
 
 ## Work boundaries
 

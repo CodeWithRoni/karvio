@@ -31,6 +31,14 @@ jobs:
           npm test
           npm run build
           touch dist/.nojekyll
+      - name: Install browser for regression tests
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Check browser workflows before publishing
+        working-directory: frontend
+        env:
+          KARVIO_BROWSER_CHANNEL: chromium
+        run: npm run test:e2e
       - name: Publish dist to the gh-pages branch
         working-directory: frontend/dist
         run: |

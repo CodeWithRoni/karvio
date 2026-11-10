@@ -1,3 +1,15 @@
+# Unreleased — local review fixes (11 November 2026)
+
+- Restore/reset keep a durable full-table recovery snapshot before changing online records; failed recovery blocks reads until it can finish.
+- Unconfirmed write IDs survive reload and session renewal; unsafe retries after the receipt lifetime or against old backends are refused.
+- Linked supplier edits require customer permission; product history respects sales visibility, and nested warranty replacement costs stay private.
+- Collection reminders use the invoice's current due allocation. Full expense/return/warranty reports no longer inherit UI row limits.
+- Public/business invoices count an advance once. Native offline backups from before Repairs existed can be restored.
+- Complete frontend build regenerated and checked for missing local assets. Packaging runs the same build check.
+- Release publication requires every platform to succeed; Pages checks browser workflows before publication.
+- Existing dependency major versions, layout, business modules and database schema are retained. Remaining npm advisories require separate approval for dependency migration. The development editor-launch endpoint is disabled.
+- This patch has not been pushed or deployed; publication requires the owner's approval.
+
 # Karvio 1.2.0
 
 ## Repairs (নতুন module)

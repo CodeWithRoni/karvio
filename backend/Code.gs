@@ -89,6 +89,7 @@ var STAFF_ROLES = ['manager', 'sales', 'technician'];
  * ========================================================================== */
 var _mem = {}; // per-execution cache
 var _txn = null; // staged business rows; the durable journal is written before any data row
+var _maintenance = false; // a full-table reset/restore has its own durable before-images
 var JOURNAL_SHEET = '__KarvioTxnJournal';
 var RECEIPT_SHEET = '__KarvioRequestReceipts';
 
@@ -225,6 +226,9 @@ function planText_(plan) {
   var copy = Object.assign({}, plan, { rows: plan.rows.map(function (r) {
     return { table: r.table, row: r.row, before: r.before.map(journalCell_), after: r.after.map(journalCell_) };
   }) });
+  if (plan.tables) copy.tables = plan.tables.map(function (t) {
+    return { name: t.name, width: t.width, values: t.values.map(function (row) { return row.map(journalCell_); }) };
+  });
   return JSON.stringify(copy);
 }
 function textDigest_(text) { return hash_('karvio-journal-v1', text); }
@@ -311,13 +315,16 @@ function pruneReceipts_() {
 function recoverJournal_() {
   var j = readJournal_();
   if (!j || j.meta.state === 'EMPTY') return;
-  if (j.meta.state === 'PREPARED') applyPlan_(j.plan, 'before'); // repeatable even if a prior recovery was interrupted
+  if (j.meta.state === 'PREPARED') {
+    if (j.plan.tables) restoreTables_(j.plan.tables);
+    else applyPlan_(j.plan, 'before'); // repeatable even if a prior recovery was interrupted
+  }
   else if (j.meta.state === 'COMMITTED') saveReceipt_(j.plan, j.plan.result, false);
   else if (j.meta.state !== 'BUILDING') fail_('Recovery required: unknown transaction state');
   journalState_(j.sh, { state: 'EMPTY' });
   _mem = {};
 }
-function commitPlan_(plan) {
+function preparePlan_(plan) {
   var sh = privateSheet_(JOURNAL_SHEET), text = planText_(plan), parts = chunks_(text);
   // BUILDING is safe to discard: no business row is applied before PREPARED flushes.
   journalState_(sh, { state: 'BUILDING', id: plan.id });
@@ -325,6 +332,10 @@ function commitPlan_(plan) {
   sh.getRange(2, 1, parts.length, 1).setValues(parts.map(function (part) { return ['J:' + part]; })); flush_();
   var meta = { state: 'PREPARED', id: plan.id, parts: parts.length, digest: textDigest_(text) };
   journalState_(sh, meta);
+  return { sh: sh, meta: meta };
+}
+function commitPlan_(plan) {
+  var prepared = preparePlan_(plan), sh = prepared.sh, meta = prepared.meta;
   applyPlan_(plan, 'after');
   meta.state = 'COMMITTED'; journalState_(sh, meta);
 }
@@ -697,8 +708,16 @@ function stripCost_(obj, user) {
   // always work on copies — rows come from the shared per-request cache
   var strip = function (o) {
     if (!o || typeof o !== 'object') return o;
-    var c = Object.assign({}, o);
-    ['cost', 'profit', 'cost_price', 'wholesale_price'].forEach(function (k) { delete c[k]; });
+    if (Array.isArray(o)) return o.map(strip);
+    var c = {};
+    Object.keys(o).forEach(function (k) {
+      if (['cost', 'profit', 'cost_price', 'wholesale_price', 'inventory_cost', 'after_cost', 'valuation'].indexOf(k) >= 0) return;
+      var v = o[k];
+      if (k === 'replacement' && typeof v === 'string') {
+        try { v = JSON.stringify(strip(JSON.parse(v))); } catch (e) { v = ''; }
+      } else v = strip(v);
+      c[k] = v;
+    });
     return c;
   };
   return Array.isArray(obj) ? obj.map(strip) : strip(obj);
@@ -1093,6 +1112,7 @@ function supplierSave_(p, user) {
   if (p.id) {
     if (p.active !== undefined) row.active = p.active === true || p.active === 'true';
     var curS = all_('Suppliers').filter(function (x) { return x.id === p.id; })[0]; if (!curS) fail_('Supplier record not found');
+    if (curS.link_id) need_(user, 'customers');
     var oldS = curS.opening_balance;
     var upd = update_('Suppliers', p.id, row);
     auditOpening_(user, 'supplier', upd, oldS, row.opening_balance);
@@ -1221,6 +1241,63 @@ function driveCopy_(ss, name) {
   var copy = ss.copy(name);
   return { name: copy.getName(), url: copy.getUrl ? copy.getUrl() : '' };
 }
+/** Full-table operations use the same PREPARED/COMMITTED journal as ordinary saves.
+ * The snapshot includes receipts; recovery clears appended rows as well as restoring old ones.
+ * OfflineRuntime already commits the entire local file atomically, so it needs no second snapshot. */
+function withMaintenance_(fn) {
+  var ss = ss_();
+  if (typeof ss.copy !== 'function') return fn();
+  var names = Object.keys(SCHEMA).concat([RECEIPT_SHEET]);
+  var plan = { version: 1, id: Utilities.getUuid(), rows: [], request: null, result: null, tables: names.map(function (name) {
+    var sh = SCHEMA[name] ? sheet_(name) : privateSheet_(name), width = SCHEMA[name] ? cols_(name).length : 3;
+    var last = sh.getLastRow();
+    return { name: name, width: width, values: last ? sh.getRange(1, 1, last, width).getValues() : [] };
+  }) };
+  var result, prepared;
+  try {
+    prepared = preparePlan_(plan);
+    _maintenance = true;
+    result = fn();
+    flush_();
+    prepared.meta.state = 'COMMITTED'; journalState_(prepared.sh, prepared.meta);
+  } catch (error) {
+    try {
+      var j = readJournal_();
+      if (!j || j.meta.id !== plan.id || j.meta.state !== 'COMMITTED') {
+        recoverJournal_();
+        throw error;
+      }
+      // A COMMITTED acknowledgement may have been lost; the new database is complete.
+    } catch (recoveryError) {
+      if (recoveryError === error) throw error;
+      throw retryError_('Database recovery is pending. Try again after recovery: ' + recoveryError.message);
+    }
+  } finally { _maintenance = false; _mem = { __ss: ss }; }
+  try {
+    var journal = privateSheet_(JOURNAL_SHEET);
+    journalState_(journal, { state: 'EMPTY' });
+    // Only discard before-images after the complete new database is durably committed.
+    var last = journal.getLastRow();
+    if (last) journal.getRange(1, 1, last, 1).setValues(blankRows_(last, 1));
+    flush_();
+  } catch (clearError) { /* COMMITTED or EMPTY is safe to recover */ }
+  return result;
+}
+function restoreTables_(tables) {
+  var ss = ss_();
+  tables.forEach(function (t) {
+    if (!SCHEMA[t.name] && t.name !== RECEIPT_SHEET) fail_('Recovery required: unknown snapshot table');
+    var sh = ss.getSheetByName(t.name) || ss.insertSheet(t.name);
+    var height = Math.max(sh.getLastRow(), t.values.length);
+    ensureRows_(sh, height);
+    for (var i = 0; i < height; i += 5000) {
+      var rows = blankRows_(Math.min(5000, height - i), t.width);
+      rows.forEach(function (row, n) { if (i + n < t.values.length) rows[n] = t.values[i + n].map(restoreCell_); });
+      sh.getRange(i + 1, 1, rows.length, t.width).setValues(rows);
+    }
+  });
+  flush_();
+}
 /** Empty every business table (headers stay) and the private transaction journal / request receipts. */
 function wipeAll_(ss) {
   Object.keys(SCHEMA).forEach(function (name) {
@@ -1228,6 +1305,7 @@ function wipeAll_(ss) {
     if (last > 1) sh.getRange(2, 1, last - 1, w).setValues(blankRows_(last - 1, w));
   });
   [[JOURNAL_SHEET, 1], [RECEIPT_SHEET, 3]].forEach(function (x) {
+    if (_maintenance && x[0] === JOURNAL_SHEET) return;
     var sh = ss.getSheetByName(x[0]), last = sh ? sh.getLastRow() : 0;
     if (last) sh.getRange(1, 1, last, x[1]).setValues(blankRows_(last, x[1]));
   });
@@ -1316,6 +1394,7 @@ function databaseRestore_(p, user) {
   var plan = checkBackup_(b);
   var ss = ss_(), stamp = now_().replace('T', ' ');
   var safety = driveCopy_(ss, 'Karvio backup before restore ' + stamp);
+  return withMaintenance_(function () {
   wipeAll_(ss);
   Object.keys(plan).forEach(function (name) {
     var rows = plan[name], sh = sheet_(name);
@@ -1337,6 +1416,7 @@ function databaseRestore_(p, user) {
   var stillSignedIn = !!me && me.active && me.salt === user.salt && me.password_hash === user.password_hash && isOwner_(me);
   var counts = {}; Object.keys(plan).forEach(function (k) { counts[k] = plan[k].length; });
   return { safety: safety, backup_created_at: b.created_at, shop_name: b.shop_name, counts: counts, signed_out: !stillSignedIn, restored_at: restoredAt };
+  });
 }
 /* ---- Automatic daily Google Drive backup (online only). A time trigger runs dailyBackup() every night;
  *      copies go to the Drive folder "Karvio backups" and copies older than backup_keep_days are moved to the trash. ---- */
@@ -1386,6 +1466,7 @@ function databaseReset_(p, user) {
   var ss = ss_(), stamp = now_().replace('T', ' ');
 
   var backup = driveCopy_(ss, 'Karvio backup before reset ' + stamp);
+  return withMaintenance_(function () {
 
   // What stays: this Administrator account (same password), and on request the other users / the shop settings.
   var users = all_('Users').filter(function (u) { return u.id === user.id || keepUsers; })
@@ -1403,6 +1484,7 @@ function databaseReset_(p, user) {
   audit_(user, 'database_reset', { backup: backup ? backup.name : '', kept_users: keepUsers, kept_settings: keepSettings });
   flush_();
   return { backup: backup, users: users.length, kept_settings: keepSettings };
+  });
 }
 
 var SECRET_KEYS = ['sms_api_key'];
@@ -2365,13 +2447,14 @@ function sreturnCreate_(p, user) {
   return { return: ret, items: lines.map(function (l) { return { name: l.si.name, qty: l.qty, total: l.value }; }) };
 }
 
-function sreturnsList_(p) {
-  var q = String(p.q || '').toLowerCase();
+function sreturnsList_(p, user, allRows) {
+  var q = String(p.q || '').toLowerCase(), items = {};
+  all_('SalesReturnItems').forEach(function (i) { (items[i.return_id] = items[i.return_id] || []).push(i.name + ' x' + i.qty); });
   return all_('SalesReturns').filter(function (r) {
     return inRange_(r.date, p.from, p.to) && (!p.status || r.status === p.status) && (!q || (r.return_no + ' ' + r.invoice_no + ' ' + r.customer_name).toLowerCase().indexOf(q) >= 0);
-  }).sort(function (a, b) { return b._row - a._row; }).slice(0, 500).map(function (r) {
+  }).sort(function (a, b) { return b._row - a._row; }).slice(0, allRows === true ? Infinity : 500).map(function (r) {
     var o = Object.assign({}, r); delete o._row;
-    o.items_text = all_('SalesReturnItems').filter(function (i) { return i.return_id === r.id; }).map(function (i) { return i.name + ' x' + i.qty; }).join(', ');
+    o.items_text = (items[r.id] || []).join(', ');
     return o;
   });
 }
@@ -2452,13 +2535,14 @@ function preturnCreate_(p, user) {
   audit_(user, 'preturn_create', no);
   return { return: ret };
 }
-function preturnsList_(p) {
-  var q = String(p.q || '').toLowerCase();
+function preturnsList_(p, user, allRows) {
+  var q = String(p.q || '').toLowerCase(), items = {};
+  all_('PurchaseReturnItems').forEach(function (i) { (items[i.return_id] = items[i.return_id] || []).push(i.name + ' x' + i.qty); });
   return all_('PurchaseReturns').filter(function (r) {
     return inRange_(r.date, p.from, p.to) && (!p.status || r.status === p.status) && (!q || (r.return_no + ' ' + r.invoice_no + ' ' + r.supplier_name).toLowerCase().indexOf(q) >= 0);
-  }).sort(function (a, b) { return b._row - a._row; }).slice(0, 500).map(function (r) {
+  }).sort(function (a, b) { return b._row - a._row; }).slice(0, allRows === true ? Infinity : 500).map(function (r) {
     var o = Object.assign({}, r); delete o._row;
-    o.items_text = all_('PurchaseReturnItems').filter(function (i) { return i.return_id === r.id; }).map(function (i) { return i.name + ' x' + i.qty; }).join(', ');
+    o.items_text = (items[r.id] || []).join(', ');
     return o;
   });
 }
@@ -2534,10 +2618,10 @@ function expenseCreate_(p, user) {
   acctTxn_(acc.id, 'out', amt, 'expense', e.id, 'Expense: ' + cat + (p.note ? ' — ' + p.note : ''), user, date);
   return e;
 }
-function expensesList_(p) {
+function expensesList_(p, user, allRows) {
   var accs = indexBy_(all_('Accounts'));
   return all_('Expenses').filter(function (e) { return inRange_(e.date, p.from, p.to) && (!p.category || e.category === p.category) && (!p.status || e.status === p.status); })
-    .sort(function (a, b) { return b._row - a._row; }).slice(0, 1000)
+    .sort(function (a, b) { return b._row - a._row; }).slice(0, allRows === true ? Infinity : 1000)
     .map(function (e) { var o = Object.assign({}, e); delete o._row; o.account_name = accs[e.account_id] ? accs[e.account_id].name : ''; return o; });
 }
 
@@ -2890,14 +2974,14 @@ function claimRestock_(p, user) {
   audit_(user, 'claim_restock', c.claim_no);
   return r;
 }
-function claimsList_(p) {
+function claimsList_(p, user, allRows) {
   var q = String(p.q || '').toLowerCase();
   return all_('WarrantyClaims').filter(function (c) {
     if (!inRange_(c.date, p.from, p.to)) return false;
     if (p.status === 'open') { if (c.status === 'Delivered' || c.status === 'Rejected') return false; }
     else if (p.status && c.status !== p.status) return false;
     return !q || (c.claim_no + ' ' + c.serial + ' ' + c.invoice_no + ' ' + c.product_name + ' ' + c.customer_name + ' ' + c.phone).toLowerCase().indexOf(q) >= 0;
-  }).sort(function (a, b) { return b._row - a._row; }).slice(0, 500).map(function (c) { var o = Object.assign({}, c); delete o._row; try { o.log = JSON.parse(c.log || '[]'); } catch (e) { o.log = []; } return o; });
+  }).sort(function (a, b) { return b._row - a._row; }).slice(0, allRows === true ? Infinity : 500).map(function (c) { var o = Object.assign({}, c); delete o._row; try { o.log = JSON.parse(c.log || '[]'); } catch (e) { o.log = []; } return o; });
 }
 
 /* ============================================================================
@@ -3222,30 +3306,19 @@ function salePromise_(p, user) {
 }
 /**
  * Collection reminders: due invoices whose promised payment date is today or already passed.
- * Customer payments (and returns credited to the account) made after an invoice are applied to the
- * oldest promised invoices first, so a reminder switches itself off once that invoice is paid,
- * including when the customer paid before the promised date.
+ * Use the same opening-debt/advance/return allocation as the invoice's current due.
  */
 function collectionReminders_(sales, today) {
   var promised = sales.filter(function (s) { return s.customer_id && s.next_payment_date && s.due > 0.005; });
   if (!promised.length) return [];
-  var bal = customerBalances_(), custs = indexBy_(all_('Customers')), out = [];
-  var byCust = {}; promised.forEach(function (s) { (byCust[s.customer_id] = byCust[s.customer_id] || []).push(s); });
-  var ledger = all_('CustomerLedger').filter(function (l) { return !l.voided && byCust[l.customer_id]; });
-  var saleRow = {}; ledger.forEach(function (l) { if (l.type === 'sale') saleRow[l.ref_id] = l._row; });
-  Object.keys(byCust).forEach(function (cid) {
-    var open = byCust[cid].map(function (s) { return { s: s, row: saleRow[s.id] || 0, left: s.due }; }).sort(function (a, b) { return a.row - b.row; });
-    ledger.filter(function (l) { return l.customer_id === cid && (l.type === 'payment' || l.type === 'sreturn'); }).forEach(function (l) {
-      var amt = round_(l.credit - l.debit); if (amt <= 0) return;
-      open.forEach(function (o) { if (amt <= 0 || o.left <= 0 || o.row > l._row) return; var take = Math.min(o.left, amt); o.left = round_(o.left - take); amt = round_(amt - take); });
-    });
-    var cap = Math.max(bal[cid] || 0, 0), c = custs[cid] || {};
-    open.forEach(function (o) {
-      var left = Math.min(o.left, cap); if (left <= 0.005 || o.s.next_payment_date > today) return;
-      var days = Math.round((new Date(today + 'T12:00:00') - new Date(o.s.next_payment_date + 'T12:00:00')) / 864e5);
-      out.push({ sale_id: o.s.id, invoice_no: o.s.invoice_no, customer_id: cid, customer_name: c.name || o.s.customer_name, phone: parseList_(c.phones || '')[0] || '',
-        date: o.s.date, next_payment_date: o.s.next_payment_date, overdue_days: days, invoice_due: o.s.due, remaining: round_(left), customer_balance: round_(bal[cid] || 0) });
-    });
+  var bal = customerBalances_(), custs = indexBy_(all_('Customers')), due = saleOpenDues_(), out = [];
+  promised.forEach(function (s) {
+    var left = due[s.id] || 0;
+    if (left <= 0.005 || s.next_payment_date > today) return;
+    var c = custs[s.customer_id] || {};
+    var days = Math.round((new Date(today + 'T12:00:00') - new Date(s.next_payment_date + 'T12:00:00')) / 864e5);
+    out.push({ sale_id: s.id, invoice_no: s.invoice_no, customer_id: s.customer_id, customer_name: c.name || s.customer_name, phone: parseList_(c.phones || '')[0] || '',
+      date: s.date, next_payment_date: s.next_payment_date, overdue_days: days, invoice_due: s.due, remaining: round_(left), customer_balance: round_(bal[s.customer_id] || 0) });
   });
   return out.sort(function (a, b) { return b.overdue_days - a.overdue_days || b.remaining - a.remaining; });
 }
@@ -3336,7 +3409,7 @@ function topProducts_(sales, today, showCost) {
 function productHistory_(p, user) {
   var pr = all_('Products').filter(function (x) { return x.id === p.product_id; })[0]; if (!pr) fail_('Product not found');
   var out = { product_id: pr.id, stock: pr.stock, last_sales: [] };
-  var actSale = indexBy_(all_('Sales').filter(function (s) { return s.status === 'active'; }));
+  var actSale = indexBy_(all_('Sales').filter(function (s) { return s.status === 'active' && (can_(user, 'sales.all') || s.user_id === user.id); }));
   var si = all_('SaleItems').filter(function (i) { return i.product_id === pr.id && actSale[i.sale_id]; });
   out.last_sales = si.slice(-3).reverse().map(function (i) { var s = actSale[i.sale_id]; return { price: i.price, qty: i.qty, date: s.date, invoice_no: s.invoice_no, customer: s.customer_name }; });
   if (can_(user, 'cost') || can_(user, 'purchase')) {
@@ -3630,11 +3703,11 @@ function reportsRaw_(p, user) {
   }
 
   if (T === 'sales_returns') {
-    var sr = sreturnsList_({ from: from, to: to, status: status === 'all' ? '' : status }).reverse();
+    var sr = sreturnsList_({ from: from, to: to, status: status === 'all' ? '' : status }, user, true).reverse();
     return finishReport_('Sales Returns' + period, [col_('date', 'Date', 'date'), col_('return_no', 'Return #'), col_('invoice_no', 'Invoice'), col_('customer_name', 'Customer'), col_('type', 'Type'), col_('items_text', 'Items'), col_('total', 'Value', 'money', 1), col_('refund', 'Cash Refund', 'money', 1), col_('user', 'Staff'), col_('status', 'Status')], sr);
   }
   if (T === 'purchase_returns') {
-    var pr = preturnsList_({ from: from, to: to, status: status === 'all' ? '' : status }).reverse();
+    var pr = preturnsList_({ from: from, to: to, status: status === 'all' ? '' : status }, user, true).reverse();
     return finishReport_('Purchase Returns' + period, [col_('date', 'Date', 'date'), col_('return_no', 'Return #'), col_('invoice_no', 'Purchase'), col_('supplier_name', 'Supplier'), col_('items_text', 'Items'), col_('total', 'Value', 'money', 1), col_('received', 'Cash Received', 'money', 1), col_('user', 'Staff'), col_('status', 'Status')], pr);
   }
 
@@ -3668,14 +3741,14 @@ function reportsRaw_(p, user) {
   }
 
   if (T === 'warranty') {
-    var cl = claimsList_({ from: from, to: to, status: p.status === 'all' || !p.status ? '' : p.status }).reverse();
+    var cl = claimsList_({ from: from, to: to, status: p.status === 'all' || !p.status ? '' : p.status }, user, true).reverse();
     var counts = {}; cl.forEach(function (c) { counts[c.status] = (counts[c.status] || 0) + 1; });
     return finishReport_('Warranty Report' + period, [col_('claim_no', 'Claim #'), col_('date', 'Received', 'date'), col_('invoice_no', 'Invoice'), col_('customer_name', 'Customer'), col_('phone', 'Phone'), col_('product_name', 'Product'), col_('serial', 'Serial'), col_('issue', 'Issue'), col_('vendor', 'Vendor'), col_('status', 'Status'), col_('delivered_date', 'Delivered', 'date')],
-      cl.map(function (c) { var o = Object.assign({}, c); delete o.log; return o; }), { summary: counts });
+      cl.map(function (c) { var o = Object.assign({}, c); delete o.log; return stripCost_(o, user); }), { summary: counts });
   }
 
   if (T === 'expenses') {
-    var ex = expensesList_({ from: from, to: to, status: status === 'all' ? '' : status });
+    var ex = expensesList_({ from: from, to: to, status: status === 'all' ? '' : status }, user, true);
     if (group === 'category') {
       var eg = {}; ex.forEach(function (e) { if (e.status !== 'active') return; var r = eg[e.category] = eg[e.category] || { category: e.category, count: 0, amount: 0 }; r.count++; r.amount += e.amount; });
       return finishReport_('Expenses by Category' + period, [col_('category', 'Category'), col_('count', 'Entries', 'num', 1), col_('amount', 'Amount', 'money', 1)], Object.keys(eg).map(function (k) { return eg[k]; }));
@@ -3765,10 +3838,10 @@ var ROUTES = {
   'reverse':          r_('cancel', reverse_, true),
 
   'warranty.lookup':  r_('warranty', warrantyLookup_),
-  'claim.create':     r_('warranty', claimCreate_, true),
-  'claim.update':     r_('warranty', claimUpdate_, true),
-  'claims.list':      r_('warranty', claimsList_),
-  'claim.restock':    r_('warranty', claimRestock_, true),
+  'claim.create':     r_('warranty', function (p, u) { return stripCost_(claimCreate_(p, u), u); }, true),
+  'claim.update':     r_('warranty', function (p, u) { return stripCost_(claimUpdate_(p, u), u); }, true),
+  'claims.list':      r_('warranty', function (p, u) { return stripCost_(claimsList_(p), u); }),
+  'claim.restock':    r_('warranty', function (p, u) { return stripCost_(claimRestock_(p, u), u); }, true),
   'repairs.meta':     r_('repairs', repairsMeta_),
   'repairs.list':     r_('repairs', repairsList_),
   'repair.get':       r_('repairs', repairGet_),
@@ -3778,8 +3851,8 @@ var ROUTES = {
   'repair.cancel':    r_('repairs', repairCancel_, true),
   'repair.seen':      r_('repairs', repairSeen_, true),
 
-  'history':          r_(null, itemHistory_),
-  'history.doc':      r_(null, historyDoc_route_),
+  'history':          r_(null, function (p, u) { return stripCost_(itemHistory_(p, u), u); }),
+  'history.doc':      r_(null, function (p, u) { return stripCost_(historyDoc_route_(p, u), u); }),
   'dashboard':        r_(null, dashboard_),
   'reports':          r_('reports', reports_),
   'profit.report':    r_('reports', profitReport_),

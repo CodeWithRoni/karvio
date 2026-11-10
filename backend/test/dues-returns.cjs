@@ -151,7 +151,7 @@ const sales = Q('user.save', {name:'Seller', username:'seller1', password:'selle
 const t2 = call('login', {username:'seller1', password:'seller123'}).data.token;
 const h2 = call('product.history', {product_id:cable.id}, t2).data;
 same(h2.last_purchase, undefined, 'no purchase cost for users without the cost permission');
-same(h2.last_sales.length, 3);
+same(h2.last_sales.length, 0, 'sales.all is required to read invoice history from other staff');
 /* ---------- SMS gateway replies: HTTP 200 with an error code is a failure ---------- */
 same(['1003', '1007', ' 1002 ', '{"response_code":1003,"error_message":"x"}', 'Invalid API key'].map((t) => sandbox.smsReplyFailed_(t)), [true, true, true, true, true]);
 same(['SMS SUBMITTED: ID - 123', '{"response_code":202,"success_message":"SMS Submitted Successfully"}', 'OK', '{"status":"success"}'].map((t) => sandbox.smsReplyFailed_(t)), [false, false, false, false]);

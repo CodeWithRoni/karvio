@@ -1,51 +1,50 @@
-# Karvio 1.0.6 — verification record
+# Karvio 1.2.0 — local patch verification
 
-Date: 6 November 2026 (Asia/Dhaka). Baseline input: Karvio-v1.0.5-complete.zip.
+Date: 11 November 2026 (Asia/Dhaka). Base: GitHub main `dbb74404bb3865f3093f6ee95463fa804d748863`. State: **unpublished, awaiting owner approval**. The original 1.0.6 verification record is preserved unchanged in VERIFICATION-1.0.6.md.
 
-Input ZIP SHA-256: `6a4cff5ce2bdef5447d43e5bace95ac3a97830aa7e44e76b3a53eeacb0081863`.
+## Recorded results
 
-## Automated checks
+```json
+{
+  "automatedChecks": 1234,
+  "browserTests": 45,
+  "browser": "Microsoft Edge",
+  "frontendBuild": "passed",
+  "buildAssets": "passed",
+  "dependencyAdvisories": { "high": 1, "moderate": 9, "majorUpgrades": "deferred per owner constraint" },
+  "nativeInstallers": "not run in this review",
+  "productionDataAccess": false
+}
+```
 
-| Suite | Passed checks |
-|---|---:|
-| Original scenario | 152 |
-| Valuation | 18 |
-| Product groups/categories | 22 |
-| Services | 44 |
-| Dues/returns/dashboard | 63 |
-| Barcodes | 22 |
-| Working hours | 47 |
-| Supplier invoice | 15 |
-| Public invoice links | 41 |
-| SMS presets | 20 |
-| New finance integrity | 60 |
-| New journal/recovery/idempotency/access | 56 |
-| New frontend/API/native-path reliability | 49 |
-| Persistent local database | 31 |
-| Offline restart/idempotency/legacy migration | 14 |
-| **Total** | **654** |
+- `npm test`: all original 1,172 reported checks plus 62 new checks passed. These are assertion counts, not 1,234 independent end-to-end tests. New backend checks: 34; legacy offline restore: 3; client recovery/invoice display: 25.
+- `npm run test:e2e`: 45 browser tests passed (the existing 42 plus three new tests). Edge run took 51.2 seconds. Added checks cover blocked dev editor launch, real-page reload after lost sale acknowledgements, and advance-paid public invoices.
+- `npm run build`: successful; the built entry, local JS/CSS imports, fonts and manifest icons passed the new asset validator. The regenerated dist is included in the local package.
+- Both GitHub workflow YAML files parse successfully. Chromium selection is supported for CI; the CI jobs themselves have not been executed remotely.
+- Local checks used Node.js v26.13.0, npm 11.20.0, temporary data directories and isolated mocked Google services. CI remains configured for Node.js 22.
 
-All passed in the final integrated `npm test` run after the SMS uncertainty/link-preservation fix. The purchase-discount scenario's old expected profit was corrected from 1450 to 1482.14 to match net allocated purchase cost; it was not deleted or weakened. Other original test expectations remain intact.
+## New failure cases verified
 
-Production `npm run build` passed. The full browser suite passed **26 tests**, including five new real-browser regressions for report switching, one-save-only purchase, F9/F10 latest payment date and duplicate-key protection, and committed-purchase response-loss replay. Browser tests used Microsoft Edge and a local in-memory API.
+- A valid restore fails while writing, then every previous business table and request receipt is restored.
+- A larger restore appends rows before failing; recovery also removes those appended rows.
+- A reset fails while re-creating defaults and the old shop records are restored.
+- A storage outage interrupts both maintenance and rollback. Reads remain blocked; a fresh execution recovers the full prior database before authentication/read.
+- A COMMITTED write succeeds but its acknowledgement is lost. The complete restored database remains committed.
+- A lost sale acknowledgement survives page reload and session renewal with one invoice and the original request ID.
+- A write is blocked before transmission if its pending ID cannot be stored. Failed local confirmation cleanup is finished by replay without another charge.
+- An uncertain request is not replayed after the safe receipt lifetime or against an unsupported old backend.
+- Linked supplier/customer permissions, other-staff price history, nested warranty response costs, opening-debt reminders, 1,001 expenses and 501 return/report boundaries are checked.
+- Public and business invoice renderers show 100 paid for a total of 100 comprising cash 80 and advance 20.
+- Offline backup restore migrates missing Repairs/Units/InvoiceLinks and preserves the product across a restart.
 
-The Electron offline UI run passed restart persistence, stock/account balances, Bengali PDF export and backup/restore. It passed against both the source desktop and an electron-builder packaged Windows app with the bundled backend resource. Internet was disabled and **zero internet requests** were observed in both runs. Tests used isolated temporary application-data directories, never the user's actual ShopERP Offline folder. The local packaging smoke test used the existing compatible Electron distribution and skipped executable resource editing/signing; installers are built separately by the documented commands.
+## Scope and remaining limits
 
-## Failure scenarios exercised
+No push, remote release, deployment, production login, business-data access, real SMS or production database modification took place. No actual user's offline data directory was used. Native installers, Electron GUI, mobile devices, physical printers, real Google Sheets quotas/formula execution and cloud-trigger behavior were not tested as real-device/production runs.
 
-- Duplicate return lines/serials, fractional pieces, shared-product stock limits.
-- Purchase discounts, partial refunds, weighted cost restoration, serial reuse/reversal dependencies and legacy costing.
-- Physical sheet write errors, interrupted PREPARED transaction recovery, interrupted recovery blocking reads, lost COMMITTED acknowledgement, partial receipt archival and large journal chunking.
-- Lost HTTP responses with same-request replay, unsupported old backend retry gating, concurrent submit guards and offline IPC.
-- Hidden-cost/history access, header secrets, password revocation, failed combined-customer writes.
-- SMS after durable financial commit, no resend on replay, and invoice-link retention when delivery/logging is uncertain.
-- Old offline header prefixes/missing newer tables, restart idempotency and invalid-backup rejection without replacing saved records.
-- Native icon copying with Windows/space/Bengali path fixtures.
+Dependency majors remain unchanged as requested. Current npm audit still flags 10 package entries (1 high and 9 moderate, including indirect overlap). Disabling Vite editor launch, loopback binding and CORS restrictions are limited local-development mitigations; the advisories are not claimed fully resolved. Authentication migration and other major architectural changes are deferred.
 
-## Scope and limits
+## Transfer integrity
 
-All transactions were synthetic fixtures. No production Google Sheet, Apps Script deployment, real SMS gateway, running user application or actual user database was modified. The original input ZIP is retained unchanged.
+From the repository root, run `node scripts/prepare-review.cjs`, then `node scripts/prepare-review.cjs --check`. The manifest records this local file set and these verification results. SHA256SUMS.txt covers every listed payload file except itself, including the manifest. Legacy backend/parts, dependencies, test outputs, credentials and user databases/backups are excluded from the transfer package.
 
-The package includes source and the tested prebuilt website. Android/iOS/macOS/Linux installers, device signing, external SMS delivery, physical thermal printing, production quotas/load and manual edits to Google Sheets were not claimed as real-device/production validations. SMS delivery is at-most-once for a financial request; an interrupted dispatch may remain unconfirmed and must be checked at the gateway before resending.
-
-The release archive excludes node_modules, generated test reports/downloads, release build directories, obsolete backend/parts, user databases/backups, credentials and local environment files. SHA256SUMS.txt records the included source/build artifacts for transfer verification.
+Approval is required before any upload. Deploy the authoritative backend first, then frontend. Pushing main triggers Pages publication, so it must not be treated as a harmless staging step.

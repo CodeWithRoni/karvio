@@ -162,7 +162,7 @@ class OfflineRuntime {
       const table = next.sheets[name], expected = schema.split(',').map((s) => s.split(':')[0]);
       // InvoiceLinks did not exist in the first offline release; append-only
       // migrations add it and the later valuation columns after restoration.
-      if (!table && ['InvoiceLinks', 'Units'].includes(name)) continue;
+      if (!table && ['InvoiceLinks', 'Units', 'Repairs'].includes(name)) continue;
       const oldMinimum = { Users: 8, Products: 19, Customers: 8, Suppliers: 8, Purchases: 16,
         Sales: 20, PurchaseItems: 9, SalesReturnItems: 10, PurchaseReturnItems: 9 }[name] || expected.length;
       if (!table?.rows[0] || table.rows[0].length < oldMinimum || table.rows[0].length > expected.length || table.rows[0].some((key, i) => key !== expected[i])) throw new Error(`Invalid backup table: ${name}`);

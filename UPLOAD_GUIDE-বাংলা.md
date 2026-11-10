@@ -1,4 +1,6 @@
-# Karvio 1.0.6 — আপলোড ও ব্যবহার
+# Karvio 1.2.0 — আপলোড ও ব্যবহার
+
+১১ নভেম্বর ২০২৬-এর local review patch এখনো push/deploy করা হয়নি। ব্যবহারকারীর অনুমোদনের পরে নিচের upload ধাপ প্রযোজ্য। বর্তমান পরিবর্তন ও পরীক্ষার ফল `FIXES-REVIEW.md` এবং `VERIFICATION.md`-এ আছে। পুরোনো 1.0.6 উল্লেখগুলো ওই release-এর compatibility history।
 
 এই প্যাকেজে সংশোধিত source code, তৈরি করা web build, Google Apps Script backend, offline Electron desktop runtime, icons ও পরীক্ষার ফাইল আছে। প্যাকেজ থেকে কোনো customer data, local database, backup বা login session দেওয়া হয়নি।
 

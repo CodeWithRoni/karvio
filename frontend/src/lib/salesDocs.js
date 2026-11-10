@@ -123,7 +123,7 @@ function businessInvoiceHtml(d) {
         <table class="bdue">
           <tr><td class="k">Previous Due</td><td>:</td><td class="r">${esc(m2(prev, false))}</td></tr>
           <tr><td class="k">Sales Amount</td><td>:</td><td class="r">${esc(m2(total, false))}</td></tr>
-          <tr><td class="k">Collected Amount</td><td>:</td><td class="r">${esc(m2(paid + (Number(s.credit_used) || 0), false))}</td></tr>
+          <tr><td class="k">Collected Amount</td><td>:</td><td class="r">${esc(m2(paid, false))}</td></tr>
           <tr><td class="k">Outstanding Amount</td><td>:</td><td class="r">${esc(m2(outstanding, false))}</td></tr>
           ${s.next_payment_date && s.due > 0 ? `<tr><td class="k">Next Payment Date</td><td>:</td><td class="r">${esc(fdate(s.next_payment_date))}</td></tr>` : ''}
         </table></div>

@@ -106,7 +106,7 @@ jobs:
   release:
     name: Publish release
     needs: [desktop, android, ios]
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && needs.desktop.result == 'success' && needs.android.result == 'success' && needs.ios.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
