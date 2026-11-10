@@ -51,7 +51,7 @@ export default function PublicInvoice({ token }) {
   const s = d.sale, shop = d.shop, c = d.customer;
   const walkIn = !s.customer_id || /^walk-?in/i.test(String(s.customer_name || '').trim());
   const cancelled = s.status === 'cancelled';
-  const due = Number(s.due) || 0;
+  const due = Number(s.due_now ?? s.due) || 0;
   const contacts = [shop.shop_phone, shop.shop_tel, shop.shop_email, shop.shop_web].filter(Boolean);
   return (
     <div className="pubinv-wrap">

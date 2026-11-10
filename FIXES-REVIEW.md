@@ -1,5 +1,17 @@
 # Karvio 1.2.0 — local fix review
 
+## Current follow-up: five financial fixes (approved for publication)
+
+Base: main `9d9ebcb8e4e628b57d824e29995fdc135e44845a`. The owner approved publication to main and the existing Apps Script deployment. Backend Version 41 was successfully deployed on 11 November 2026, preserving the Web App URL and access settings. This file accompanies the approved main publication. Earlier pending-upload statements below describe historical review stages.
+
+1. Statements sort entries by business date, then insertion order, before calculating opening/running balances. Backdated entries no longer contaminate opening balances with later transactions.
+2. Returns use the server's cumulative rounded line allocation and earlier returned value. Walk-in refunds omit a client-calculated amount so the server refunds its exact canonical value.
+3. Repair delivery requires POS permission because it creates invoices and can discount stock or collect money. Repairs-only staff can still manage jobs and mark work completed/failed, but cannot deliver sales or change part prices. Existing prices approved by authorized staff can be preserved.
+4. Cancelling with an advance refund fails before any cash leaves if current customer credit cannot cover the full advance. Keeping credit is the default; a failed refund leaves the job open for review. Available credit remains the existing pooled customer credit model.
+5. Public invoice links return canonical current invoice due, including subsequent payments/returns, while preserving original due separately and historical paid-at-sale values. Reopening/reloading the existing link fetches the updated amount; no new link is needed.
+
+New isolated checks are in `frontend/test/financial-fixes.cjs`, included in `npm test`. No production business records or schema were changed. Existing historical bad entries are not rewritten by these fixes.
+
 Prepared 11 November 2026 (Asia/Dhaka), from GitHub main `dbb74404bb3865f3093f6ee95463fa804d748863`. **Awaiting the owner's approval: nothing has been pushed or deployed.** The version stays 1.2.0; this is an unpublished patch, not a new announced release.
 
 The layout, modules, business-table schema, existing records, online/offline separation and dependency major versions remain unchanged.

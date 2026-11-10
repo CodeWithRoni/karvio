@@ -10,6 +10,7 @@ import { excelSales, pdfSales, printSales } from '../lib/salesDocs';
 const saleDocs = { excel: async (rows) => excelSales(await api('sales.details', { ids: rows.map((r) => r.id) }), `invoices-${rows.length}.xlsx`), pdf: async (rows) => pdfSales(await api('sales.details', { ids: rows.map((r) => r.id) }), `invoices-${rows.length}.pdf`), print: async (rows) => printSales(await api('sales.details', { ids: rows.map((r) => r.id) })) };
 import { useApi, PageHead, Tabs, DateRange, Badge, statusTone, Modal, Btn, Field, Loading, ErrorBox, useAction, Select, noWheel } from '../components/ui';
 import { ReverseDialog } from '../components/widgets';
+import { returnValue } from '../lib/returnValue';
 
 export default function Sales() {
   const { id } = useParams();
@@ -158,8 +159,7 @@ function ReturnForm({ detail, onClose, onDone }) {
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [busy, run] = useAction();
-  const ratio = sale.subtotal > 0 ? sale.total / sale.subtotal : 1;
-  const value = round2(lines.reduce((a, l, i) => a + (Number(l.qty) || 0) * items[i].price * ratio, 0));
+  const value = returnValue(sale, items, lines);
   // The return first clears what is still unpaid on this invoice; only the rest can be paid back in cash.
   const owed = sale.customer_id ? Number(sale.due_now ?? sale.due) || 0 : 0;
   const maxCash = round2(Math.max(value - owed, 0));
@@ -170,7 +170,7 @@ function ReturnForm({ detail, onClose, onDone }) {
     await run(() => api('sreturn.create', {
       sale_id: sale.id, type, note,
       items: lines.map((l) => ({ sale_item_id: l.id, qty: Number(l.qty) || 0, serials: l.serials })).filter((l) => l.qty > 0),
-      refund: mode === 'adjust' ? { mode: 'adjust' } : { mode: 'cash', account_id: acc, amount: Number(amount) }
+      refund: mode === 'adjust' ? { mode: 'adjust' } : { mode: 'cash', account_id: acc, ...(sale.customer_id ? { amount: Number(amount) } : {}) }
     }), type === 'exchange' ? 'Exchange recorded — sell the replacement from POS' : 'Return recorded and items restocked');
     refresh('products', 'customers');
     onDone();

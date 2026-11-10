@@ -69,6 +69,7 @@ export default function Repairs() {
 /* ---------------- New job / edit an open job ---------------- */
 function JobForm({ job, meta, onClose, onDone }) {
   const products = useStore((s) => s.products);
+  const can = useStore((s) => s.can);
   const pmap = useMemo(() => Object.fromEntries(products.map((p) => [p.id, p])), [products]);
   const [f, setF] = useState(() => job ? {
     device: job.device, serial: job.serial, problem: job.problem, accessories: job.accessories, technician_id: job.technician_id,
@@ -153,7 +154,7 @@ function JobForm({ job, meta, onClose, onDone }) {
                   {isSerial(p) && <SerialChooser productId={x.product_id} value={x.serials} onChange={(s) => setPart(i, { serials: s, qty: s.length })} />}
                 </td>
                 <td className="r">{isSerial(p) ? x.qty : <input type="number" min="0" step="any" value={x.qty} onChange={(e) => setPart(i, { qty: e.target.value })} style={{ width: 70 }} aria-label={`Qty of ${x.name}`} />}</td>
-                <td className="r"><input type="number" min="0" step="any" value={x.price} onChange={(e) => setPart(i, { price: e.target.value })} style={{ width: 100 }} aria-label={`Price of ${x.name}`} /></td>
+                <td className="r"><input type="number" min="0" step="any" value={x.price} disabled={!can('pos')} onChange={(e) => setPart(i, { price: e.target.value })} style={{ width: 100 }} aria-label={`Price of ${x.name}`} /></td>
                 <td className="r num">{money((Number(x.qty) || 0) * (Number(x.price) || 0), false)}</td>
                 <td><button className="x" onClick={() => set({ parts: f.parts.filter((_, j) => j !== i) })} aria-label={`Remove ${x.name}`}>×</button></td>
               </tr>
@@ -204,7 +205,7 @@ function JobDetail({ job, meta, onClose, onEdit, onDone }) {
         {job.status === 'Received' && <Btn kind="danger" busy={busy} onClick={() => status('Failed')} disabled={!report.trim()} title={report.trim() ? '' : 'Write the report first'}>Mark failed</Btn>}
         {job.status === 'Received' && <Btn kind="primary" busy={busy} onClick={() => status('Completed')}>Mark completed</Btn>}
         {(job.status === 'Completed' || job.status === 'Failed') && <Btn busy={busy} onClick={() => status('Received')}>Back to repair</Btn>}
-        {open && <Btn kind="primary" onClick={() => setStep('deliver')}>Deliver</Btn>}
+        {open && can('pos') && <Btn kind="primary" onClick={() => setStep('deliver')}>Deliver</Btn>}
       </>}>
       <div className="kv">
         <div><span>Status</span><b><Badge tone={TONE[job.status]}>{job.status}</Badge>{job.sale_status === 'cancelled' ? ' (invoice cancelled)' : ''}</b></div>
@@ -281,7 +282,7 @@ function Deliver({ job, meta, onClose, onDone }) {
 
 function Cancel({ job, meta, onClose, onDone }) {
   const [reason, setReason] = useState('');
-  const [refund, setRefund] = useState(job.advance > 0 ? 'return' : 'keep');
+  const [refund, setRefund] = useState('keep');
   const [acc, setAcc] = useState(meta.accounts[0]?.id || '');
   const [busy, run] = useAction();
   const go = async () => {

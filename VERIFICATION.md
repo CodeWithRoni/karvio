@@ -1,13 +1,17 @@
 # Karvio 1.2.0 — local patch verification
 
-Date: 11 November 2026 (Asia/Dhaka). Base: GitHub main `dbb74404bb3865f3093f6ee95463fa804d748863`. State: **unpublished, awaiting owner approval**. The original 1.0.6 verification record is preserved unchanged in VERIFICATION-1.0.6.md.
+Date: 11 November 2026 (Asia/Dhaka). Current follow-up base: GitHub main `9d9ebcb8e4e628b57d824e29995fdc135e44845a`. The owner approved publication of these five financial fixes. Apps Script Version 41 was successfully deployed to the existing Web App URL after verifying editor contents against the tested source. No setup/reset or production transaction was run. Earlier sections below describe previous review stages. The original 1.0.6 record remains in VERIFICATION-1.0.6.md.
 
 ## Recorded results
 
+Current five-fix follow-up: `npm test` passed (1,273 assertions including 39 new financial regressions). The existing 45 Edge browser tests passed in 54.0 seconds. The updated audit browser file then passed all five tests, including two new tests, for 47 distinct passing browser cases. `npm run build` and its asset validation passed. Tests used mocked Google services and disposable local databases; no production transactions were performed. The first restricted browser-server attempt was stopped, then the local browser suite completed successfully with the required process permissions.
+
+New cases cover backdated supplier balances, exact discounted line/partial-return refunds, technician price/delivery denials without stock changes, authorized repair delivery, spent-advance refund rejection without cash/job mutation, safe cancellation, valid refunds and duplicate-cancel rejection, and partial/full subsequent payments through the same public link. These changes do not correct historical records automatically.
+
 ```json
 {
-  "automatedChecks": 1234,
-  "browserTests": 45,
+  "automatedChecks": 1273,
+  "browserTests": 47,
   "browser": "Microsoft Edge",
   "frontendBuild": "passed",
   "buildAssets": "passed",

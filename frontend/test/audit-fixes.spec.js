@@ -66,3 +66,33 @@ test('the customer invoice counts an advance once', async ({ page, request }) =>
   await expect(paid).toContainText('100');
   await expect(paid).not.toContainText('120');
 });
+
+test('the same customer link reflects a later collection', async ({ page, request }) => {
+  const customer = await call(request, 'customer.save', { name: 'Later collection customer' });
+  const invoice = await call(request, 'sale.create', {
+    customer_id: customer.id, items: [{ product_id: product.id, qty: 1, price: 100 }], payments: []
+  });
+  const link = await call(request, 'sale.link', { id: invoice.sale.id });
+  await page.goto('/' + new URL(link.url).hash);
+  await expect(page.locator('.pubinv-tot .due')).toContainText('100');
+  await call(request, 'customer.payment', { customer_id: customer.id, amount: 40, account_id: cash.id });
+  await page.reload();
+  await expect(page.locator('.pubinv-tot .due')).toContainText('60');
+  await call(request, 'customer.payment', { customer_id: customer.id, amount: 60, account_id: cash.id });
+  await page.reload();
+  await expect(page.locator('.pubinv-tot')).toBeVisible();
+  await expect(page.locator('.pubinv-tot .due')).toHaveCount(0);
+});
+
+test('repairs-only staff can complete work but cannot deliver a sale', async ({ page, request }) => {
+  const username = 'tech' + randomUUID().slice(0, 8);
+  await call(request, 'user.save', { name: 'Restricted technician', username, password: 'techpass12', role: 'technician', phone: '01722223333' });
+  const job = await call(request, 'repair.save', { customer_name: 'Restricted repair', phone: '01744445555', device: 'PC', problem: 'Test' });
+  const login = await call(request, 'login', { username, password: 'techpass12' });
+  await page.addInitScript(t => localStorage.setItem('erp_token', t), login.token);
+  await page.goto('/#/repairs');
+  await page.locator('table').getByText(job.job_no).click();
+  const dialog = page.getByRole('dialog', { name: `Repair job ${job.job_no}` });
+  await expect(dialog.getByRole('button', { name: 'Mark completed', exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Deliver', exact: true })).toHaveCount(0);
+});

@@ -111,7 +111,8 @@ test('repair job: cancel and give the advance back', async ({ page, request }) =
   const c = page.getByRole('dialog', { name: `Cancel ${made.job_no}` });
   await expect(c.getByRole('button', { name: 'Cancel job' })).toBeDisabled();
   await c.getByLabel('Why is it cancelled?').fill('Customer took it back');
-  await expect(c.getByLabel('Give it back to the customer now')).toBeChecked();
+  await expect(c.getByLabel("Keep it on the customer's account (credit for later)")).toBeChecked();
+  await c.getByLabel('Give it back to the customer now').check();
   await c.getByRole('button', { name: 'Cancel job' }).click();
   await expect(page.getByRole('dialog', { name: `Repair job ${made.job_no}` }).locator('.kv')).toContainText('Cancelled');
   expect((await call(request, 'accounts.list')).find((a) => a.id === cash.id).balance).toBeCloseTo(cash0 - 200, 2);

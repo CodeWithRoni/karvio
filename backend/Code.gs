@@ -1718,7 +1718,7 @@ function invoicePublic_(p) {
   var pays = []; try { pays = (typeof s.payments === 'string' ? JSON.parse(s.payments || '[]') : s.payments) || []; } catch (e) {}
   return {
     sale: Object.assign(pick(s, ['invoice_no', 'date', 'customer_id', 'customer_name', 'subtotal', 'discount', 'total', 'paid', 'credit_used', 'due', 'note', 'status', 'user_name', 'created_at', 'cancel_reason', 'next_payment_date']),
-      { payments: pays.map(function (x) { return { account_name: x.account_name || '', amount: x.amount }; }) }),
+      { original_due: s.due, due: d.sale.due_now, due_now: d.sale.due_now, payments: pays.map(function (x) { return { account_name: x.account_name || '', amount: x.amount }; }) }),
     items: d.items.map(function (i) { return pick(i, ['id', 'name', 'unit', 'qty', 'price', 'total', 'serials', 'warranty_type', 'warranty_days', 'warranty_expiry', 'returned_qty']); }),
     customer: d.customer ? pick(d.customer, ['name', 'phones', 'addresses', 'balance']) : null,
     returns: d.returns.map(function (r) { return pick(r, ['return_no', 'date', 'total', 'status']); }),
@@ -1852,6 +1852,14 @@ function repairSave_(p, user) {
   var charge = round_(p.charge); if (charge < 0) fail_('Repair charge cannot be negative');
   var estimate = round_(p.estimate); if (estimate < 0) fail_('Estimate cannot be negative');
   var parts = repairPartsClean_(p.parts);
+  if (!can_(user, 'pos')) {
+    var oldParts = open ? repairParts_(open) : [], products = indexBy_(all_('Products'));
+    parts.forEach(function (part) {
+      var previous = oldParts.filter(function (x) { return x.product_id === part.product_id; })[0];
+      var allowed = previous ? num_(previous.price) : num_(products[part.product_id].sale_price);
+      if (round_(part.price) !== round_(allowed)) fail_('Permission denied: POS permission is required to change a part price');
+    });
+  }
   var fields = {
     device: device, serial: String(p.serial || '').trim(), problem: problem, accessories: String(p.accessories || '').trim(),
     technician_id: tech ? tech.id : '', technician_name: tech ? tech.name : '', estimate: estimate, charge: charge,
@@ -1944,6 +1952,7 @@ function repairServiceProduct_() {
 }
 /** Hand the device back: a sale invoice for the parts and the charge; the advance is used as credit. */
 function repairDeliver_(p, user) {
+  need_(user, 'pos'); // Handover creates a sale and can collect money or discount stock.
   var r = repairRow_(p.id);
   if (!repairOpen_(r)) fail_('Job ' + r.job_no + ' is ' + repairStatusOf_(r));
   var cust = all_('Customers').filter(function (c) { return c.id === r.customer_id; })[0]; if (!cust) fail_('Customer of this job not found');
@@ -1975,6 +1984,8 @@ function repairCancel_(p, user) {
   var reason = String(p.reason || '').trim(); if (!reason) fail_('Write why the job is cancelled');
   var log = repairLog_(r), note = reason;
   if (num_(r.advance) > 0 && p.refund_account_id) {
+    var available = round_(Math.max(-(customerBalances_()[r.customer_id] || 0), 0));
+    if (num_(r.advance) > available + 0.005) fail_('Repair advance is no longer fully available. Keep it on the customer account; available credit is ' + available);
     customerPayment_({ customer_id: r.customer_id, amount: num_(r.advance), account_id: p.refund_account_id, direction: 'pay', note: 'Repair advance returned ' + r.job_no }, user);
     note += ' · Advance ' + num_(r.advance) + ' returned';
   } else if (num_(r.advance) > 0) note += ' · Advance ' + num_(r.advance) + ' kept on the customer account';
@@ -2331,10 +2342,10 @@ function saleDetail_(p, user) {
   var items = all_('SaleItems').filter(function (i) { return i.sale_id === s.id; });
   var customer = s.customer_id ? all_('Customers').filter(function (c) { return c.id === s.customer_id; })[0] || null : null;
   var returns = all_('SalesReturns').filter(function (r) { return r.sale_id === s.id; });
-  var retQty = {};
+  var retQty = {}, retValue = {};
   var retIds = {}; returns.forEach(function (r) { if (r.status === 'active') retIds[r.id] = 1; });
-  all_('SalesReturnItems').forEach(function (x) { if (retIds[x.return_id]) retQty[x.sale_item_id] = (retQty[x.sale_item_id] || 0) + x.qty; });
-  var itemsOut = items.map(function (i) { var o = Object.assign({}, i); delete o._row; o.returned_qty = retQty[i.id] || 0; return o; });
+  all_('SalesReturnItems').forEach(function (x) { if (retIds[x.return_id]) { retQty[x.sale_item_id] = (retQty[x.sale_item_id] || 0) + x.qty; retValue[x.sale_item_id] = (retValue[x.sale_item_id] || 0) + x.total; } });
+  var itemsOut = items.map(function (i) { var o = Object.assign({}, i); delete o._row; o.returned_qty = retQty[i.id] || 0; o.returned_value = round_(retValue[i.id] || 0); o.net_total = invoiceLineNet_(i, items, s); return o; });
   s = Object.assign({}, s, { due_now: saleOpenDues_()[s.id] || 0 }); // copy: rows come from the shared per-request cache
   var out = { sale: s, items: itemsOut, customer: customer, returns: returns };
   if (customer) { out.customer = Object.assign({}, customer); out.customer.balance = customerBalances_()[customer.id] || 0; }
@@ -2575,7 +2586,7 @@ function supplierPayment_(p, user) {
 }
 function statement_(table, key, parties, sign, p) {
   var party = parties.filter(function (x) { return x.id === p[key]; })[0]; if (!party) fail_('Not found');
-  var rows = all_(table).filter(function (l) { return l[key] === party.id && !l.voided; }).sort(function (a, b) { return a._row - b._row; });
+  var rows = all_(table).filter(function (l) { return l[key] === party.id && !l.voided; }).sort(function (a, b) { return String(a.date).localeCompare(String(b.date)) || a._row - b._row; });
   var run = party.opening_balance, opening = party.opening_balance, out = [];
   rows.forEach(function (l) {
     if (p.from && l.date < p.from) { run += sign * (l.debit - l.credit); opening = run; return; }

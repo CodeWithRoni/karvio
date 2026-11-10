@@ -36,14 +36,15 @@ if (process.argv.includes('--check')) {
   if (!verification) throw new Error('Record the current checks in VERIFICATION.md before preparing the package.');
   const manifest = {
     product: 'Karvio', version: JSON.parse(fs.readFileSync(path.join(root, 'frontend/package.json'))).version,
-    preparedDate: '2026-11-11', state: 'local-review-awaiting-owner-approval',
-    baseCommit: 'dbb74404bb3865f3093f6ee95463fa804d748863',
+    preparedDate: '2026-11-11', state: 'owner-approved-for-publication',
+    baseCommit: '9d9ebcb8e4e628b57d824e29995fdc135e44845a',
     validation: JSON.parse(verification[1]),
     excluded: ['backend/parts (legacy duplicate backend)', 'node_modules', 'verification artifacts', 'test results', 'release installers', 'user databases/backups', 'credentials'],
     fileCount: files.length, files,
     checksumPolicy: 'SHA256SUMS.txt covers every listed file except itself, including this manifest.',
     uploadOrder: ['After approval: deploy backend/Code.gs to the existing Apps Script web app', 'After approval: push frontend/source or publish the complete dist'],
-    onlineUploadPerformed: false
+    onlineUploadPerformed: true,
+    appsScriptVersion: 41
   };
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
   fs.writeFileSync(sumsPath, files.filter(name => name !== 'SHA256SUMS.txt').map(name => digest(name) + '  ' + name).join('\n') + '\n');
