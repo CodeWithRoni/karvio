@@ -205,7 +205,7 @@ Detailed instructions are available in `SETUP.md` and `UPLOAD_GUIDE-বাংল
 
 ## 💾 Offline Desktop Application
 
-Karvio ERP includes an Electron desktop environment. Fresh standard installers open the online shop by default and require your existing shop account. Existing offline data is detected and kept in offline mode; it is never merged into the online shop. Launch with `--online` or `--offline` to choose explicitly. The separate portable offline build stays offline by default. Online and offline databases do not sync. Older downloaded installers must be replaced by a newly built version to receive this behavior.
+Karvio works online only, including the Electron desktop app. An internet connection and your online shop account are required. Legacy offline flags and profiles cannot enable offline mode. Existing local data is left untouched; it is not imported or synced. Replace older downloaded installers with a newly built version.
 
 Key capabilities:
 

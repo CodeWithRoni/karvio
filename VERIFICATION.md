@@ -1,3 +1,5 @@
+Online-only release (owner authorized publication): desktop always uses online profile; offline runtime and backend excluded from installer; legacy offline bridge rejected; disconnected browser blocked with form retained. No database changes or data deletion. Build, npm test and connection-loss browser regression passed. Old downloaded installers require replacement.
+
 # Karvio 1.2.0 — local patch verification
 
 ## Fresh Supabase backend — current follow-up

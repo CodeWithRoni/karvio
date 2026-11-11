@@ -1,10 +1,10 @@
-// Google Apps Script and the local desktop IPC transport share one envelope.
+// Online API transport.
 // Keep a write's ID until a definitive response so a lost reply cannot charge twice.
 import { DEFAULT_API_URL } from '../config';
 
 const CFG_KEY = 'erp_api_config';
 const TOKEN_KEY = 'erp_token';
-export const isOffline = () => Boolean(globalThis.window?.karvio?.offline);
+export const isOffline = () => false;
 const safe = (fn, fallback) => { try { return fn(); } catch { return fallback; } };
 
 export function getApiConfig() {
@@ -14,7 +14,6 @@ export function setApiConfig(cfg) { safe(() => localStorage.setItem(CFG_KEY, JSO
 export function getToken() { return safe(() => localStorage.getItem(TOKEN_KEY), null); }
 export function setToken(t) { safe(() => (t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY))); }
 export function endpoint(cfg = getApiConfig()) {
-  if (isOffline()) return 'offline://local';
   return (cfg.proxyUrl || cfg.scriptUrl || DEFAULT_API_URL || '').trim();
 }
 
@@ -67,10 +66,12 @@ export function newRequestId() {
 }
 
 export async function api(action, payload = {}, { url, requestId } = {}) {
-  const offline = isOffline(), target = offline ? endpoint() : (url || endpoint());
+  if (globalThis.window?.karvio?.offline) throw new ApiError('This offline installer is no longer supported. Install Karvio Online to continue.');
+  if (globalThis.navigator?.onLine === false) throw new ApiError('Internet connection required. Reconnect to use Karvio.');
+  const target = url || endpoint();
   if (!target) throw new ApiError('API URL is not configured. Open Settings → API connection.');
   const token = getToken(), write = WRITES.has(action);
-  if (write && !offline && !endpointCapabilities.has(target)) {
+  if (write && !endpointCapabilities.has(target)) {
     // A user may upload the frontend before the backend. Old backends ignore IDs,
     // so discover support with a read-only ping before allowing automatic retries.
     let probe = capabilityProbes.get(target);
@@ -80,7 +81,7 @@ export async function api(action, payload = {}, { url, requestId } = {}) {
     }
     await probe;
   }
-  const canReplay = offline || endpointCapabilities.get(target) === true;
+  const canReplay = endpointCapabilities.get(target) === true;
   const principal = stored(PRINCIPALS_KEY)[fingerprint(target)] || token;
   const key = write ? fingerprint(JSON.stringify([target, principal, action, payload])) : '';
   const prior = write && (pendingWrites.get(key) || stored(PENDING_KEY)[key]);
@@ -102,8 +103,7 @@ export async function api(action, payload = {}, { url, requestId } = {}) {
   // Only idempotent writes get one transport retry. SMS test sends are never retried.
   for (let attempt = 0; attempt < (write && canReplay ? 2 : 1); attempt++) {
     try {
-      if (offline) body = await window.karvio.request(request);
-      else {
+      {
         const res = await fetch(target, {
           method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: encoded, redirect: 'follow'
@@ -114,9 +114,7 @@ export async function api(action, payload = {}, { url, requestId } = {}) {
       uncertainError = null;
       break;
     } catch {
-      uncertainError = new ApiError(offline
-        ? 'Could not confirm the local result. Retry the same action or reopen Karvio.'
-        : write && !canReplay
+      uncertainError = new ApiError(write && !canReplay
           ? 'Could not confirm the server result. Check the invoice or ledger before trying again; this backend has not confirmed safe retry support.'
           : 'Could not confirm the server result. Check your connection, then retry the same action.', false, write);
     }
@@ -134,7 +132,7 @@ export async function api(action, payload = {}, { url, requestId } = {}) {
     if (body.auth) { setToken(null); onAuthLost(message); }
     throw new ApiError(message, body.auth, Boolean(body.uncertain || body.retryable));
   }
-  if (!offline && (action === 'ping' || action === 'bootstrap')) endpointCapabilities.set(target, body.data?.apiCapabilities?.idempotency === true);
+  if (action === 'ping' || action === 'bootstrap') endpointCapabilities.set(target, body.data?.apiCapabilities?.idempotency === true);
   if ((action === 'login' || action === 'bootstrap') && body.data?.user?.id) {
     const users = stored(PRINCIPALS_KEY);
     users[fingerprint(target)] = body.data.user.id;

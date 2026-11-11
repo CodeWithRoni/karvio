@@ -41,6 +41,12 @@ function Guard({ perm, children }) {
 
 export default function App() {
   const { theme, token, user, booting, bootError, boot, logout } = useStore();
+  const [connected, setConnected] = useState(() => navigator.onLine);
+  useEffect(() => {
+    const update = () => setConnected(navigator.onLine);
+    window.addEventListener('online', update); window.addEventListener('offline', update);
+    return () => { window.removeEventListener('online', update); window.removeEventListener('offline', update); };
+  }, []);
   const [pub, setPub] = useState(linkToken);
   useEffect(() => {
     // Capture also covers lazy pages, portal dialogs and future native inputs.
@@ -105,5 +111,5 @@ export default function App() {
       </HashRouter>
     );
   }
-  return <>{body}<Toasts /><NativeShell /></>;
+  return <><div inert={!connected ? '' : undefined} aria-hidden={!connected ? true : undefined}>{body}<Toasts /><NativeShell /></div>{!connected && <div role="alertdialog" aria-modal="true" aria-labelledby="connection-title" style={{position:'fixed',inset:0,zIndex:100000,display:'grid',placeItems:'center',background:'#0d1b2a',padding:24}}><div className="auth-card"><h2 id="connection-title">Internet connection required</h2><p>Karvio works online only. Reconnect to continue. Your current form stays open.</p></div></div>}</>;
 }

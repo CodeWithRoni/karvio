@@ -88,7 +88,7 @@ receipt.printQuotation({lines:[],customer:'Test'});assert.ok(printed.includes('2
 const date=load('../src/lib/format.js',{'./store':{useStore:settings,shopDay:()=> '2026-11-11'}});
 eq(date.today(),'2026-11-11');
 const {desktopMode}=require('../desktop/mode.cjs');const dir=fs.mkdtempSync(path.join(os.tmpdir(),'karvio-mode-'));
-try { const opts={args:[],appData:dir};eq(desktopMode(opts),'online');fs.mkdirSync(path.join(dir,'Karvio Offline'));fs.writeFileSync(path.join(dir,'Karvio Offline','karvio.json'),'{}');eq(desktopMode(opts),'offline');eq(desktopMode({...opts,args:['--online']}),'online');eq(desktopMode({args:['--offline'],appData:dir}),'offline');eq(desktopMode({args:[],appData:'unused',defaultMode:'offline'}),'offline'); } finally {fs.rmSync(dir,{recursive:true,force:true});}
+try { const opts={args:[],appData:dir};eq(desktopMode(opts),'online');fs.mkdirSync(path.join(dir,'Karvio Offline'));fs.writeFileSync(path.join(dir,'Karvio Offline','karvio.json'),'{}');eq(desktopMode(opts),'online');eq(desktopMode({...opts,args:['--online']}),'online');eq(desktopMode({args:['--offline'],appData:dir}),'online');eq(desktopMode({args:[],appData:'unused',defaultMode:'offline'}),'online'); } finally {fs.rmSync(dir,{recursive:true,force:true});}
 const {OfflineRuntime}=require('../desktop/offline-runtime.cjs');
 const migrationDir=fs.mkdtempSync(path.join(os.tmpdir(),'karvio-snapshot-upgrade-'));
 try {

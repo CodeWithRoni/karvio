@@ -38,7 +38,7 @@ if (process.argv.includes('--check')) {
   const manifest = {
     product: 'Karvio', version: JSON.parse(fs.readFileSync(path.join(root, 'frontend/package.json'))).version,
     preparedDate: '2026-11-11', state: 'owner-approved-main-publication-supabase-backend-deployed',
-    baseCommit: 'a8bd19c5e8e5d6bcc39320fc9f28a1a3c4fa70c7',
+    baseCommit: 'd7e772b9c71d9fb96c11397be72df424cff517d4',
     validation: JSON.parse(verification[1]),
     excluded: ['backend/parts (legacy duplicate backend)', 'node_modules', 'verification artifacts', 'test results', 'release installers', 'user databases/backups', 'credentials'],
     fileCount: files.length, files,

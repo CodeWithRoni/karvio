@@ -13,7 +13,7 @@
     "dev": "vite",
     "build": "vite build && node scripts/verify-build.mjs",
     "preview": "vite preview",
-    "desktop": "npm run build && electron . --offline",
+    "desktop": "npm run build && electron . --online",
     "desktop:build": "npm run build && electron-builder --publish never",
     "desktop:build:win": "npm run build && electron-builder --win nsis --x64 --publish never",
     "desktop:build:mac": "npm run build && electron-builder --mac dmg --publish never",
@@ -26,9 +26,7 @@
     "android:prepare": "npm run build && npx cap add android && node scripts/native-icons.mjs android && npx cap sync android",
     "ios:prepare": "npm run build && npx cap add ios && node scripts/native-icons.mjs ios && npx cap sync ios",
     "desktop:online": "npm run build && electron . --online",
-    "offline:build": "npm run build && electron-builder --win portable --x64 --config.extraMetadata.karvioDefaultMode=offline --publish never",
     "test:offline": "node ../backend/test/offline.cjs",
-    "test:offline-ui": "node test/offline-ui.cjs",
     "verify:build": "node scripts/verify-build.mjs",
     "test:supabase": "node ../backend/test/supabase.mjs"
   },
@@ -65,7 +63,8 @@
     "artifactName": "Karvio-${version}-${os}-${arch}.${ext}",
     "files": [
       "dist/**/*",
-      "desktop/**/*",
+      "desktop/main.cjs",
+      "desktop/mode.cjs",
       "branding/linux/256x256.png",
       "package.json"
     ],
@@ -136,13 +135,7 @@
     "deb": {
       "packageName": "karvio"
     },
-    "publish": null,
-    "extraResources": [
-      {
-        "from": "../backend/Code.gs",
-        "to": "backend/Code.gs"
-      }
-    ]
+    "publish": null
   },
   "homepage": "https://codewithroni.github.io/karvio/",
   "repository": {

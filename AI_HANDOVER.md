@@ -1,3 +1,5 @@
+Online-only release (owner authorized publication): desktop always uses online profile; offline runtime and backend excluded from installer; legacy offline bridge rejected; disconnected browser blocked with form retained. No database changes or data deletion. Build, npm test and connection-loss browser regression passed. Old downloaded installers require replacement.
+
 # Fresh Supabase work — 11 November 2026
 
 Current authorized release: owner requested pushing all accumulated corrections. Naming backend now preserves entered description whitespace on save (removed trim, retained 500-character bound); no existing records renamed or migrated. Four migrations already match hosted history; schema/data reset is unnecessary. Full 56-case browser run passed; final save/reload naming + category-isolation pair passed after backend whitespace correction. Naming fixture removes its sample records so later category tests remain independent. Earlier no-push notes below are historical for this authorization.

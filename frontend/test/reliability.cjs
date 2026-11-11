@@ -92,17 +92,15 @@ async function clientChecks() {
   eq(c.values.has('erp_token'), false);
 
   c = client();
-  const localCalls = [];
-  c.context.window.karvio = { offline: true, request: async (request) => {
-    localCalls.push(request);
-    if (localCalls.length === 1) throw Error('IPC reply lost');
-    return { ok: true, data: 'local-replay' };
-  } };
-  eq(await c.api.api('sale.create', { amount: 7 }, { url: 'https://must-not-be-used.invalid' }), 'local-replay');
-  eq(localCalls.length, 2);
-  eq(localCalls[0].request_id, localCalls[1].request_id);
-  eq(c.requests.length, 0);
-  eq(c.api.endpoint(), 'offline://local');
+  let localCalls = 0;
+  c.context.window.karvio = { offline: true, request: async () => { localCalls++; } };
+  await assert.rejects(c.api.api('sale.create', { amount: 7 }), /offline installer/); checks++;
+  eq(localCalls, 0); eq(c.requests.length, 0);
+  c = client(); c.context.navigator = { onLine: false };
+  await assert.rejects(c.api.api('sale.create', { amount: 7 }), /Internet connection required/); checks++;
+  eq(c.requests.length, 0); eq(c.values.has('erp_pending_writes_v1'), false);
+  c.context.navigator.onLine = true;
+  await c.api.api('sale.create', { amount: 7 }); eq(c.requests.length, 1);
 
   c = client();
   await Promise.all([c.api.api('purchase.create', { qty: 1 }), c.api.api('purchase.create', { qty: 1 })]);
