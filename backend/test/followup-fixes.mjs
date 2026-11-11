@@ -50,7 +50,7 @@ reset();c=q('customer.save',{name:'Public settled'});p=product('Public paid serv
 let historical=q('sale.detail',{id:sale.sale.id}).sale;assert.equal(historical.paid,100);assert.equal(historical.due,400);assert.equal(JSON.parse(historical.balance_snapshot).outstanding,400);
 ret(sale,1);pub=q('invoice.public',{token:link},'');assert.equal(pub.sale.returned_total,100);assert.equal(pub.sale.net_total,400);assert.equal(pub.sale.paid_now,400);assert.equal(pub.sale.due_now,0);
 // F05: stocked products cannot disappear; explicit write-offs carry their loss.
-reset();p=product('Counted stock',{cost_price:100});q('stock.adjust',{product_id:p.id,new_stock:2});denied('product.delete',{id:p.id},token,/still has stock/i);assert.equal(q('dashboard').stock_value,200);q('stock.adjust',{product_id:p.id,new_stock:0,note:'Write off damaged stock'});assert.equal(q('profit.report',{}).summary.net,0);assert.equal(q('product.delete',{id:p.id}).deactivated,true);assert.equal(q('products.list').find(x=>x.id===p.id).active,false);
+reset();p=product('Counted stock',{cost_price:100});q('stock.adjust',{product_id:p.id,new_stock:2});denied('product.delete',{id:p.id},token,/still has stock/i);assert.equal(q('dashboard').stock_value,200);q('stock.adjust',{product_id:p.id,new_stock:0,note:'Write off damaged stock'});assert.equal(q('profit.report',{}).summary.net,0);denied('product.delete',{id:p.id},token,/history/i);q('product.save',{...p,active:false});assert.equal(q('products.list').find(x=>x.id===p.id).active,false);
 // F07: cancelled returns remain inspectable but contribute zero to financial totals.
 for(const purchase of [false,true]) {
  reset();p=product('Returns report');let a,b;

@@ -1,3 +1,35 @@
+Owner authorized live publication on 12 November 2026. Supabase API version 13 deployed and source verified; public ping passed. No schema migration, production reset or business-data edit. Earlier local-only status below records pre-publication validation.
+
+## Local history-retention rules — 12 November 2026 (NOT DEPLOYED)
+
+```json
+{
+  "scope": "used products/accounts/expenses history retention and fresh owner reset",
+  "deployment": "owner-authorized publication; API version 13 verified; frontend publication in progress",
+  "regularSuite": "passed",
+  "supabaseGatewayChecks": 63,
+  "allPriorAuditRegressions": "passed",
+  "historyRetentionRegression": "passed, including settings bypass guard and local reset",
+  "browser": {
+    "engine": "Microsoft Edge",
+    "passed": 75,
+    "failed": 0
+  },
+  "productionBuild": "passed",
+  "schemaMigrationRequired": false,
+  "productionResetPerformed": false
+}
+```
+
+Owner requested preserving used products, accounts and expenses until explicit database reset. No reset, production business-data change, deployment or push was performed. Live baseline remains main eb576760ad3e0726f1c6f8c16022ea0eae542b02 and Supabase API version 11.
+
+- Product Delete now fails instead of silently deactivating a used product. A cached productUsageIndex_ covers purchases/sales/returns/serials/events/claims/repair parts, including cancelled history. products.list exposes has_history and the Edit form disables Delete for history or nonzero stock. Active remains the separate way to stop using a product. The existing product.history endpoint is unchanged.
+- Cash/bank/MFS accounts already have no delete route. accounts.list now exposes history, including voided AccountTxns and cancelled expenses; used-account Edit explains retention and offers Active off. Account rows/transactions remain present when deactivated.
+- Expense cancellation keeps its row and voids linked cash movement as before. Used expense category names cannot be removed/renamed through expense.categories or the generic settings.save path; the UI loads usage and disables those actions, including after cancellation. Unused categories can still be managed. Canonical case/spacing matching prevents bypass; pre-existing unconfigured legacy category names do not block unrelated settings changes.
+- Owner-only, password/RESET-confirmed reset remains the maintenance path to a fresh database. A local in-memory test confirms old products, custom accounts, expenses, ledgers and business history clear, while the owner remains and a new zero-balance Cash account is created. Default keep_settings/keep_users are false; the existing optional retention checkboxes remain explicit user choices. No production reset was run.
+
+Validation: full regular regression suite passed; Supabase gateway (63 checks), all earlier audit suites and backend/test/history-retention.mjs passed; full Edge browser suite 75/75 passed; final production build/assets passed. No schema migration is required.
+
 Latest owner instruction authorizes publishing all pending follow-up fixes and transaction-history deletion protection. Supabase API version 11 is ACTIVE; all six deployed files match tested source, and public ping is healthy. No schema or business-data migration was performed. Earlier local-only notes below are historical for this publication.
 
 ## Latest local deletion protection — not published

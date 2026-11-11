@@ -113,15 +113,16 @@ function ProductForm({ initial, onClose }) {
     await refresh('products'); onClose();
   };
   const remove = async () => {
-    if (!confirm('Delete this product? Products with sales or purchases are deactivated instead.')) return;
+    if (!confirm('Delete this unused product? Products with history cannot be deleted.')) return;
     const r = await run(() => api('product.delete', { id: f.id }));
     useStore.getState().toast(r.deleted ? 'Product deleted' : 'Product has history — it was deactivated');
     await refresh('products'); onClose();
   };
   return (
     <Modal open onClose={onClose} size="lg" title={isNew ? 'Add product' : `Edit — ${initial.name}`}
-      footer={<>{!isNew && <Btn kind="danger" onClick={remove}>Delete</Btn>}<span className="spacer" /><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={save}>{isNew ? 'Add product' : 'Save changes'}</Btn></>}>
+      footer={<>{!isNew && <Btn kind="danger" disabled={!!initial.has_history || Number(initial.stock) !== 0} title={initial.has_history ? 'This product has history. Turn Active off instead.' : Number(initial.stock) !== 0 ? 'This product still has stock' : 'Delete unused product'} onClick={remove}>Delete</Btn>}<span className="spacer" /><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={save}>{isNew ? 'Add product' : 'Save changes'}</Btn></>}>
       <div className="form">
+        {initial.has_history && <p className="muted wide">This product has transaction or stock/job history and cannot be deleted. Turn Active off to stop selling it.</p>}
         <Field label="Product name" wide error={dup ? `"${dup.name}" already exists` : undefined}
           hint={dup ? undefined : auto ? 'Fills in automatically: brand, group, category, model, then # short description. Type here to write your own name.' : <>Custom name. <button type="button" className="link" onClick={() => { setAuto(true); setF({ ...f, name: autoName(f) }); }}>Use automatic name</button></>}>
           <input value={f.name} onChange={(e) => { setAuto(false); setF({ ...f, name: e.target.value }); }} placeholder="Select group, category, brand and model — or type a name" aria-label="Product name" aria-invalid={!!dup} autoFocus />

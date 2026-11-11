@@ -896,9 +896,20 @@ function masterDelete_(p, user) {
 /* ============================================================================
  *  6. PRODUCTS
  * ========================================================================== */
+/** Any product history, including cancelled records, prevents deletion. */
+function productUsageIndex_() {
+  if (!_txn && _mem.__productUsageIndex) return _mem.__productUsageIndex;
+  var used = {};
+  ['SaleItems','PurchaseItems','SalesReturnItems','PurchaseReturnItems','SerialItems','ItemEvents','WarrantyClaims'].forEach(function(name) {
+    all_(name).forEach(function(row) { if (row.product_id) used[row.product_id] = true; });
+  });
+  all_('Repairs').forEach(function(job) { repairParts_(job).forEach(function(part) { used[part.product_id] = true; }); });
+  if (!_txn) _mem.__productUsageIndex = used;
+  return used;
+}
 function productsList_(user) {
-  var reservations = repairReservations_().qty;
-  var list = all_('Products').map(function (p) { var c = Object.assign({}, p); delete c._row; c.reserved = reservations[p.id] || 0; c.available = Math.max(0, round_(p.stock - c.reserved, 4)); return c; });
+  var reservations = repairReservations_().qty, history = productUsageIndex_();
+  var list = all_('Products').map(function (p) { var c = Object.assign({}, p); delete c._row; c.has_history = !!history[p.id]; c.reserved = reservations[p.id] || 0; c.available = Math.max(0, round_(p.stock - c.reserved, 4)); return c; });
   return stripCost_(list, user);
 }
 function productSave_(p, user) {
@@ -998,10 +1009,7 @@ function productDelete_(p, user) {
   var product = all_('Products').filter(function(x) { return x.id === p.id; })[0];
   if (!product) fail_('Product not found');
   if (Math.abs(num_(product.stock)) > 1e-9) fail_('This product still has stock. Return or write off the stock before deleting it');
-  var referenced = all_('ItemEvents').some(function(i) { return i.product_id === p.id; }) || all_('WarrantyClaims').some(function(i) { return i.product_id === p.id; }) || all_('Repairs').some(function(job) { return repairParts_(job).some(function(i) { return i.product_id === p.id; }); });
-  if (referenced) { update_('Products', p.id, { active: false }); audit_(user, 'product_deactivate', {id:p.id}); return {deactivated:true}; }
-  var used = all_('SaleItems').some(function (i) { return i.product_id === p.id; }) || all_('PurchaseItems').some(function (i) { return i.product_id === p.id; });
-  if (used) { update_('Products', p.id, { active: false }); return { deactivated: true }; }
+  if (productUsageIndex_()[p.id]) fail_('This product has purchase, sale or stock/job history and cannot be deleted. Turn Active off instead');
   remove_('Products', p.id); return { deleted: true };
 }
 function serialsList_(p) {
@@ -1168,8 +1176,10 @@ function supplierSave_(p, user) {
  *  8. ACCOUNTS (cash / bank / MFS)
  * ========================================================================== */
 function accountsList_() {
-  var bal = accountBalances_();
-  return all_('Accounts').map(function (a) { var o = Object.assign({}, a); delete o._row; o.balance = bal[a.id] || 0; return o; });
+  var bal = accountBalances_(), history = {};
+  all_('AccountTxns').forEach(function(t) { history[t.account_id] = true; });
+  all_('Expenses').forEach(function(t) { history[t.account_id] = true; });
+  return all_('Accounts').map(function (a) { var o = Object.assign({}, a); delete o._row; o.balance = bal[a.id] || 0; o.has_history = !!history[a.id]; return o; });
 }
 function accountSave_(p, user) {
   var name = String(p.name || '').trim(); if (!name) fail_('Account name is required');
@@ -1537,10 +1547,24 @@ function settingsGet_(p, user) {
   return m;
 }
 /** Expense categories live in the Expenses module (staff with the expenses permission manage them). */
+function expenseCategoryUsage_() {
+  var used = {};
+  all_('Expenses').forEach(function(e) { var key = nameKey_(e.category); if (key) used[key] = (used[key] || 0) + 1; });
+  return used;
+}
+function checkedExpenseCategories_(values) {
+  if (!Array.isArray(values)) fail_('Expense categories must be a list');
+  var seen = {}, list = values.map(function(c) { return String(c || '').trim().replace(/\s+/g, ' '); }).filter(function(c) {
+    var key = nameKey_(c); if (!key || seen[key]) return false; seen[key] = true; return true;
+  });
+  if (!list.length || list.length > 200) fail_('Keep between 1 and 200 expense categories');
+  var old = []; try { old = JSON.parse(getSetting_('expense_categories','[]')); } catch(e) {}
+  var used = expenseCategoryUsage_();
+  old.forEach(function(c) { if (used[nameKey_(c)] && !seen[nameKey_(c)]) fail_('Expense category "' + c + '" has history and cannot be deleted or renamed, including after cancellation'); });
+  return list;
+}
 function expenseCategoriesSave_(p, user) {
-  var seen = {}, list = (Array.isArray(p.categories) ? p.categories : []).map(function (c) { return String(c || '').trim().replace(/\s+/g, ' '); })
-    .filter(function (c) { var k = c.toLowerCase(); if (!c || seen[k]) return false; seen[k] = 1; return true; }).slice(0, 200);
-  if (!list.length) fail_('Keep at least one expense category');
+  var list = checkedExpenseCategories_(p.categories);
   setSetting_('expense_categories', JSON.stringify(list));
   audit_(user, 'expense_categories', { count: list.length });
   return list;
@@ -1550,7 +1574,12 @@ function settingsSave_(p, user) {
     'sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_repair_template', 'sms_technician_template', 'sms_headers',
     'dashboard_hidden', 'invoice_template', 'invoice_paper', 'invoice_custom_width', 'invoice_custom_height', 'invoice_note',
     'sms_invoice_link', 'invoice_link_base', 'books_locked_until'];
-  var vals = p.values || {};
+  var vals = Object.assign({}, p.values || {});
+  if (vals.expense_categories !== undefined) {
+    var cats = vals.expense_categories;
+    if (typeof cats === 'string') { try { cats = JSON.parse(cats); } catch(e) { fail_('Expense categories must be a valid list'); } }
+    vals.expense_categories = checkedExpenseCategories_(cats);
+  }
   if (vals.books_locked_until !== undefined && String(vals.books_locked_until || '') !== lockedUntil_()) {
     if (user.role !== 'admin') fail_('Only an admin can close or reopen the books');
     var lk = String(vals.books_locked_until || '').trim().slice(0, 10);
@@ -4030,6 +4059,7 @@ var ROUTES = {
 
   'expense.create':   r_('expenses', expenseCreate_, true),
   'expense.categories': r_('expenses', expenseCategoriesSave_, true),
+  'expense.categories.usage': r_('expenses', expenseCategoryUsage_),
   'expenses.list':    r_('expenses', expensesList_),
 
   'reverse':          r_('cancel', reverse_, true),

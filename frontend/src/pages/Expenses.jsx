@@ -64,6 +64,8 @@ export default function Expenses() {
 }
 
 function ExpenseCategories({ cats }) {
+  const usage = useApi('expense.categories.usage', {});
+  const used = c => !!usage.data?.[c.trim().replace(/\s+/g, ' ').toLowerCase()];
   const [name, setName] = useState('');
   const [edit, setEdit] = useState(null); // { from, value }
   const [busy, run] = useAction();
@@ -87,11 +89,12 @@ function ExpenseCategories({ cats }) {
   };
   const remove = async (c) => {
     if (cats.length <= 1) return useStore.getState().toast('Keep at least one category', 'err');
-    if (!(await ask({ title: 'Delete category?', message: <>Delete <b>“{c}”</b>? Expenses already recorded keep this category name.</> }))) return;
+    if (!(await ask({ title: 'Delete category?', message: <>Delete <b>“{c}”</b>? Only unused categories can be deleted. Used categories stay with their expense history.</> }))) return;
     await save(cats.filter((x) => x !== c), `${c} deleted`);
   };
   return (
     <div className="card exp-cats">
+      <ErrorBox error={usage.error} onRetry={usage.reload} />
       <form className="row" onSubmit={add} style={{ gap: 8 }}>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New category, e.g. Shop rent" aria-label="New expense category" style={{ flex: 1 }} />
         <Btn kind="primary" type="submit" busy={busy} disabled={!name.trim()}>Add</Btn>
@@ -101,7 +104,7 @@ function ExpenseCategories({ cats }) {
           <li key={c}>
             {edit?.from === c
               ? <form className="row" onSubmit={rename} style={{ gap: 6, flex: 1 }}><input value={edit.value} onChange={(e) => setEdit({ ...edit, value: e.target.value })} autoFocus aria-label={`New name for ${c}`} style={{ flex: 1 }} /><Btn size="sm" kind="primary" type="submit" busy={busy}>Save</Btn><Btn size="sm" onClick={() => setEdit(null)}>Cancel</Btn></form>
-              : <><span>{c}</span><span className="spacer" /><Btn size="sm" onClick={() => setEdit({ from: c, value: c })}>Rename</Btn><Btn size="sm" kind="danger" onClick={() => remove(c)}>Delete</Btn></>}
+              : <><span>{c}{used(c) && <small className="muted"> · Used — retained for history</small>}</span><span className="spacer" /><Btn size="sm" disabled={usage.loading || !!usage.error || used(c)} onClick={() => setEdit({ from: c, value: c })}>Rename</Btn><Btn size="sm" kind="danger" disabled={usage.loading || !!usage.error || used(c)} title={used(c) ? 'This category has expense history and cannot be deleted' : 'Delete unused category'} onClick={() => remove(c)}>Delete</Btn></>}
           </li>
         ))}
       </ul>

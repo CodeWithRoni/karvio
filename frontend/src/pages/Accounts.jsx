@@ -57,6 +57,7 @@ function AccountForm({ initial, onClose, onDone }) {
   return (
     <Modal open onClose={onClose} size="sm" title={f.id ? `Edit ${f.name}` : 'Add account'} footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={save}>Save account</Btn></>}>
       <div className="form">
+        {f.has_history && <p className="muted wide">This account has transaction history and is retained for accounting. Turn Active off to stop using it; previous entries remain.</p>}
         <Field label="Account name" wide><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="e.g. bKash Merchant, Islami Bank" autoFocus /></Field>
         <Field label="Type" wide><select value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>{TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
         <Field label="Account / wallet number" wide><input value={f.number} onChange={(e) => setF({ ...f, number: e.target.value })} /></Field>
