@@ -2,6 +2,22 @@
 
 ## Fresh Supabase backend — current follow-up
 
+Current owner-approved publication: includes all pending sidebar/label, Repair filters, Dashboard overview/shortcut, import/export icon and product naming changes. Four hosted/local migrations match; RLS and daily backup schedule verified active, owner preserved. Full 56-case browser suite passed together after fixture isolation correction. A final two-case naming-save/category pair passed after preserving description whitespace in backend storage (future saves only; no historical rewrite). Regular 1,343 and Supabase 63 assertions passed; build/assets passed. No production test records or SMS were created.
+
+Latest separator clarification: product description now uses ' #' before the raw description (space before #, none added after). Model #Description is the default. User-entered leading description spaces remain intentional. Updated browser case verifies the corrected format, replacement/clearing and custom names. No push/deployment.
+
+LOCAL-ONLY # spacing correction: description suffix now uses '#' directly with no inserted spaces; description text retains user-entered whitespace. Tests passed for no space, explicit leading space, whitespace-only/empty description, replacement and manual base names. Build/assets passed; screenshot updated. No push/deployment.
+
+LOCAL-ONLY product naming correction: preserved field positions, moved Brand to the start of generated names, and append nonblank short description as " # description". Changing/clearing description updates/removes that suffix; manual base names remain manual and can receive the suffix. No bulk/historical rename or backend/database change. One focused browser check passed for brand-first naming, suffix replacement/removal and custom names; screenshot reviewed with test data. Build/assets passed. No deployment/push performed.
+
+LOCAL-ONLY import/export icon correction: all five master panels use distinct outward document-arrow Export and inward document-arrow Import SVGs, rather than ambiguous download/upload arrows. Existing handlers are preserved. The master-selection browser check now confirms Import opens the file chooser, Export produces the selected-only spreadsheet and bulk deletion still works; passed 1/1. Build/assets passed and requested screenshot captured with test data. No API/database change or deployment performed.
+
+LOCAL-ONLY dashboard header review: replaced the top period selector with Total Business Overview and use all-time totals for the summary. Added New Service and New Repair immediately before New sale; repair opens the existing create-job modal directly and Service opens its pending-workflow page. Existing permission checks retained. History and leaderboard period controls are unchanged. New shortcut/mobile check and updated totals auto-refresh test passed together (2/2); desktop screenshot reviewed using test data. No API/database migration or deployment. Production build/assets passed.
+
+LOCAL-ONLY repair filter restoration: dashboard cards and the legacy filtered job table are now visible together. Restored Open/Received/Completed/Failed/Delivered/Cancelled/All tabs, technician filter, table search and existing exports below the cards. Added received-period selector and Reset filters; card drilldown synchronizes list state and scrolls to it without removing the dashboard. Existing job dialogs/actions remain unchanged. Ten focused repair/access/delivery/cancel browser cases passed; the final dashboard case and production build/assets also passed after final layout cleanup. Desktop screenshot with mock data reviewed. No API/database change or deployment performed.
+
+LOCAL-ONLY follow-up after published commit a8bd19c5: owner asked not to push without another instruction. Sidebar width increased to 264px and row gaps/padding balanced so existing module names stay on one line with icons and shortcuts. Full labels retain hover tooltips. Desktop check verified no current label is truncated; all-routes, 390px mobile-fit and menu-toggle browser checks passed (3/3). Production build/assets passed. No deployment/API/database change for this follow-up. The earlier 54-case release result below is historical; only the relevant navigation checks were rerun for this spacing change.
+
 Owner-approved publication: Edge karvio-api version 5 deployed; public ping reports backend=supabase and requiresSetup=false. Local migration filenames match all four hosted versions. Added a private pg_cron daily snapshot at 02:00 Dhaka, default 30-day retention, configurable from Database settings. Ran one snapshot successfully; verified active schedule, snapshot count and unchanged owner/sales counts (1/0). Hosted security advisor has no WARN/ERROR findings. Final local regular suite passed 1,343 assertions; Supabase suite passed 63; final complete Edge suite passed all 54 together (1.0 minute), after sidebar and backup UI updates. Production build/assets passed. Main push and GitHub Pages pipeline are authorized; no production financial test data or SMS was created.
 
 Sidebar icon review (local only): replaced all five group dots with semantic native SVG section icons and added a matching outline icon to every module link, including Repairs and the new Service placeholder. One consistent stroke family supports current-color active/hover accents, slight hover feedback and reduced-motion preference; icons are decorative and hidden from accessibility names so existing labels/shortcuts remain usable. No icon package, remote font or network dependency added. Build/assets passed. Four existing browser checks passed for all module routes, mobile fit, menu hide/show and Advance Search placement. The all-routes check was expanded to include Repairs and Service and passed separately; desktop screenshot reviewed. No deployment/push performed. The last full 54-case pass predates this visual change; only these relevant navigation checks were repeated.
@@ -49,8 +65,8 @@ New cases cover backdated supplier balances, exact discounted line/partial-retur
   "automatedChecks": 1406,
   "supabaseAdapterChecks": 63,
   "hostedSqlTransactionTest": "passed; rolled back; no shop test records retained",
-  "browserTests": 54,
-  "browserRunGrouping": "all 54 together",
+  "browserTests": 56,
+  "browserRunGrouping": "all 56 together; final naming persistence pair also passed",
   "supabaseBackend": "deployed; owner password setup pending; current live frontend unchanged",
   "browser": "Microsoft Edge",
   "frontendBuild": "passed",

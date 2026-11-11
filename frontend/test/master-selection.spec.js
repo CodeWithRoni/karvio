@@ -9,7 +9,10 @@ test('master list checkboxes export only marked rows and delete together after c
  await call('master.save',{kind:'brand',name:'Marked Alpha'});await call('master.save',{kind:'brand',name:'Marked Beta'});
  await page.addInitScript(({endpoint,token})=>{localStorage.setItem('erp_api_config',JSON.stringify({scriptUrl:endpoint}));localStorage.setItem('erp_token',token);},{endpoint,token});
  await page.goto('/#/stock');await page.getByRole('tab',{name:'Categories, brands & warranty'}).click();
+ await page.setViewportSize({width:1920,height:1200});
+ await page.screenshot({path:'../verification/master-import-export-icons-review.png',fullPage:true,animations:'disabled'});
  const panel=page.locator('.md-panel').filter({has:page.getByRole('heading',{name:'Brands',exact:true})});
+ const chooser=page.waitForEvent('filechooser');await panel.getByRole('button',{name:'Import Brands',exact:true}).click();await chooser;
  await panel.getByRole('checkbox',{name:'Select Marked Alpha',exact:true}).check();
  await expect(panel.getByRole('button',{name:'Rename Marked Alpha',exact:true})).toHaveText('');
  await expect(panel.getByRole('button',{name:'Export Brands',exact:true})).toHaveText('');

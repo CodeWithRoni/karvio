@@ -41,8 +41,8 @@ export const NAV = [
   { to: '/stock', label: 'Products & Stock', key: '5' },
   { to: '/barcodes', label: 'Barcode Labels' },
   { to: '/prices', label: 'Price Manager', perm: 'products' },
-  { to: '/purchases', label: 'Purchases', perm: 'purchase', key: '6' },
-  { to: '/suppliers', label: 'Suppliers', perm: 'suppliers' },
+  { to: '/purchases', label: 'Purchases & Returns', perm: 'purchase', key: '6' },
+  { to: '/suppliers', label: 'Suppliers & Dues', perm: 'suppliers' },
   { to: '/warranty', label: 'Warranty Claims', perm: 'warranty', key: '7' },
   { group: 'Money & Reports' },
   { to: '/accounts', label: 'Cash, Bank & MFS', perm: 'accounts' },
@@ -103,7 +103,7 @@ export default function Layout() {
           {groups.map((g) => (
             <section className={`nav-card ${tone[g.title] || ''}`} key={g.title}>
               <div className="nav-group"><NavIcon name={g.title} group />{g.title}</div>
-              {g.links.map((n) => <NavLink key={n.to} to={n.to} end={n.end}><NavIcon name={n.to} /><span className="nav-item-label">{n.label}</span>{n.key && <kbd>Alt {n.key}</kbd>}</NavLink>)}
+              {g.links.map((n) => <NavLink key={n.to} to={n.to} end={n.end} title={n.label}><NavIcon name={n.to} /><span className="nav-item-label">{n.label}</span>{n.key && <kbd>Alt {n.key}</kbd>}</NavLink>)}
             </section>
           ))}
         </nav>

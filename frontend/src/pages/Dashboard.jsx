@@ -27,19 +27,20 @@ export default function Dashboard() {
   const { data: d, loading, error, reload } = useApi('dashboard', {}, [], { refreshMs: 30000 });
   const can = useStore((s) => s.can);
   const on = useCardOn();
-  const [per, setPer] = useState('today');
   const [lb, setLb] = useState('month');
 
   if (loading && !d) return <Loading label="Loading dashboard" />;
   if (error && !d) return <ErrorBox error={error} onRetry={reload} />;
-  const c = d[per];
+  const c = d.total;
   const max = Math.max(1, ...d.series.map((x) => x.sales));
 
   return (
     <>
       <PageHead title={d.limited ? `Hello, ${d.user}` : 'Dashboard'} sub={`${fdate(d.date)}${d.limited ? ' — your own sales' : ''}`} center={<LiveClock />}>
-        <Tabs tabs={[['today', 'Today'], ['month', 'This month'], ['total', 'All time']]} value={per} onChange={setPer} />
+        <span className="business-overview-label">Total Business Overview</span>
         <Btn onClick={reload} busy={loading}>Refresh</Btn>
+        {can('repairs') && <Link to="/service" className="btn">New Service</Link>}
+        {can('repairs') && <Link to="/repairs?new=1" className="btn">New Repair</Link>}
         {can('pos') && <Link to="/pos" className="btn btn-primary">New sale</Link>}
       </PageHead>
 

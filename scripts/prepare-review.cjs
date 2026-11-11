@@ -38,7 +38,7 @@ if (process.argv.includes('--check')) {
   const manifest = {
     product: 'Karvio', version: JSON.parse(fs.readFileSync(path.join(root, 'frontend/package.json'))).version,
     preparedDate: '2026-11-11', state: 'owner-approved-main-publication-supabase-backend-deployed',
-    baseCommit: '6232d19375d9b1bdcb34984fc5f4f9f005422982',
+    baseCommit: 'a8bd19c5e8e5d6bcc39320fc9f28a1a3c4fa70c7',
     validation: JSON.parse(verification[1]),
     excluded: ['backend/parts (legacy duplicate backend)', 'node_modules', 'verification artifacts', 'test results', 'release installers', 'user databases/backups', 'credentials'],
     fileCount: files.length, files,
@@ -46,7 +46,7 @@ if (process.argv.includes('--check')) {
     uploadOrder: ['Supabase Edge version 5 deployed and migration history matched', 'Daily backup schedule enabled and first snapshot verified', 'Publish approved main and verify GitHub Pages pipeline and live assets'],
     onlineUploadPerformed: true,
     appsScriptVersion: 42,
-    supabase: { project: 'svqhlotlzgmwjneuphpe', edgeFunction: 'karvio-api', deployedVersion: 5, businessTables: 29, ownerSetup: 'created by owner', liveFrontendCutover: true }
+    supabase: { project: 'svqhlotlzgmwjneuphpe', edgeFunction: 'karvio-api', deployedVersion: 7, businessTables: 29, ownerSetup: 'created by owner', liveFrontendCutover: true }
   };
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
   fs.writeFileSync(sumsPath, files.filter(name => name !== 'SHA256SUMS.txt').map(name => digest(name) + '  ' + name).join('\n') + '\n');

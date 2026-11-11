@@ -11,8 +11,8 @@ const Icon = {
   plus: <path d="M12 5v14M5 12h14" />,
   chevron: <path d="m9 6 6 6-6 6" />,
   search: <><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></>,
-  download: <path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14" />,
-  upload: <path d="M12 16V5m0 0L7.5 9.5M12 5l4.5 4.5M5 20h14" />,
+  export: <><path d="M14 3H5v18h14v-8M14 3v5h5" /><path d="M12 12 21 3m-6 0h6v6" /></>,
+  import: <><path d="M14 3H5v18h14v-8M14 3v5h5" /><path d="m21 3-9 9m0-6v6h6" /></>,
   info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 7.5v.5" /></>
 };
 const Svg = ({ name, size = 13 }) => (
@@ -83,7 +83,7 @@ function PanelTools({ kind, title, rows, onImport, busy, selectedCount, onDelete
   return (
     <div className="md-tools" ref={box}>
       {!!selectedCount && <><span className="md-count">{selectedCount} selected</span><ActBtn tone="delete" icon="trash" disabled={busy} aria-label={`Delete selected ${title}`} onClick={onDelete} /></>}
-      <button type="button" className="md-tool" title={selectedCount ? `Export ${selectedCount} selected ${title}` : `Export ${title}`} onClick={() => setOpen(!open)} aria-haspopup="menu" aria-expanded={open} aria-label={`Export ${title}`}><Svg name="download" size={14} /></button>
+      <button type="button" className="md-tool" title={selectedCount ? `Export ${selectedCount} selected ${title}` : `Export ${title}`} onClick={() => setOpen(!open)} aria-haspopup="menu" aria-expanded={open} aria-label={`Export ${title}`}><Svg name="export" size={16} /></button>
       {open && (
         <div className="md-menu" role="menu">
           <button type="button" role="menuitem" onClick={() => run(exportExcel)}>Excel (.xlsx)</button>
@@ -91,7 +91,7 @@ function PanelTools({ kind, title, rows, onImport, busy, selectedCount, onDelete
           <button type="button" role="menuitem" onClick={() => run(printTable)}>Print</button>
         </div>
       )}
-      <button type="button" className="md-tool" title={`Import ${title}`} disabled={busy} onClick={() => file.current?.click()} aria-label={`Import ${title}`}><Svg name="upload" size={14} /></button>
+      <button type="button" className="md-tool" title={`Import ${title}`} disabled={busy} onClick={() => file.current?.click()} aria-label={`Import ${title}`}><Svg name="import" size={16} /></button>
       <input ref={file} type="file" hidden accept=".xlsx,.xls,.csv,.ods" onChange={pickFile} />
       <button type="button" className="md-info" title="Download demo import" data-tip="Download demo import" aria-label={`Download demo import file for ${title}`} onClick={demo}><Svg name="info" size={15} /></button>
     </div>

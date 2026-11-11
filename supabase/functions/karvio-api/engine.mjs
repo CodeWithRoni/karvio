@@ -924,7 +924,7 @@ function productSave_(p, user) {
   var row = {
     sku: sku, barcode: barcode, name: name, category_id: p.category_id || '', subcategory_id: p.subcategory_id || '', brand_id: p.brand_id || '',
     unit: unit, roll_length: isDecimalUnit_(unit) ? num_(p.roll_length) : 0, cost_price: service ? 0 : num_(p.cost_price), sale_price: num_(p.sale_price), wholesale_price: num_(p.wholesale_price),
-    low_stock: service ? 0 : num_(p.low_stock), service: service, description: String(p.description || '').trim().slice(0, 500), has_warranty: hasW, warranty_type: wType, warranty_days: hasW ? Math.round(num_(p.warranty_days)) : 0,
+    low_stock: service ? 0 : num_(p.low_stock), service: service, description: String(p.description || '').slice(0, 500), has_warranty: hasW, warranty_type: wType, warranty_days: hasW ? Math.round(num_(p.warranty_days)) : 0,
     active: p.active === undefined ? true : (p.active === true || p.active === 'true')
   };
   if (p.id) {

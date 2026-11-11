@@ -39,12 +39,13 @@ test('all main screens load without browser errors', async ({ page }) => {
   await page.setViewportSize({width:1920,height:1080});
   await page.goto('/#/stock');
   await expect(page.locator('.page-head h1')).toBeVisible();
+  expect(await page.locator('.nav-item-label').evaluateAll(labels=>labels.filter(el=>el.scrollWidth>el.clientWidth+1).map(el=>el.textContent))).toEqual([]);
   await page.screenshot({path:'../verification/sidebar-icons-review.png',fullPage:true,animations:'disabled'});
 });
 
 test('dashboard refreshes another counter sale automatically and retains data on failure', async ({ page, request }) => {
   await page.clock.install();
-  const baseline = (await call(request, 'dashboard')).today.sales;
+  const baseline = (await call(request, 'dashboard')).total.sales;
   await page.goto('/');
   await expect(page.locator('.stats .stat').first()).toContainText('Tk ' + baseline.toLocaleString('en-IN'));
   await call(request, 'sale.create', { items: [{ product_id: product.id, qty: 1, price: 300 }], payments: [{ account_id: cash.id, amount: 300 }] });

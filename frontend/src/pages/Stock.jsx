@@ -8,7 +8,7 @@ import MasterData from '../components/MasterData';
 import { PageHead, Tabs, Modal, Btn, Field, Badge, Select, useAction, noWheel } from '../components/ui';
 
 const blank = { name: '', sku: '', barcode: '', category_id: '', subcategory_id: '', brand_id: '', unit: 'pcs', roll_length: '', cost_price: '', sale_price: '', wholesale_price: '', low_stock: '', has_warranty: false, warranty_type: 'serial', warranty_days: 0, active: true, service: false, description: '' };
-// Auto name = Product group + Category + Brand + Model, e.g. "Networking Router TP-Link Archer C6".
+// Auto name = Brand + Product group + Category + Model + optional # description.
 export const nameKey = (s) => String(s || '').trim().replace(/\s+/g, ' ').toLowerCase();
 
 export default function Stock() {
@@ -82,9 +82,21 @@ export default function Stock() {
 function ProductForm({ initial, onClose }) {
   const { categories, brands, warrantyPeriods, units, products, refresh, can } = useStore();
   const catName = (id) => categories.find((c) => c.id === id)?.name || '';
-  const autoName = (x) => [catName(x.category_id), catName(x.subcategory_id), brands.find((b) => b.id === x.brand_id)?.name, String(x.sku || '').trim()].filter(Boolean).join(' ');
+  const shortText = value => String(value || '').trim().replace(/\s+/g, ' ');
+  const descriptionSuffix = value => String(value || '').trim() ? ' #' + String(value) : '';
+  const autoName = x => {
+    const base = [brands.find(b=>b.id===x.brand_id)?.name, catName(x.category_id), catName(x.subcategory_id), shortText(x.sku)].filter(Boolean).join(' ');
+    return base + descriptionSuffix(x.description);
+  };
+  const changeDescription = value => setF(cur=>{
+    const next={...cur,description:value};
+    if(auto)return {...next,name:autoName(next)};
+    const suffix=descriptionSuffix(cur.description);
+    const base=suffix&&cur.name.endsWith(suffix)?cur.name.slice(0,-suffix.length):cur.name;
+    return {...next,name:base+descriptionSuffix(value)};
+  });
   const [f, setF] = useState({ ...initial, service: initial.service === true || initial.service === 'true' });
-  // The name follows group → category → brand → model until the user types their own name.
+  // The name follows brand → group → category → model → description until the user types their own name.
   const [auto, setAuto] = useState(() => !initial.id || !initial.name || initial.name === autoName(initial));
   const setPart = (patch) => setF((cur) => { const next = { ...cur, ...patch }; return auto ? { ...next, name: autoName(next) } : next; });
   const dup = nameKey(f.name) && products.find((p) => p.id !== f.id && nameKey(p.name) === nameKey(f.name));
@@ -111,7 +123,7 @@ function ProductForm({ initial, onClose }) {
       footer={<>{!isNew && <Btn kind="danger" onClick={remove}>Delete</Btn>}<span className="spacer" /><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={save}>{isNew ? 'Add product' : 'Save changes'}</Btn></>}>
       <div className="form">
         <Field label="Product name" wide error={dup ? `"${dup.name}" already exists` : undefined}
-          hint={dup ? undefined : auto ? 'Fills in automatically from group, category, brand and model. Type here to write your own name.' : <>Custom name. <button type="button" className="link" onClick={() => { setAuto(true); setF({ ...f, name: autoName(f) }); }}>Use automatic name</button></>}>
+          hint={dup ? undefined : auto ? 'Fills in automatically: brand, group, category, model, then # short description. Type here to write your own name.' : <>Custom name. <button type="button" className="link" onClick={() => { setAuto(true); setF({ ...f, name: autoName(f) }); }}>Use automatic name</button></>}>
           <input value={f.name} onChange={(e) => { setAuto(false); setF({ ...f, name: e.target.value }); }} placeholder="Select group, category, brand and model — or type a name" aria-label="Product name" aria-invalid={!!dup} autoFocus />
         </Field>
         <Field label="Product group"><Select value={f.category_id} onChange={(v) => setPart({ category_id: v, subcategory_id: '' })} options={tops} placeholder="Select a group" /></Field>
@@ -129,7 +141,7 @@ function ProductForm({ initial, onClose }) {
 
         <div className="wide card product-desc" style={{ background: 'var(--panel-2)' }}>
           <Field label="Short description" wide hint={`${String(f.description || '').length}/500 — e.g. Dual-band AC1200, 4 antennas, 1 year warranty.`}>
-            <textarea value={f.description || ''} maxLength={500} rows={3} onChange={s('description')} placeholder="A few words about this product (optional)" aria-label="Short description" />
+            <textarea value={f.description || ''} maxLength={500} rows={3} onChange={e=>changeDescription(e.target.value)} placeholder="A few words about this product (optional)" aria-label="Short description" />
           </Field>
         </div>
 

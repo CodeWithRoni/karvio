@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { money, fdate, fdatetime, round2 } from '../lib/format';
 import { printHtml, esc, shopContacts } from '../lib/export';
@@ -26,7 +26,8 @@ const partsTotal = (parts) => round2(parts.reduce((a, x) => a + (Number(x.qty) |
 export default function Repairs() {
   const [tab, setTab] = useState('open');
   const [tech, setTech] = useState('');
-  const [showList,setShowList]=useState(false);
+  const jobsRef = useRef(null);
+  const showJobs = () => requestAnimationFrame(()=>jobsRef.current?.scrollIntoView({block:'start'}));
   const [period,setPeriod]=useState(null);
   const meta = useApi('repairs.meta', {}, [], {refreshMs:60000});
   const list = useApi('repairs.list', {}, [], {refreshMs:15000});
@@ -36,8 +37,15 @@ export default function Repairs() {
   const periodRows=activePeriod?jobsInPeriod(scope,activePeriod):scope;
   const rows = periodRows.filter(r=>tab==='all'||(tab==='open'?OPEN.includes(r.status):r.status===tab));
   const [form, setForm] = useState(null); // {} = new job, or the job being edited
+  const [searchParams,setSearchParams] = useSearchParams();
+  useEffect(()=>{
+    if(searchParams.get('new')!=='1')return;
+    setForm({});
+    const next=new URLSearchParams(searchParams);next.delete('new');
+    setSearchParams(next,{replace:true});
+  },[searchParams,setSearchParams]);
   const [sel, setSel] = useState(null);
-  const done = (job) => { list.reload(); setShowList(true); setForm(null); setSel(job || null); };
+  const done = (job) => { list.reload(); setForm(null); setSel(job || null); };
   // #/repairs/<id> (from a dashboard alert) opens that job
   const { id } = useParams();
   const nav = useNavigate();
@@ -50,30 +58,31 @@ export default function Repairs() {
   return (
     <>
       <PageHead title="Repairs" sub="Job cards for devices left at the shop: receive, repair, mark ready and deliver with an invoice.">
-        <Btn onClick={()=>{setShowList(!showList);setTech('');if(!showList){setPeriod(null);setTab('all');}}}>{showList?'Repair dashboard':'All repair jobs'}</Btn>
+        <Btn onClick={()=>{setTech('');setPeriod(null);setTab('all');showJobs();}}>All repair jobs</Btn>
         <Btn kind="primary" onClick={() => setForm({})} disabled={!meta.data}>New repair job</Btn>
       </PageHead>
       <ErrorBox error={list.error || meta.error} onRetry={() => { list.reload(); meta.reload(); }} />
-      {!showList&&<>
+      <>
         <p className="muted">By received date · week starts Saturday · Last 3/6 Months includes the current month. Pending = Received; Complete = Completed. Delivered and Cancelled remain available in each period’s list.</p>
         {meta.loading&&!meta.data&&<p role="status">Loading repair dashboard…</p>}
         <div className="repair-dashboard">
           {periods.map(p=>{
             const jobs=jobsInPeriod(scope,p),counts=repairCounts(jobs);
             return <section className="repair-period" key={p.key} aria-label={p.label}>
-              <button type="button" className="repair-period-title" onClick={()=>{setPeriod(p);setTab('all');setShowList(true);}} aria-label={`View ${p.label} repair jobs`}>
+              <button type="button" className="repair-period-title" onClick={()=>{setPeriod(p);setTab('all');showJobs();}} aria-label={`View ${p.label} repair jobs`}>
                 <h2>{p.label}</h2><small>{fdate(p.from)}{p.from!==p.to?` – ${fdate(p.to)}`:''}</small>
               </button>
-              <div className="repair-period-counts">{[['pending','Pending','Received'],['complete','Complete','Completed'],['failed','Failed','Failed']].map(([key,label,status])=><button type="button" key={key} className={`repair-count repair-${key}`} aria-label={`${p.label} ${label}: ${counts[key]}`} onClick={()=>{setPeriod(p);setTab(status);setShowList(true);}}><span>{label}</span><strong>{list.loading&&!list.data?'—':counts[key]}</strong></button>)}</div>
-              <button type="button" className="repair-period-footer" onClick={()=>{setPeriod(p);setTab('all');setShowList(true);}}>View {jobs.length} jobs →</button>
+              <div className="repair-period-counts">{[['pending','Pending','Received'],['complete','Complete','Completed'],['failed','Failed','Failed']].map(([key,label,status])=><button type="button" key={key} className={`repair-count repair-${key}`} aria-label={`${p.label} ${label}: ${counts[key]}`} onClick={()=>{setPeriod(p);setTab(status);showJobs();}}><span>{label}</span><strong>{list.loading&&!list.data?'—':counts[key]}</strong></button>)}</div>
+              <button type="button" className="repair-period-footer" onClick={()=>{setPeriod(p);setTab('all');showJobs();}}>View {jobs.length} jobs →</button>
             </section>;
           })}
         </div>
-      </>}
-      {showList&&<>
-      <p className="muted">{activePeriod?`${activePeriod.label} · Received ${fdate(activePeriod.from)} – ${fdate(activePeriod.to)}`:'All received dates'}</p>
+      </>
+      <section className="repair-jobs-section" ref={jobsRef} aria-label="Repair job list">
+      <div className="repair-list-heading"><div><h2>Repair jobs</h2><p className="muted">{activePeriod?`${activePeriod.label} · Received ${fdate(activePeriod.from)} – ${fdate(activePeriod.to)}`:'All received dates'}</p></div><Btn size="sm" onClick={()=>{setPeriod(null);setTech('');setTab('all');}}>Reset filters</Btn></div>
       <div className="filters">
         <Tabs tabs={[['open', 'Open'], ['Received', 'Received'], ['Completed', 'Completed'], ['Failed', 'Failed'], ['Delivered', 'Delivered'], ['Cancelled', 'Cancelled'], ['all', 'All']]} value={tab} onChange={setTab} />
+        <Select value={period?.key||''} onChange={key=>setPeriod(periods.find(p=>p.key===key)||null)} options={periods.map(p=>({id:p.key,name:p.label}))} placeholder="All received dates" aria-label="Received period" />
         <Select value={tech} onChange={setTech} options={meta.data?.technicians || []} placeholder="All technicians" aria-label="Technician" />
       </div>
       <DataTable title="Repair jobs" loading={list.loading} rows={rows} pageSize={10} onRowClick={setSel}
@@ -86,7 +95,7 @@ export default function Repairs() {
           { key: 'due', label: 'Due', type: 'money', sum: true, value: (r) => (OPEN.includes(r.status) ? r.due : 0) },
           { key: 'status', label: 'Status', render: (r) => <Badge tone={TONE[r.status]}>{r.status}</Badge> }
         ]} />
-      </>}
+      </section>
       {form && meta.data && <JobForm job={form.id ? form : null} meta={meta.data} onClose={() => setForm(null)} onDone={done} />}
       {sel && !form && meta.data && <JobDetail key={`${sel.id}-${sel.status}-${sel.updated_at || ''}`} job={sel} meta={meta.data} onClose={closeSel} onEdit={() => setForm(sel)} onDone={done} />}
     </>
