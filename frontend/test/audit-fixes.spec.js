@@ -62,7 +62,7 @@ test('the customer invoice counts an advance once', async ({ page, request }) =>
   });
   const link = await call(request, 'sale.link', { id: invoice.sale.id });
   await page.goto('/' + new URL(link.url).hash);
-  const paid = page.locator('.pubinv-tot').getByText('Paid', { exact: true }).locator('..');
+  const paid = page.locator('.pubinv-tot').getByText('Paid now', { exact: true }).locator('..');
   await expect(paid).toContainText('100');
   await expect(paid).not.toContainText('120');
 });
@@ -98,3 +98,4 @@ test('repairs-only staff can complete work but cannot deliver a sale', async ({ 
   await expect(dialog.getByRole('button', { name: 'Mark completed', exact: true })).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Deliver', exact: true })).toHaveCount(0);
 });
+

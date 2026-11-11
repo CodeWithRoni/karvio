@@ -1,3 +1,4 @@
+import { quotationTotals } from '../lib/quotationTotals';
 import { shopStorageKey } from '../lib/shopStorage';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -68,17 +69,19 @@ function Builder() {
     return [...new Set([...(warrantyPeriods || []).map((w) => Number(w.days)), p && p.has_warranty ? Number(p.warranty_days) : 0, warrantyDays(l), 0])].filter((d) => d >= 0).sort((a, b) => a - b);
   };
   const filled = lines.filter((l) => (l.product_id || (l.manual && String(l.name).trim())) && l.name && Number(l.qty) > 0);
-  const sub = filled.reduce((a, l) => a + l.qty * (Number(l.price) || 0), 0);
-  const total = sub - (Number(meta.discount) || 0);
+  const pricing = quotationTotals(filled, meta.discount);
+  const sub = pricing.subtotal, total = pricing.total;
 
-  const quote = () => printQuotation({ ...meta, discount: Number(meta.discount) || 0, lines: filled.map((l) => ({ ...l, price: Number(l.price) || 0 })) });
+  const quote = () => { if (!pricing.valid) return useStore.getState().toast(pricing.error, 'err'); return printQuotation({ ...meta, discount: Number(meta.discount) || 0, lines: filled.map((l) => ({ ...l, price: Number(l.price) || 0 })) }); };
   const save = () => {
+    if (!pricing.valid) return useStore.getState().toast(pricing.error, 'err');
     const q = { id: Date.now(), date: new Date().toISOString().slice(0, 10), meta, lines };
     const next = [q, ...saved].slice(0, 30); setSaved(next);
     try { if (!savedKey()) throw new Error(); localStorage.setItem(savedKey(), JSON.stringify(next)); } catch { setSaved(saved); return useStore.getState().toast('Could not save the quote on this device', 'err'); }
     useStore.getState().toast('Quote saved for this user and shop');
   };
   const toPos = async () => {
+    if (!pricing.valid) return useStore.getState().toast(pricing.error, 'err');
     const inStock = filled.filter((l) => l.product_id);
     if (!inStock.length) return useStore.getState().toast('Add a stock product before sending to POS', 'err');
     if (loadPosDraft()?.cart?.length && !await ask({ title: 'Replace the POS cart?', message: 'Your current cart will be replaced by this quotation. Cancel to keep it.', confirmLabel: 'Replace cart' })) return;
@@ -94,9 +97,9 @@ function Builder() {
       {confirmDialog}
       <PageHead title="PC builder & quotations" sub="Build a setup part by part, print a quote for the customer, or send it straight to the POS.">
         <Btn onClick={() => setLines(newLines())}>Start over</Btn>
-        <Btn onClick={save} disabled={!filled.length}>Save quote</Btn>
-        <Btn onClick={toPos} disabled={!filled.some((l) => l.product_id)}>Send to POS</Btn>
-        <Btn kind="primary" onClick={quote} disabled={!filled.length}>Print / PDF quote</Btn>
+        <Btn onClick={save} disabled={!filled.length || !pricing.valid}>Save quote</Btn>
+        <Btn onClick={toPos} disabled={!filled.some((l) => l.product_id) || !pricing.valid}>Send to POS</Btn>
+        <Btn kind="primary" onClick={quote} disabled={!filled.length || !pricing.valid}>Print / PDF quote</Btn>
       </PageHead>
       <div className="split">
         <div className="card">
@@ -143,9 +146,10 @@ function Builder() {
             <Field label="Notes" wide><textarea value={meta.note} onChange={(e) => setMeta({ ...meta, note: e.target.value })} placeholder="Assembly charge, OS installation, delivery…" /></Field>
             <div className="wide totals">
               <span>{filled.length} parts</span><b className="num">{money(sub, false)}</b>
-              <span>Grand total</span><span className="grand">{money(total)}</span>
+              <span>Grand total</span><span className="grand">{pricing.valid ? money(total) : '—'}</span>
             </div>
           </div>
+          {pricing.error && <p className="errbox" role="alert">{pricing.error}</p>}
           {saved.length > 0 && (
             <div className="card">
               <h2 style={{ marginBottom: 8 }}>Saved quotes</h2>

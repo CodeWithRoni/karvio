@@ -104,7 +104,7 @@ async function retryChecks() {
 }
 
 function invoiceChecks() {
-  const fixture = { sale: { invoice_no: 'TEST', customer_id: 'C', customer_name: 'Customer', total: 100, subtotal: 100, paid: 100, credit_used: 20, due: 0, status: 'active', payments: [{ account_name: 'Cash', amount: 80 }] }, shop: { shop_name: 'Test' }, customer: { phones: '01700000000' }, items: [], returns: [], expires_at: '2026-11-26' };
+  const fixture = { sale: { invoice_no: 'TEST', customer_id: 'C', customer_name: 'Customer', total: 100, subtotal: 100, paid: 100, credit_used: 20, due: 0, status: 'active', payments: [{ account_name: 'Cash', amount: 80 }] }, shop: { shop_name: 'Test', invoice_template: 'business' }, customer: { phones: '01700000000' }, items: [], returns: [], expires_at: '2026-11-26' };
   const format = { money: n => 'Tk ' + n, splitList: x => String(x).split(','), fdate: x => x, fdatetime: x => x, qty: x => x, today: () => '2026-11-11' };
   let state = 0;
   const hooks = { ...React, useState: () => [state++ === 0 ? fixture : '', () => {}], useEffect: () => {} };
@@ -116,7 +116,7 @@ function invoiceChecks() {
   }
   const publicInvoice = load('src/pages/PublicInvoice.jsx', { react: hooks, '../lib/api': {}, '../lib/store': {}, '../lib/format': { ...format, qty: x => x } });
   const html = renderToStaticMarkup(publicInvoice.default({ token: 'fixture' }));
-  equal((/<span>Paid<\/span><span>([^<]+)/.exec(html) || [])[1], 'Tk 100', 'public invoice does not add advance twice');
+  equal((/<span>Paid now<\/span><span>([^<]+)/.exec(html) || [])[1], 'Tk 100', 'public invoice does not add advance twice');
   const docs = load('src/lib/salesDocs.js', {
     './store': { useStore: { getState: () => ({ settings: { invoice_template: 'business' } }) } },
     './format': format, './export': { esc: x => String(x ?? ''), shopContacts: () => '', printHtml: () => {} }, './purchaseDocs': { pdfPages: () => {} }

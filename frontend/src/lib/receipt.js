@@ -1,3 +1,4 @@
+import { quotationTotals } from './quotationTotals';
 // Thermal receipts (58mm / 80mm), A4 quotation and ledger statements.
 import { useStore } from './store';
 import { money, qty, fdate, fdatetime, splitList, today } from './format';
@@ -98,8 +99,9 @@ function safeJson(s, d) { try { return JSON.parse(s); } catch { return d; } }
 /** A4 quotation for the PC builder. lines = [{name, qty, price, warranty}] */
 export function printQuotation({ title, customer, phone, lines, discount = 0, note = '', validDays = 7 }) {
   const s = useStore.getState().settings;
-  const sub = lines.reduce((a, l) => a + l.qty * l.price, 0);
   const no = 'Q-' + Date.now().toString().slice(-7);
+  const pricing = quotationTotals(lines, discount), sub = pricing.subtotal;
+  if (!pricing.valid) throw new Error(pricing.error);
   const rows = lines.map((l, i) => `<tr><td>${i + 1}</td><td><b>${esc(l.group || '')}</b>${l.group ? '<br>' : ''}${esc(l.name)}</td><td class="r">${esc(l.warranty || '—')}</td><td class="r">${esc(l.qty)}</td><td class="r">${esc(money(l.price, false))}</td><td class="r">${esc(money(l.qty * l.price, false))}</td></tr>`).join('');
   printHtml(`
   <style>
@@ -119,7 +121,7 @@ export function printQuotation({ title, customer, phone, lines, discount = 0, no
   <tfoot>
     <tr class="tot"><td colspan="5" class="r">Subtotal</td><td class="r">${esc(money(sub))}</td></tr>
     ${discount ? `<tr class="tot"><td colspan="5" class="r">Discount</td><td class="r">-${esc(money(discount))}</td></tr>` : ''}
-    <tr class="tot big"><td colspan="5" class="r">Grand total</td><td class="r">${esc(money(sub - discount))}</td></tr>
+    <tr class="tot big"><td colspan="5" class="r">Grand total</td><td class="r">${esc(money(pricing.total))}</td></tr>
   </tfoot></table>
   ${note ? `<div class="note"><b>Notes:</b> ${esc(note)}</div>` : ''}
   <div class="note">Prices may change with market rates after the validity period. Stock is not reserved until an order is confirmed.</div>`);

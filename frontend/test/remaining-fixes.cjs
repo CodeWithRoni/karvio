@@ -83,6 +83,7 @@ assert.match(html,/Previous Due<\/td><td>:<\/td><td class="r">200\.00/);checks++
 assert.ok(!html.includes('99,999'));checks++;
 html=docs.saleDocHtml({...document,sale:{...document.sale,balance_snapshot:''}});
 assert.match(html,/Previous Due<\/td><td>:<\/td><td class="r">Not recorded/);checks++;
+imports['./quotationTotals']=load('../src/lib/quotationTotals.js',{'./format':{round2:n=>Math.round((Number(n)+Number.EPSILON)*100)/100}});
 const receipt=load('../src/lib/receipt.js',imports);
 receipt.printQuotation({lines:[],customer:'Test'});assert.ok(printed.includes('2026-11-11'));checks++;
 const date=load('../src/lib/format.js',{'./store':{useStore:settings,shopDay:()=> '2026-11-11'}});

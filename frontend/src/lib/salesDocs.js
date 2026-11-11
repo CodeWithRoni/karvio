@@ -19,7 +19,7 @@ const css = `
   .sdoc .cx{margin:8px 0;padding:6px 10px;border:2px solid #c0392b;color:#c0392b;font-weight:800;text-align:center}
   .sdoc .log li{margin:3px 0}.sdoc .foot{margin-top:18px;display:flex;justify-content:space-between;font-size:11px;color:#444}
 `;
-const head = (title, right) => { const s = useStore.getState().settings; return `<div class="top"><div><h1>${esc(s.shop_name || 'Karvio')}</h1><div>${esc(s.shop_address || '')}</div><div>${shopContacts(s)}</div></div><div><h2>${title}</h2><div style="text-align:right">${right}</div></div></div>`; };
+const head = (title, right, settings = useStore.getState().settings) => { const s = settings; return `<div class="top"><div><h1>${esc(s.shop_name || 'Karvio')}</h1><div>${esc(s.shop_address || '')}</div><div>${shopContacts(s)}</div></div><div><h2>${title}</h2><div style="text-align:right">${right}</div></div></div>`; };
 const pays = (x) => { try { return Array.isArray(x.payments) ? x.payments : JSON.parse(x.payments || '[]'); } catch { return []; } };
 const sers = (v) => splitList(String(v || '').replace(/\n/g, ','));
 // Invoice templates (Settings → Invoice). They restyle the same content.
@@ -32,9 +32,9 @@ const tplCss = `
   .sdoc .note-line{margin-top:14px;text-align:left;white-space:pre-wrap;font-size:11.5px}
 `;
 const pageCss = (paper) => paper === 'a5' ? '@page{size:A5;margin:8mm}.sdoc{font-size:10.5px}.sdoc h1{font-size:16px}.sdoc h2{font-size:16px}' : '@page{size:A4;margin:12mm}';
-const isBiz = () => useStore.getState().settings.invoice_template === 'business';
+const isBiz = (list = []) => list.length ? list.some(d => (d.shop || useStore.getState().settings).invoice_template === 'business') : useStore.getState().settings.invoice_template === 'business';
 const wrap = (blocks, paper = 'a4', biz = false) => `<style>${biz && paper !== 'a5' ? bizPageCss() : pageCss(paper)}body{margin:0}${css}${tplCss}${biz ? bizCss : ''}.sdoc+.sdoc,.bdoc+.bdoc{page-break-before:always;break-before:page}</style>${blocks.join('')}`;
-const noteHtml = () => { const n = String(useStore.getState().settings.invoice_note || '').trim(); return n ? `<div class="note-line"><b>Note:</b> ${esc(n)}</div>` : ''; };
+const noteHtml = (settings = useStore.getState().settings) => { const n = String(settings.invoice_note || '').trim(); return n ? `<div class="note-line"><b>Note:</b> ${esc(n)}</div>` : ''; };
 
 /* ---------------- "Business" template: centred letterhead, grey bill bar, boxed info, page footer ---------------- */
 const ONES = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
@@ -93,7 +93,7 @@ const bizPageCss = () => {
     @bottom-right{content:"Page " counter(page) " of " counter(pages);${box}}}`;
 };
 function businessInvoiceHtml(d) {
-  const st = useStore.getState().settings;
+  const st = d.shop || useStore.getState().settings;
   const s = d.sale, c = d.customer || {};
   const row = (k, v) => `<tr><td class="k">${k}</td><td class="c">:</td><td>${v}</td></tr>`;
   const rows = d.items.map((i, n) => {
@@ -101,11 +101,11 @@ function businessInvoiceHtml(d) {
     return `<tr><td class="cn">${n + 1}</td><td>${esc(i.name)}${sn.length ? `<div class="sn">${esc(sn.join(', '))}</div>` : ''}${i.returned_qty ? `<div class="sn">Returned: ${esc(qty(i.returned_qty))}</div>` : ''}</td>
       <td class="cn">${Number(i.warranty_days) > 0 ? esc(i.warranty_days) : '—'}</td><td class="r">${esc(m2(i.price, false))}</td><td class="cn">${esc(qty(i.qty))}${i.unit && i.unit !== 'pcs' ? ' ' + esc(i.unit) : ''}</td><td class="r">${esc(m2(i.total, false))}</td></tr>`;
   }).join('');
-  const total = Number(s.total) || 0, paid = Number(s.paid) || 0;
+  const total = Number(s.total) || 0, paid = Number(s.live_invoice ? (s.paid_now ?? s.paid) : s.paid) || 0;
   let snapshot = null;
   try { snapshot = typeof s.balance_snapshot === 'string' ? JSON.parse(s.balance_snapshot || 'null') : s.balance_snapshot; } catch {}
   const recorded = snapshot && Number.isFinite(Number(snapshot.previous)) && Number.isFinite(Number(snapshot.outstanding));
-  const outstanding = recorded ? Number(snapshot.outstanding) : !s.customer_id ? Number(s.due) || 0 : null;
+  const outstanding = s.live_invoice ? Number(s.due_now ?? s.due) || 0 : recorded ? Number(snapshot.outstanding) : !s.customer_id ? Number(s.due) || 0 : null;
   const prev = recorded ? Number(snapshot.previous) : !s.customer_id ? 0 : null;
   const user = esc(s.user_name || '');
   const phone = c.phones ? esc(splitList(c.phones).join(', ')) : '';
@@ -123,10 +123,11 @@ function businessInvoiceHtml(d) {
     <div class="bsum">
       <div><div><b>Amount In Words :</b> ${esc(amountInWords(total))}</div>
         <table class="bdue">
-          <tr><td class="k">Previous Due</td><td>:</td><td class="r">${prev === null ? 'Not recorded' : esc(m2(prev, false))}</td></tr>
+          <tr><td class="k">${s.live_invoice ? 'Previous balance at sale' : 'Previous Due'}</td><td>:</td><td class="r">${prev === null ? 'Not recorded' : esc(m2(prev, false))}</td></tr>
           <tr><td class="k">Sales Amount</td><td>:</td><td class="r">${esc(m2(total, false))}</td></tr>
-          <tr><td class="k">Collected Amount</td><td>:</td><td class="r">${esc(m2(paid, false))}</td></tr>
-          <tr><td class="k">Outstanding Amount</td><td>:</td><td class="r">${outstanding === null ? 'Not recorded' : esc(m2(outstanding, false))}</td></tr>
+          ${s.live_invoice && s.returned_total > 0 ? `<tr><td class="k">Returned value</td><td>:</td><td class="r">${esc(m2(s.returned_total))}</td></tr><tr><td class="k">Net invoice amount</td><td>:</td><td class="r">${esc(m2(s.net_total))}</td></tr>` : ''}
+          <tr><td class="k">${s.live_invoice ? 'Paid now' : 'Collected Amount'}</td><td>:</td><td class="r">${esc(m2(paid, false))}</td></tr>
+          <tr><td class="k">${s.live_invoice ? 'Invoice due now' : 'Outstanding Amount'}</td><td>:</td><td class="r">${outstanding === null ? 'Not recorded' : esc(m2(outstanding, false))}</td></tr>
           ${s.next_payment_date && s.due > 0 ? `<tr><td class="k">Next Payment Date</td><td>:</td><td class="r">${esc(fdate(s.next_payment_date))}</td></tr>` : ''}
         </table></div>
       <table class="btot">
@@ -136,7 +137,7 @@ function businessInvoiceHtml(d) {
       </table>
     </div>
     <div class="bsign"><span>Authorised Signature And Company Stamp</span></div>
-    ${noteHtml()}
+    ${noteHtml(st)}
     <div class="bfoot"><span>Print Date: ${esc(fdate(today()))}</span><span>Print Time: ${esc(now.toLocaleTimeString('en-US'))}</span><span>${SOFTWARE_LINE}</span><span>Page 1 of 1</span></div>
   </div>`;
 }
@@ -150,31 +151,33 @@ export function saleInvoiceHtml(d) {
       <td>${esc(i.unit || 'pcs')}</td><td class="r">${esc(qty(i.qty))}</td><td class="r">${esc(money(i.price, false))}</td><td class="r">${esc(money(i.total, false))}</td></tr>`;
   }).join('');
   const pl = pays(s);
-  const tpl = useStore.getState().settings.invoice_template || 'classic';
+  const st = d.shop || useStore.getState().settings;
+  const tpl = st.invoice_template || 'classic';
   if (tpl === 'business') return businessInvoiceHtml(d);
-  return `<div class="sdoc tpl-${esc(tpl)}">${head('INVOICE', `<b>${esc(s.invoice_no)}</b><br>${esc(fdatetime(s.created_at || s.date))}<br><span class="sm">Served by ${esc(s.user_name || '')}</span>`)}
+  return `<div class="sdoc tpl-${esc(tpl)}">${head('INVOICE', `<b>${esc(s.invoice_no)}</b><br>${esc(fdatetime(s.created_at || s.date))}<br><span class="sm">Served by ${esc(s.user_name || '')}</span>`, st)}
     ${s.status === 'cancelled' ? `<div class="cx">CANCELLED — ${esc(s.cancel_reason || '')}</div>` : ''}
     <div class="meta">
       <div class="box"><b class="t">Customer</b><b>${esc(s.customer_name || 'Walk-in')}</b>${c.phones ? `<div>Phone: ${esc(splitList(c.phones).join(', '))}</div>` : ''}${c.addresses ? `<div>${esc(String(c.addresses).split('|').join('; '))}</div>` : ''}</div>
-      <div class="box"><b class="t">Payment</b>${pl.length ? pl.map((x) => `<div>${esc(x.account_name || 'Paid')}: <b>${esc(money(x.amount, false))}</b></div>`).join('') : ''}${s.credit_used ? `<div>Advance used: <b>${esc(money(s.credit_used, false))}</b></div>` : ''}${!pl.length && !s.credit_used ? '<div>Sold on due</div>' : ''}${s.note ? `<div class="sm">Note: ${esc(s.note)}</div>` : ''}</div>
+      <div class="box"><b class="t">${s.live_invoice ? 'Payments at sale' : 'Payment'}</b>${pl.length ? pl.map((x) => `<div>${esc(x.account_name || 'Paid')}: <b>${esc(money(x.amount, false))}</b></div>`).join('') : ''}${s.credit_used ? `<div>Advance used: <b>${esc(money(s.credit_used, false))}</b></div>` : ''}${!pl.length && !s.credit_used ? '<div>Sold on due</div>' : ''}${s.note ? `<div class="sm">Note: ${esc(s.note)}</div>` : ''}</div>
     </div>
     <table><thead><tr><th style="width:28px">#</th><th>Product / serial / warranty</th><th style="width:56px">Unit</th><th class="r" style="width:60px">Qty</th><th class="r" style="width:90px">Price</th><th class="r" style="width:96px">Amount</th></tr></thead><tbody>${rows}</tbody></table>
     <table class="tot">
       <tr><td>Subtotal</td><td class="r">${esc(money(s.subtotal, false))}</td></tr>
       ${s.discount ? `<tr><td>Discount</td><td class="r">-${esc(money(s.discount, false))}</td></tr>` : ''}
       <tr class="g"><td>Total</td><td class="r">${esc(money(s.total))}</td></tr>
-      <tr><td>Paid</td><td class="r">${esc(money(s.paid, false))}</td></tr>
+      ${s.live_invoice && s.returned_total > 0 ? `<tr><td>Returned value</td><td class="r">${esc(money(s.returned_total, false))}</td></tr><tr><td>Net invoice amount</td><td class="r">${esc(money(s.net_total, false))}</td></tr>` : ''}
+      <tr><td>${s.live_invoice ? 'Paid now' : 'Paid'}</td><td class="r">${esc(money(s.live_invoice ? (s.paid_now ?? s.paid) : s.paid, false))}</td></tr>
       ${s.due > 0 ? `<tr><td><b>Due</b></td><td class="r"><b>${esc(money(s.due))}</b></td></tr>` : ''}
       ${d.customer && d.customer.balance !== undefined ? `<tr><td>Total balance due</td><td class="r">${esc(money(d.customer.balance, false))}</td></tr>` : ''}
       ${s.next_payment_date && s.due > 0 ? `<tr><td>Next payment date</td><td class="r">${esc(fdate(s.next_payment_date))}</td></tr>` : ''}
     </table>
     ${d.returns && d.returns.length ? `<p class="sm">Returns: ${esc(d.returns.map((r) => `${r.return_no} (${money(r.total, false)}, ${r.status})`).join(', '))}</p>` : ''}
-    <div class="foot"><span>Printed ${esc(new Date().toLocaleString())}</span><span>Customer signature: ____________________</span></div>${noteHtml()}</div>`;
+    <div class="foot"><span>Printed ${esc(new Date().toLocaleString())}</span><span>Customer signature: ____________________</span></div>${noteHtml(st)}</div>`;
 }
-export const printSales = (list, paper) => printHtml(wrap(list.map(saleInvoiceHtml), paper, isBiz()));
+export const printSales = (list, paper) => printHtml(wrap(list.map(saleInvoiceHtml), paper, isBiz(list)));
 /** One sale invoice as the full document printSales prints (A4 / A5, with the chosen template). */
-export const saleDocHtml = (d, paper = 'a4') => wrap([saleInvoiceHtml(d)], paper, isBiz());
-export const pdfSales = (list, filename) => pdfPages(list.map(saleInvoiceHtml), css + tplCss + (isBiz() ? bizCss : ''), filename);
+export const saleDocHtml = (d, paper = 'a4') => wrap([saleInvoiceHtml(d)], paper, isBiz([d]));
+export const pdfSales = (list, filename) => pdfPages(list.map(saleInvoiceHtml), css + tplCss + (isBiz(list) ? bizCss : ''), filename);
 export async function excelSales(list, filename) {
   const XLSX = await import('xlsx');
   const a = [['Invoice #', 'Date', 'Status', 'Customer', 'Phone', 'Address', 'Subtotal', 'Discount', 'Total', 'Paid', 'Due', 'Payment', 'Served by', 'Note']];

@@ -1,3 +1,4 @@
+import { purchaseDetails } from '../lib/purchaseDetails';
 import { returnValue } from '../lib/returnValue';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -29,7 +30,7 @@ export default function Purchases() {
         <>
           {tab === 'list' ? <PurchaseList list={list} f={lf} setF={setLf} onOpen={setOpen} /> : <div className="filters"><DateRange {...range} onChange={setRange} /></div>}
           {tab === 'list' ? null : (
-            <DataTable title="Purchase returns" loading={rets.loading} rows={rets.data || []} rowClass={(r) => (r.status === 'cancelled' ? 'dim' : '')}
+            <DataTable title="Purchase returns" sumFilter={(r) => r.status === 'active'} loading={rets.loading} rows={rets.data || []} rowClass={(r) => (r.status === 'cancelled' ? 'dim' : '')}
               columns={[
                 { key: 'date', label: 'Date', type: 'date' }, { key: 'return_no', label: 'Return #' }, { key: 'invoice_no', label: 'Purchase' },
                 { key: 'supplier_name', label: 'Supplier' }, { key: 'items_text', label: 'Items', className: 'clip' },
@@ -63,7 +64,7 @@ function PurchaseList({ list, f, setF, onOpen }) {
   const out = async (kind) => {
     setBusy(kind);
     try {
-      const docs = await api('purchases.details', { ids });
+      const docs = await purchaseDetails(ids);
       const name = ids.length === 1 ? `purchase-${docs[0].purchase.invoice_no}` : `purchases-${ids.length}-invoices`;
       if (kind === 'excel') await excelPurchases(docs, `${name}.xlsx`);
       else if (kind === 'pdf') await pdfPurchases(docs, `${name}.pdf`);

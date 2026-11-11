@@ -187,7 +187,7 @@ function PartyDetail({ kind, id, onClose, onEdit, onChanged, onDeleted }) {
   const liveBal = st.data && !range.from && !range.to ? st.data.closing : Number(party?.balance) || 0;
   const zero = party && Math.abs(liveBal) < 0.005;
   const del = async () => {
-    if (!(await ask({ title: `Delete ${kind}?`, message: <>Delete <b>“{party.name}”</b> permanently? Their balance is 0. Old invoices keep the name.</> }))) return;
+    if (!(await ask({ title: `Delete ${kind}?`, message: <>Delete <b>“{party.name}”</b> permanently? Only unused records can be deleted. For a record with history, use Edit details → turn Active off.</> }))) return;
     try { await run(() => api(c.del, { id }), `${party.name} deleted`); onDeleted(); } catch { /* toast shown */ }
   };
 
@@ -195,7 +195,7 @@ function PartyDetail({ kind, id, onClose, onEdit, onChanged, onDeleted }) {
     <Modal open onClose={onClose} size="lg" title={st.data ? st.data.party : 'Ledger'}
       footer={st.data && <>
         {party && <Btn onClick={() => onEdit(party)}>Edit details</Btn>}
-        {party && <Btn kind="danger" busy={busy} disabled={!zero} onClick={del} title={zero ? `Delete this ${kind}` : `Only a ${kind} with 0 balance can be deleted`}>Delete</Btn>}
+        {party && <Btn kind="danger" busy={busy} disabled={!zero || party.has_history} onClick={del} title={party.has_history ? `This ${kind} has transaction or job history. Turn Active off in Edit details instead.` : zero ? `Delete an unused ${kind}` : `Only a ${kind} with 0 balance can be deleted`}>Delete</Btn>}
         <div className="seg">
           <button onClick={() => exportParties(kind, [id], 'excel')}>Excel</button>
           <button onClick={() => exportParties(kind, [id], 'pdf')}>PDF</button>
@@ -204,6 +204,7 @@ function PartyDetail({ kind, id, onClose, onEdit, onChanged, onDeleted }) {
         <span className="spacer" />
         <Btn kind="primary" onClick={() => setPay(true)}>{c.payLabel}</Btn>
       </>}>
+      {party?.has_history && <p className="muted">Deletion is blocked because this profile or its combined profile has transaction or job history, including cancelled entries. Use Edit details to turn Active off.</p>}
       {party && !zero && <div className="muted del-note">Delete is available when the balance is 0 (now {money(liveBal)}).</div>}
       {st.loading && !st.data && <Loading />}
       <ErrorBox error={st.error} onRetry={st.reload} />

@@ -1,3 +1,69 @@
+Latest owner instruction authorizes publishing all pending follow-up fixes and transaction-history deletion protection. Supabase API version 11 is ACTIVE; all six deployed files match tested source, and public ping is healthy. No schema or business-data migration was performed. Earlier local-only notes below are historical for this publication.
+
+## Latest local deletion protection — not published
+
+```json
+{
+  "scope": "follow-up fixes plus explicit transaction-history deletion protection",
+  "deployment": "owner-authorized publication; API version 11 deployed and verified; no business-data migration",
+  "regularSuite": "passed",
+  "supabaseGatewayChecks": 63,
+  "allAuditBackendRegressions": "passed including voided/cancelled and combined-profile history",
+  "latestFocusedBrowser": {
+    "passed": 6,
+    "failed": 0
+  },
+  "priorFullBrowser": {
+    "passed": 71,
+    "failed": 0,
+    "before": "latest shared-history metadata and Delete-button refinement"
+  },
+  "productionBuild": "passed",
+  "schemaMigrationRequired": false
+}
+```
+
+Owner explicitly requested preventing any customer/supplier with transaction history from being deleted. A shared indexed history check now drives both API has_history metadata and the server delete guard, including cancelled invoices/voided payments, jobs/claims, and a combined profile's linked side. Delete is disabled in the directory detail even at zero balance when history exists. The explanatory note points to Inactive. Unused zero-balance profiles remain deletable. No live data or deployment changed.
+
+Validation for this latest change: full regular suite passed; Supabase gateway and all three audit regression groups passed (including new zero-balance voided-payment/cancelled-invoice and combined-profile cases); focused browser suite 6/6 passed; final production build/assets passed. Earlier full 71-browser run below predates only this last history-metadata/button refinement.
+
+## Local follow-up fixes F01–F10 — not pushed or deployed
+
+```json
+{
+  "scope": "follow-up F01-F10 plus Sales report ownership, retaining B01-B19 fixes",
+  "deployment": "local only; no push, API deployment or live data change",
+  "regularSuite": "passed, including 30 new client checks",
+  "supabaseGatewayChecks": 63,
+  "followupBackendRegressions": "passed with denied-write rollback and legacy compatibility checks",
+  "priorAuditRegressions": "passed",
+  "browser": {
+    "engine": "Microsoft Edge",
+    "passed": 71,
+    "failed": 0
+  },
+  "productionBuild": "passed",
+  "schemaMigrationRequired": false,
+  "legacyWarranty": "unique historical line inferred; ambiguous claims require review",
+  "previouslyDeletedParties": "not automatically reconstructed"
+}
+```
+
+Latest owner request authorizes fixing the follow-up audit, including Sales report ownership consistency. Current live baseline remains main fd4a920fb8cd3f2eed0380b780f69f8b1a26069e / Supabase API version 9. No production reads of business data, writes, resets, deployments or GitHub pushes were performed for these fixes. Earlier publication notes below refer to the previous release.
+
+- F01/F06: unused zero-balance parties can still be deleted. Financial/job history prevents permanent deletion and points to Inactive; open repairs have an explicit guard. Payment cancellation also rejects a pre-existing missing party instead of creating invisible debt. Records already deleted in a live database are not reconstructed or migrated by this local patch.
+- F02: serial tracking cannot be switched off after serial history exists, even at stock zero; unused serial products remain editable.
+- F03: new warranty claims retain the exact validated sale_item_id in the immutable first claim-log entry (existing JSON log column). Replacement checks only that line. Legacy claims infer a line only when unique by serial or warranty expiry; ambiguous legacy claims stop for review instead of guessing. No schema migration/backfill is required.
+- F04: public API adds paid_now/net_total/returned_total/live_invoice while retaining historical paid/paid_at_sale/original_due. Public view and print/PDF use live amounts; staff invoices keep frozen balances. Public document shop/template/note are passed directly to the renderer, without changing shared staff settings. Active returns are shown separately so net amount, paid and due reconcile.
+- F05: stocked products cannot be deleted. Explicit stock adjustments write off inventory; zero-stock products with event/job/claim history are deactivated, preserving the audit trail.
+- F07: return table totals, selected summary exports and all-status Sales/Purchase Return reports count active financial rows only. Cancelled documents remain visible.
+- F08: selected purchase documents load in checked batches of 200; oversized server requests fail explicitly rather than truncate. The browser export of 201 selected invoices and helper batching of 501 documents are covered.
+- F09: Purchase Reports show Due at purchase and Due now for invoice, daily, monthly and yearly groups, including totals.
+- F10: one quotation calculator validates quantity/price/discount and rounds invoice lines consistently. Invalid discount disables save/POS/print, and the print helper also refuses invalid totals. Corrected valid quotations remain usable.
+- Sales report permission: invoice and grouped Sales reports honor sales.all just like invoice details; an own-sales reporter cannot select another staff member via user_id. Other shop-wide dashboard/report permissions are not redefined by this patch.
+
+Validation: full regular suite including 30 new client checks passed; Supabase gateway (63 checks), original B01–B19 regressions and new follow-up backend regressions passed; focused 5-case browser suite passed; production build/assets passed. Full Edge browser suite: 71/71 passed, including all 66 prior browser workflows and five new follow-up cases.
+
 Owner authorized publication of all 19 audit fixes. Supabase karvio-api version 9 is ACTIVE; deployed sources match all six tested local files; public ping is healthy and advertises chunked restore. No schema/data migration performed. Main push and CI/Pages verification are in progress. Earlier local-only notes below are historical.
 
 ## Local remaining audit fixes — 11 November 2026 (NOT DEPLOYED)

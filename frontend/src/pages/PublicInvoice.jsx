@@ -27,7 +27,7 @@ export default function PublicInvoice({ token }) {
     return () => { live = false; };
   }, [token]);
 
-  const doc = d && { sale: d.sale, items: d.items, customer: d.customer, returns: d.returns };
+  const doc = d && { sale: d.sale, items: d.items, customer: d.customer, returns: d.returns, shop: d.shop };
   const download = async (kind) => {
     setBusy(kind);
     try {
@@ -98,9 +98,10 @@ export default function PublicInvoice({ token }) {
           <div><span>Subtotal</span><span>{money(s.subtotal, false)}</span></div>
           {Number(s.discount) > 0 && <div><span>Discount</span><span>-{money(s.discount, false)}</span></div>}
           <div className="g"><span>Total</span><span>{money(s.total)}</span></div>
-          {(s.payments || []).map((p, k) => <div key={k} className="sm"><span>Paid · {p.account_name || 'Payment'}</span><span>{money(p.amount, false)}</span></div>)}
-          {Number(s.credit_used) > 0 && <div className="sm"><span>Advance used</span><span>{money(s.credit_used, false)}</span></div>}
-          <div><span>Paid</span><span>{money(s.paid, false)}</span></div>
+          {Number(s.returned_total) > 0 && <><div><span>Returned value</span><span>-{money(s.returned_total, false)}</span></div><div><span>Net invoice amount</span><span>{money(s.net_total, false)}</span></div></>}
+          {(s.payments || []).map((p, k) => <div key={k} className="sm"><span>At sale · {p.account_name || 'Payment'}</span><span>{money(p.amount, false)}</span></div>)}
+          {Number(s.credit_used) > 0 && <div className="sm"><span>Advance used at sale</span><span>{money(s.credit_used, false)}</span></div>}
+          <div><span>Paid now</span><span>{money(s.paid_now ?? s.paid, false)}</span></div>
           {due > 0.004 && <div className="due"><span>Due</span><span>{money(due)}</span></div>}
           {due > 0.004 && s.next_payment_date && <div className="sm"><span>Next payment date</span><span>{fdate(s.next_payment_date)}</span></div>}
         </section>

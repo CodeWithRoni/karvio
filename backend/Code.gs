@@ -938,8 +938,8 @@ function productSave_(p, user) {
       return all_(table).some(function(i) { return i.product_id === cur.id && !String(i.serials || '').trim(); });
     }))) fail_('Cannot enable serial tracking on a product with nonserial stock or inventory history. Create a separate serial-tracked product');
     if (cur && service) row.cost_price = 0;
-    if (cur && cur.has_warranty && cur.warranty_type === 'serial' && (!hasW || wType !== 'serial') && cur.stock > 0)
-      fail_('Cannot change warranty type while serial-tracked stock exists');
+    if (cur && isSerialProduct_(cur) && (!hasW || wType !== 'serial') && (num_(cur.stock) > 0 || all_('SerialItems').some(function(i) { return i.product_id === cur.id; })))
+      fail_('Cannot change warranty type after serial-tracked stock or serial history exists. Create a separate product');
     return update_('Products', p.id, row);
   }
   row.stock = 0; row.created_at = now_();
@@ -995,6 +995,11 @@ function productBarcodes_(p, user) {
   return { assigned: out };
 }
 function productDelete_(p, user) {
+  var product = all_('Products').filter(function(x) { return x.id === p.id; })[0];
+  if (!product) fail_('Product not found');
+  if (Math.abs(num_(product.stock)) > 1e-9) fail_('This product still has stock. Return or write off the stock before deleting it');
+  var referenced = all_('ItemEvents').some(function(i) { return i.product_id === p.id; }) || all_('WarrantyClaims').some(function(i) { return i.product_id === p.id; }) || all_('Repairs').some(function(job) { return repairParts_(job).some(function(i) { return i.product_id === p.id; }); });
+  if (referenced) { update_('Products', p.id, { active: false }); audit_(user, 'product_deactivate', {id:p.id}); return {deactivated:true}; }
   var used = all_('SaleItems').some(function (i) { return i.product_id === p.id; }) || all_('PurchaseItems').some(function (i) { return i.product_id === p.id; });
   if (used) { update_('Products', p.id, { active: false }); return { deactivated: true }; }
   remove_('Products', p.id); return { deleted: true };
@@ -1038,10 +1043,26 @@ function auditOpening_(user, kind, rec, from, to) {
 }
 function joinList_(v, sep) { return (Array.isArray(v) ? v : String(v || '').split(sep)).map(function (x) { return String(x).trim(); }).filter(Boolean).join(sep); }
 
+/** References survive cancellation: only a completely unused party may be deleted. */
+function partyHistory_() {
+  if (!_txn && _mem.__partyHistory) return _mem.__partyHistory;
+  var history = { customer: {}, supplier: {} };
+  var tables = { customer: ['Sales','SalesReturns','CustomerLedger','Repairs','WarrantyClaims'], supplier: ['Purchases','PurchaseReturns','SupplierLedger'] };
+  Object.keys(tables).forEach(function(kind) {
+    tables[kind].forEach(function(name) {
+      all_(name).forEach(function(row) { var id = row[kind + '_id']; if (id) history[kind][id] = true; });
+    });
+  });
+  // Combined customer/supplier profiles represent the same party on both sides.
+  all_('Customers').forEach(function(c) { if (c.link_id && history.supplier[c.link_id]) history.customer[c.id] = true; });
+  all_('Suppliers').forEach(function(c) { if (c.link_id && history.customer[c.link_id]) history.supplier[c.id] = true; });
+  if (!_txn) _mem.__partyHistory = history;
+  return history;
+}
 function customersList_() {
-  var bal = customerBalances_(), sb = null;
+  var bal = customerBalances_(), sb = null, history = partyHistory_().customer;
   return all_('Customers').map(function (c) {
-    var o = Object.assign({}, c); delete o._row; o.balance = bal[c.id] || 0; o.combined = !!c.link_id;
+    var o = Object.assign({}, c); delete o._row; o.balance = bal[c.id] || 0; o.has_history = !!history[c.id]; o.combined = !!c.link_id;
     if (c.link_id) { sb = sb || supplierBalances_(); o.link_balance = sb[c.link_id] || 0; }
     return o;
   });
@@ -1095,9 +1116,9 @@ function customerQuickAdd_(p, user) {
   var o = Object.assign({}, c); delete o._row; o.balance = 0; return o;
 }
 function suppliersList_() {
-  var bal = supplierBalances_(), cb = null;
+  var bal = supplierBalances_(), cb = null, history = partyHistory_().supplier;
   return all_('Suppliers').map(function (c) {
-    var o = Object.assign({}, c); delete o._row; o.balance = bal[c.id] || 0; o.combined = !!c.link_id;
+    var o = Object.assign({}, c); delete o._row; o.balance = bal[c.id] || 0; o.has_history = !!history[c.id]; o.combined = !!c.link_id;
     if (c.link_id) { cb = cb || customerBalances_(); o.link_balance = cb[c.link_id] || 0; }
     return o;
   });
@@ -1737,9 +1758,12 @@ function invoicePublic_(p) {
   ['shop_name', 'shop_address', 'shop_phone', 'shop_tel', 'shop_email', 'shop_web', 'shop_social', 'shop_footer', 'currency', 'invoice_template', 'invoice_note']
     .forEach(function (k) { shop[k] = st[k] || ''; });
   var pays = []; try { pays = (typeof s.payments === 'string' ? JSON.parse(s.payments || '[]') : s.payments) || []; } catch (e) {}
+  var returnedTotal = round_(sum_(d.returns.filter(function(r) { return r.status === 'active'; }), function(r) { return num_(r.total); }));
+  var netTotal = s.status === 'active' ? round_(Math.max(num_(s.total) - returnedTotal, 0)) : 0;
+  var paidNow = round_(Math.max(netTotal - num_(d.sale.due_now), 0));
   return {
     sale: Object.assign(pick(s, ['invoice_no', 'date', 'customer_id', 'customer_name', 'subtotal', 'discount', 'total', 'paid', 'credit_used', 'due', 'note', 'status', 'user_name', 'created_at', 'cancel_reason', 'next_payment_date', 'balance_snapshot']),
-      { original_due: s.due, due: d.sale.due_now, due_now: d.sale.due_now, payments: pays.map(function (x) { return { account_name: x.account_name || '', amount: x.amount }; }) }),
+      { original_due: s.due, paid_at_sale: s.paid, paid_now: paidNow, net_total: netTotal, returned_total: returnedTotal, live_invoice: true, due: d.sale.due_now, due_now: d.sale.due_now, payments: pays.map(function (x) { return { account_name: x.account_name || '', amount: x.amount }; }) }),
     items: d.items.map(function (i) { return pick(i, ['id', 'name', 'unit', 'qty', 'price', 'total', 'serials', 'warranty_type', 'warranty_days', 'warranty_expiry', 'returned_qty']); }),
     customer: d.customer ? pick(d.customer, ['name', 'phones', 'addresses', 'balance']) : null,
     returns: d.returns.map(function (r) { return pick(r, ['return_no', 'date', 'total', 'status']); }),
@@ -2270,7 +2294,8 @@ function purchaseDetail_(p) {
 }
 /** Full details of several purchases at once (for exporting / printing the selected invoices). */
 function purchasesDetails_(p) {
-  var ids = Array.isArray(p.ids) ? p.ids.slice(0, 200) : [];
+  var ids = Array.isArray(p.ids) ? p.ids : [];
+  if (ids.length > 200) fail_('Export at most 200 purchases per request; use batched export');
   if (!ids.length) fail_('Select at least one purchase');
   return ids.map(function (id) { return purchaseDetail_({ id: id }); });
 }
@@ -2677,6 +2702,10 @@ function partyDelete_(kind, p, user) {
   var party = all_(table).filter(function (x) { return x.id === p.id; })[0]; if (!party) fail_((kind === 'customer' ? 'Customer' : 'Supplier') + ' not found');
   var bal = round_((kind === 'customer' ? customerBalances_() : supplierBalances_())[party.id] || 0);
   if (Math.abs(bal) > 0.004) fail_(party.name + ' still has a balance of ' + bal + '. Settle it to 0 before deleting');
+  if (kind === 'customer' && all_('Repairs').some(function(job) { return job.customer_id === party.id && repairOpen_(job); }))
+    fail_('This customer has open repair jobs. Finish or cancel the jobs before deleting');
+  if (partyHistory_()[kind][party.id])
+    fail_('This ' + kind + ' has transaction or job history. Mark it inactive in Edit details instead of deleting');
   if (party.link_id) { var twinT = kind === 'customer' ? 'Suppliers' : 'Customers'; if (all_(twinT).some(function (x) { return x.id === party.link_id; })) update_(twinT, party.link_id, { link_id: '' }); }
   remove_(table, party.id);
   audit_(user, kind + '_delete', { name: party.name, phones: party.phones });
@@ -2881,6 +2910,8 @@ function reversePayment_(p, user, reason) {
   var row = all_(table).filter(function (x) { return x.id === p.id; })[0];
   if (!row || row.voided) fail_('Payment not found or already cancelled');
   if (row.type !== 'payment' && row.type !== 'refund') fail_('Only payment entries can be cancelled here');
+  var parties = p.type === 'cpay' ? 'Customers' : 'Suppliers', key = p.type === 'cpay' ? 'customer_id' : 'supplier_id';
+  if (!all_(parties).some(function(party) { return party.id === row[key]; })) fail_('The customer or supplier record is missing. Restore that party before cancelling this payment');
   voidRefs_('AccountTxns', row.ref_id, refType); voidRefs_(table, row.ref_id);
   return true;
 }
@@ -2958,7 +2989,7 @@ function claimCreate_(p, user) {
   var cust = sale.customer_id ? all_('Customers').filter(function (c) { return c.id === sale.customer_id; })[0] : null;
   var inW = !!si.warranty_expiry && si.warranty_expiry >= today_();
   var no = nextNo_('seq_claim', 'WC-');
-  var log = [{ ts: now_(), status: 'Pending', note: (p.issue || 'Item received for warranty') + (inW ? '' : ' (OUT OF WARRANTY)'), user: user.name }];
+  var log = [{ ts: now_(), status: 'Pending', sale_item_id: si.id, note: (p.issue || 'Item received for warranty') + (inW ? '' : ' (OUT OF WARRANTY)'), user: user.name }];
   var c = insert_('WarrantyClaims', {
     claim_no: no, date: today_(), serial: serial, sale_id: sale.id, invoice_no: sale.invoice_no, product_id: si.product_id, product_name: si.name,
     customer_id: sale.customer_id, customer_name: sale.customer_name, phone: p.phone || (cust ? parseList_(cust.phones)[0] || '' : ''),
@@ -2997,13 +3028,18 @@ function claimReplace_(c, p, user) {
   var pr = all_('Products').filter(function (x) { return x.id === c.product_id; })[0]; if (!pr) fail_('Product not found');
   var sale = all_('Sales').filter(function (s) { return s.id === c.sale_id; })[0];
   if (!sale || sale.status !== 'active') fail_('The invoice of this claim is cancelled');
-  if (!c.serial) {
-    var sold = {}, remaining = 0, returns = {};
-    all_('SaleItems').forEach(function (i) { if (i.sale_id === sale.id && i.product_id === pr.id) { sold[i.id] = true; remaining += num_(i.qty); } });
-    all_('SalesReturns').forEach(function (r) { if (r.sale_id === sale.id && r.status === 'active') returns[r.id] = true; });
-    all_('SalesReturnItems').forEach(function (i) { if (returns[i.return_id] && sold[i.sale_item_id]) remaining -= num_(i.qty); });
-    if (remaining < 1 - 1e-9) fail_('This item was returned; a warranty replacement is no longer allowed');
-  }
+  var invoiceItems = all_('SaleItems').filter(function(i) { return i.sale_id === sale.id && i.product_id === pr.id; });
+  var claimLog = []; try { claimLog = typeof c.log === 'string' ? JSON.parse(c.log || '[]') : c.log || []; } catch(e) {}
+  var lineId = claimLog.length && claimLog[0].sale_item_id;
+  var candidates = invoiceItems.filter(function(i) {
+    if (lineId) return i.id === lineId;
+    return c.serial ? parseList_(i.serials).indexOf(c.serial) >= 0 : i.warranty_expiry === c.expiry;
+  });
+  if (candidates.length !== 1) fail_('The original warranty invoice line cannot be identified uniquely. Review this legacy claim before giving a replacement');
+  var claimedLine = candidates[0], returns = {}, returned = 0;
+  all_('SalesReturns').forEach(function(r) { if (r.sale_id === sale.id && r.status === 'active') returns[r.id] = true; });
+  all_('SalesReturnItems').forEach(function(i) { if (returns[i.return_id] && i.sale_item_id === claimedLine.id) returned += num_(i.qty); });
+  if (!c.serial && num_(claimedLine.qty) - returned < 1 - 1e-9) fail_('This invoice line was returned; a warranty replacement is no longer allowed');
   if (isService_(pr)) return { record: { kind: 'service' }, events: [], text: 'Service repeated (no stock)' };
   if (isSerialProduct_(pr) && c.serial) {
     var sidx = serialIndex_(), want = String(p.replacement_serial || '').trim();
@@ -3801,6 +3837,12 @@ function reports_(p, user) {
   if (rep.totals) rep.totals = clean(rep.totals);
   return rep;
 }
+function activeReportTotals_(report) {
+  if (report.totals) Object.keys(report.totals).forEach(function(key) {
+    report.totals[key] = round_(sum_(report.rows.filter(function(row) { return row.status === 'active'; }), function(row) { return num_(row[key]); }));
+  });
+  return report;
+}
 function reportsRaw_(p, user) {
   var from = p.from || '', to = p.to || '', group = p.group || 'invoice', cost = can_(user, 'cost');
   var status = p.status || 'active', okStatus = function (s) { return status === 'all' || s === status; };
@@ -3808,7 +3850,7 @@ function reportsRaw_(p, user) {
   var T = p.type;
 
   if (T === 'sales') {
-    var sl = all_('Sales').filter(function (s) { return inRange_(s.date, from, to) && okStatus(s.status) && (!p.customer_id || s.customer_id === p.customer_id) && (!p.user_id || s.user_id === p.user_id); });
+    var sl = all_('Sales').filter(function (s) { return (can_(user, 'sales.all') || s.user_id === user.id) && inRange_(s.date, from, to) && okStatus(s.status) && (!p.customer_id || s.customer_id === p.customer_id) && (!p.user_id || s.user_id === p.user_id); });
     if (group === 'invoice') {
       var items = {}; all_('SaleItems').forEach(function (i) { (items[i.sale_id] = items[i.sale_id] || []).push(i.name + ' x' + i.qty); });
       var cols = [col_('date', 'Date', 'date'), col_('invoice_no', 'Invoice'), col_('customer_name', 'Customer'), col_('items', 'Items'), col_('subtotal', 'Subtotal', 'money', 1), col_('discount', 'Discount', 'money', 1), col_('total', 'Total', 'money', 1), col_('paid', 'Paid', 'money', 1), col_('due', 'Due at sale', 'money', 1), col_('due_now', 'Due now', 'money', 1)];
@@ -3831,30 +3873,31 @@ function reportsRaw_(p, user) {
   }
 
   if (T === 'purchases') {
+    var purchaseDues = purchaseOpenDues_();
     var pu = all_('Purchases').filter(function (s) { return inRange_(s.date, from, to) && okStatus(s.status) && (!p.supplier_id || s.supplier_id === p.supplier_id); });
     if (group === 'invoice') {
       var pit = {}; all_('PurchaseItems').forEach(function (i) { (pit[i.purchase_id] = pit[i.purchase_id] || []).push(i.name + ' x' + i.qty); });
-      var pc = [col_('date', 'Date', 'date'), col_('invoice_no', 'Invoice'), col_('supplier_name', 'Supplier'), col_('items', 'Items'), col_('subtotal', 'Subtotal', 'money', 1), col_('discount', 'Discount', 'money', 1), col_('total', 'Total', 'money', 1), col_('paid', 'Paid', 'money', 1), col_('due', 'Due', 'money', 1), col_('user', 'Staff'), col_('status', 'Status')];
-      var prow = pu.sort(function (a, b) { return a._row - b._row; }).map(function (s) { var o = Object.assign({}, s); o.items = (pit[s.id] || []).join(', '); return o; });
+      var pc = [col_('date', 'Date', 'date'), col_('invoice_no', 'Invoice'), col_('supplier_name', 'Supplier'), col_('items', 'Items'), col_('subtotal', 'Subtotal', 'money', 1), col_('discount', 'Discount', 'money', 1), col_('total', 'Total', 'money', 1), col_('paid', 'Paid', 'money', 1), col_('due', 'Due at purchase', 'money', 1), col_('due_now', 'Due now', 'money', 1), col_('user', 'Staff'), col_('status', 'Status')];
+      var prow = pu.sort(function (a, b) { return a._row - b._row; }).map(function (s) { var o = Object.assign({}, s); o.items = (pit[s.id] || []).join(', '); o.due_now = purchaseDues[s.id] || 0; return o; });
       var prep = finishReport_('Purchase Report — Invoice-wise' + period, pc, prow);
       if (prep.totals) { var pact = prow.filter(function (r) { return r.status === 'active'; }); Object.keys(prep.totals).forEach(function (k) { prep.totals[k] = round_(sum_(pact, function (r) { return r[k]; })); }); }
       return prep;
     }
     var pg = {};
     pu.filter(function (s) { return s.status === 'active'; }).forEach(function (s) {
-      var k = bucket_(s.date, group), r = pg[k] = pg[k] || { period: k, invoices: 0, total: 0, paid: 0, due: 0 };
-      r.invoices++; r.total += s.total; r.paid += s.paid; r.due += s.due;
+      var k = bucket_(s.date, group), r = pg[k] = pg[k] || { period: k, invoices: 0, total: 0, paid: 0, due: 0, due_now: 0 };
+      r.invoices++; r.total += s.total; r.paid += s.paid; r.due += s.due; r.due_now += purchaseDues[s.id] || 0;
     });
-    return finishReport_('Purchase Report — ' + group + period, [col_('period', 'Period'), col_('invoices', 'Invoices', 'num', 1), col_('total', 'Total', 'money', 1), col_('paid', 'Paid', 'money', 1), col_('due', 'Due', 'money', 1)], Object.keys(pg).sort().map(function (k) { return pg[k]; }));
+    return finishReport_('Purchase Report — ' + group + period, [col_('period', 'Period'), col_('invoices', 'Invoices', 'num', 1), col_('total', 'Total', 'money', 1), col_('paid', 'Paid', 'money', 1), col_('due', 'Due at purchase', 'money', 1), col_('due_now', 'Due now', 'money', 1)], Object.keys(pg).sort().map(function (k) { return pg[k]; }));
   }
 
   if (T === 'sales_returns') {
     var sr = sreturnsList_({ from: from, to: to, status: status === 'all' ? '' : status }, user, true).reverse();
-    return finishReport_('Sales Returns' + period, [col_('date', 'Date', 'date'), col_('return_no', 'Return #'), col_('invoice_no', 'Invoice'), col_('customer_name', 'Customer'), col_('type', 'Type'), col_('items_text', 'Items'), col_('total', 'Value', 'money', 1), col_('refund', 'Cash Refund', 'money', 1), col_('user', 'Staff'), col_('status', 'Status')], sr);
+    return activeReportTotals_(finishReport_('Sales Returns' + period, [col_('date', 'Date', 'date'), col_('return_no', 'Return #'), col_('invoice_no', 'Invoice'), col_('customer_name', 'Customer'), col_('type', 'Type'), col_('items_text', 'Items'), col_('total', 'Value', 'money', 1), col_('refund', 'Cash Refund', 'money', 1), col_('user', 'Staff'), col_('status', 'Status')], sr));
   }
   if (T === 'purchase_returns') {
     var pr = preturnsList_({ from: from, to: to, status: status === 'all' ? '' : status }, user, true).reverse();
-    return finishReport_('Purchase Returns' + period, [col_('date', 'Date', 'date'), col_('return_no', 'Return #'), col_('invoice_no', 'Purchase'), col_('supplier_name', 'Supplier'), col_('items_text', 'Items'), col_('total', 'Value', 'money', 1), col_('received', 'Cash Received', 'money', 1), col_('user', 'Staff'), col_('status', 'Status')], pr);
+    return activeReportTotals_(finishReport_('Purchase Returns' + period, [col_('date', 'Date', 'date'), col_('return_no', 'Return #'), col_('invoice_no', 'Purchase'), col_('supplier_name', 'Supplier'), col_('items_text', 'Items'), col_('total', 'Value', 'money', 1), col_('received', 'Cash Received', 'money', 1), col_('user', 'Staff'), col_('status', 'Status')], pr));
   }
 
   if (T === 'daily_summary') {

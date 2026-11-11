@@ -19,7 +19,7 @@
     "desktop:build:mac": "npm run build && electron-builder --mac dmg --publish never",
     "tauri": "tauri",
     "tauri:build": "tauri build",
-    "test": "node ../backend/test/simulate.js && node ../backend/test/valuation.js && node ../backend/test/categories.cjs && node ../backend/test/service.cjs && node ../backend/test/dues-returns.cjs && node ../backend/test/barcodes.cjs && node ../backend/test/access-hours.cjs && node ../backend/test/supplier-invoice.cjs && node ../backend/test/invoice-links.cjs && node test/sms-presets.mjs && node ../backend/test/finance-integrity.cjs && node ../backend/test/integrity.cjs && node test/reliability.cjs && node ../backend/test/offline.cjs && node ../backend/test/offline-upgrade.cjs && node ../backend/test/reset-profit.cjs && node ../backend/test/backup-restore.cjs && node ../backend/test/offline-rename.cjs && node ../backend/test/history-cards.cjs && node ../backend/test/open-dues.cjs && node ../backend/test/review-fixes.cjs && node ../backend/test/repairs.cjs && node ../backend/test/audit-fixes.cjs && node test/audit-fixes.cjs && node test/financial-fixes.cjs && node test/remaining-fixes.cjs && node test/repair-dashboard.mjs",
+    "test": "node ../backend/test/simulate.js && node ../backend/test/valuation.js && node ../backend/test/categories.cjs && node ../backend/test/service.cjs && node ../backend/test/dues-returns.cjs && node ../backend/test/barcodes.cjs && node ../backend/test/access-hours.cjs && node ../backend/test/supplier-invoice.cjs && node ../backend/test/invoice-links.cjs && node test/sms-presets.mjs && node ../backend/test/finance-integrity.cjs && node ../backend/test/integrity.cjs && node test/reliability.cjs && node ../backend/test/offline.cjs && node ../backend/test/offline-upgrade.cjs && node ../backend/test/reset-profit.cjs && node ../backend/test/backup-restore.cjs && node ../backend/test/offline-rename.cjs && node ../backend/test/history-cards.cjs && node ../backend/test/open-dues.cjs && node ../backend/test/review-fixes.cjs && node ../backend/test/repairs.cjs && node ../backend/test/audit-fixes.cjs && node test/audit-fixes.cjs && node test/financial-fixes.cjs && node test/remaining-fixes.cjs && node test/repair-dashboard.mjs && node test/followup-fixes.cjs",
     "test:e2e": "playwright test",
     "verify:live": "node ../backend/test/live.cjs",
     "desktop:build:linux": "npm run build && electron-builder --linux deb --x64 --publish never",
@@ -28,7 +28,7 @@
     "desktop:online": "npm run build && electron . --online",
     "test:offline": "node ../backend/test/offline.cjs",
     "verify:build": "node scripts/verify-build.mjs",
-    "test:supabase": "node ../backend/test/supabase.mjs && node ../backend/test/urgent-fixes.mjs && node ../backend/test/remaining-audit.mjs"
+    "test:supabase": "node ../backend/test/supabase.mjs && node ../backend/test/urgent-fixes.mjs && node ../backend/test/remaining-audit.mjs && node ../backend/test/followup-fixes.mjs"
   },
   "dependencies": {
     "@capacitor/app": "8.1.2",
