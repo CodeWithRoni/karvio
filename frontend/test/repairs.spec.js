@@ -49,7 +49,8 @@ test('repair job: receive, mark completed, deliver with an invoice', async ({ pa
   await dlg.getByLabel('Device').fill('Dell Inspiron laptop');
   await dlg.getByLabel('Problem').fill('Overheating and shutdown');
   await dlg.getByLabel('Received with').fill('Charger');
-  await expect(dlg.getByLabel('Technician').locator('option')).toHaveText(['Not assigned', 'E2E Tech']); // only Technician-role users
+  const technicianNames = (await call(request, 'users.list')).filter((u) => u.active && u.role === 'technician').map((u) => u.name);
+  await expect(dlg.getByLabel('Technician').locator('option')).toHaveText(['Not assigned', ...technicianNames]); // all and only active Technician-role users
   await dlg.getByLabel('Technician').selectOption({ label: 'E2E Tech' });
   await expect(dlg.getByText('Mobile: 01700000555')).toBeVisible();
   await dlg.getByLabel('Repair charge').fill('700');

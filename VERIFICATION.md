@@ -4,6 +4,8 @@ Date: 11 November 2026 (Asia/Dhaka). Current follow-up base: GitHub main `9d9ebc
 
 ## Recorded results
 
+Publication follow-up: the first combined CI run passed 46/47 browser cases. A pre-existing repair test assumed there was exactly one technician; the new permission test legitimately added another. The repair dropdown test now compares all options against all active Technician-role users, preserving its role-filter check. The audit and repair files passed together (9/9 locally). The public production health check also passed (`Live Karvio API verified: 1.2.0`); it performs no business writes.
+
 Current five-fix follow-up: `npm test` passed (1,273 assertions including 39 new financial regressions). The existing 45 Edge browser tests passed in 54.0 seconds. The updated audit browser file then passed all five tests, including two new tests, for 47 distinct passing browser cases. `npm run build` and its asset validation passed. Tests used mocked Google services and disposable local databases; no production transactions were performed. The first restricted browser-server attempt was stopped, then the local browser suite completed successfully with the required process permissions.
 
 New cases cover backdated supplier balances, exact discounted line/partial-return refunds, technician price/delivery denials without stock changes, authorized repair delivery, spent-advance refund rejection without cash/job mutation, safe cancellation, valid refunds and duplicate-cancel rejection, and partial/full subsequent payments through the same public link. These changes do not correct historical records automatically.
