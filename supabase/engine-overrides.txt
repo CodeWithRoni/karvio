@@ -57,3 +57,72 @@ function initialize(payload) {
   setupDatabase();
   return {username:'admin',initialized:true};
 }
+
+// Preflight credentials before restoring any rows: legacy hashes cannot authenticate here.
+var originalCheckBackup_ = checkBackup_;
+checkBackup_ = function(backup) {
+  var plan = originalCheckBackup_(backup), columns = cols_('Users').map(function(c) { return c.k; });
+  var hashIndex = columns.indexOf('password_hash'), saltIndex = columns.indexOf('salt');
+  plan.Users.forEach(function(row) {
+    if (!/^pbkdf2\$600000\$[a-f0-9]{64}$/.test(String(row[hashIndex])) || !String(row[saltIndex] || '').trim())
+      fail_('This backup uses incompatible or legacy login credentials. Restore cancelled; existing data is unchanged. Use a compatible Supabase backup');
+  });
+  return plan;
+};
+
+// Bounded, owner-only staged restore. Partial uploads never touch business tables.
+var RESTORE_UPLOAD_MAX = 16 * 1024 * 1024, RESTORE_UPLOAD_PART = 128 * 1024;
+API_CAPABILITIES.chunkedRestore = {maxBytes: RESTORE_UPLOAD_MAX, partChars: RESTORE_UPLOAD_PART};
+function restoreUploadKey_(user) { return 'restore_upload_' + user.id; }
+function restoreUpload_(p, user) {
+  if (!isOwner_(user)) fail_('Only the Administrator can upload a backup');
+  var raw = CacheService.getScriptCache().get(restoreUploadKey_(user)), stage = raw ? JSON.parse(raw) : null;
+  if (!stage || stage.id !== p.upload_id || stage.expires <= Date.now() || stage.credential !== hash_('restore-owner', user.salt + '|' + user.password_hash))
+    fail_('Backup upload expired or is not available. Start the upload again');
+  return stage;
+}
+ROUTES['database.restore.begin'] = r_('settings', function(p,user) {
+  if (!isOwner_(user) || !pwCheck_(user,p.password)) fail_('Administrator password required');
+  if (String(p.confirm || '').trim() !== RESTORE_WORD) fail_('Type RESTORE to confirm');
+  if (!Number.isInteger(p.size) || p.size < 1 || p.size > RESTORE_UPLOAD_MAX) fail_('Chunked backup restore supports files up to 16 MiB');
+  if (!Number.isInteger(p.parts) || p.parts < 1 || p.parts > 128 || !/^[a-f0-9]{64}$/.test(String(p.digest))) fail_('Invalid backup upload');
+  var stage = {id:uid_(),size:p.size,parts:p.parts,digest:p.digest,chunks:[],bytes:0,expires:Date.now()+1800000,credential:hash_('restore-owner', user.salt+'|'+user.password_hash)};
+  CacheService.getScriptCache().put(restoreUploadKey_(user),JSON.stringify(stage),1800);
+  return {upload_id:stage.id};
+}, false);
+ROUTES['database.restore.chunk'] = r_('settings', function(p,user) {
+  var stage=restoreUpload_(p,user), index=p.index, text=p.text;
+  if (!Number.isInteger(index) || index < 0 || index >= stage.parts || typeof text !== 'string' || text.length > RESTORE_UPLOAD_PART || !text.length) fail_('Invalid backup chunk');
+  if (index < stage.chunks.length) { if(stage.chunks[index] !== text) fail_('Backup chunk conflicts with the uploaded content'); return {received:stage.chunks.length}; }
+  if (index !== stage.chunks.length) fail_('Upload the missing backup chunk first');
+  var bytes=security.textBytes(text);
+  if (stage.bytes+bytes > stage.size) fail_('Backup upload exceeds its declared size');
+  stage.chunks.push(text);stage.bytes+=bytes;
+  CacheService.getScriptCache().put(restoreUploadKey_(user),JSON.stringify(stage),Math.max(1,Math.ceil((stage.expires-Date.now())/1000)));
+  return {received:stage.chunks.length};
+}, false);
+ROUTES['database.restore.finish'] = r_('settings', function(p,user) {
+  if (!isOwner_(user)) fail_('Only the Administrator can restore a backup');
+  if (!/^[a-f0-9]{32}$/.test(String(p.upload_id))) fail_('Invalid backup upload');
+  var receiptKey='restore_done_'+p.upload_id, receipt=CacheService.getScriptCache().get(receiptKey);
+  if (receipt) return JSON.parse(receipt);
+  var stage=restoreUpload_(p,user);
+  if (stage.chunks.length !== stage.parts || stage.bytes !== stage.size) fail_('Backup upload is incomplete; nothing was restored');
+  var text=stage.chunks.join('');
+  if (hash_('restore-upload-v1',text) !== stage.digest) fail_('Backup upload checksum mismatch; nothing was restored');
+  // Same full validation, credential compatibility, safety snapshot and atomic commit as ordinary restore.
+  var result=databaseRestore_({password:p.password,confirm:p.confirm,backup_text:text},user);
+  CacheService.getScriptCache().remove(restoreUploadKey_(user));
+  CacheService.getScriptCache().put(receiptKey,JSON.stringify(result),86400);
+  return result;
+}, false);
+ROUTES['database.restore.abort'] = r_('settings', function(p,user) {
+  restoreUpload_(p,user);CacheService.getScriptCache().remove(restoreUploadKey_(user));return {aborted:true};
+}, false);
+
+ROUTES['database.restore.status'] = r_('settings', function(p,user) {
+  if (!isOwner_(user) || !/^[a-f0-9]{32}$/.test(String(p.upload_id))) fail_('Administrator upload required');
+  var done=CacheService.getScriptCache().get('restore_done_'+p.upload_id);
+  if (done) return {done:JSON.parse(done)};
+  var stage=restoreUpload_(p,user);return {received:stage.chunks.length};
+}, false);

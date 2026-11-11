@@ -43,7 +43,8 @@ export function purchaseInvoiceHtml(d) {
       ${p.discount ? `<tr><td>Discount</td><td class="r">-${esc(money(p.discount, false))}</td></tr>` : ''}
       <tr class="g"><td>Total</td><td class="r">${esc(money(p.total))}</td></tr>
       <tr><td>Paid</td><td class="r">${esc(money(p.paid, false))}</td></tr>
-      <tr><td><b>Due to supplier</b></td><td class="r"><b>${esc(money(p.due))}</b></td></tr>
+      <tr><td><b>Due at purchase</b></td><td class="r"><b>${esc(money(p.due))}</b></td></tr>
+      <tr><td><b>Due now</b></td><td class="r"><b>${esc(money(p.due_now ?? p.due))}</b></td></tr>
     </table>
     ${d.returns && d.returns.length ? `<p class="sm">Returns: ${esc(d.returns.map((r) => `${r.return_no} (${money(r.total, false)}, ${r.status})`).join(', '))}</p>` : ''}
     <div class="foot"><span>Printed ${esc(new Date().toLocaleString())}</span><span>Received by: ____________________</span></div>
@@ -118,11 +119,11 @@ export const pdfPurchases = (list, filename) => pdfPages(list.map(purchaseInvoic
 /** Sheet 1: one line per invoice. Sheet 2: every product line with supplier details and serial numbers. */
 export async function excelPurchases(list, filename) {
   const XLSX = await import('xlsx');
-  const inv = [['Purchase #', 'Supplier invoice', 'Date', 'Status', 'Supplier', 'Phone', 'Address', 'Subtotal', 'Discount', 'Total', 'Paid', 'Due', 'Payment', 'Note', 'Entered by']];
+  const inv = [['Purchase #', 'Supplier invoice', 'Date', 'Status', 'Supplier', 'Phone', 'Address', 'Subtotal', 'Discount', 'Total', 'Paid', 'Due at purchase', 'Due now', 'Payment', 'Note', 'Entered by']];
   const lines = [['Purchase #', 'Supplier invoice', 'Date', 'Supplier', 'Phone', 'Address', 'Product', 'Model', 'Description', 'Unit', 'Qty', 'Purchase price', 'Amount', 'Serial numbers']];
   list.forEach((d) => {
     const p = d.purchase, s = d.supplier || {}, phone = splitList(s.phones || '').join(', ');
-    inv.push([p.invoice_no, p.supplier_invoice || '', String(p.date).slice(0, 10), p.status, s.name || p.supplier_name || '', phone, s.address || '', p.subtotal, p.discount, p.total, p.paid, p.due,
+    inv.push([p.invoice_no, p.supplier_invoice || '', String(p.date).slice(0, 10), p.status, s.name || p.supplier_name || '', phone, s.address || '', p.subtotal, p.discount, p.total, p.paid, p.due, p.due_now ?? p.due,
       pays(p).map((x) => `${x.account_name || ''} ${x.amount}`).join('; '), p.note || '', p.user || '']);
     d.items.forEach((i) => lines.push([p.invoice_no, p.supplier_invoice || '', String(p.date).slice(0, 10), s.name || p.supplier_name || '', phone, s.address || '', i.name, i.sku || '', i.description || '',
       i.unit || 'pcs', i.qty, i.cost, i.total, splitList(String(i.serials || '').replace(/\n/g, ',')).join(', ')]));

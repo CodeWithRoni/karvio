@@ -993,3 +993,6 @@ body::before { content: ''; position: fixed; top: 0; left: 0; right: 0; height: 
 .hc-choose li button:hover { border-color: var(--fiber); }
 .hc-choose li .muted { font-size: 12.5px; }
 .doc-frame { display: block; width: 100%; height: min(74vh, 1100px); border: 1px solid var(--line); border-radius: 8px; background: #dfe5ec; }
+
+/* Keep the online connection guard in the full-height shell chain. */
+.online-app { height: 100%; min-height: 0; }

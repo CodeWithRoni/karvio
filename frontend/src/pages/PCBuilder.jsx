@@ -1,3 +1,4 @@
+import { shopStorageKey } from '../lib/shopStorage';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../lib/store';
@@ -13,11 +14,15 @@ const SLOTS = [
   ['Graphics card', ['gpu', 'graphics']], ['Power supply', ['power supply', 'psu']], ['Casing', ['casing', 'case']], ['CPU cooler / fans', ['cool', 'fan']],
   ['Monitor', ['monitor']], ['Keyboard', ['keyboard']], ['Mouse', ['mouse']], ['UPS', ['ups']]
 ];
-const SAVED = 'erp_quotes';
-const loadSaved = () => { try { return JSON.parse(localStorage.getItem(SAVED)) || []; } catch { return []; } };
+const savedKey = () => shopStorageKey('erp_quotes');
+const loadSaved = () => { try { const key=savedKey(); const rows=key ? JSON.parse(localStorage.getItem(key)) : []; return Array.isArray(rows) ? rows : []; } catch { return []; } };
 const newLines = () => SLOTS.map(([g]) => ({ group: g, product_id: '', name: '', qty: 1, price: '' }));
 
 export default function PCBuilder() {
+  const userId = useStore((s) => s.user?.id);
+  return <Builder key={userId + ':' + savedKey()} />;
+}
+function Builder() {
   const { products, categories, brands, warrantyPeriods } = useStore();
   const nav = useNavigate();
   const [confirmDialog, ask] = useConfirm();
@@ -70,8 +75,8 @@ export default function PCBuilder() {
   const save = () => {
     const q = { id: Date.now(), date: new Date().toISOString().slice(0, 10), meta, lines };
     const next = [q, ...saved].slice(0, 30); setSaved(next);
-    try { localStorage.setItem(SAVED, JSON.stringify(next)); } catch {}
-    useStore.getState().toast('Quote saved on this device');
+    try { if (!savedKey()) throw new Error(); localStorage.setItem(savedKey(), JSON.stringify(next)); } catch { setSaved(saved); return useStore.getState().toast('Could not save the quote on this device', 'err'); }
+    useStore.getState().toast('Quote saved for this user and shop');
   };
   const toPos = async () => {
     const inStock = filled.filter((l) => l.product_id);
@@ -148,7 +153,7 @@ export default function PCBuilder() {
                 <div className="row" key={q.id} style={{ padding: '4px 0' }}>
                   <span>{q.meta.customer || 'No name'} — {q.meta.title}</span><span className="muted">{q.date}</span><span className="spacer" />
                   <button className="link" onClick={() => { setLines(q.lines); setMeta(q.meta); }}>Open</button>
-                  <button className="x" onClick={() => { const n = saved.filter((x) => x.id !== q.id); setSaved(n); try { localStorage.setItem(SAVED, JSON.stringify(n)); } catch {} }} aria-label="Delete quote">×</button>
+                  <button className="x" onClick={() => { const n = saved.filter((x) => x.id !== q.id); setSaved(n); try { localStorage.setItem(savedKey(), JSON.stringify(n)); } catch {} }} aria-label="Delete quote">×</button>
                 </div>
               ))}
             </div>

@@ -7,9 +7,10 @@ import { printReceipt, printInvoice } from '../lib/receipt';
 import DataTable from '../components/DataTable';
 import { excelSales, pdfSales, printSales } from '../lib/salesDocs';
 // Full invoices for ticked rows (fetched in one call).
-const saleDocs = { excel: async (rows) => excelSales(await api('sales.details', { ids: rows.map((r) => r.id) }), `invoices-${rows.length}.xlsx`), pdf: async (rows) => pdfSales(await api('sales.details', { ids: rows.map((r) => r.id) }), `invoices-${rows.length}.pdf`), print: async (rows) => printSales(await api('sales.details', { ids: rows.map((r) => r.id) })) };
+const saleDocs = { excel: async (rows) => excelSales(await salesDetails(rows), `invoices-${rows.length}.xlsx`), pdf: async (rows) => pdfSales(await salesDetails(rows), `invoices-${rows.length}.pdf`), print: async (rows) => printSales(await salesDetails(rows)) };
 import { useApi, PageHead, Tabs, DateRange, Badge, statusTone, Modal, Btn, Field, Loading, ErrorBox, useAction, Select, noWheel } from '../components/ui';
 import { ReverseDialog } from '../components/widgets';
+import { salesDetails } from '../lib/salesDetails';
 import { returnValue } from '../lib/returnValue';
 
 export default function Sales() {
@@ -36,7 +37,7 @@ export default function Sales() {
       {tab === 'sales' ? (
         <>
           <ErrorBox error={sales.error} onRetry={sales.reload} />
-          <DataTable title={`Sales ${range.from} to ${range.to}`} loading={sales.loading} rows={sales.data || []} pageSize={10} docExport={saleDocs} onRowClick={(r) => nav(`/sales/${r.id}`)}
+          <DataTable title={`Sales ${range.from} to ${range.to}`} loading={sales.loading} rows={sales.data || []} pageSize={10} docExport={saleDocs} sumFilter={(r) => r.status === 'active'} onRowClick={(r) => nav(`/sales/${r.id}`)}
             rowClass={(r) => (r.status === 'cancelled' ? 'dim' : '')}
             columns={[
               { key: 'date', label: 'Date', type: 'date' },

@@ -282,15 +282,25 @@ function JobDetail({ job, meta, onClose, onEdit, onDone }) {
 }
 
 function Deliver({ job, meta, onClose, onDone }) {
+  const fresh = useApi('repair.get', { id: job.id });
+  if (!fresh.data) return <Modal open onClose={onClose} title={`Deliver ${job.job_no}`}>
+    <ErrorBox error={fresh.error} onRetry={fresh.reload} />
+    {!fresh.error && <p className="muted">Checking available advance…</p>}
+  </Modal>;
+  return <DeliveryForm job={fresh.data} meta={meta} onClose={onClose} onDone={onDone} />;
+}
+
+function DeliveryForm({ job, meta, onClose, onDone }) {
+  const advance = Number(job.available_advance) || 0;
   const [discount, setDiscount] = useState('');
-  const toPay = round2(Math.max(job.total - (Number(discount) || 0) - job.advance, 0));
+  const toPay = round2(Math.max(job.total - (Number(discount) || 0) - advance, 0));
   const [pay, setPay] = useState({ account_id: meta.accounts[0]?.id || '', amount: String(toPay || '') });
   const [nextDate, setNextDate] = useState('');
   const [busy, run] = useAction();
   const left = round2(toPay - (Number(pay.amount) || 0));
   const go = async (print) => {
     const r = await run(() => api('repair.deliver', {
-      id: job.id, discount: Number(discount) || 0, next_payment_date: left > 0.004 ? nextDate : '',
+      id: job.id, expected_credit: round2(Math.min(advance, Math.max(job.total - (Number(discount) || 0), 0))), discount: Number(discount) || 0, next_payment_date: left > 0.004 ? nextDate : '',
       payments: Number(pay.amount) > 0 ? [{ account_id: pay.account_id, amount: Number(pay.amount) }] : []
     }), `Job ${job.job_no} delivered`);
     if (print && r.invoice) printInvoice(r.invoice);
@@ -304,9 +314,9 @@ function Deliver({ job, meta, onClose, onDone }) {
       <div className="form">
         <div className="wide totals">
           <span>Parts + charge</span><b className="num">{money(job.total, false)}</b>
-          <span>Advance already paid</span><b className="num">{money(job.advance, false)}</b>
+          <span>Advance available now</span><b className="num">{money(advance, false)}</b>
         </div>
-        {job.total > 0 && <Field label="Discount"><input type="number" min="0" step="any" value={discount} onChange={(e) => { setDiscount(e.target.value); setPay({ ...pay, amount: String(round2(Math.max(job.total - (Number(e.target.value) || 0) - job.advance, 0)) || '') }); }} /></Field>}
+        {job.total > 0 && <Field label="Discount"><input type="number" min="0" step="any" value={discount} onChange={(e) => { setDiscount(e.target.value); setPay({ ...pay, amount: String(round2(Math.max(job.total - (Number(e.target.value) || 0) - advance, 0)) || '') }); }} /></Field>}
         <Field label="Received now into"><Select value={pay.account_id} onChange={(v) => setPay({ ...pay, account_id: v })} options={meta.accounts} allowEmpty={false} /></Field>
         <Field label={`Amount received (to pay ${money(toPay, false)})`}><input type="number" min="0" step="any" value={pay.amount} onChange={(e) => setPay({ ...pay, amount: e.target.value })} /></Field>
         {left > 0.004 && <Field label={`Next payment date (${money(left, false)} stays as the customer's due)`}><input type="date" value={nextDate} onChange={(e) => setNextDate(e.target.value)} /></Field>}
@@ -317,6 +327,7 @@ function Deliver({ job, meta, onClose, onDone }) {
 }
 
 function Cancel({ job, meta, onClose, onDone }) {
+  const canRefund = useStore((s) => s.can('customers'));
   const [reason, setReason] = useState('');
   const [refund, setRefund] = useState('keep');
   const [acc, setAcc] = useState(meta.accounts[0]?.id || '');
@@ -333,7 +344,8 @@ function Cancel({ job, meta, onClose, onDone }) {
         {job.advance > 0 && <>
           <div className="field wide" role="radiogroup" aria-label="Advance">
             <span className="field-label">Advance {money(job.advance)}</span>
-            <label className="check"><input type="radio" name="adv" checked={refund === 'return'} onChange={() => setRefund('return')} /> Give it back to the customer now</label>
+            {!canRefund && <small className="muted">Returning money requires Customers &amp; dues permission.</small>}
+            <label className="check"><input type="radio" name="adv" disabled={!canRefund} checked={refund === 'return'} onChange={() => setRefund('return')} /> Give it back to the customer now</label>
             <label className="check"><input type="radio" name="adv" checked={refund === 'keep'} onChange={() => setRefund('keep')} /> Keep it on the customer's account (credit for later)</label>
           </div>
           {refund === 'return' && <Field label="Paid back from"><Select value={acc} onChange={setAcc} options={meta.accounts} allowEmpty={false} /></Field>}

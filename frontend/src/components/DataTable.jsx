@@ -9,7 +9,7 @@ import { Empty, Loading } from './ui';
  * selectable: tick rows; Excel / PDF / Print then export only the ticked rows.
  * docExport: { excel(rows), pdf(rows), print(rows) } — full documents (e.g. invoices) for the ticked rows.
  */
-export default function DataTable({ columns, rows, loading, title = 'Export', exportable = true, searchable = true, pageSize = 50, onRowClick, empty, totals: totalsProp, toolbar, rowClass, selectable = exportable, docExport }) {
+export default function DataTable({ columns, rows, loading, title = 'Export', exportable = true, searchable = true, pageSize = 50, onRowClick, empty, totals: totalsProp, toolbar, rowClass, selectable = exportable, docExport, sumFilter }) {
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(() => new Set());
   useEffect(() => { setSel(new Set()); }, [rows]);
@@ -49,9 +49,9 @@ export default function DataTable({ columns, rows, loading, title = 'Export', ex
     if (totalsProp !== undefined) return totalsProp;
     if (!columns.some((c) => c.sum)) return null;
     const t = {};
-    columns.forEach((c) => { if (c.sum) t[c.key] = filtered.reduce((a, r) => a + (Number(c.value ? c.value(r) : r[c.key]) || 0), 0); });
+    columns.forEach((c) => { if (c.sum) t[c.key] = filtered.filter((r) => !sumFilter || sumFilter(r)).reduce((a, r) => a + (Number(c.value ? c.value(r) : r[c.key]) || 0), 0); });
     return t;
-  }, [filtered, columns, totalsProp]);
+  }, [filtered, columns, totalsProp, sumFilter]);
 
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const cur = Math.min(page, pages - 1);
@@ -63,7 +63,7 @@ export default function DataTable({ columns, rows, loading, title = 'Export', ex
   const togglePage = () => setSel((s0) => { const s1 = new Set(s0); slice.forEach((r) => (allOnPage ? s1.delete(r) : s1.add(r))); return s1; });
   // Ticked rows win; with nothing ticked the whole (filtered) table is exported.
   const outRows = picked.length ? picked : filtered;
-  const outTotals = picked.length && totals ? Object.fromEntries(Object.keys(totals).map((k) => { const c = columns.find((x) => x.key === k); return [k, picked.reduce((a, r) => a + (Number(c && c.value ? c.value(r) : r[k]) || 0), 0)]; })) : totals;
+  const outTotals = picked.length && totals ? Object.fromEntries(Object.keys(totals).map((k) => { const c = columns.find((x) => x.key === k); return [k, picked.filter((r) => !sumFilter || sumFilter(r)).reduce((a, r) => a + (Number(c && c.value ? c.value(r) : r[k]) || 0), 0)]; })) : totals;
   const run = (kind) => {
     if (picked.length && docExport && docExport[kind]) return download(() => docExport[kind](picked));
     if (kind === 'excel') return download(() => exportExcel(title, expCols, outRows, outTotals));

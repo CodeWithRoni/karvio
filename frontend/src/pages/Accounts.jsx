@@ -95,8 +95,9 @@ function Ledger({ account, onClose }) {
     <Modal open onClose={onClose} size="lg" title={`${account.name} — transactions`}>
       <div className="row" style={{ marginBottom: 12 }}>
         <DateRange {...range} onChange={setRange} /><span className="spacer" />
-        {l.data && <b>Balance now {money(l.data.closing)}</b>}
+        {l.data && <b>Balance now {money(l.data.current_balance ?? l.data.closing)}</b>}
       </div>
+      {l.data && <p className="muted">Period opening {money(l.data.opening)} · Period closing {money(l.data.closing)}</p>}
       <ErrorBox error={l.error} onRetry={l.reload} />
       <DataTable title={`${account.name} ledger`} loading={l.loading} rows={l.data?.rows || []} pageSize={200}
         columns={[

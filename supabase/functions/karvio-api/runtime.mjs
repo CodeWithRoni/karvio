@@ -58,6 +58,7 @@ export function createRuntime(snapshot) {
     insertSheet(name){if(Object.hasOwn(state.sheets,name)||['__proto__','constructor','prototype'].includes(name))throw new Error('Invalid table');state.sheets[name]={rows:[],columns:1};return new Sheet(name);},
     getSheets:()=>Object.keys(state.sheets).map(n=>new Sheet(n)),deleteSheet:sheet=>{delete state.sheets[sheet.name];},setSpreadsheetTimeZone(){}};
   const security={
+    textBytes:text=>Buffer.byteLength(text,'utf8'),
     passwordHash:(salt,pw)=>'pbkdf2$600000$'+pbkdf2Sync(pw,salt,600000,32,'sha256').toString('hex'),
     passwordCheck(user,pw){
       const m=/^pbkdf2\$(600000)\$([a-f0-9]{64})$/.exec(String(user.password_hash));

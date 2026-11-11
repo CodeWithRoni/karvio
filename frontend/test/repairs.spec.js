@@ -161,3 +161,36 @@ test('failed repair: the admin dashboard shows the result until Seen', async ({ 
   await expect(page.locator('.rem-row', { hasText: job.job_no })).toHaveCount(0);
   expect((await call(request, 'dashboard')).repair_alerts.some((a) => a.id === job.id)).toBe(false);
 });
+
+test('spent repair advance is refreshed before delivery and collected correctly', async ({page,request}) => {
+  const customer = await call(request,'customer.save',{name:'Spent advance UI'});
+  const job = await call(request,'repair.save',{customer_id:customer.id,device:'Advance laptop',problem:'Fault',charge:500,advance:500,account_id:cash.id,parts:[]});
+  await page.goto(`/#/repairs/${job.id}`);
+  const detail = page.getByRole('dialog',{name:`Repair job ${job.job_no}`});
+  await expect(detail).toBeVisible();
+  // Spend the credit after the job detail has already loaded.
+  const service=await call(request,'product.save',{name:'Spent advance UI service',service:true,sale_price:500});
+  await call(request,'sale.create',{customer_id:customer.id,items:[{product_id:service.id,qty:1,price:500}],credit_used:500,payments:[],send_sms:false});
+  await detail.getByRole('button',{name:'Deliver',exact:true}).click();
+  const deliver=page.getByRole('dialog',{name:`Deliver ${job.job_no}`});
+  await expect(deliver.getByText('Advance available now')).toBeVisible();
+  await expect(deliver.getByLabel(/Amount received/)).toHaveValue('500');
+  await deliver.getByRole('button',{name:'Deliver',exact:true}).click();
+  await expect(page.getByRole('dialog',{name:`Repair job ${job.job_no}`})).toContainText('Delivered');
+  const done=await call(request,'repair.get',{id:job.id});
+  const invoice=await call(request,'sale.detail',{id:done.sale_id});
+  expect([invoice.sale.credit_used,invoice.sale.paid,invoice.sale.due]).toEqual([0,500,0]);
+});
+
+test('repairs-only technician cannot select cash refund', async ({page,request}) => {
+  const job=await call(request,'repair.save',{customer_name:'Tech refund UI',phone:'01555000777',device:'Printer',problem:'Fault',advance:200,account_id:cash.id});
+  const response=await request.post(endpoint,{data:{action:'login',payload:{username:'e2etech',password:'e2etech1'}}});
+  const login=await response.json();expect(login.ok).toBe(true);
+  await page.addInitScript((t)=>localStorage.setItem('erp_token',t),login.data.token);
+  await page.goto(`/#/repairs/${job.id}`);
+  await page.getByRole('dialog',{name:`Repair job ${job.job_no}`}).getByRole('button',{name:'Cancel job'}).click();
+  const cancel=page.getByRole('dialog',{name:`Cancel ${job.job_no}`});
+  await expect(cancel.getByLabel('Give it back to the customer now')).toBeDisabled();
+  await expect(cancel.getByLabel("Keep it on the customer's account (credit for later)")).toBeChecked();
+});
+

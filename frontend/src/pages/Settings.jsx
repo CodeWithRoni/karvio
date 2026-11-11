@@ -1,3 +1,4 @@
+import { clearShopDrafts } from '../lib/shopStorage';
 import { useEffect, useState } from 'react';
 import { useStore } from '../lib/store';
 import { api, getApiConfig, setApiConfig, testConnection, isOffline, getToken } from '../lib/api';
@@ -338,7 +339,7 @@ function DatabaseReset({ onDone }) {
     if (!ready) return;
     let r; try { r = await run(() => api('database.reset', f), 'Database reset — Karvio is fresh'); } catch { return; } // shown as a message; nothing changed
     // this computer's saved cart and saved PC Builder quotes point at products that no longer exist
-    ['erp_pos_draft', 'erp_quotes'].forEach((k) => { try { localStorage.removeItem(k); } catch { /* private mode */ } });
+    if (!clearShopDrafts()) useStore.getState().toast('Database changed, but saved carts could not be cleared. Clear this site’s saved data before opening POS.', 'err');
     setF({ password: '', confirm: '', keep_settings: false, keep_users: false });
     setDone(r);
     await useStore.getState().refresh('all').catch(() => {});

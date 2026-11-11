@@ -77,7 +77,7 @@ test('a part typed by hand goes on the quote but not to the POS', async ({ page 
   expect(printed.find((r) => r[1].includes('Ryzen 7 7700'))[2]).toBe('900 days');
   expect(printed.find((r) => r[1].includes('PCB Test Mouse'))[2]).toBe('—');
   await page.getByRole('button', { name: 'Save quote' }).click();
-  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('erp_quotes'))[0].lines.find((l) => l.group === 'Processor'));
+  const saved = await page.evaluate(async () => { const {shopStorageKey}=await import('/src/lib/shopStorage.js'); return JSON.parse(localStorage.getItem(shopStorageKey('erp_quotes')))[0].lines.find((l) => l.group === 'Processor'); });
   expect([saved.name, saved.warranty]).toEqual(['Ryzen 7 7700 (on order)', '900 days']);
 
   // Send to POS: only the stocked mouse goes; the typed processor is reported.

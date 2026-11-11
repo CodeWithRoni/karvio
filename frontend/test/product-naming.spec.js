@@ -16,11 +16,11 @@ test('brand leads automatic product name and description is a single trailing su
  await desc.fill('   ');await expect(name).toHaveValue('MSI MOTHERBOARD AMD B450M-A PRO MAX II');
  await name.fill('My custom name');await desc.fill('Custom notes');await expect(name).toHaveValue('My custom name #Custom notes');
  await dlg.getByRole('button',{name:'Use automatic name',exact:true}).click();
- await desc.fill(' DDR4, AM4 Socket');await dlg.getByRole('button',{name:'Add product',exact:true}).click();
+ await desc.fill('  DDR4, AM4 Socket');await dlg.getByRole('button',{name:'Add product',exact:true}).click();
  await expect(dlg).toHaveCount(0);
  const saved=(await call('products.list')).find(p=>p.sku==='B450M-A PRO MAX II');
- expect(saved.name).toBe('MSI MOTHERBOARD AMD B450M-A PRO MAX II # DDR4, AM4 Socket');
- expect(saved.description).toBe(' DDR4, AM4 Socket');
+ expect(saved.name).toBe('MSI MOTHERBOARD AMD B450M-A PRO MAX II #  DDR4, AM4 Socket');
+ expect(saved.description).toBe('  DDR4, AM4 Socket');
  await call('product.delete',{id:saved.id});
  // Leave no sample master records behind for the later category workflow tests.
  await call('master.delete',{kind:'category',id:cat.id});

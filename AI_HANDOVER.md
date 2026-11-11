@@ -1,3 +1,42 @@
+Owner authorized publication of all 19 audit fixes. Supabase karvio-api version 9 is ACTIVE; deployed sources match all six tested local files; public ping is healthy and advertises chunked restore. No schema/data migration performed. Main push and CI/Pages verification are in progress. Earlier local-only notes below are historical.
+
+## Local remaining audit fixes — 11 November 2026 (NOT DEPLOYED)
+
+Audit B10–B19 implemented locally on top of the unpublished B01–B09 fixes. No GitHub push, hosted deployment or live database mutation performed. Existing business records and schema are unchanged.
+
+- B10: refuse serial-tracking activation when nonserial stock OR nonserial purchase/sale history exists (past returns could otherwise recreate untracked stock). An unused zero-stock product may enable tracking.
+- B11: Sales table totals and summary exports sum active invoices only; cancelled documents remain visible with their original amounts. Filtering and selected summary totals use the same rule.
+- B12: purchase detail supplies cumulative net_total/returned_qty/returned_value; purchase-return UI uses the same allocation as sales/server, including partial prior returns. Refund 66.66 now agrees with the server.
+- B13: sales.list returns every matching invoice unless a caller explicitly requests a limit. Sales detail requests above 200 are rejected explicitly; frontend fetches selected documents in complete batches of 200 and verifies IDs/counts before producing any export.
+- B14: supplier invoice due_now is allocated from live nonvoid ledger entries, with FIFO payments and own-invoice return credits. Purchase list/detail/Excel/print distinguish Due at purchase and Due now; historical due stays unchanged.
+- B15: reset/restore clear namespaced POS drafts and quotes for all users of the current endpoint, preserving other endpoints. Legacy unscoped keys are removed. Storage access failures are reported after confirmed database success.
+- B16: quotations are scoped to authenticated user plus API endpoint; legacy shared quotes are not automatically assigned to a user. Existing 30-quote device limit remains.
+- B17: Supabase-only owner/password-gated staged restore supports backup files up to 16 MiB using 128 Ki-character chunks. Per-request 8 MiB transport guard remains. Stages persist in existing private server metadata cache, expire after 30 minutes, verify size/full SHA-256 and ordinary backup checksum/credential checks, and restore atomically with the existing safety snapshot. Partial uploads never change business rows. Duplicate chunks are safe; conflicting chunks fail. Completion receipt prevents duplicate restores after lost responses. The browser stores only upload ID/hash/expiry in sessionStorage and can resume/check completion, including UTF-8/surrogate boundaries. Files over 16 MiB are refused explicitly; unlimited restore is not implemented.
+- B18: full-height online-app wrapper restores the viewport height chain, independent main/sidebar scrolling and reachable Sign out. Online blocking remains in place.
+- B19: product.save preserves entered name whitespace while rejecting blank names; duplicate-name canonical comparison stays unchanged. Product preview and saved description suffix now match.
+
+No new migration is required: staged upload data uses already-private metadata/cache and the existing revision compare-and-swap commit. Regenerate hosted engine from Code.gs + engine-overrides.txt, without --schema. Future owner-authorized deployment must update the hosted backend before the frontend; older backends explicitly report missing large-restore support.
+
+Local checks: complete regular suite passed; hosted gateway 63 checks plus B01–B09 and remaining-audit regressions passed; actual >8 MiB backup successfully staged/restored in the local hosted runtime; production build/assets passed. Full Edge browser suite: 66/66 passed, including 7 remaining-audit cases and updated quotation/naming regressions.
+
+## Local urgent fixes — 11 November 2026 (NOT DEPLOYED)
+
+Owner requested fixing audit B01–B09 only. No GitHub push, release, hosted function deployment or production database mutation is authorized/performed in this fix turn. Preserve the remaining audit findings for separate work.
+
+- B01: serial matching prioritizes any live/non-returned serial over older supplier-return records; repurchase can no longer admit duplicate live serials.
+- B02: invoice open dues allocate active ledger debits/credits rather than stale saved due/advance fields; voided advance receipts reopen invoice debt, including public invoice links.
+- B03: repair cash refunds require Customers permission server-side; repairs-only UI disables refund while retaining cancellation with credit kept.
+- B04: sales-return creation and listing enforce the original invoice owner unless sales.all is granted. Route explicitly forwards the authenticated user.
+- B05: stock/service warranty replacement rejects fully returned products on the original invoice; valid partial returns retain eligibility.
+- B06: Inventory/Service type changes are refused once purchase/sale history exists, preserving historical stock semantics. Unused products can still change type.
+- B07: hosted restore preflight rejects legacy/malformed credential hashes before any replacement. Compatible Supabase backups still restore. This prevents data replacement followed by owner lockout; it DOES NOT convert/import legacy password hashes.
+- B08: account ledger sorts chronologically with stable row ties, calculates range opening/closing, and exposes current_balance separately. UI labels range balances separately from current funds.
+- B09: repair output exposes available_advance; delivery fetches fresh job/credit before initializing payment, sends expected_credit, and server rejects changed/stale advance before any sale/stock write. Old clients cannot silently deliver using spent advance.
+
+Backend source: backend/Code.gs; hosted override: supabase/engine-overrides.txt. Regenerate via node scripts/generate-supabase.cjs (without --schema). No schema change or migration is needed. On a future authorized deployment, deploy backend before frontend and refresh clients. No historical records are rewritten by these changes.
+
+Validation: npm test passed; npm run test:supabase passed (63 gateway checks plus new backend/test/urgent-fixes.mjs covering all nine scenarios, public due, failed-write rollback and allowed operations); production build/assets passed. Full Microsoft Edge browser suite: 59/59 passed (including spent-advance delivery and restricted-technician refund UI).
+
 Online-only release (owner authorized publication): desktop always uses online profile; offline runtime and backend excluded from installer; legacy offline bridge rejected; disconnected browser blocked with form retained. No database changes or data deletion. Build, npm test and connection-loss browser regression passed. Old downloaded installers require replacement.
 
 # Fresh Supabase work — 11 November 2026

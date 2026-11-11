@@ -1,3 +1,4 @@
+import { returnValue } from '../lib/returnValue';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useStore, shopDay } from '../lib/store';
@@ -97,18 +98,18 @@ function PurchaseList({ list, f, setF, onOpen }) {
       <div className="dt"><div className="dt-scroll"><table className="pl-table">
         <thead><tr>
           <th style={{ width: 36 }}><input type="checkbox" checked={allOnPage} onChange={togglePage} aria-label="Select all on this page" /></th>
-          <th>Date</th><th>Purchase #</th><th>Supplier invoice</th><th>Supplier</th><th>Items</th><th className="r">Total</th><th className="r">Paid</th><th className="r">Due</th><th>Status</th>
+          <th>Date</th><th>Purchase #</th><th>Supplier invoice</th><th>Supplier</th><th>Items</th><th className="r">Total</th><th className="r">Paid</th><th className="r">Due at purchase</th><th className="r">Due now</th><th>Status</th>
         </tr></thead>
         <tbody>{d.rows.map((r) => (
           <tr key={r.id} className={`${r.status === 'cancelled' ? 'dim' : ''} ${sel[r.id] ? 'picked' : ''}`} onClick={() => onOpen(r.id)}>
             <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={!!sel[r.id]} onChange={() => toggle(r)} aria-label={`Select ${r.invoice_no}`} /></td>
             <td className="nowrap">{fdate(r.date)}</td><td>{r.invoice_no}</td><td>{r.supplier_invoice || <span className="muted">—</span>}</td><td>{r.supplier_name || '—'}</td><td className="clip">{r.items_text}</td>
-            <td className="r num">{money(r.total, false)}</td><td className="r num">{money(r.paid, false)}</td><td className="r num">{money(r.due, false)}</td>
+            <td className="r num">{money(r.total, false)}</td><td className="r num">{money(r.paid, false)}</td><td className="r num">{money(r.due, false)}</td><td className="r num">{money(r.due_now ?? r.due, false)}</td>
             <td><Badge tone={statusTone(r.status)}>{r.status}</Badge></td>
           </tr>
         ))}</tbody>
-        {d.total > 0 && <tfoot><tr><td /><td colSpan={4}><b>Total of {d.total} purchase{d.total === 1 ? '' : 's'}</b> <span className="muted">(cancelled not counted)</span></td>
-          <td className="r num"><b>{money(d.sums.total, false)}</b></td><td className="r num"><b>{money(d.sums.paid, false)}</b></td><td className="r num"><b>{money(d.sums.due, false)}</b></td><td /></tr></tfoot>}
+        {d.total > 0 && <tfoot><tr><td /><td colSpan={5}><b>Total of {d.total} purchase{d.total === 1 ? '' : 's'}</b> <span className="muted">(cancelled not counted)</span></td>
+          <td className="r num"><b>{money(d.sums.total, false)}</b></td><td className="r num"><b>{money(d.sums.paid, false)}</b></td><td className="r num"><b>{money(d.sums.due, false)}</b></td><td className="r num"><b>{money(d.sums.due_now ?? d.sums.due, false)}</b></td><td /></tr></tfoot>}
       </table>
       {list.loading && !d.rows.length && <Loading />}
       {!list.loading && !d.rows.length && <div className="empty"><b>No purchases found</b><div>{f.supplier_id || f.from || f.to ? 'Change the supplier or dates.' : 'Record your first purchase in New purchase.'}</div></div>}
@@ -387,7 +388,7 @@ function PurchaseDetail({ id, onClose, onChanged }) {
           <div><span>Date</span><b>{fdate(p.date)}</b></div><div><span>Supplier</span><b>{p.supplier_name || '—'}</b></div>
           <div><span>Supplier invoice</span><b>{p.supplier_invoice || '—'}</b></div>
           {p.note && <div><span>Note</span><b>{p.note}</b></div>}
-          <div><span>Total</span><b>{money(p.total)}</b></div><div><span>Paid</span><b>{money(p.paid)}</b></div><div><span>Due</span><b>{money(p.due)}</b></div>
+          <div><span>Total</span><b>{money(p.total)}</b></div><div><span>Paid</span><b>{money(p.paid)}</b></div><div><span>Due at purchase</span><b>{money(p.due)}</b></div><div><span>Due now</span><b>{money(p.due_now ?? p.due)}</b></div>
           <div><span>Entered by</span><b>{p.user}</b></div>
           {data.supplier && <div><span>Supplier phone</span><b>{splitList(data.supplier.phones || '').join(', ') || '—'}</b></div>}
           {data.supplier?.address && <div><span>Supplier address</span><b>{data.supplier.address}</b></div>}
@@ -414,8 +415,7 @@ function PReturnForm({ detail, onClose, onDone }) {
   const [acc, setAcc] = useState(accounts[0]?.id || '');
   const [amount, setAmount] = useState('');
   const [busy, run] = useAction();
-  const ratio = purchase.subtotal > 0 ? purchase.total / purchase.subtotal : 1;
-  const value = round2(lines.reduce((a, l, i) => a + (Number(l.qty) || 0) * items[i].cost * ratio, 0));
+  const value = returnValue(purchase, items, lines);
   useEffect(() => setAmount(value || ''), [value]);
   const set = (i, patch) => setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const save = async () => {
@@ -432,7 +432,7 @@ function PReturnForm({ detail, onClose, onDone }) {
         <thead><tr><th>Item</th><th className="r">Bought</th><th style={{ width: 110 }} className="r">Return qty</th><th>Serials</th></tr></thead>
         <tbody>{items.map((it, i) => (
           <tr key={it.id}><td>{it.name}</td><td className="r num">{fqty(it.qty, it.unit)}</td>
-            <td><input type="number" min="0" max={it.qty} step="any" value={lines[i].qty} onChange={(e) => set(i, { qty: e.target.value })} onWheel={noWheel} /></td>
+            <td><input type="number" min="0" max={Math.max(0, it.qty - (it.returned_qty || 0))} step="any" value={lines[i].qty} onChange={(e) => set(i, { qty: e.target.value })} onWheel={noWheel} /></td>
             <td>{splitList(it.serials).length > 0 && <div className="serial-grid">{splitList(it.serials).map((sn) => (
               <button type="button" key={sn} className={lines[i].serials.includes(sn) ? 'on' : ''} onClick={() => { const c = lines[i].serials; const n = c.includes(sn) ? c.filter((x) => x !== sn) : [...c, sn]; set(i, { serials: n, qty: n.length || '' }); }}>{sn}</button>
             ))}</div>}</td></tr>

@@ -1,3 +1,5 @@
+import { clearShopDrafts } from '../lib/shopStorage';
+import { restoreBackup } from '../lib/restoreBackup';
 // Settings → Database (Administrator account only): overview, full backup download, restore from a backup file.
 import { useRef, useState } from 'react';
 import { useStore } from '../lib/store';
@@ -7,7 +9,6 @@ import { Btn, Field, useAction, useApi, Loading, ErrorBox } from './ui';
 
 export const BACKUP_FORMAT = 'Karvio database backup';
 const RESTORE_WORD = 'RESTORE';
-const LOCAL_DRAFTS = ['erp_pos_draft', 'erp_quotes'];
 const label = (name) => name.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^(\w)(.*)$/, (m, a, b) => a + b.toLowerCase());
 const size = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 const daysSince = (ts) => (ts ? Math.floor((Date.now() - new Date(ts.replace(' ', 'T') + '+06:00').getTime()) / 864e5) : null);
@@ -20,7 +21,7 @@ export async function backupChecksum(tables) {
   const hash = await crypto.subtle.digest('SHA-256', bytes);
   return Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, '0')).join('');
 }
-function forgetLocalDrafts() { LOCAL_DRAFTS.forEach((k) => { try { localStorage.removeItem(k); } catch { /* private mode */ } }); }
+
 
 export function DatabaseOverview({ info }) {
   if (info.loading && !info.data) return <div className="card"><Loading label="Reading the database" /></div>;
@@ -78,6 +79,7 @@ export function DatabaseRestore({ onDone }) {
   const [f, setF] = useState({ password: '', confirm: '' });
   const [done, setDone] = useState(null);
   const [drag, setDrag] = useState(false);
+  const [progress, setProgress] = useState('');
   const [busy, run] = useAction();
   const input = useRef();
   const offline = isOffline();
@@ -102,8 +104,8 @@ export function DatabaseRestore({ onDone }) {
   const ready = file && !file.error && f.password && f.confirm.trim() === RESTORE_WORD;
   const restore = async () => {
     if (!ready) return;
-    let r; try { r = await run(() => api('database.restore', { password: f.password, confirm: f.confirm, backup_text: file.text })); } catch { return; } // shown as a message; nothing changed
-    forgetLocalDrafts();
+    let r; try { r = await run(() => restoreBackup(file.text, f, setProgress)); } catch { return; } // shown as a message; nothing changed
+    if (!clearShopDrafts()) useStore.getState().toast('Database changed, but saved carts could not be cleared. Clear this site’s saved data before opening POS.', 'err');
     setF({ password: '', confirm: '' }); setFile(null); if (input.current) input.current.value = '';
     if (r.signed_out) {
       await useStore.getState().logout();
@@ -119,6 +121,8 @@ export function DatabaseRestore({ onDone }) {
   return (
     <div className="card form db-card">
       <h2 className="wide">Restore (import)</h2>
+      <p className="muted wide">Backups up to 16 MiB are supported. Large files upload in small parts before the complete backup is checked and restored.</p>
+      {busy && progress && <p className="wide muted" role="status">{progress}</p>}
       <p className="muted wide">Replaces <b>everything</b> in Karvio with the data in a backup file. {offline ? 'The current data file is kept on this computer first.' : 'A full safety backup is saved in your backend first — if it cannot be saved, nothing changes.'}</p>
       {done && <div className="wide note reset-done" role="status">
         <b>Restored</b> the backup of {done.shop_name || 'the shop'} made {fdatetime(done.backup_created_at)}.{' '}
