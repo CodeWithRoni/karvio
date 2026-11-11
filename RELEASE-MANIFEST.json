@@ -1,9 +1,9 @@
 {
   "product": "Karvio",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "preparedDate": "2026-11-11",
   "state": "owner-approved-main-publication-supabase-backend-deployed",
-  "baseCommit": "d7e772b9c71d9fb96c11397be72df424cff517d4",
+  "baseCommit": "17d70d2861000d0ceb99718fadf1e224caccd353",
   "validation": {
     "automatedChecks": 1406,
     "supabaseAdapterChecks": 63,

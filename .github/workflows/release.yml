@@ -70,6 +70,8 @@ jobs:
         run: |
           VERSION=$(node -p "require('../package.json').version")
           sed -i "s/versionName \".*\"/versionName \"$VERSION\"/" app/build.gradle
+          VERSION_CODE=$(node -p "const [a,b,c]=require('../package.json').version.split('.').map(Number);a*10000+b*100+c")
+          sed -i "s/versionCode [0-9]*/versionCode $VERSION_CODE/" app/build.gradle
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
           mkdir -p ../release
@@ -119,8 +121,11 @@ jobs:
         run: |
           VERSION=$(node -p "require('./frontend/package.json').version")
           TAG="${GITHUB_REF_NAME}"; case "$TAG" in v*) ;; *) TAG="v$VERSION" ;; esac
+          (cd out && sha256sum * > SHA256SUMS.txt)
           ls -la out
-          NOTES="Karvio $TAG — installers for every platform.
+          NOTES="Karvio $TAG — online-only installers for every platform.
+
+          Internet access and your existing online shop account are required. Offline database mode is disabled. Legacy local data is left untouched and is not imported. Includes the latest ERP fixes and interface updates.
 
           - **Windows:** Karvio-*-win-x64.exe — run the installer.
           - **macOS:** Karvio-*-mac-arm64.dmg (Apple Silicon) or Karvio-*-mac-x64.dmg (Intel). First open: right-click → Open (the app is not notarized).
