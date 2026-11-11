@@ -9,7 +9,7 @@ let desktop, page;
 const networkRequests = [];
 const launch = async () => {
   const executablePath = process.env.KARVIO_PACKAGED_EXE || process.env.KARVIO_ELECTRON_EXECUTABLE || require('electron');
-  desktop = await _electron.launch({ executablePath, args: process.env.KARVIO_PACKAGED_EXE ? [] : [path.resolve(__dirname, '..')], env: { ...process.env, KARVIO_DATA_DIR: dataDir, KARVIO_TEST_MODE: '1' }, timeout: 30000 });
+  desktop = await _electron.launch({ executablePath, args: process.env.KARVIO_PACKAGED_EXE ? ['--offline'] : [path.resolve(__dirname, '..'), '--offline'], env: { ...process.env, KARVIO_DATA_DIR: dataDir, KARVIO_TEST_MODE: '1' }, timeout: 30000 });
   page = await desktop.firstWindow();
   page.on('pageerror', (error) => console.error('Offline window:', error.message));
   page.on('request', (request) => { if (/^https?:/.test(request.url())) networkRequests.push(request.url()); });

@@ -39,7 +39,7 @@ var SCHEMA = {
   Suppliers:           'id,name,phones,address,opening_balance:n,note,active:b,created_at,link_id',
   Purchases:           'id,invoice_no,date,supplier_id,supplier_name,subtotal:n,discount:n,total:n,paid:n,due:n,note,status,user,created_at,payments,cancel_reason,supplier_invoice',
   PurchaseItems:       'id,purchase_id,product_id,name,unit,qty:n,cost:n,total:n,serials,valuation',
-  Sales:               'id,invoice_no,date,customer_id,customer_name,subtotal:n,discount:n,total:n,paid:n,credit_used:n,due:n,cost:n,profit:n,note,status,user_id,user_name,created_at,payments,cancel_reason,next_payment_date',
+  Sales:               'id,invoice_no,date,customer_id,customer_name,subtotal:n,discount:n,total:n,paid:n,credit_used:n,due:n,cost:n,profit:n,note,status,user_id,user_name,created_at,payments,cancel_reason,next_payment_date,balance_snapshot',
   SaleItems:           'id,sale_id,product_id,name,unit,qty:n,price:n,cost:n,total:n,serials,warranty_type,warranty_days:n,warranty_expiry',
   SalesReturns:        'id,return_no,date,sale_id,invoice_no,customer_id,customer_name,type,total:n,cost:n,refund:n,refund_account_id,note,status,user,created_at,cancel_reason',
   SalesReturnItems:    'id,return_id,sale_item_id,product_id,name,qty:n,price:n,cost:n,total:n,serials,valuation',
@@ -366,6 +366,12 @@ function insert_(name, obj) { return insertMany_(name, [obj])[0]; }
 function update_(name, id, patch) {
   var r = all_(name).filter(function (x) { return x.id === id; })[0];
   if (!r) fail_(name + ' record not found');
+  if (name === 'Products' && patch.stock !== undefined && num_(patch.stock) < num_(r.stock)) {
+    var held = repairReservations_(_mem.__repairDelivery).qty[id] || 0;
+    if (num_(patch.stock) < held - 1e-9) fail_('Stock is reserved for open repair jobs: ' + r.name + ' (' + held + ')');
+  }
+  if (name === 'SerialItems' && r.status === 'in_stock' && patch.status && patch.status !== 'in_stock' && repairReservations_(_mem.__repairDelivery).serial[id])
+    fail_('Serial is reserved for an open repair job: ' + r.serial);
   var cs = cols_(name);
   cs.forEach(function (c) { if (patch.hasOwnProperty(c.k)) r[c.k] = cast_(ser_(patch[c.k], c.t), c.t); });
   writeRows_(name, r._row, 1, [cs.map(function (c) { return ser_(r[c.k], c.t); })]);
@@ -891,7 +897,8 @@ function masterDelete_(p, user) {
  *  6. PRODUCTS
  * ========================================================================== */
 function productsList_(user) {
-  var list = all_('Products').map(function (p) { var c = Object.assign({}, p); delete c._row; return c; });
+  var reservations = repairReservations_().qty;
+  var list = all_('Products').map(function (p) { var c = Object.assign({}, p); delete c._row; c.reserved = reservations[p.id] || 0; c.available = Math.max(0, round_(p.stock - c.reserved, 4)); return c; });
   return stripCost_(list, user);
 }
 function productSave_(p, user) {
@@ -999,6 +1006,7 @@ function serialFind_(p) {
   return { product_id: h.product_id, serial: h.serial, status: h.status };
 }
 function stockAdjust_(p, user) {
+  if (p.new_stock === null || p.new_stock === undefined || String(p.new_stock).trim() === '' || !isFinite(Number(p.new_stock))) fail_('Enter the counted stock quantity (use 0 explicitly for zero stock)');
   var pr = all_('Products').filter(function (x) { return x.id === p.product_id; })[0]; if (!pr) fail_('Product not found');
   if (isService_(pr)) fail_(pr.name + ' is a service (no inventory), so it has no stock to adjust');
   if (pr.has_warranty && pr.warranty_type === 'serial') fail_('Serial-tracked items must be adjusted through purchases / returns');
@@ -1039,6 +1047,10 @@ function customerSave_(p, user) {
   if (p.id) { need_(user, 'customers'); if (!current) fail_('Customer record not found'); }
   if (combined || (current && current.link_id)) need_(user, 'suppliers'); // all permissions before the first write
   var phones = joinList_(p.phones, ',');
+  if (p.id && !p.allow_duplicate_phone) {
+    var duplicate = customerByPhone_(phones, p.id);
+    if (duplicate) fail_('DUPLICATE_PHONE: this phone number already belongs to customer ' + duplicate.name);
+  }
   var row = { name: name, phones: phones, addresses: joinList_(p.addresses, '|'), note: p.note || '' };
   if (p.id) {
     need_(user, 'customers');
@@ -1717,7 +1729,7 @@ function invoicePublic_(p) {
     .forEach(function (k) { shop[k] = st[k] || ''; });
   var pays = []; try { pays = (typeof s.payments === 'string' ? JSON.parse(s.payments || '[]') : s.payments) || []; } catch (e) {}
   return {
-    sale: Object.assign(pick(s, ['invoice_no', 'date', 'customer_id', 'customer_name', 'subtotal', 'discount', 'total', 'paid', 'credit_used', 'due', 'note', 'status', 'user_name', 'created_at', 'cancel_reason', 'next_payment_date']),
+    sale: Object.assign(pick(s, ['invoice_no', 'date', 'customer_id', 'customer_name', 'subtotal', 'discount', 'total', 'paid', 'credit_used', 'due', 'note', 'status', 'user_name', 'created_at', 'cancel_reason', 'next_payment_date', 'balance_snapshot']),
       { original_due: s.due, due: d.sale.due_now, due_now: d.sale.due_now, payments: pays.map(function (x) { return { account_name: x.account_name || '', amount: x.amount }; }) }),
     items: d.items.map(function (i) { return pick(i, ['id', 'name', 'unit', 'qty', 'price', 'total', 'serials', 'warranty_type', 'warranty_days', 'warranty_expiry', 'returned_qty']); }),
     customer: d.customer ? pick(d.customer, ['name', 'phones', 'addresses', 'balance']) : null,
@@ -1768,13 +1780,26 @@ function repairOut_(r, sales) {
   return o;
 }
 /** The parts list as stored on the job: real products in stock, the price typed, serials for serial items. */
-function repairPartsClean_(list) {
-  var pmap = indexBy_(all_('Products')), sidx = serialIndex_(), seen = {};
+function repairReservations_(exceptId) {
+  var qty = {}, serial = {}, idx = serialIndex_();
+  all_('Repairs').forEach(function (job) {
+    if (job.id === exceptId || !repairOpen_(job)) return;
+    repairParts_(job).forEach(function (part) {
+      qty[part.product_id] = (qty[part.product_id] || 0) + num_(part.qty);
+      splitSerials_(part.serials).forEach(function (sn) { var rec = idx[part.product_id + '|' + sn]; if (rec) serial[rec.id] = job.id; });
+    });
+  });
+  return { qty: qty, serial: serial };
+}
+function repairPartsClean_(list, exceptId) {
+  var pmap = indexBy_(all_('Products')), sidx = serialIndex_(), seen = {}, quantities = {}, reserved = repairReservations_(exceptId);
   return (list || []).map(function (it) {
     var pr = pmap[it.product_id]; if (!pr || !pr.active) fail_('Part not found or inactive');
     var qty = num_(it.qty); if (qty <= 0) fail_('Invalid quantity for ' + pr.name);
     if (!isDecimalUnit_(pr.unit) && qty % 1 !== 0) fail_('Quantity for ' + pr.name + ' must be a whole number');
     var price = round_(it.price); if (price < 0) fail_('Invalid price for ' + pr.name);
+    quantities[pr.id] = (quantities[pr.id] || 0) + qty;
+    if (!isService_(pr) && quantities[pr.id] > pr.stock - (reserved.qty[pr.id] || 0) + 1e-9) fail_('Only ' + Math.max(0, pr.stock - (reserved.qty[pr.id] || 0)) + ' ' + pr.unit + ' of ' + pr.name + ' available; other parts are reserved for repairs');
     var sers = [];
     if (isSerialProduct_(pr)) {
       sers = splitSerials_(it.serials);
@@ -1782,6 +1807,7 @@ function repairPartsClean_(list) {
       sers.forEach(function (s) {
         var k = pr.id + '|' + s;
         if (!sidx[k] || sidx[k].status !== 'in_stock') fail_('Serial ' + s + ' is not in stock for ' + pr.name);
+        if (reserved.serial[sidx[k].id]) fail_('Serial ' + s + ' is reserved for another repair');
         if (seen[k]) fail_('Duplicate serial ' + s); seen[k] = 1;
       });
     } else if (!isService_(pr) && pr.stock < qty - 1e-9) fail_('Only ' + pr.stock + ' ' + pr.unit + ' of ' + pr.name + ' in stock');
@@ -1851,7 +1877,7 @@ function repairSave_(p, user) {
   var tech = repairTechnician_(p.technician_id, open ? open.technician_id : '');
   var charge = round_(p.charge); if (charge < 0) fail_('Repair charge cannot be negative');
   var estimate = round_(p.estimate); if (estimate < 0) fail_('Estimate cannot be negative');
-  var parts = repairPartsClean_(p.parts);
+  var parts = repairPartsClean_(p.parts, p.id);
   if (!can_(user, 'pos')) {
     var oldParts = open ? repairParts_(open) : [], products = indexBy_(all_('Products'));
     parts.forEach(function (part) {
@@ -1964,10 +1990,11 @@ function repairDeliver_(p, user) {
     var discount = Math.min(Math.max(round_(p.discount), 0), total);
     var avail = Math.max(-(customerBalances_()[cust.id] || 0), 0);
     var credit = round_(Math.min(num_(r.advance), avail, total - discount));
-    sale = saleCreate_({
+    _mem.__repairDelivery = r.id;
+    try { sale = saleCreate_({
       customer_id: cust.id, items: items, discount: discount, payments: p.payments || [], credit_used: credit,
       next_payment_date: p.next_payment_date, note: 'Repair ' + r.job_no + ' · ' + r.device, send_sms: false
-    }, user);
+    }, user); } finally { delete _mem.__repairDelivery; }
   }
   log.push({ ts: now_(), status: 'Delivered', note: sale ? 'Invoice ' + sale.sale.invoice_no : 'Delivered without charge', user: user.name });
   var upd = update_('Repairs', r.id, { status: 'Delivered', delivered_date: today_(), sale_id: sale ? sale.sale.id : '', invoice_no: sale ? sale.sale.invoice_no : '', log: log, updated_at: now_() });
@@ -2021,6 +2048,10 @@ function bootstrap_(p, user) {
  * ========================================================================== */
 function splitSerials_(v) {
   return (Array.isArray(v) ? v : String(v || '').split(/[\n,]+/)).map(function (s) { return String(s).trim(); }).filter(Boolean);
+}
+function serialCaseMatch_(productId, serial) {
+  var key = String(serial).trim().toLowerCase();
+  return all_('SerialItems').filter(function (s) { return s.product_id === productId && s.status !== 'cancelled' && String(s.serial).toLowerCase() === key; })[0] || null;
 }
 function isSerialProduct_(pr) { return !pr.service && pr.has_warranty && pr.warranty_type === 'serial'; }
 /**
@@ -2121,9 +2152,10 @@ function purchaseCreate_(p, user) {
       if (sers.length !== qty) fail_('Enter exactly ' + qty + ' serial number(s) for ' + pr.name + ' (got ' + sers.length + ')');
       sers.forEach(function (s) {
         var k = pr.id + '|' + s;
-        if (sidx[k] && sidx[k].status !== 'returned_supplier') fail_('Serial already exists: ' + s);
-        if (seen[k]) fail_('Duplicate serial in list: ' + s);
-        seen[k] = 1;
+        var existing = serialCaseMatch_(pr.id, s), folded = k.toLowerCase();
+        if (existing && (existing.status !== 'returned_supplier' || existing.serial !== s)) fail_('Serial already exists: ' + s);
+        if (seen[folded]) fail_('Duplicate serial in list: ' + s);
+        seen[folded] = 1;
       });
     } else if (!isDecimalUnit_(pr.unit) && qty % 1 !== 0) fail_('Quantity for ' + pr.name + ' must be a whole number');
     var total = round_(qty * cost);
@@ -2273,12 +2305,12 @@ function saleCreate_(p, user) {
       });
     } else cost = isService_(pr) ? 0 : pr.cost_price * qty;
     var wDays = 0, wExp = '';
-    if (pr.has_warranty) {
+    if (pr.has_warranty || num_(it.warranty_days) > 0) {
       wDays = (it.warranty_days !== undefined && it.warranty_days !== null && it.warranty_days !== '') ? Math.min(Math.max(Math.round(num_(it.warranty_days)), 0), 36500) : pr.warranty_days;
       if (wDays > 0) wExp = addDays_(date, wDays);
     }
     var total = round_(qty * price);
-    lines.push({ pr: pr, qty: qty, price: price, cost: round_(cost, 4), total: total, serials: sers, wType: pr.has_warranty ? pr.warranty_type : '', wDays: wDays, wExp: wExp });
+    lines.push({ pr: pr, qty: qty, price: price, cost: round_(cost, 4), total: total, serials: sers, wType: pr.has_warranty ? pr.warranty_type : wDays > 0 ? 'invoice' : '', wDays: wDays, wExp: wExp });
     subtotal += total; costTotal += cost;
   });
 
@@ -2298,11 +2330,13 @@ function saleCreate_(p, user) {
   var nextPay = due > 0.005 ? promiseDate_(p.next_payment_date, date) : '';
 
   var inv = nextNo_('seq_sale', getSetting_('invoice_prefix', 'INV-'));
+  var previousBalance = customer ? (customerBalances_()[customer.id] || 0) : 0;
   var profit = round_(total - costTotal);
   var sale = insert_('Sales', {
     invoice_no: inv, date: date, customer_id: customer ? customer.id : '', customer_name: customer ? customer.name : 'Walk-in',
     subtotal: subtotal, discount: discount, total: total, paid: paid, credit_used: creditUsed, due: due, cost: round_(costTotal), profit: profit,
-    note: p.note || '', status: 'active', user_id: user.id, user_name: user.name, created_at: now_(), payments: pays, next_payment_date: nextPay
+    note: p.note || '', status: 'active', user_id: user.id, user_name: user.name, created_at: now_(), payments: pays, next_payment_date: nextPay,
+    balance_snapshot: { previous: round_(previousBalance), outstanding: round_(previousBalance + total - cashPaid) }
   });
   var rows = insertMany_('SaleItems', lines.map(function (l) {
     return { sale_id: sale.id, product_id: l.pr.id, name: l.pr.name, unit: l.pr.unit, qty: l.qty, price: l.price, cost: l.cost, total: l.total, serials: l.serials.join(','), warranty_type: l.wType, warranty_days: l.wDays, warranty_expiry: l.wExp };
@@ -2681,6 +2715,10 @@ function reverseSale_(p, user, reason) {
   });
   voidRefs_('AccountTxns', s.id, 'sale'); voidRefs_('CustomerLedger', s.id);
   update_('Sales', s.id, { status: 'cancelled', cancel_reason: reason });
+  all_('Repairs').filter(function (job) { return job.sale_id === s.id && job.status === 'Delivered'; }).forEach(function (job) {
+    var log = repairLog_(job); log.push({ ts: now_(), status: 'Completed', user: user.name, note: 'Delivery invoice cancelled: ' + reason });
+    update_('Repairs', job.id, { status: 'Completed', sale_id: '', invoice_no: '', delivered_date: '', log: log, updated_at: now_() });
+  });
   evBatch_(user, events);
   return true;
 }
@@ -2926,6 +2964,7 @@ function claimUpdate_(p, user) {
  * The stock value goes down by the new unit's cost until the vendor's unit is put back with claim.restock.
  */
 function claimReplace_(c, p, user) {
+  if (!c.in_warranty || !c.expiry || c.expiry < c.date) fail_('Warranty had expired when this claim was received; a free stock replacement is not allowed');
   var pr = all_('Products').filter(function (x) { return x.id === c.product_id; })[0]; if (!pr) fail_('Product not found');
   if (isService_(pr)) return { record: { kind: 'service' }, events: [], text: 'Service repeated (no stock)' };
   var sale = all_('Sales').filter(function (s) { return s.id === c.sale_id; })[0];
@@ -2968,7 +3007,8 @@ function claimRestock_(p, user) {
   var serial = '';
   if (rep.kind === 'serial') {
     serial = String(p.serial || '').trim(); if (!serial) fail_('Enter the serial number of the unit the vendor sent');
-    var sidx = serialIndex_(), ex = sidx[pr.id + '|' + serial];
+    var sidx = serialIndex_(), ex = serialCaseMatch_(pr.id, serial);
+    if (ex && ex.serial !== serial) fail_('Serial already exists with different capitalization: ' + ex.serial);
     if (ex && ex.id && serial !== rep.faulty && ex.status !== 'returned_supplier') fail_('Serial already exists: ' + serial);
     if (serial === rep.faulty) update_('SerialItems', ex.id, { status: 'in_stock', sale_id: '', cost: rep.cost }); // repaired and returned
     else insert_('SerialItems', { product_id: pr.id, serial: serial, purchase_id: '', sale_id: '', status: 'in_stock', cost: rep.cost, created_at: now_() });
@@ -3436,11 +3476,20 @@ function productHistory_(p, user) {
 /** Value of manual stock adjustments in the date range (negative = stock lost). Keyed by day or month if `key` is given. */
 function stockAdjustValue_(from, to, key) {
   var by = {}, total = 0;
+  var add = function (d, value) { d = String(d || '').slice(0, 10); if (!d || !inRange_(d, from, to)) return; total += value; if (key) by[key(d)] = (by[key(d)] || 0) + value; };
   all_('ItemEvents').forEach(function (e) {
     if (e.event !== 'stock_adjust') return;
     var d = String(e.ts || '').slice(0, 10); if (!inRange_(d, from, to)) return;
     var v = num_(e.amount); total += v;
     if (key) by[key(d)] = (by[key(d)] || 0) + v;
+  });
+  all_('WarrantyClaims').forEach(function (claim) {
+    var rep = valuation_(claim.replacement);
+    if (!rep || (rep.kind !== 'unit' && rep.kind !== 'serial')) return;
+    var log = []; try { log = JSON.parse(claim.log || '[]'); } catch (e) {}
+    var replaced = log.filter(function (entry) { return entry.status === 'Replaced'; })[0];
+    add(replaced ? replaced.ts : claim.date, -num_(rep.cost));
+    if (rep.restocked) add(rep.restocked_at, num_(rep.cost));
   });
   return key ? by : round_(total);
 }

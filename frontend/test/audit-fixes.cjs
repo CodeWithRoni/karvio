@@ -105,7 +105,7 @@ async function retryChecks() {
 
 function invoiceChecks() {
   const fixture = { sale: { invoice_no: 'TEST', customer_id: 'C', customer_name: 'Customer', total: 100, subtotal: 100, paid: 100, credit_used: 20, due: 0, status: 'active', payments: [{ account_name: 'Cash', amount: 80 }] }, shop: { shop_name: 'Test' }, customer: { phones: '01700000000' }, items: [], returns: [], expires_at: '2026-11-26' };
-  const format = { money: n => 'Tk ' + n, splitList: x => String(x).split(','), fdate: x => x, fdatetime: x => x, qty: x => x };
+  const format = { money: n => 'Tk ' + n, splitList: x => String(x).split(','), fdate: x => x, fdatetime: x => x, qty: x => x, today: () => '2026-11-11' };
   let state = 0;
   const hooks = { ...React, useState: () => [state++ === 0 ? fixture : '', () => {}], useEffect: () => {} };
   function load(file, modules) {

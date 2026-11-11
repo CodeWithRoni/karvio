@@ -1,6 +1,6 @@
 // Customer / supplier details with their full ledger: print, PDF (one party per A4 page) and Excel.
 import { useStore } from './store';
-import { money, fdate, splitList } from './format';
+import { money, fdate, splitList, today } from './format';
 import { printHtml, esc, shopContacts } from './export';
 import { pdfPages } from './purchaseDocs';
 
@@ -27,7 +27,7 @@ export function statementHtml(kind, st) {
   const tag = st.closing > 0.004 ? ` (${L.pos})` : st.closing < -0.004 ? ` (${L.neg})` : '';
   return `<div class="pst">
     <div class="top"><div><h1>${esc(s.shop_name || 'Karvio')}</h1><div>${esc(s.shop_address || '')}</div><div>${shopContacts(s)}</div></div>
-      <div><h2>${L.title}</h2><div style="text-align:right">${esc(fdate(new Date().toISOString()))}</div></div></div>
+      <div><h2>${L.title}</h2><div style="text-align:right">${esc(fdate(today()))}</div></div></div>
     <div class="box">
       <div><b class="t">${L.who}</b><b>${esc(st.party)}</b></div>
       <div><b class="t">Phone</b>${esc(splitList(st.phones || '').join(', ') || '—')}</div>

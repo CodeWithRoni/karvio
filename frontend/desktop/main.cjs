@@ -4,7 +4,8 @@ const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const { OfflineRuntime } = require('./offline-runtime.cjs');
 
-const online = process.argv.includes('--online');
+const { desktopMode } = require('./mode.cjs');
+const online = desktopMode({ args: process.argv, appData: app.getPath('appData'), dataDir: process.env.KARVIO_DATA_DIR, defaultMode: require('../package.json').karvioDefaultMode }) === 'online';
 app.setName('Karvio');
 app.setAppUserModelId('com.karvio.erp');
 // Offline data lives in "Karvio Offline"; an older "ShopERP Offline" folder is moved there on first start.

@@ -1,4 +1,5 @@
 # KARVIO ERP
+Current application version: **1.2.0**. Earlier 1.0.6 documents are retained as release history; use SETUP.md and FIXES-REVIEW.md for current setup and pending fixes.
 ### Smart Business Management & Point of Sale System
 
 **A Modern, Powerful & Flexible ERP Solution for Retail, Computer, IT, Electronics and Networking Businesses.**
@@ -199,7 +200,7 @@ Detailed instructions are available in `SETUP.md` and `UPLOAD_GUIDE-বাংল
 
 ## 💾 Offline Desktop Application
 
-Karvio ERP includes an Electron-based offline desktop environment.
+Karvio ERP includes an Electron desktop environment. Fresh standard installers open the online shop by default and require your existing shop account. Existing offline data is detected and kept in offline mode; it is never merged into the online shop. Launch with `--online` or `--offline` to choose explicitly. The separate portable offline build stays offline by default. Online and offline databases do not sync. Older downloaded installers must be replaced by a newly built version to receive this behavior.
 
 Key capabilities:
 

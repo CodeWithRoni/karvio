@@ -1,4 +1,4 @@
-import { useStore } from './store';
+import { useStore, shopDay } from './store';
 
 export const cur = () => useStore.getState().settings.currency || 'Tk';
 
@@ -31,8 +31,7 @@ export function fdatetime(ts) {
   return `${fdate(ts)}${t ? ', ' + t : ''}`;
 }
 export function today() {
-  const d = new Date();
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  return shopDay();
 }
 export function addDays(dateStr, n) {
   const d = new Date(dateStr + 'T12:00:00');

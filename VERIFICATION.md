@@ -1,8 +1,14 @@
 # Karvio 1.2.0 — local patch verification
 
-Date: 11 November 2026 (Asia/Dhaka). Current follow-up base: GitHub main `9d9ebcb8e4e628b57d824e29995fdc135e44845a`. The owner approved publication of these five financial fixes. Apps Script Version 41 was successfully deployed to the existing Web App URL after verifying editor contents against the tested source. No setup/reset or production transaction was run. Earlier sections below describe previous review stages. The original 1.0.6 record remains in VERIFICATION-1.0.6.md.
+Date: 11 November 2026 (Asia/Dhaka). Remaining-fixes base: main `b2cb6d790fe8492cf477f0bf9f382f56d61dcfb6`. The owner approved main publication and Apps Script deployment. Backend Version 42 was successfully deployed on 11 November 2026 to the existing Web App URL; saved code matched the tested source. The append-only invoice snapshot column is initialized by normal schema handling, without a reset/setup run. No production transaction or historical balance rewrite was performed. Earlier publication notes below describe prior stages. The original 1.0.6 record remains in VERIFICATION-1.0.6.md.
 
 ## Recorded results
+
+Latest remaining-fixes review adds 51 isolated assertions, plus a browser test for preserving quote warranty and confirming cart replacement. The actual Electron offline UI passed restart persistence, stock/accounts, Bengali PDF, backup/restore and zero internet requests. A fresh standard Electron start passed online-mode/sign-in/no-offline-database checks. Windows Electron was exercised; newly packaged Windows/macOS/Linux installers have not been built or published in this review.
+
+Final current run: `npm test` passed all 1,324 assertions; the complete 48-case Edge browser suite passed together in 57.0 seconds. Production frontend build and entry/import/font/icon validation passed. Transfer inventory/checksums were regenerated and verified. No local test used the shop's actual database.
+
+Regressions include reserved quantities/serials, blocked writes rolling back without a stray invoice, own-job delivery, reversal/reopening/re-reservation, reservation release, empty count rejection, normalized duplicate phones/serials, stable invoice snapshots, legacy snapshot-column backup restore preserving an invoice, warranty cost loss/recovery, expired claim rejection, per-sale quote warranty, draft isolation, shop-day print output and desktop mode selection. Legacy invoices without stored balances explicitly show "Not recorded".
 
 Publication follow-up: the first combined CI run passed 46/47 browser cases. A pre-existing repair test assumed there was exactly one technician; the new permission test legitimately added another. The repair dropdown test now compares all options against all active Technician-role users, preserving its role-filter check. The audit and repair files passed together (9/9 locally). The public production health check also passed (`Live Karvio API verified: 1.2.0`); it performs no business writes.
 
@@ -12,13 +18,13 @@ New cases cover backdated supplier balances, exact discounted line/partial-retur
 
 ```json
 {
-  "automatedChecks": 1273,
-  "browserTests": 47,
+  "automatedChecks": 1324,
+  "browserTests": 48,
   "browser": "Microsoft Edge",
   "frontendBuild": "passed",
   "buildAssets": "passed",
   "dependencyAdvisories": { "high": 1, "moderate": 9, "majorUpgrades": "deferred per owner constraint" },
-  "nativeInstallers": "not run in this review",
+  "nativeInstallers": "not packaged; Electron online and offline source-app smoke checks passed",
   "productionDataAccess": false
 }
 ```

@@ -103,12 +103,13 @@ test('a serial line with no serials picked blocks the sale and shows what to do'
   await expect(page.locator('.modal .serial-status')).toContainText('0 picked of 2 in stock');
 });
 
-test('an old saved cart with a typed serial quantity is corrected to the serials picked', async ({ page }) => {
-  await page.addInitScript(({ endpoint, token, id }) => {
+test('an old saved cart with a typed serial quantity is corrected to the serials picked', async ({ page, request }) => {
+  const owner = (await call(request, 'bootstrap')).user.id;
+  await page.addInitScript(({ endpoint, token, id, owner }) => {
     localStorage.setItem('erp_api_config', JSON.stringify({ scriptUrl: endpoint }));
     localStorage.setItem('erp_token', token);
-    localStorage.setItem('erp_pos_draft', JSON.stringify({ cart: [{ product_id: id, qty: 2, price: 2200, serials: [], warranty_days: 300 }], customerId: '', discount: '' }));
-  }, { endpoint, token, id: router.id });
+    localStorage.setItem(`erp_pos_draft:${encodeURIComponent(endpoint)}:${encodeURIComponent(owner)}`, JSON.stringify({ cart: [{ product_id: id, qty: 2, price: 2200, serials: [], warranty_days: 300 }], customerId: '', discount: '' }));
+  }, { endpoint, token, id: router.id, owner });
   await page.goto('/#/pos');
   const row = page.locator('.cart tbody tr').filter({ hasText: 'Router Serial Test C54' });
   await expect(row.getByRole('button', { name: /^Quantity 0/ })).toBeVisible();

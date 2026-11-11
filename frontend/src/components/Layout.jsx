@@ -106,7 +106,7 @@ export default function Layout() {
           ))}
         </nav>
         <div className="rail-foot">
-          <div className="who"><b>{user?.name}</b><span className="muted">{user?.role === 'sales' ? 'Sales staff' : user?.role === 'manager' ? 'Manager' : 'Admin'}</span></div>
+          <div className="who"><b>{user?.name}</b><span className="muted">{{ sales: 'Sales staff', manager: 'Manager', technician: 'Technician', admin: 'Admin' }[user?.role] || user?.role || 'Staff'}</span></div>
           <Btn size="sm" onClick={toggleTheme} title="Switch light / dark mode">{theme === 'dark' ? 'Light' : 'Dark'}</Btn>
           <Btn size="sm" onClick={logout}>Sign out</Btn>
         </div>

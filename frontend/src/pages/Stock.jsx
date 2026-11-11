@@ -42,6 +42,8 @@ export default function Stock() {
     { key: 'brand', label: 'Brand' },
     { key: 'stock', label: 'Stock', type: 'num', render: (r) => r.service ? <Badge tone="info">Service</Badge> : <b style={{ color: r.stock <= 0 ? 'var(--bad)' : r.stock <= (r.low_stock > 0 ? r.low_stock : lowDef) ? 'var(--warn)' : undefined }}>{fqty(r.stock, r.unit)}</b> },
     { key: 'unit', label: 'Unit' },
+    { key: 'reserved', label: 'Reserved for repairs', type: 'num' },
+    { key: 'available', label: 'Available to sell', type: 'num' },
     ...(can('cost') ? [{ key: 'cost_price', label: 'Cost', type: 'money' }] : []),
     { key: 'sale_price', label: 'Price', type: 'money' },
     ...(can('cost') ? [{ key: 'value', label: 'Stock value', type: 'money', sum: true }] : []),
@@ -167,9 +169,10 @@ function AdjustForm({ product, onClose }) {
   const [n, setN] = useState(product.stock);
   const [note, setNote] = useState('');
   const [busy, run] = useAction();
-  const save = async () => { await run(() => api('stock.adjust', { product_id: product.id, new_stock: Number(n), note }), 'Stock updated'); await refresh('products'); onClose(); };
+  const valid = String(n).trim() !== '' && Number.isFinite(Number(n)) && Number(n) >= 0;
+  const save = async () => { if (!valid) return; const result = await run(() => api('stock.adjust', { product_id: product.id, new_stock: Number(n), note }), 'Stock updated'); if (result === undefined || result === null) return; await refresh('products'); onClose(); };
   return (
-    <Modal open onClose={onClose} size="sm" title={`Adjust stock — ${product.name}`} footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={save}>Save count</Btn></>}>
+    <Modal open onClose={onClose} size="sm" title={`Adjust stock — ${product.name}`} footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" disabled={!valid} busy={busy} onClick={save}>Save count</Btn></>}>
       <div className="form">
         <Field label="Current" wide><input value={fqty(product.stock, product.unit)} readOnly /></Field>
         <Field label={`Counted quantity (${product.unit})`} wide><input type="number" step="any" min="0" value={n} onChange={(e) => setN(e.target.value)} onWheel={noWheel} /></Field>

@@ -1,6 +1,6 @@
 # Karvio 1.2.0 — আপলোড ও ব্যবহার
 
-১১ নভেম্বর ২০২৬-এর local review patch এখনো push/deploy করা হয়নি। ব্যবহারকারীর অনুমোদনের পরে নিচের upload ধাপ প্রযোজ্য। বর্তমান পরিবর্তন ও পরীক্ষার ফল `FIXES-REVIEW.md` এবং `VERIFICATION.md`-এ আছে। পুরোনো 1.0.6 উল্লেখগুলো ওই release-এর compatibility history।
+মালিকের অনুমোদনের পরে বাকি সমস্যার সংশোধন backend Version 42-এ একই ওয়েব অ্যাপ ঠিকানায় deploy করা হয়েছে; এই ফাইলগুলো অনুমোদিত main publication-এর অংশ। Native installer আলাদাভাবে প্রকাশ করতে হবে। বর্তমান নির্দেশনা Karvio 1.2.0-এর জন্য; FIXES-1.0.6.md শুধু পুরোনো release-এর ইতিহাস।
 
 এই প্যাকেজে সংশোধিত source code, তৈরি করা web build, Google Apps Script backend, offline Electron desktop runtime, icons ও পরীক্ষার ফাইল আছে। প্যাকেজ থেকে কোনো customer data, local database, backup বা login session দেওয়া হয়নি।
 
@@ -18,7 +18,7 @@
 
 ৬. website reload করে নতুন করে sign in করুন। নিরাপত্তার কারণে পুরোনো session আর গ্রহণ করা হয় না। Settings → API connection থেকে প্রয়োজন হলে নিজের Web app URL দিন। Login/Settings-এর API configuration এবং `VITE_API_URL` আগের মতো কাজ করে।
 
-**ক্রমটি জরুরি:** 1.0.6 backend আগে প্রকাশ করুন, তারপর frontend। নতুন frontend পুরোনো backend চিনে unsafe automatic write retry বন্ধ রাখে, কিন্তু নতুন হিসাব ও recovery সুবিধা পেতে দুটোই আপডেট করতে হবে।
+**ক্রমটি জরুরি:** 1.2.0-এর সংশোধিত backend আগে প্রকাশ করুন, তারপর frontend। নতুন frontend পুরোনো backend চিনে unsafe automatic write retry বন্ধ রাখে, কিন্তু নতুন হিসাব ও recovery সুবিধা পেতে দুটোই আপডেট করতে হবে।
 
 ## অন্য static hosting-এ সরাসরি web build
 
@@ -99,4 +99,4 @@ Android-এর জন্য Android Studio/JDK/SDK, iOS-এর জন্য macO
 - Financial commit-এর পরে SMS হয়। Sale saved কিন্তু SMS নিশ্চিত না হলে log/gateway পরীক্ষা করুন; একই sale আবার বানাবেন না।
 - Google Sheet-এ সরাসরি manual edit করলে API lock/journal তার সঙ্গে সমন্বয় করতে পারে না। দৈনন্দিন transaction অ্যাপ দিয়ে লিখুন।
 
-কী ঠিক হয়েছে ও পরীক্ষার ফল `FIXES-1.0.6.md` এবং `VERIFICATION.md`-এ আছে।
+বর্তমান সংশোধন `FIXES-REVIEW.md` এবং পরীক্ষার ফল `VERIFICATION.md`-এ আছে।

@@ -1,6 +1,6 @@
 // Thermal receipts (58mm / 80mm), A4 quotation and ledger statements.
 import { useStore } from './store';
-import { money, qty, fdate, fdatetime, splitList } from './format';
+import { money, qty, fdate, fdatetime, splitList, today } from './format';
 import { printHtml, esc, shopContacts } from './export';
 
 function shopHead(s) {
@@ -111,7 +111,7 @@ export function printQuotation({ title, customer, phone, lines, discount = 0, no
     .meta{display:grid;grid-template-columns:1fr 1fr;gap:4px 24px}.note{margin-top:18px;color:#444}
   </style>
   <div class="top"><div><h1>${esc(s.shop_name || 'Karvio')}</h1><div>${esc(s.shop_address || '')}</div><div>${shopContacts(s)}</div></div>
-  <div class="r"><h2>QUOTATION</h2><div>${esc(no)}</div><div>${esc(fdate(new Date().toISOString()))}</div></div></div>
+  <div class="r"><h2>QUOTATION</h2><div>${esc(no)}</div><div>${esc(fdate(today()))}</div></div></div>
   <div class="meta"><div><b>Prepared for:</b> ${esc(customer || '—')}</div><div><b>Phone:</b> ${esc(phone || '—')}</div>
   <div><b>Subject:</b> ${esc(title || 'Custom PC build')}</div><div><b>Valid for:</b> ${esc(validDays)} days</div></div>
   <table><thead><tr><th>#</th><th>Item</th><th class="r">Warranty</th><th class="r">Qty</th><th class="r">Unit price</th><th class="r">Amount</th></tr></thead>

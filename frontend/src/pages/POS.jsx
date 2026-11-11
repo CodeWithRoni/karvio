@@ -5,15 +5,14 @@ import { money, qty as fqty, round2, isDecimalUnit, fdate } from '../lib/format'
 import { printReceipt, printInvoice } from '../lib/receipt';
 import { Btn, Modal, Field, Tabs, useAction, useHotkeys, useConfirm, noWheel } from '../components/ui';
 import { ProductSearch, PaymentSplit, defaultPay, cleanPays, QuickCustomer, CustomerPicker, SerialChooser } from '../components/widgets';
+import { loadPosDraft, savePosDraft } from '../lib/posDraft';
 
-const DRAFT = 'erp_pos_draft';
 // Next payment date picker works in the shop's date (server time zone), not this computer's clock.
 const inDays = (n) => shopDay(n);
-const loadDraft = () => { try { return JSON.parse(localStorage.getItem(DRAFT)) || null; } catch { return null; } };
 
 export default function POS() {
   const { products, customers, warrantyPeriods, settings, refresh, toast } = useStore();
-  const draft = loadDraft();
+  const draft = loadPosDraft();
   const [cart, setCart] = useState(draft?.cart || []);
   const [customerId, setCustomerId] = useState(draft?.customerId || '');
   const [discount, setDiscount] = useState(draft?.discount || '');
@@ -40,7 +39,7 @@ export default function POS() {
   const searchRef = useRef();
   const discRef = useRef();
 
-  useEffect(() => { try { localStorage.setItem(DRAFT, JSON.stringify({ cart, customerId, discount })); } catch {} }, [cart, customerId, discount]);
+  useEffect(() => { try { savePosDraft({ cart, customerId, discount }); } catch {} }, [cart, customerId, discount]);
 
   const pmap = useMemo(() => Object.fromEntries(products.map((p) => [p.id, p])), [products]);
   const customer = customers.find((c) => c.id === customerId);
@@ -58,7 +57,7 @@ export default function POS() {
   useEffect(() => { cart.forEach((l) => loadHist(l.product_id)); }, [cart.map((l) => l.product_id).join()]); // eslint-disable-line react-hooks/exhaustive-deps
   // Serial products: the quantity is always the number of serials picked (click them, or scan each box).
   const add = (p, serial) => {
-    if (!p.service && p.stock <= 0) { setOos(p); loadHist(p.id, true); return; } // not in stock: show its prices instead
+    if (!p.service && (p.available ?? p.stock) <= 0) { setOos(p); loadHist(p.id, true); return; } // not in stock: show its prices instead
     const i = cart.findIndex((l) => l.product_id === p.id);
     if (i >= 0) {
       const l = cart[i];
@@ -124,7 +123,7 @@ export default function POS() {
     const p = pmap[l.product_id];
     if (!p) return problems.push('A cart item no longer exists');
     if (isSerial(p) && (!l.serials.length || l.serials.length !== Number(l.qty))) problems.push(`Pick the serial numbers for ${p.name}`);
-    if (!p.service && Number(l.qty) > p.stock) problems.push(`Only ${fqty(p.stock, p.unit)} of ${p.name} in stock`);
+    if (!p.service && Number(l.qty) > (p.available ?? p.stock)) problems.push(`Only ${fqty(p.available ?? p.stock, p.unit)} of ${p.name} in stock`);
   });
   if (due > 0.004 && !customer) problems.push('Cash sales must be fully paid — select a customer to sell on due');
 
@@ -196,11 +195,11 @@ export default function POS() {
                   <tr key={i}>
                     <td className="cn">
                       <b>{p.name}</b>
-                      <small>{p.service ? 'Service — no stock' : `${fqty(p.stock, p.unit)} in stock`}{p.unit !== 'pcs' ? ` · sold by ${p.unit}` : ''}</small>
+                      <small>{p.service ? 'Service — no stock' : `${fqty(p.available ?? p.stock, p.unit)} in stock`}{p.unit !== 'pcs' ? ` · sold by ${p.unit}` : ''}</small>
                       {isSerial(p) && (l.serials.length
                         ? <div><button className="serial-ok" onClick={() => setSerialFor(i)}>S/N: {l.serials.join(', ')}</button></div>
                         : <div><button className="serial-need" onClick={() => setSerialFor(i)}>Pick serial numbers{l.want ? ` (${l.want} planned)` : ''}</button></div>)}
-                      {p.has_warranty && (
+                      {(p.has_warranty || Number(l.warranty_days) > 0) && (
                         <div className="w">Warranty&nbsp;
                           {(() => {
                             const opts = [...new Set([Number(p.warranty_days), ...warrantyPeriods.map((w) => Number(w.days)), 0])].sort((a, b) => a - b);

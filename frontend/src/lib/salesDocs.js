@@ -1,6 +1,6 @@
 // Sales invoices and warranty claims as full A4 documents: print, PDF (one per page) and Excel.
 import { useStore } from './store';
-import { money, qty, fdate, fdatetime, splitList } from './format';
+import { money, qty, fdate, fdatetime, splitList, today } from './format';
 import { printHtml, esc, shopContacts } from './export';
 import { pdfPages } from './purchaseDocs';
 
@@ -88,7 +88,7 @@ const bizPageCss = () => {
   // Empty top margin boxes stop the browser printing its own date / page title at the top.
   return `@page{size:A4;margin:12mm 12mm 16mm;
     @top-left{content:' '}@top-center{content:' '}@top-right{content:' '}
-    @bottom-left{content:${q(`Print Date: ${fdate(now.toISOString())}\u00a0\u00a0\u00a0\u00a0Print Time: ${now.toLocaleTimeString('en-US')}`)};${box}}
+    @bottom-left{content:${q(`Print Date: ${fdate(today())}\u00a0\u00a0\u00a0\u00a0Print Time: ${now.toLocaleTimeString('en-US')}`)};${box}}
     @bottom-center{content:${q(SOFTWARE_LINE)};${box}}
     @bottom-right{content:"Page " counter(page) " of " counter(pages);${box}}}`;
 };
@@ -102,9 +102,11 @@ function businessInvoiceHtml(d) {
       <td class="cn">${Number(i.warranty_days) > 0 ? esc(i.warranty_days) : '—'}</td><td class="r">${esc(m2(i.price, false))}</td><td class="cn">${esc(qty(i.qty))}${i.unit && i.unit !== 'pcs' ? ' ' + esc(i.unit) : ''}</td><td class="r">${esc(m2(i.total, false))}</td></tr>`;
   }).join('');
   const total = Number(s.total) || 0, paid = Number(s.paid) || 0;
-  const hasBal = d.customer && d.customer.balance !== undefined;
-  const outstanding = hasBal ? Number(d.customer.balance) || 0 : Number(s.due) || 0;
-  const prev = hasBal ? outstanding - (Number(s.due) || 0) : 0;
+  let snapshot = null;
+  try { snapshot = typeof s.balance_snapshot === 'string' ? JSON.parse(s.balance_snapshot || 'null') : s.balance_snapshot; } catch {}
+  const recorded = snapshot && Number.isFinite(Number(snapshot.previous)) && Number.isFinite(Number(snapshot.outstanding));
+  const outstanding = recorded ? Number(snapshot.outstanding) : !s.customer_id ? Number(s.due) || 0 : null;
+  const prev = recorded ? Number(snapshot.previous) : !s.customer_id ? 0 : null;
   const user = esc(s.user_name || '');
   const phone = c.phones ? esc(splitList(c.phones).join(', ')) : '';
   const walkIn = !s.customer_id || !s.customer_name || /^walk-?in/i.test(String(s.customer_name).trim());
@@ -121,10 +123,10 @@ function businessInvoiceHtml(d) {
     <div class="bsum">
       <div><div><b>Amount In Words :</b> ${esc(amountInWords(total))}</div>
         <table class="bdue">
-          <tr><td class="k">Previous Due</td><td>:</td><td class="r">${esc(m2(prev, false))}</td></tr>
+          <tr><td class="k">Previous Due</td><td>:</td><td class="r">${prev === null ? 'Not recorded' : esc(m2(prev, false))}</td></tr>
           <tr><td class="k">Sales Amount</td><td>:</td><td class="r">${esc(m2(total, false))}</td></tr>
           <tr><td class="k">Collected Amount</td><td>:</td><td class="r">${esc(m2(paid, false))}</td></tr>
-          <tr><td class="k">Outstanding Amount</td><td>:</td><td class="r">${esc(m2(outstanding, false))}</td></tr>
+          <tr><td class="k">Outstanding Amount</td><td>:</td><td class="r">${outstanding === null ? 'Not recorded' : esc(m2(outstanding, false))}</td></tr>
           ${s.next_payment_date && s.due > 0 ? `<tr><td class="k">Next Payment Date</td><td>:</td><td class="r">${esc(fdate(s.next_payment_date))}</td></tr>` : ''}
         </table></div>
       <table class="btot">
@@ -135,7 +137,7 @@ function businessInvoiceHtml(d) {
     </div>
     <div class="bsign"><span>Authorised Signature And Company Stamp</span></div>
     ${noteHtml()}
-    <div class="bfoot"><span>Print Date: ${esc(fdate(now.toISOString()))}</span><span>Print Time: ${esc(now.toLocaleTimeString('en-US'))}</span><span>${SOFTWARE_LINE}</span><span>Page 1 of 1</span></div>
+    <div class="bfoot"><span>Print Date: ${esc(fdate(today()))}</span><span>Print Time: ${esc(now.toLocaleTimeString('en-US'))}</span><span>${SOFTWARE_LINE}</span><span>Page 1 of 1</span></div>
   </div>`;
 }
 

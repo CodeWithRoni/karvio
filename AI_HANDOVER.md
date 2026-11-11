@@ -1,3 +1,7 @@
+# Current state — Karvio 1.2.0
+
+The owner approved main publication of the remaining fixes. Backend Version 42 was successfully deployed to the existing URL, building on main b2cb6d7. See FIXES-REVIEW.md and VERIFICATION.md. Native installers have not been published. Any older deployment/pending-status notes below are historical.
+
 # Karvio 1.2.0 — maintenance handover
 
 ## Local review patch — 11 November 2026 (awaiting approval)

@@ -4,7 +4,7 @@ import { money, fdate, addDays } from '../lib/format';
 import DataTable from '../components/DataTable';
 import { useApi, PageHead, Tabs, DateRange, Loading, ErrorBox, Btn, Empty } from '../components/ui';
 
-/** Profit reports. Gross profit = sales − cost of goods − profit given back on returns. Net profit = gross − expenses ± stock adjustments at cost. */
+/** Profit reports. Gross profit = sales − cost of goods − profit given back on returns. Net profit = gross − expenses ± stock adjustments and warranty replacements at cost. */
 const PRESETS = [['today', 'Today'], ['week', 'This week'], ['month', 'This month'], ['last_month', 'Last month'], ['six', 'Last 6 months'], ['year', 'This year'], ['custom', 'Custom']];
 const ym = (y, m) => { while (m < 1) { m += 12; y--; } return `${y}-${String(m).padStart(2, '0')}`; };
 const lastDayOf = (ymStr) => { const [y, m] = ymStr.split('-').map(Number); return `${ymStr}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`; };
@@ -68,7 +68,7 @@ function Report({ d, group, setGroup, view, setView }) {
           <tr><td>− Profit given back on returns <small className="muted">({s.return_count} return{s.return_count === 1 ? '' : 's'} worth {money(s.returns, false)}, goods back at cost {money(s.returns_cost, false)})</small></td><td className="r num">{money(-s.returns_profit, false)}</td></tr>
           <tr className={`sub ${tone(s.gross)}`}><td><b>= Gross profit</b></td><td className="r num"><b>{money(s.gross, false)}</b></td></tr>
           <tr><td>− Expenses <small className="muted">({s.expense_count})</small></td><td className="r num">{money(-s.expenses, false)}</td></tr>
-          {!!s.stock_adjust && <tr><td>{s.stock_adjust < 0 ? '− Stock written off' : '+ Stock found'} <small className="muted">(stock adjustments at cost)</small></td><td className="r num">{money(s.stock_adjust, false)}</td></tr>}
+          {!!s.stock_adjust && <tr><td>{s.stock_adjust < 0 ? '− Stock / warranty loss' : '+ Stock / warranty recovery'} <small className="muted">(stock adjustments at cost)</small></td><td className="r num">{money(s.stock_adjust, false)}</td></tr>}
           <tr className={`sub total ${tone(s.net)}`}><td><b>= Net profit</b></td><td className="r num"><b>{money(s.net, false)}</b></td></tr>
         </tbody></table>
       </div>

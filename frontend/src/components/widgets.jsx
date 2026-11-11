@@ -21,7 +21,7 @@ export function ProductSearch({ onPick, onCode, inStockOnly = false, noServices 
     if (!q.trim()) return [];
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
     return products
-      .filter((p) => p.active && (!noServices || !p.service) && (!inStockOnly || p.service || p.stock > 0))
+      .filter((p) => p.active && (!noServices || !p.service) && (!inStockOnly || p.service || (p.available ?? p.stock) > 0))
       .filter((p) => { const hay = `${p.name} ${p.sku || ''} ${p.barcode || ''} ${brandMap[p.brand_id] || ''}`.toLowerCase(); return words.every((w) => hay.includes(w)); })
       .slice(0, 12);
   }, [q, products, inStockOnly, noServices, brandMap]);
@@ -52,7 +52,7 @@ export function ProductSearch({ onPick, onCode, inStockOnly = false, noServices 
           {list.map((p, i) => (
             <li key={p.id} role="option" aria-selected={i === hi} className={i === hi ? 'hi' : ''} onMouseDown={(e) => { e.preventDefault(); pick(p); }} onMouseEnter={() => setHi(i)}>
               <span className="pn">{p.name}<small>{[p.sku, p.barcode].filter(Boolean).join(' / ')}</small></span>
-              {p.service ? <span className="ps svc">Service</span> : <span className={`ps ${p.stock <= 0 ? 'out' : ''}`}>{fqty(p.stock, p.unit)}</span>}
+              {p.service ? <span className="ps svc">Service</span> : <span className={`ps ${(p.available ?? p.stock) <= 0 ? 'out' : ''}`}>{fqty(p.available ?? p.stock, p.unit)}</span>}
               <span className="pp">{money(p.sale_price, false)}</span>
             </li>
           ))}

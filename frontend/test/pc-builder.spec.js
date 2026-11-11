@@ -87,3 +87,23 @@ test('a part typed by hand goes on the quote but not to the POS', async ({ page 
   await expect(page.getByText('PCB Test Mouse').first()).toBeVisible();
   await expect(page.getByText('Ryzen 7 7700')).toHaveCount(0);
 });
+
+test('quotation warranty is kept and replacing an existing POS cart requires confirmation', async ({ page, request }) => {
+  const owner = (await call(request, 'bootstrap')).user.id;
+  const key = `erp_pos_draft:${encodeURIComponent(endpoint)}:${encodeURIComponent(owner)}`;
+  await page.goto('/#/pc-builder');
+  const row = page.locator('.pcb-row').filter({ has: page.locator('.g', { hasText: /^Mouse$/ }) });
+  await row.getByLabel('Mouse product').selectOption(mouse.id);
+  await row.getByLabel('Mouse warranty').selectOption('300');
+  const old = { cart: [{ product_id: mouse.id, qty: 2, price: 600, serials: [], warranty_days: 0 }], customerId: '', discount: '' };
+  await page.evaluate(({key,old}) => localStorage.setItem(key,JSON.stringify(old)),{key,old});
+  await page.getByRole('button', {name:'Send to POS'}).click();
+  const dialog = page.getByRole('dialog', {name:'Replace the POS cart?'});
+  await dialog.getByRole('button', {name:'Cancel',exact:true}).click();
+  expect(await page.evaluate(key=>JSON.parse(localStorage.getItem(key)),key)).toEqual(old);
+  await expect(page).toHaveURL(/#\/pc-builder/);
+  await page.getByRole('button', {name:'Send to POS'}).click();
+  await dialog.getByRole('button', {name:'Replace cart',exact:true}).click();
+  await expect(page).toHaveURL(/#\/pos/);
+  await expect(page.getByLabel('Warranty period')).toHaveValue('300');
+});

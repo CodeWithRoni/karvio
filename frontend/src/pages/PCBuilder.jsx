@@ -4,7 +4,8 @@ import { useStore } from '../lib/store';
 import { money, qty as fqty } from '../lib/format';
 import { printQuotation } from '../lib/receipt';
 import { textOf, cpuInfo, boardInfo, ramInfo, boardFitsCpu, ramFits } from '../lib/compat';
-import { PageHead, Btn, Field, noWheel } from '../components/ui';
+import { PageHead, Btn, Field, noWheel, useConfirm } from '../components/ui';
+import { loadPosDraft, savePosDraft } from '../lib/posDraft';
 
 // Suggest parts using their product group, category or product name.
 const SLOTS = [
@@ -19,6 +20,7 @@ const newLines = () => SLOTS.map(([g]) => ({ group: g, product_id: '', name: '',
 export default function PCBuilder() {
   const { products, categories, brands, warrantyPeriods } = useStore();
   const nav = useNavigate();
+  const [confirmDialog, ask] = useConfirm();
   const [lines, setLines] = useState(newLines);
   const [meta, setMeta] = useState({ customer: '', phone: '', title: 'Custom PC build', discount: '', note: '', validDays: 7 });
   const [saved, setSaved] = useState(loadSaved);
@@ -71,16 +73,20 @@ export default function PCBuilder() {
     try { localStorage.setItem(SAVED, JSON.stringify(next)); } catch {}
     useStore.getState().toast('Quote saved on this device');
   };
-  const toPos = () => {
+  const toPos = async () => {
     const inStock = filled.filter((l) => l.product_id);
+    if (!inStock.length) return useStore.getState().toast('Add a stock product before sending to POS', 'err');
+    if (loadPosDraft()?.cart?.length && !await ask({ title: 'Replace the POS cart?', message: 'Your current cart will be replaced by this quotation. Cancel to keep it.', confirmLabel: 'Replace cart' })) return;
     const typed = filled.length - inStock.length;
     if (typed) useStore.getState().toast(`${typed} typed part${typed > 1 ? 's were' : ' was'} not sent to the POS — only products in stock can be sold there`);
-    try { localStorage.setItem('erp_pos_draft', JSON.stringify({ cart: inStock.map((l) => { const p = products.find((x) => x.id === l.product_id); return { product_id: l.product_id, qty: Number(l.qty), price: Number(l.price), serials: [], warranty_days: p?.has_warranty ? p.warranty_days : '' }; }), customerId: '', discount: meta.discount })); } catch {}
+    try { savePosDraft({ cart: inStock.map((l) => ({ product_id: l.product_id, qty: Number(l.qty), price: Number(l.price), serials: [], warranty_days: warrantyDays(l) })), customerId: '', discount: meta.discount }); }
+    catch { return useStore.getState().toast('Could not save the POS cart. Nothing was replaced.', 'err'); }
     nav('/pos');
   };
 
   return (
     <>
+      {confirmDialog}
       <PageHead title="PC builder & quotations" sub="Build a setup part by part, print a quote for the customer, or send it straight to the POS.">
         <Btn onClick={() => setLines(newLines())}>Start over</Btn>
         <Btn onClick={save} disabled={!filled.length}>Save quote</Btn>
