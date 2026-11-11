@@ -1,0 +1,59 @@
+// Hosted adaptations. All money, stock, permission and ledger rules remain above.
+pwHash_ = function(salt, pw) { return security.passwordHash(salt, String(pw || '')); };
+pwCheck_ = function(user, pw) { return security.passwordCheck(user, String(pw || '')); };
+uid_ = function() { return Utilities.getUuid().replace(/-/g, ''); };
+seedCategories_ = function() {}; // Fresh shop: owner enters their own groups/categories.
+// Keep only the base Pieces unit; optional selling units must be entered by owner.
+DEFAULT_UNITS = [{name:'pcs',label:'Pieces',decimal:false}];
+driveCopy_ = function(ss, name) { security.backup(name); return {name: name, url: ''}; };
+// The fixed pg_cron job reads these settings; browser users cannot schedule SQL.
+backupSchedule_ = function(p,user) {
+  if(!isOwner_(user))fail_('Only the Administrator account can change automatic backups');
+  var keep=Math.round(num_(p.keep_days));if(keep<1||keep>365)fail_('Keep backups for 1 to 365 days');
+  var enabled=p.enabled===true||p.enabled==='true';
+  setSetting_('backup_daily',String(enabled));setSetting_('backup_keep_days',String(keep));
+  audit_(user,'backup_schedule',{enabled:enabled,keep_days:keep,provider:'supabase'});
+  return {enabled:enabled,keep_days:keep,folder:'Supabase private snapshots',last:getSetting_('last_daily_backup_at','')};
+};
+ROUTES['backup.schedule'].fn = backupSchedule_;
+var originalDatabaseInfo_ = ROUTES['database.info'].fn;
+ROUTES['database.info'].fn = function(p,user) {
+  var info=originalDatabaseInfo_(p,user);
+  info.backend='supabase';info.offline=false;info.backup_folder='Supabase private snapshots';
+  info.daily_backup=getSetting_('backup_daily','true')==='true';
+  return info;
+};
+ROUTES['sms.test'].fn = function(p) { return sendSms_(p.phone,'Test SMS from '+getSetting_('shop_name')+' - Karvio'); };
+// Persist messages with the financial commit; the worker claims each job once.
+sendSms_ = function(phone, message, logMessage) {
+  if (_txn) {
+    var queued = {ok:false,status:'queued',response:'SMS queued; check the SMS log for delivery.'};
+    _txn.sms.push({phone:phone,message:message,logMessage:logMessage,result:queued}); return queued;
+  }
+  var number = smsNumber_(phone);
+  if (!number) return {ok:false,status:'skipped',response:'No phone number'};
+  var vars = {api_key:getSetting_('sms_api_key'),sender_id:getSetting_('sms_sender_id'),number:number,message:message};
+  var method = getSetting_('sms_method','GET').toUpperCase(), type = getSetting_('sms_body_type','form');
+  var headers = {};
+  String(getSetting_('sms_headers','')).split(/\r?\n/).forEach(function(line){
+    var i=line.indexOf(':');if(i>0)headers[line.slice(0,i).trim()]=fillTpl_(line.slice(i+1).trim(),vars,'raw');
+  });
+  var options={method:method==='POST'?'POST':'GET',headers:headers};
+  if(options.method==='POST') {
+    headers['Content-Type']=type==='json'?'application/json':'application/x-www-form-urlencoded';
+    options.body=fillTpl_(getSetting_('sms_body'),vars,type==='json'?'json':'form');
+    if(type==='json'){try{var o=JSON.parse(options.body);Object.keys(o).forEach(function(k){if(o[k]==='')delete o[k];});options.body=JSON.stringify(o);}catch(e){}}
+  }
+  var log=insert_('SmsLog',{ts:now_(),phone:number,message:logMessage||message,status:'queued',response:'SMS queued; delivery is not confirmed.'});
+  security.queueSms({id:log.id,url:fillTpl_(getSetting_('sms_url'),vars,'url'),options:options});
+  return {ok:false,status:'queued',response:'SMS queued; check the SMS log for delivery.'};
+};
+function initialize(payload) {
+  if (all_('Users').length) fail_('The owner account is already initialized');
+  if (!payload.name || String(payload.password || '').length < 12) fail_('Enter your name and a password of at least 12 characters');
+  // Insert the chosen credential BEFORE setup, so admin/admin123 is never created.
+  var salt = uid_();
+  insert_('Users', {name:String(payload.name).trim(),username:'admin',salt:salt,password_hash:pwHash_(salt,payload.password),role:'admin',active:true,created_at:now_()});
+  setupDatabase();
+  return {username:'admin',initialized:true};
+}

@@ -119,7 +119,7 @@ export function DatabaseRestore({ onDone }) {
   return (
     <div className="card form db-card">
       <h2 className="wide">Restore (import)</h2>
-      <p className="muted wide">Replaces <b>everything</b> in Karvio with the data in a backup file. {offline ? 'The current data file is kept on this computer first.' : 'A full copy of the current spreadsheet is saved to your Google Drive first — if that copy cannot be made, nothing changes.'}</p>
+      <p className="muted wide">Replaces <b>everything</b> in Karvio with the data in a backup file. {offline ? 'The current data file is kept on this computer first.' : 'A full safety backup is saved in your backend first — if it cannot be saved, nothing changes.'}</p>
       {done && <div className="wide note reset-done" role="status">
         <b>Restored</b> the backup of {done.shop_name || 'the shop'} made {fdatetime(done.backup_created_at)}.{' '}
         {done.safety ? <>The data from before the restore was saved as <b>{done.safety.name}</b>{done.safety.url ? <> (<a href={done.safety.url} target="_blank" rel="noreferrer">open the copy</a>)</> : null}.</> : offline ? 'The data from before the restore is kept in the data folder on this computer.' : null}
@@ -166,15 +166,16 @@ export function DatabaseTab({ Reset }) {
 
 /** Nightly copy of the Google Sheet to the Drive folder "Karvio backups"; old copies go to the trash. */
 function DailyBackup({ info, onDone }) {
+  const supabase = info.backend === 'supabase';
   const [on, setOn] = useState(!!info.daily_backup);
   const [keep, setKeep] = useState(info.backup_keep_days || 30);
   const [busy, run] = useAction();
-  const save = async () => { await run(() => api('backup.schedule', { enabled: on, keep_days: Number(keep) }), on ? 'Daily Drive backup is on' : 'Daily Drive backup is off'); onDone?.(); };
+  const save = async () => { await run(() => api('backup.schedule', { enabled: on, keep_days: Number(keep) }), on ? 'Daily backup is on' : 'Daily backup is off'); onDone?.(); };
   return (
     <div className="card form">
-      <div className="card-head wide"><h2>Automatic daily backup</h2><span className="muted">Google Drive folder “{info.backup_folder || 'Karvio backups'}”</span></div>
-      <Field label="Back up every night"><label className="check"><input type="checkbox" checked={on} onChange={(e) => setOn(e.target.checked)} /> Copy the database to Google Drive at about 2 AM</label></Field>
-      <Field label="Keep copies for (days)" hint="Older copies are moved to the Drive trash."><input type="number" min="1" max="365" value={keep} onChange={(e) => setKeep(e.target.value)} /></Field>
+      <div className="card-head wide"><h2>Automatic daily backup</h2><span className="muted">{supabase ? 'Private Supabase snapshots' : `Google Drive folder “${info.backup_folder || 'Karvio backups'}”`}</span></div>
+      <Field label="Back up every night"><label className="check"><input type="checkbox" checked={on} onChange={(e) => setOn(e.target.checked)} /> {supabase ? 'Save a private database snapshot at 2 AM (Dhaka)' : 'Copy the database to Google Drive at about 2 AM'}</label></Field>
+      <Field label="Keep copies for (days)" hint={supabase ? 'Expired daily snapshots are deleted. Also keep downloaded exports outside this project.' : 'Older copies are moved to the Drive trash.'}><input type="number" min="1" max="365" value={keep} onChange={(e) => setKeep(e.target.value)} /></Field>
       <p className="muted wide" style={{ margin: 0 }}>Last automatic backup: {info.last_daily_backup ? fdatetime(info.last_daily_backup) : 'none yet'}</p>
       <div className="wide row end"><Btn kind="primary" busy={busy} onClick={save}>Save</Btn></div>
     </div>

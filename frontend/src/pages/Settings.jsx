@@ -8,6 +8,8 @@ import { PageHead, Btn, Field, useAction, Tabs, useApi, Badge } from '../compone
 import { DASH_CARDS, hiddenCards } from '../lib/dashboardCards';
 import { PAPERS, TEMPLATES, printInvoice } from '../lib/receipt';
 import { PRESETS, matchPreset } from '../lib/smsPresets';
+import SmsFieldBuilder from '../components/SmsFieldBuilder';
+import { gatewayError } from '../lib/smsGateway';
 import { DatabaseTab } from '../components/DatabaseTools';
 
 export default function Settings() {
@@ -202,52 +204,63 @@ export function smsParts(text) {
 
 function SmsSettings() {
   const { f, setF, bind, save, busy } = useSettingsForm(['sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_repair_template', 'sms_technician_template', 'sms_headers', 'sms_invoice_link', 'invoice_link_base']);
+  const [builderVersion, setBuilderVersion] = useState(0);
+  const [showKey, setShowKey] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+  const [preview, setPreview] = useState('sms_template');
+  const saved = useStore(s=>s.settings);
+  const dirty = Object.keys(f).some(k=>String(f[k]||'')!==String(saved[k]||''));
+  const [mappingError, setMappingError] = useState('');
+  const configError = mappingError || gatewayError(f);
   const linkOn = f.sms_invoice_link !== 'false'; // on unless switched off
   const [phone, setPhone] = useState('');
   const preset = matchPreset(f);
   const [tbusy, run] = useAction();
-  const log = useApi('sms.log', {});
+  const log = useApi('sms.log', {}, [], {refreshMs:5000});
   const sampleLink = `${linkBaseOf(f.invoice_link_base)}#/i/Ab12Cd34Ef56Gh78Ij90Kl`;
-  let sample = (f.sms_template || '').replace(/\{(\w+)\}/g, (m, k) => ({ name: 'Rahim', shop: useStore.getState().settings.shop_name, items: 'Kingston 512GB SSD x1, Cat6 Cable x15', invoice: 'INV-000123', total: '5,250', paid: '5,000', due: '250', date: '2026-11-05', link: linkOn ? sampleLink : '' }[k] ?? m));
-  if (linkOn && !/\{link\}/.test(f.sms_template || '')) sample += ` Invoice: ${sampleLink}`;
+  let sample = (f[preview] || '').replace(/\{(\w+)\}/g, (m, k) => ({ name: 'Rahim', shop: useStore.getState().settings.shop_name, items: 'Kingston 512GB SSD x1, Cat6 Cable x15', invoice: 'INV-000123', total: '5,250', paid: '5,000', due: '250', device:'Laptop', job:'REP-000123', advance:'500', technician:'Karim', problem:'No display', phone:'01700000000', date: new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Dhaka'}).format(new Date()), link: linkOn ? sampleLink : '' }[k] ?? m));
+  if (preview==='sms_template' && linkOn && !/\{link\}/.test(f.sms_template || '')) sample += ` Invoice: ${sampleLink}`;
   if (!linkOn) sample = sample.replace(/\s*(View|Invoice|Link):?\s*$/i, '');
   const parts = smsParts(sample);
   return (
     <div className="split">
       <div className="card form">
         <label className="check wide"><input type="checkbox" checked={f.sms_enabled === 'true'} onChange={(e) => setF({ ...f, sms_enabled: String(e.target.checked) })} /> Send an SMS after every sale that has a named customer</label>
-        <p className="muted wide" style={{ margin: 0 }}>Walk-in sales never trigger an SMS. The API key is stored in your Google Sheet and never sent to the browser of non-admin users.</p>
-        <Field label="Start from a preset" wide>
+        <p className="muted wide" style={{ margin: 0 }}>Walk-in sales never trigger an SMS. Gateway credentials stay in your shop backend and are hidden from users without Settings permission.</p>
+        <Field label="1. Choose your gateway" wide>
           {/* The list shows only real providers. "Choose…" / "Custom" are status labels for the closed box,
               added (hidden) only while they are the current state, so they never appear as dead rows in the list. */}
-          <select value={preset} aria-label="SMS provider preset" onChange={(e) => PRESETS[e.target.value] && setF({ ...f, ...PRESETS[e.target.value] })}>
+          <select value={preset} aria-label="SMS provider preset" onChange={(e) => { if(PRESETS[e.target.value]) {setF({ ...f, sms_body:'', sms_body_type:'form', ...PRESETS[e.target.value] });setBuilderVersion(v=>v+1);setMappingError('');setTestResult(null);} }}>
             {preset === '' && <option value="" hidden>Choose a provider template…</option>}
             {Object.keys(PRESETS).map((k) => <option key={k} value={k}>{k}</option>)}
             {preset === 'custom' && <option value="custom" hidden>Custom settings (my own)</option>}
           </select>
         </Field>
-        <Field label="Method"><select {...bind('sms_method')}><option>GET</option><option>POST</option></select></Field>
-        <Field label="Phone number format"><select {...bind('sms_number_format')}><option value="intl">8801XXXXXXXXX</option><option value="local">01XXXXXXXXX</option></select></Field>
-        <Field label="API URL" wide hint="Placeholders: {api_key} {sender_id} {number} {message}"><input {...bind('sms_url')} /></Field>
-        {/\((APIKEY|API KEY|NUMBER|Approved Sender ID|Message Content)\)/i.test(f.sms_url || '') && (
-          <p className="wide sms-warn" role="alert">This URL still has the provider's example text like <b>(APIKEY)</b> or <b>(NUMBER)</b>. Choose the <b>MRAM Technologies</b> preset above, or write <code>{'{api_key}'}</code>, <code>{'{number}'}</code>, <code>{'{sender_id}'}</code> and <code>{'{message}'}</code> in their place — Karvio fills them in for every SMS.</p>
-        )}
-        {/PASTE-BASE-URL|BASE_URL/i.test(f.sms_url || '') && (
-          <p className="wide sms-warn" role="alert">Replace <b>PASTE-BASE-URL-FROM-DASHBOARD</b> with the API base address from your <b>OneCodeSoft Dashboard › API</b> page, keeping <code>/v3/send-sms</code> at the end. To try without sending or paying, use <code>/v3/sandbox/send-sms</code> instead.</p>
-        )}
-        {f.sms_method === 'POST' && <>
-          <Field label="Body type"><select {...bind('sms_body_type')}><option value="form">Form (x-www-form-urlencoded)</option><option value="json">JSON</option></select></Field>
-          <Field label="Request body" wide><textarea {...bind('sms_body')} /></Field>
-        </>}
-        <Field label="Request headers (optional)" wide hint="One per line, like  Authorization: Bearer {api_key}  — only for gateways that want the key in a header."><textarea {...bind('sms_headers')} rows={2} placeholder="Authorization: Bearer {api_key}" /></Field>
-        <Field label="API key"><input type="password" {...bind('sms_api_key')} autoComplete="off" /></Field>
-        <Field label="Sender ID"><input {...bind('sms_sender_id')} /></Field>
-        <Field label="Message template" wide hint="Placeholders: {name} {shop} {items} {invoice} {total} {paid} {due} {date} {link}"><textarea {...bind('sms_template')} /></Field>
+        <p className="muted wide sms-provider-note">{preset.startsWith('Generic') || preset==='custom' ? 'Custom gateway: enter your provider’s URL and match its request fields below. Switching a template changes the draft only; save when ready.' : preset.startsWith('OneCodeSoft') ? 'Use the API address from your OneCodeSoft dashboard. The authorization header and JSON fields are prepared for you.' : 'BulkSMSBD uses a GET request. Enter your API key and approved Sender ID below.'}</p>
+        <Field label="API URL" wide hint="Use the full HTTPS endpoint supplied by your SMS provider."><input aria-label="API URL" {...bind('sms_url')} placeholder="https://your-provider.com/api/send" spellCheck={false} /></Field>
+        <Field label="2. API key"><div className="row"><input aria-label="API key" type={showKey?'text':'password'} {...bind('sms_api_key')} autoComplete="off" /><Btn size="sm" aria-label={showKey?'Hide API key':'Show API key'} onClick={()=>setShowKey(v=>!v)}>{showKey?'Hide':'Show'}</Btn></div></Field>
+        <Field label="Sender ID" hint="Use the sender name or ID approved by your provider."><input {...bind('sms_sender_id')} /></Field>
+        <Field label="Phone number format"><select {...bind('sms_number_format')}><option value="intl">8801XXXXXXXXX — international</option><option value="local">01XXXXXXXXX — local</option></select></Field>
+        {f.sms_method==='POST' && (preset.startsWith('Generic') || preset==='custom') && <SmsFieldBuilder key={builderVersion+':'+f.sms_body_type} body={f.sms_body} type={f.sms_body_type} onChange={(body,error)=>{setF({...f,sms_body:body});setMappingError(error);}} />}
+        <details className="wide sms-advanced">
+          <summary>Advanced request settings</summary>
+          <p className="muted">For custom authentication, GET requests or a provider-specific request format. Available values: {'{api_key} {sender_id} {number} {message}'}</p>
+          <div className="form">
+            <Field label="Method"><select {...bind('sms_method')}><option>GET</option><option>POST</option></select></Field>
+            {f.sms_method==='POST'&&<>
+              <Field label="Body type"><select {...bind('sms_body_type')}><option value="form">Form</option><option value="json">JSON</option></select></Field>
+              <Field label="Request body" wide><textarea value={f.sms_body} onChange={e=>{setF({...f,sms_body:e.target.value});setBuilderVersion(v=>v+1);setMappingError('');}} rows={5} spellCheck={false} /></Field>
+            </>}
+            <Field label="Request headers (optional)" wide hint="One header per line. Example: Authorization: Bearer {api_key}"><textarea {...bind('sms_headers')} rows={2} spellCheck={false} /></Field>
+          </div>
+        </details>
+        {configError&&<p className="wide sms-warn" role="status">{configError}</p>}
+        <Field label="3. Sale message template" wide hint="Placeholders: {name} {shop} {items} {invoice} {total} {paid} {due} {date} {link}"><textarea {...bind('sms_template')} /></Field>
         <Field label="Repair completed message" wide hint="Sent to the customer when a repair job is marked Completed. Placeholders: {name} {device} {job} {shop} {total} {advance} {due}"><textarea {...bind('sms_repair_template')} /></Field>
         <Field label="Technician job message" wide hint="Sent to the technician when a repair job is given to them. Placeholders: {technician} {job} {device} {problem} {name} {phone} {shop}"><textarea {...bind('sms_technician_template')} /></Field>
         <div className="wide sms-link">
           <label className="check"><input type="checkbox" checked={linkOn} onChange={(e) => setF({ ...f, sms_invoice_link: String(e.target.checked) })} /> <b>Add a link to the invoice</b></label>
-          <p className="muted" style={{ margin: '4px 0 0', fontSize: 12.5 }}>The customer taps it to see (and download) only their own invoice. Each link works for <b>15 days</b>, then it is deleted from your sheet. Put <code>{'{link}'}</code> in the template to choose where it goes — otherwise it is added at the end.</p>
+          <p className="muted" style={{ margin: '4px 0 0', fontSize: 12.5 }}>The customer taps it to see (and download) only their own invoice. Each link works for <b>15 days</b>, then it expires. Put <code>{'{link}'}</code> in the template to choose where it goes — otherwise it is added at the end.</p>
           {linkOn && (
             <details style={{ marginTop: 6 }}>
               <summary className="muted" style={{ cursor: 'pointer', fontSize: 12.5 }}>Web address of the invoice page</summary>
@@ -256,18 +269,20 @@ function SmsSettings() {
             </details>
           )}
         </div>
-        <div className="wide note">Preview ({sample.length} characters · {parts.count} SMS{parts.unicode ? ' · Bangla / Unicode' : ''}): {sample}</div>
-        <div className="wide row end"><Btn kind="primary" busy={busy} onClick={save}>Save SMS settings</Btn></div>
+        <Field label="Preview message" wide><select aria-label="Preview message" value={preview} onChange={e=>setPreview(e.target.value)}><option value="sms_template">Sale invoice</option><option value="sms_repair_template">Repair completed</option><option value="sms_technician_template">Technician assignment</option></select></Field>
+        <div className="wide note sms-preview">Preview ({[...sample].length} characters · estimated {parts.count} SMS{parts.unicode ? ' · Bangla / Unicode' : ''}): {sample}</div>
+        <div className="wide row end"><span className="muted">{dirty?'Unsaved changes':'Settings saved'}</span><Btn kind="primary" disabled={!!configError || !dirty} busy={busy} onClick={()=>save().catch(()=>{})}>Save SMS settings</Btn></div>
       </div>
       <div className="grid">
         <div className="card">
           <h2 style={{ marginBottom: 10 }}>Send a test SMS</h2>
-          <p className="muted">Save your settings first, then test.</p>
-          <div className="row"><input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="01XXXXXXXXX" style={{ flex: 1 }} />
-            <Btn busy={tbusy} onClick={async () => { await run(() => api('sms.test', { phone }), 'Test SMS sent'); log.reload(); }}>Send test</Btn></div>
+          <p className="muted">{dirty?'Save your changes before testing.':'Send one real SMS using your saved settings. Provider charges may apply.'}</p>
+          <div className="row"><input aria-label="Test SMS phone number" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="01XXXXXXXXX" style={{ flex: 1 }} />
+            <Btn busy={tbusy} disabled={dirty || !!configError || !/^\+?\d{10,15}$/.test(phone.replace(/[\s-]/g,''))} onClick={async () => {try{const result=await run(()=>api('sms.test',{phone:phone.replace(/[\s-]/g,'')}));setTestResult(result);log.reload();}catch(error){setTestResult({status:'failed',response:error.message});}}}>Send test</Btn></div>
         </div>
+        {testResult&&<div className="card" role="status"><Badge tone={testResult.status==='sent'?'ok':'muted'}>{testResult.status || (testResult.ok?'sent':'unknown')}</Badge><p>{testResult.status==='queued'?'Queued for delivery. Check the SMS log for the final result.':testResult.response || 'Check the SMS log for delivery details.'}</p></div>}
         <DataTable title="SMS log" rows={log.data || []} loading={log.loading} pageSize={15} exportable={false}
-          columns={[{ key: 'ts', label: 'Time', value: (r) => fdatetime(r.ts) }, { key: 'phone', label: 'Phone' }, { key: 'status', label: 'Status', render: (r) => <Badge tone={r.status === 'sent' ? 'ok' : 'bad'}>{r.status}</Badge> }, { key: 'response', label: 'Gateway reply', className: 'clip' }]} />
+          columns={[{ key: 'ts', label: 'Time', value: (r) => fdatetime(r.ts) }, { key: 'phone', label: 'Phone' }, { key: 'status', label: 'Status', render: (r) => <Badge tone={r.status === 'sent' ? 'ok' : r.status==='failed'?'bad':'muted'}>{r.status}</Badge> }, { key: 'response', label: 'Gateway reply', className: 'clip' }]} />
       </div>
     </div>
   );
@@ -334,13 +349,13 @@ function DatabaseReset({ onDone }) {
       <h2 className="wide" style={{ margin: 0 }}>Reset the whole database</h2>
       {done && <div className="wide note reset-done" role="status">
         <b>Done — Karvio is fresh.</b>{' '}
-        {done.backup ? <>A full copy of the old data was saved to your Google Drive as <b>{done.backup.name}</b>{done.backup.url ? <> (<a href={done.backup.url} target="_blank" rel="noreferrer">open the copy</a>)</> : null}.</>
+        {done.backup ? <>A full safety backup of the old data was saved as <b>{done.backup.name}</b>{done.backup.url ? <> (<a href={done.backup.url} target="_blank" rel="noreferrer">open the copy</a>)</> : null}.</>
           : offline ? 'The previous data file is kept in the data folder on this computer.' : null}
       </div>}
       <div className="wide reset-warn">
         <b>This deletes everything:</b> products and stock, serial numbers, purchases, sales, returns, customers, suppliers, dues and ledgers,
         accounts and their balances, expenses, warranty claims, SMS log, invoice links and history. Invoice numbers start again from 1.
-        <div style={{ marginTop: 6 }}>Your Administrator account stays, with the same password. {offline ? 'The previous data file is kept on this computer.' : 'Before deleting, a full copy of the spreadsheet is saved to your Google Drive — if the copy cannot be made, nothing is deleted.'}</div>
+        <div style={{ marginTop: 6 }}>Your Administrator account stays, with the same password. {offline ? 'The previous data file is kept on this computer.' : 'Before deleting, a full safety backup is saved in your backend — if it cannot be saved, nothing is deleted.'}</div>
       </div>
       <label className="check wide"><input type="checkbox" checked={f.keep_settings} onChange={(e) => setF({ ...f, keep_settings: e.target.checked })} /> Keep shop settings (shop name, invoice, SMS gateway, dashboard)</label>
       <label className="check wide"><input type="checkbox" checked={f.keep_users} onChange={(e) => setF({ ...f, keep_users: e.target.checked })} /> Keep the other user accounts</label>

@@ -1851,6 +1851,7 @@ function repairAdvance_(r, amount, accountId, user, customer) {
 /** Staff and accounts the repair page needs (also for staff without the users or accounts permissions). */
 function repairsMeta_() {
   return {
+    today: today_(),
     technicians: all_('Users').filter(function (u) { return u.active && u.role === 'technician'; }).map(function (u) { return { id: u.id, name: u.name, phone: u.phone || '' }; }),
     accounts: all_('Accounts').filter(function (a) { return a.active; }).map(function (a) { return { id: a.id, name: a.name, type: a.type }; }),
     statuses: REPAIR_STATUSES
@@ -3855,6 +3856,14 @@ var ROUTES = {
   'stock.adjust':     r_('products', stockAdjust_, true),
   'master.save':      r_('products', masterSave_, true),
   'master.delete':    r_('products', masterDelete_, true),
+  'master.deleteMany':r_('products', function(p,u) {
+    if (!MASTER[p.kind]) fail_('Unknown master type');
+    if (!Array.isArray(p.ids) || !p.ids.length || p.ids.length > 200) fail_('Select 1 to 200 items');
+    var seen = {};
+    p.ids.forEach(function(id) { if (typeof id !== 'string' || !id || seen[id]) fail_('Invalid or duplicate selection'); seen[id] = true; });
+    p.ids.forEach(function(id) { masterDelete_({kind:p.kind,id:id},u); });
+    return {deleted:p.ids.length};
+  }, true),
   'master.import':    r_('products', masterImport_, true),
   'price.update':     r_('products', priceUpdate_, true),
 

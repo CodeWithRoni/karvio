@@ -5,9 +5,10 @@ const crypto = require('node:crypto');
 const root = path.resolve(__dirname, '..');
 const manifestPath = path.join(root, 'RELEASE-MANIFEST.json');
 const sumsPath = path.join(root, 'SHA256SUMS.txt');
-const roots = ['.github', 'backend/test', 'frontend/src', 'frontend/src-tauri', 'frontend/desktop', 'frontend/public', 'frontend/branding', 'frontend/scripts', 'frontend/test', 'frontend/dist', 'scripts'];
+const roots = ['.github', 'backend/test', 'frontend/src', 'frontend/src-tauri', 'frontend/desktop', 'frontend/public', 'frontend/branding', 'frontend/scripts', 'frontend/test', 'frontend/dist', 'scripts', 'supabase'];
 const fixed = ['.gitignore', 'README.md', 'AI_HANDOVER.md', 'CHANGES.md', 'FIXES-1.0.6.md', 'FIXES-REVIEW.md', 'SETUP.md', 'UPLOAD_GUIDE-বাংলা.md', 'VERIFICATION.md', 'VERIFICATION-1.0.6.md', 'backend/Code.gs', 'backend/appsscript.json', 'frontend/.gitignore', 'frontend/.env.example', 'frontend/package.json', 'frontend/package-lock.json', 'frontend/index.html', 'frontend/vite.config.js', 'frontend/playwright.config.js', 'frontend/capacitor.config.json'];
-const excluded = new Set(['node_modules', 'target', '.git', 'test-results', 'playwright-report', 'release', 'android', 'ios']);
+fixed.push('SUPABASE-SETUP.md');
+const excluded = new Set(['node_modules', 'target', '.git', '.temp', 'test-results', 'playwright-report', 'release', 'android', 'ios']);
 function walk(relative) {
   return fs.readdirSync(path.join(root, relative), { withFileTypes: true }).flatMap(entry => {
     const name = relative + '/' + entry.name;
@@ -36,15 +37,16 @@ if (process.argv.includes('--check')) {
   if (!verification) throw new Error('Record the current checks in VERIFICATION.md before preparing the package.');
   const manifest = {
     product: 'Karvio', version: JSON.parse(fs.readFileSync(path.join(root, 'frontend/package.json'))).version,
-    preparedDate: '2026-11-11', state: 'remaining-fixes-owner-approved-for-publication',
-    baseCommit: 'b2cb6d790fe8492cf477f0bf9f382f56d61dcfb6',
+    preparedDate: '2026-11-11', state: 'owner-approved-main-publication-supabase-backend-deployed',
+    baseCommit: '6232d19375d9b1bdcb34984fc5f4f9f005422982',
     validation: JSON.parse(verification[1]),
     excluded: ['backend/parts (legacy duplicate backend)', 'node_modules', 'verification artifacts', 'test results', 'release installers', 'user databases/backups', 'credentials'],
     fileCount: files.length, files,
     checksumPolicy: 'SHA256SUMS.txt covers every listed file except itself, including this manifest.',
-    uploadOrder: ['After approval: deploy backend/Code.gs to the existing Apps Script web app', 'After approval: push frontend/source or publish the complete dist'],
+    uploadOrder: ['Supabase Edge version 5 deployed and migration history matched', 'Daily backup schedule enabled and first snapshot verified', 'Publish approved main and verify GitHub Pages pipeline and live assets'],
     onlineUploadPerformed: true,
-    appsScriptVersion: 42
+    appsScriptVersion: 42,
+    supabase: { project: 'svqhlotlzgmwjneuphpe', edgeFunction: 'karvio-api', deployedVersion: 5, businessTables: 29, ownerSetup: 'created by owner', liveFrontendCutover: true }
   };
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
   fs.writeFileSync(sumsPath, files.filter(name => name !== 'SHA256SUMS.txt').map(name => digest(name) + '  ' + name).join('\n') + '\n');

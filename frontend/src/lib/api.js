@@ -26,7 +26,7 @@ export class ApiError extends Error {
 
 const WRITES = new Set([
   'password.change', 'product.save', 'product.delete', 'product.barcodes', 'sale.promise',
-  'stock.adjust', 'master.save', 'master.delete', 'master.import', 'price.update',
+  'stock.adjust', 'master.save', 'master.delete', 'master.deleteMany', 'master.import', 'price.update',
   'customer.save', 'customer.quickAdd', 'customer.delete', 'customer.payment',
   'supplier.save', 'supplier.delete', 'supplier.payment', 'account.save', 'account.entry',
   'purchase.create', 'preturn.create', 'sale.create', 'sreturn.create', 'expense.create',

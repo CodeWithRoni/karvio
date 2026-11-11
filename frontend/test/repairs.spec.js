@@ -106,6 +106,7 @@ test('repair job: cancel and give the advance back', async ({ page, request }) =
   const made = await call(request, 'repair.save', { customer_name: 'Cancel Test', phone: '01555000222', device: 'Printer', problem: 'Jam', advance: 200, account_id: cash.id });
   const cash0 = (await call(request, 'accounts.list')).find((a) => a.id === cash.id).balance;
   await page.goto('/#/repairs');
+  await page.getByRole('button',{name:'All repair jobs',exact:true}).click();
   await page.locator('table').getByText(made.job_no).click();
   const det = page.getByRole('dialog', { name: `Repair job ${made.job_no}` });
   await det.getByRole('button', { name: 'Cancel job' }).click();

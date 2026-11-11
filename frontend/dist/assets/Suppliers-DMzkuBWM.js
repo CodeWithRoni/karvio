@@ -1,1 +1,0 @@
-import{j as r}from"./index-6yV3-qSy.js";import{P as t}from"./PartyPage-CyeUKlRw.js";import"./format-muiq47gy.js";import"./receipt-BnwM7_j2.js";import"./export-BO4vr4Ky.js";import"./DataTable-niJs5gqm.js";import"./widgets-BANF1XaT.js";import"./purchaseDocs-Bja-zmF6.js";function n(){return r.jsx(t,{kind:"supplier"})}export{n as default};

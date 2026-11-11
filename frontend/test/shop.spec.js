@@ -29,13 +29,17 @@ test.beforeEach(async ({ page }) => {
 
 test('all main screens load without browser errors', async ({ page }) => {
   const errors = []; page.on('pageerror', (e) => errors.push(e.message));
-  const routes = ['', 'pos', 'sales', 'pc-builder', 'customers', 'expenses', 'stock', 'purchases', 'suppliers', 'warranty', 'history', 'accounts', 'reports', 'users', 'settings'];
+  const routes = ['', 'pos', 'sales', 'pc-builder', 'customers', 'repairs', 'service', 'expenses', 'stock', 'purchases', 'suppliers', 'warranty', 'history', 'accounts', 'reports', 'users', 'settings'];
   for (const route of routes) {
     await page.goto('/#/' + route);
     await expect(route === 'pos' ? page.getByRole('combobox', { name: 'Search product' }) : page.locator('.page-head h1')).toBeVisible();
     await expect(page.locator('.loading')).toHaveCount(0);
   }
   expect(errors).toEqual([]);
+  await page.setViewportSize({width:1920,height:1080});
+  await page.goto('/#/stock');
+  await expect(page.locator('.page-head h1')).toBeVisible();
+  await page.screenshot({path:'../verification/sidebar-icons-review.png',fullPage:true,animations:'disabled'});
 });
 
 test('dashboard refreshes another counter sale automatically and retains data on failure', async ({ page, request }) => {
@@ -258,7 +262,7 @@ test('due sale with a next payment date shows a dashboard reminder that switches
   expect(detail.sale.next_payment_date).toBe(localYmd(0));
 
   await page.goto('/#/');
-  const card = page.locator('.reminders');
+  const card = page.getByRole('region', { name: 'Collection reminders', exact: true });
   await expect(card).toContainText('Reminder Customer');
   await expect(card).toContainText('Payment due today');
   await expect(card).toContainText(detail.sale.invoice_no);
@@ -270,7 +274,7 @@ test('due sale with a next payment date shows a dashboard reminder that switches
   // the date comes back to today, but the customer has paid: no reminder
   await call(request, 'sale.promise', { id: sale.id, next_payment_date: localYmd(0) });
   await page.reload();
-  await expect(page.locator('.reminders')).toContainText('Reminder Customer');
+  await expect(page.getByRole('region', { name: 'Collection reminders', exact: true })).toContainText('Reminder Customer');
   await call(request, 'customer.payment', { customer_id: cust.id, account_id: cash.id, amount: detail.sale.due });
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
@@ -362,8 +366,8 @@ test('SMS preset box keeps showing the chosen provider, also after saving and re
   await expect(box()).toHaveValue('OneCodeSoft (Bulk SMS API v3)');
   // the open list holds only real providers: no greyed-out "Choose…" or "Custom" rows
   const listed = () => box().locator('option:not([hidden]):not([disabled])');
-  await expect(box().locator('option')).toHaveCount(6);
-  await expect(listed()).toHaveCount(6);
+  await expect(box().locator('option')).toHaveCount(4);
+  await expect(listed()).toHaveCount(4);
   await expect(box().locator('option[disabled]')).toHaveCount(0);
   await expect(url).toHaveValue(/PASTE-BASE-URL/);
   // the user pastes their own base address: still OneCodeSoft
@@ -375,14 +379,14 @@ test('SMS preset box keeps showing the chosen provider, also after saving and re
   await page.getByRole('tab', { name: 'SMS gateway' }).click();
   await expect(box()).toHaveValue('OneCodeSoft (Bulk SMS API v3)');
   // switching to another provider follows it
-  await box().selectOption('MRAM Technologies — Bangla SMS (unicode)');
-  await expect(box()).toHaveValue('MRAM Technologies — Bangla SMS (unicode)');
-  await expect(url).toHaveValue(/type=unicode/);
+  await box().selectOption('BulkSMSBD (GET)');
+  await expect(box()).toHaveValue('BulkSMSBD (GET)');
+  await expect(url).toHaveValue(/bulksmsbd.net/);
   // a hand-made address shows as custom, never the empty placeholder
   await url.fill('https://my-own-gateway.bd/send?key={api_key}');
   await expect(box()).toHaveValue('custom');
   await expect(box().locator('option:checked')).toHaveText('Custom settings (my own)');
-  await expect(listed()).toHaveCount(6); // the custom label is not offered as a choice
+  await expect(listed()).toHaveCount(4); // the custom label is not offered as a choice
 });
 
 test('dashboard shows leaderboard, top selling and low stock as three equal cards in one row', async ({ page }) => {

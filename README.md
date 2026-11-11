@@ -1,4 +1,9 @@
 # KARVIO ERP
+
+# Current online backend — Supabase
+
+The online app now defaults to the dedicated Karvio Supabase project (`svqhlotlzgmwjneuphpe`). Sign in with the owner-created account; there is no default online password. See [SUPABASE-SETUP.md](SUPABASE-SETUP.md) for backend architecture, migrations, private backups and deployment. Google Sheets instructions and default credentials below apply to the legacy Apps Script/offline setup, not this fresh Supabase shop.
+
 Current application version: **1.2.0**. Earlier 1.0.6 documents are retained as release history; use SETUP.md and FIXES-REVIEW.md for current setup and pending fixes.
 ### Smart Business Management & Point of Sale System
 

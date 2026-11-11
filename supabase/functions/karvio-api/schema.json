@@ -1,0 +1,1332 @@
+{
+  "Users": [
+    {
+      "key": "id",
+      "type": "s"
+    },
+    {
+      "key": "name",
+      "type": "s"
+    },
+    {
+      "key": "username",
+      "type": "s"
+    },
+    {
+      "key": "password_hash",
+      "type": "s"
+    },
+    {
+      "key": "salt",
+      "type": "s"
+    },
+    {
+      "key": "role",
+      "type": "s"
+    },
+    {
+      "key": "active",
+      "type": "b"
+    },
+    {
+      "key": "created_at",
+      "type": "s"
+    },
+    {
+      "key": "access_limit",
+      "type": "b"
+    },
+    {
+      "key": "access_from",
+      "type": "s"
+    },
+    {
+      "key": "access_to",
+      "type": "s"
+    },
+    {
+      "key": "access_days",
+      "type": "s"
+    },
+    {
+      "key": "phone",
+      "type": "s"
+    }
+  ],
+  "Settings": [
+    {
+      "key": "key",
+      "type": "s"
+    },
+    {
+      "key": "value",
+      "type": "s"
+    }
+  ],
+  "Accounts": [
+    {
+      "key": "id",
+      "type": "s"
+    },
+    {
+      "key": "name",
+      "type": "s"
+    },
+    {
+      "key": "type",
+      "type": "s"
+    },
+    {
+      "key": "number",
+      "type": "s"
+    },
+    {
+      "key": "opening_balance",
+      "type": "n"
+    },
+    {
+      "key": "active",
+      "type": "b"
+    },
+    {
+      "key": "created_at",
+      "type": "s"
+    }
+  ],
+  "AccountTxns": [
+    {
+      "key": "id",
+      "type": "s"
+    },
+    {
+      "key": "date",
+      "type": "s"
+    },
+    {
+      "key": "account_id",
+      "type": "s"
+    },
+    {
+      "key": "direction",
+      "type": "s"
+    },
+    {
+      "key": "amount",
+      "type": "n"
+    },
+    {
+      "key": "ref_type",
+      "type": "s"
+    },
+    {
+      "key": "ref_id",
+      "type": "s"
+    },
+    {
+      "key": "note",
+      "type": "s"
+    },
+    {
+      "key": "user",
+      "type": "s"
+    },
+    {
+      "key": "voided",
+      "type": "b"
+    }
+  ],
+  "Categories": [
+    {
+      "key": "id",
+      "type": "s"
+    },
+    {
+      "key": "name",
+      "type": "s"
+    },
+    {
+      "key": "parent_id",
+      "type": "s"
+    }
+  ],
+  "Brands": [
+    {
+      "key": "id",
+      "type": "s"
+    },
+    {
+      "key": "name",
+      "type": "s"
+    }
+  ],
+  "WarrantyPeriods": [
+    {
+      "key": "id",
+      "type": "s"
+    },
+    {
+      "key": "label",
+      "type": "s"
+    },
+    {
+      "key": "days",
+      "type": "n"
+    }
+  ],
+  "Units": [
+    {
+      "key": "id",
+      "type": "s"
+    },
+    {
+      "key": "name",
+      "type": "s"
+    },
+    {
+      "key": "label",
+      "type": "s"
+    },
+    {
+      "key": "decimal",
+      "type": "b"
+    }
+  ],
+  "Products": [
+    {
+      "key": "id",
+      "type": "s"
+    },
+    {
+      "key": "sku",
+      "type": "s"
+    },
+    {
+      "key": "barcode",
+      "type": "s"
+    },
+    {
+      "key": "name",
+      "type": "s"
+    },
+    {
+      "key": "category_id",
+      "type": "s"
+    },
+    {
+      "key": "subcategory_id",
+      "type": "s"
+    },
+    {
+      "key": "brand_id",
+      "type": "s"
+    },
+    {
+      "key": "unit",
+      "type": "s"
+    },
+    {
+      "key": "roll_length",
+      "type": "n"
+    },
+    {
+      "key": "cost_price",
+      "type": "n"
+    },
+    {
+      "key": "sale_price",
+      "type": "n"
+    },
+    {
+      "key": "wholesale_price",
+      "type": "n"
+    },
+    {
+      "key": "stock",
+      "type": "n"
+    },
+    {
+      "key": "low_stock",
+      "type": "n"
+    },
+    {
+      "key": "has_warranty",
+      "type": "b"
+    },
+    {
+      "key": "warranty_type",
+      "type": "s"
+    },
+    {
+      "key": "warranty_days",
+      "type": "n"
+    },
+    {
+      "key": "active",
+      "type": "b"
+    },
+    {
+      "key": "created_at",
+      "type": "s"
+    },
+    {
+      "key": "service",
+      "type": "b"
+    },
+    {
+      "key": "description",
+      "type": "s"
+    }
+  ],
+  "SerialItems": [
+    {
+      "key": "id",
+      "type": "s"
+    },
+    {
+      "key": "product_id",
+      "type": "s"
+    },
+    {
+      "key": "serial",
+      "type": "s"
+    },
+    {
+      "key": "purchase_id",
+      "type": "s"
+    },
+    {
+      "key": "sale_id",
+      "type": "s"
+    },
+    {
+      "key": "status",
+      "type": "s"
+    },
+    {
+      "key": "cost",
+      "type": "n"
+    },
+    {
+      "key": "created_at",
+      "type": "s"
+    }
+  ],
+  "Customers": [
+    {
+      "key": "id",
+      "type": "s"
+    },
+    {
+      "key": "name",
+      "type": "s"
+    },
+    {
+      "key": "phones",
+      "type": "s"
+    },
+    {
+      "key": "addresses",
+      "type": "s"
+    },
+    {
+      "key": "opening_balance",
+      "type": "n"
+    },
+    {
+      "key": "note",
+      "type": "s"
+    },
+    {
+      "key": "active",
+      "type": "b"
+    },
+    {
+      "key": "created_at",
+      "type": "s"
+    },
+    {
+      "key": "link_id",
+      "type": "s"
+    }
+  ],
+  "Suppliers": [
+    {
+      "key": "id",
+      "type": "s"
+    },
+    {
+      "key": "name",
+      "type": "s"
+    },
+    {
+      "key": "phones",
+      "type": "s"
+    },
+    {
+      "key": "address",
+      "type": "s"
+    },
+    {
+      "key": "opening_balance",
+      "type": "n"
+    },
+    {
+      "key": "note",
+      "type": "s"
+    },
+    {
+      "key": "active",
+      "type": "b"
+    },
+    {
+      "key": "created_at",
+      "type": "s"
+    },
+    {
+      "key": "link_id",
+      "type": "s"
+    }
+  ],
+  "Purchases": [
+    {
+      "key": "id",
+      "type": "s"
+    },
+    {
+      "key": "invoice_no",
+      "type": "s"
+    },
+    {
+      "key": "date",
+      "type": "s"
+    },
+    {
+      "key": "supplier_id",
+      "type": "s"
+    },
+    {
+      "key": "supplier_name",
+      "type": "s"
+    },
+    {
+      "key": "subtotal",
+      "type": "n"
+    },
+    {
+      "key": "discount",
+      "type": "n"
+    },
+    {
+      "key": "total",
+      "type": "n"
+    },
+    {
+      "key": "paid",
+      "type": "n"
+    },
+    {
+      "key": "due",
+      "type": "n"
+    },
+    {
+      "key": "note",
+      "type": "s"
+    },
+    {
+      "key": "status",
+      "type": "s"
+    },
+    {
+      "key": "user",
+      "type": "s"
+    },
+    {
+      "key": "created_at",
+      "type": "s"
+    },
+    {
+      "key": "payments",
+      "type": "s"
+    },
+    {
+      "key": "cancel_reason",
+      "type": "s"
+    },
+    {
+      "key": "supplier_invoice",
+      "type": "s"
+    }
+  ],
+  "PurchaseItems": [
+    {
+      "key": "id",
+      "type": "s"
+    },
+    {
+      "key": "purchase_id",
+      "type": "s"
+    },
+    {
+      "key": "product_id",
+      "type": "s"
+    },
+    {
+      "key": "name",
+      "type": "s"
+    },
+    {
+      "key": "unit",
+      "type": "s"
+    },
+    {
+      "key": "qty",
+      "type": "n"
+    },
+    {
+      "key": "cost",
+      "type": "n"
+    },
+    {
+      "key": "total",
+      "type": "n"
+    },
+    {
+      "key": "serials",
+      "type": "s"
+    },
+    {
+      "key": "valuation",
+      "type": "s"
+    }
+  ],
+  "Sales": [
+    {
+      "key": "id",
+      "type": "s"
+    },
+    {
+      "key": "invoice_no",
+      "type": "s"
+    },
+    {
+      "key": "date",
+      "type": "s"
+    },
+    {
+      "key": "customer_id",
+      "type": "s"
+    },
+    {
+      "key": "customer_name",
+      "type": "s"
+    },
+    {
+      "key": "subtotal",
+      "type": "n"
+    },
+    {
+      "key": "discount",
+      "type": "n"
+    },
+    {
+      "key": "total",
+      "type": "n"
+    },
+    {
+      "key": "paid",
+      "type": "n"
+    },
+    {
+      "key": "credit_used",
+      "type": "n"
+    },
+    {
+      "key": "due",
+      "type": "n"
+    },
+    {
+      "key": "cost",
+      "type": "n"
+    },
+    {
+      "key": "profit",
+      "type": "n"
+    },
+    {
+      "key": "note",
+      "type": "s"
+    },
+    {
+      "key": "status",
+      "type": "s"
+    },
+    {
+      "key": "user_id",
+      "type": "s"
+    },
+    {
+      "key": "user_name",
+      "type": "s"
+    },
+    {
+      "key": "created_at",
+      "type": "s"
+    },
+    {
+      "key": "payments",
+      "type": "s"
+    },
+    {
+      "key": "cancel_reason",
+      "type": "s"
+    },
+    {
+      "key": "next_payment_date",
+      "type": "s"
+    },
+    {
+      "key": "balance_snapshot",
+      "type": "s"
+    }
+  ],
+  "SaleItems": [
+    {
+      "key": "id",
+      "type": "s"
+    },
+    {
+      "key": "sale_id",
+      "type": "s"
+    },
+    {
+      "key": "product_id",
+      "type": "s"
+    },
+    {
+      "key": "name",
+      "type": "s"
+    },
+    {
+      "key": "unit",
+      "type": "s"
+    },
+    {
+      "key": "qty",
+      "type": "n"
+    },
+    {
+      "key": "price",
+      "type": "n"
+    },
+    {
+      "key": "cost",
+      "type": "n"
+    },
+    {
+      "key": "total",
+      "type": "n"
+    },
+    {
+      "key": "serials",
+      "type": "s"
+    },
+    {
+      "key": "warranty_type",
+      "type": "s"
+    },
+    {
+      "key": "warranty_days",
+      "type": "n"
+    },
+    {
+      "key": "warranty_expiry",
+      "type": "s"
+    }
+  ],
+  "SalesReturns": [
+    {
+      "key": "id",
+      "type": "s"
+    },
+    {
+      "key": "return_no",
+      "type": "s"
+    },
+    {
+      "key": "date",
+      "type": "s"
+    },
+    {
+      "key": "sale_id",
+      "type": "s"
+    },
+    {
+      "key": "invoice_no",
+      "type": "s"
+    },
+    {
+      "key": "customer_id",
+      "type": "s"
+    },
+    {
+      "key": "customer_name",
+      "type": "s"
+    },
+    {
+      "key": "type",
+      "type": "s"
+    },
+    {
+      "key": "total",
+      "type": "n"
+    },
+    {
+      "key": "cost",
+      "type": "n"
+    },
+    {
+      "key": "refund",
+      "type": "n"
+    },
+    {
+      "key": "refund_account_id",
+      "type": "s"
+    },
+    {
+      "key": "note",
+      "type": "s"
+    },
+    {
+      "key": "status",
+      "type": "s"
+    },
+    {
+      "key": "user",
+      "type": "s"
+    },
+    {
+      "key": "created_at",
+      "type": "s"
+    },
+    {
+      "key": "cancel_reason",
+      "type": "s"
+    }
+  ],
+  "SalesReturnItems": [
+    {
+      "key": "id",
+      "type": "s"
+    },
+    {
+      "key": "return_id",
+      "type": "s"
+    },
+    {
+      "key": "sale_item_id",
+      "type": "s"
+    },
+    {
+      "key": "product_id",
+      "type": "s"
+    },
+    {
+      "key": "name",
+      "type": "s"
+    },
+    {
+      "key": "qty",
+      "type": "n"
+    },
+    {
+      "key": "price",
+      "type": "n"
+    },
+    {
+      "key": "cost",
+      "type": "n"
+    },
+    {
+      "key": "total",
+      "type": "n"
+    },
+    {
+      "key": "serials",
+      "type": "s"
+    },
+    {
+      "key": "valuation",
+      "type": "s"
+    }
+  ],
+  "PurchaseReturns": [
+    {
+      "key": "id",
+      "type": "s"
+    },
+    {
+      "key": "return_no",
+      "type": "s"
+    },
+    {
+      "key": "date",
+      "type": "s"
+    },
+    {
+      "key": "purchase_id",
+      "type": "s"
+    },
+    {
+      "key": "invoice_no",
+      "type": "s"
+    },
+    {
+      "key": "supplier_id",
+      "type": "s"
+    },
+    {
+      "key": "supplier_name",
+      "type": "s"
+    },
+    {
+      "key": "total",
+      "type": "n"
+    },
+    {
+      "key": "received",
+      "type": "n"
+    },
+    {
+      "key": "account_id",
+      "type": "s"
+    },
+    {
+      "key": "note",
+      "type": "s"
+    },
+    {
+      "key": "status",
+      "type": "s"
+    },
+    {
+      "key": "user",
+      "type": "s"
+    },
+    {
+      "key": "created_at",
+      "type": "s"
+    },
+    {
+      "key": "cancel_reason",
+      "type": "s"
+    }
+  ],
+  "PurchaseReturnItems": [
+    {
+      "key": "id",
+      "type": "s"
+    },
+    {
+      "key": "return_id",
+      "type": "s"
+    },
+    {
+      "key": "purchase_item_id",
+      "type": "s"
+    },
+    {
+      "key": "product_id",
+      "type": "s"
+    },
+    {
+      "key": "name",
+      "type": "s"
+    },
+    {
+      "key": "qty",
+      "type": "n"
+    },
+    {
+      "key": "cost",
+      "type": "n"
+    },
+    {
+      "key": "total",
+      "type": "n"
+    },
+    {
+      "key": "serials",
+      "type": "s"
+    },
+    {
+      "key": "valuation",
+      "type": "s"
+    }
+  ],
+  "Expenses": [
+    {
+      "key": "id",
+      "type": "s"
+    },
+    {
+      "key": "date",
+      "type": "s"
+    },
+    {
+      "key": "category",
+      "type": "s"
+    },
+    {
+      "key": "amount",
+      "type": "n"
+    },
+    {
+      "key": "account_id",
+      "type": "s"
+    },
+    {
+      "key": "note",
+      "type": "s"
+    },
+    {
+      "key": "user",
+      "type": "s"
+    },
+    {
+      "key": "status",
+      "type": "s"
+    },
+    {
+      "key": "created_at",
+      "type": "s"
+    },
+    {
+      "key": "cancel_reason",
+      "type": "s"
+    }
+  ],
+  "CustomerLedger": [
+    {
+      "key": "id",
+      "type": "s"
+    },
+    {
+      "key": "date",
+      "type": "s"
+    },
+    {
+      "key": "customer_id",
+      "type": "s"
+    },
+    {
+      "key": "type",
+      "type": "s"
+    },
+    {
+      "key": "ref_id",
+      "type": "s"
+    },
+    {
+      "key": "ref_no",
+      "type": "s"
+    },
+    {
+      "key": "debit",
+      "type": "n"
+    },
+    {
+      "key": "credit",
+      "type": "n"
+    },
+    {
+      "key": "note",
+      "type": "s"
+    },
+    {
+      "key": "voided",
+      "type": "b"
+    }
+  ],
+  "SupplierLedger": [
+    {
+      "key": "id",
+      "type": "s"
+    },
+    {
+      "key": "date",
+      "type": "s"
+    },
+    {
+      "key": "supplier_id",
+      "type": "s"
+    },
+    {
+      "key": "type",
+      "type": "s"
+    },
+    {
+      "key": "ref_id",
+      "type": "s"
+    },
+    {
+      "key": "ref_no",
+      "type": "s"
+    },
+    {
+      "key": "debit",
+      "type": "n"
+    },
+    {
+      "key": "credit",
+      "type": "n"
+    },
+    {
+      "key": "note",
+      "type": "s"
+    },
+    {
+      "key": "voided",
+      "type": "b"
+    }
+  ],
+  "WarrantyClaims": [
+    {
+      "key": "id",
+      "type": "s"
+    },
+    {
+      "key": "claim_no",
+      "type": "s"
+    },
+    {
+      "key": "date",
+      "type": "s"
+    },
+    {
+      "key": "serial",
+      "type": "s"
+    },
+    {
+      "key": "sale_id",
+      "type": "s"
+    },
+    {
+      "key": "invoice_no",
+      "type": "s"
+    },
+    {
+      "key": "product_id",
+      "type": "s"
+    },
+    {
+      "key": "product_name",
+      "type": "s"
+    },
+    {
+      "key": "customer_id",
+      "type": "s"
+    },
+    {
+      "key": "customer_name",
+      "type": "s"
+    },
+    {
+      "key": "phone",
+      "type": "s"
+    },
+    {
+      "key": "issue",
+      "type": "s"
+    },
+    {
+      "key": "expiry",
+      "type": "s"
+    },
+    {
+      "key": "in_warranty",
+      "type": "b"
+    },
+    {
+      "key": "status",
+      "type": "s"
+    },
+    {
+      "key": "vendor",
+      "type": "s"
+    },
+    {
+      "key": "log",
+      "type": "s"
+    },
+    {
+      "key": "delivered_date",
+      "type": "s"
+    },
+    {
+      "key": "updated_at",
+      "type": "s"
+    },
+    {
+      "key": "replacement",
+      "type": "s"
+    }
+  ],
+  "ItemEvents": [
+    {
+      "key": "id",
+      "type": "s"
+    },
+    {
+      "key": "ts",
+      "type": "s"
+    },
+    {
+      "key": "serial",
+      "type": "s"
+    },
+    {
+      "key": "product_id",
+      "type": "s"
+    },
+    {
+      "key": "product_name",
+      "type": "s"
+    },
+    {
+      "key": "event",
+      "type": "s"
+    },
+    {
+      "key": "ref_type",
+      "type": "s"
+    },
+    {
+      "key": "ref_id",
+      "type": "s"
+    },
+    {
+      "key": "ref_no",
+      "type": "s"
+    },
+    {
+      "key": "party",
+      "type": "s"
+    },
+    {
+      "key": "qty",
+      "type": "n"
+    },
+    {
+      "key": "amount",
+      "type": "n"
+    },
+    {
+      "key": "note",
+      "type": "s"
+    },
+    {
+      "key": "user",
+      "type": "s"
+    }
+  ],
+  "SmsLog": [
+    {
+      "key": "id",
+      "type": "s"
+    },
+    {
+      "key": "ts",
+      "type": "s"
+    },
+    {
+      "key": "phone",
+      "type": "s"
+    },
+    {
+      "key": "message",
+      "type": "s"
+    },
+    {
+      "key": "status",
+      "type": "s"
+    },
+    {
+      "key": "response",
+      "type": "s"
+    }
+  ],
+  "InvoiceLinks": [
+    {
+      "key": "id",
+      "type": "s"
+    },
+    {
+      "key": "token_hash",
+      "type": "s"
+    },
+    {
+      "key": "sale_id",
+      "type": "s"
+    },
+    {
+      "key": "created_at",
+      "type": "s"
+    },
+    {
+      "key": "expires_at",
+      "type": "s"
+    }
+  ],
+  "AuditLog": [
+    {
+      "key": "id",
+      "type": "s"
+    },
+    {
+      "key": "ts",
+      "type": "s"
+    },
+    {
+      "key": "user",
+      "type": "s"
+    },
+    {
+      "key": "action",
+      "type": "s"
+    },
+    {
+      "key": "detail",
+      "type": "s"
+    }
+  ],
+  "Repairs": [
+    {
+      "key": "id",
+      "type": "s"
+    },
+    {
+      "key": "job_no",
+      "type": "s"
+    },
+    {
+      "key": "date",
+      "type": "s"
+    },
+    {
+      "key": "customer_id",
+      "type": "s"
+    },
+    {
+      "key": "customer_name",
+      "type": "s"
+    },
+    {
+      "key": "phone",
+      "type": "s"
+    },
+    {
+      "key": "device",
+      "type": "s"
+    },
+    {
+      "key": "serial",
+      "type": "s"
+    },
+    {
+      "key": "problem",
+      "type": "s"
+    },
+    {
+      "key": "accessories",
+      "type": "s"
+    },
+    {
+      "key": "technician_id",
+      "type": "s"
+    },
+    {
+      "key": "technician_name",
+      "type": "s"
+    },
+    {
+      "key": "estimate",
+      "type": "n"
+    },
+    {
+      "key": "charge",
+      "type": "n"
+    },
+    {
+      "key": "advance",
+      "type": "n"
+    },
+    {
+      "key": "parts",
+      "type": "s"
+    },
+    {
+      "key": "status",
+      "type": "s"
+    },
+    {
+      "key": "note",
+      "type": "s"
+    },
+    {
+      "key": "sale_id",
+      "type": "s"
+    },
+    {
+      "key": "invoice_no",
+      "type": "s"
+    },
+    {
+      "key": "ready_date",
+      "type": "s"
+    },
+    {
+      "key": "delivered_date",
+      "type": "s"
+    },
+    {
+      "key": "cancel_reason",
+      "type": "s"
+    },
+    {
+      "key": "log",
+      "type": "s"
+    },
+    {
+      "key": "user",
+      "type": "s"
+    },
+    {
+      "key": "created_at",
+      "type": "s"
+    },
+    {
+      "key": "updated_at",
+      "type": "s"
+    },
+    {
+      "key": "result_note",
+      "type": "s"
+    },
+    {
+      "key": "result_by",
+      "type": "s"
+    },
+    {
+      "key": "result_at",
+      "type": "s"
+    },
+    {
+      "key": "alert_seen",
+      "type": "b"
+    },
+    {
+      "key": "alert_seen_by",
+      "type": "s"
+    }
+  ]
+}

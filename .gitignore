@@ -21,3 +21,4 @@ backups/
 .clasprc.json
 *.pem
 *.key
+supabase/.temp/

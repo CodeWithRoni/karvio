@@ -1,0 +1,24 @@
+import {test,expect} from '@playwright/test';
+test('repair dashboard has eight periods and drills from status counts into a job detail',async({page,request})=>{
+ const endpoint='http://localhost:8787';let token;
+ const call=async(action,payload={})=>{const r=await request.post(endpoint,{data:{action,payload,token}});const b=await r.json();expect(b.ok,b.error).toBe(true);return b.data;};
+ token=(await call('login',{username:'admin',password:'admin123'})).token;
+ const job=await call('repair.save',{customer_name:'Dashboard customer',phone:'01755550000',device:'Dashboard laptop',problem:'No display'});
+ await call('repair.status',{id:job.id,status:'Completed',send_sms:false});
+ const meta=await call('repairs.meta'),jobs=await call('repairs.list');
+ const completed=jobs.filter(j=>j.date===meta.today&&j.status==='Completed').length;
+ await page.addInitScript(({endpoint,token})=>{localStorage.setItem('erp_api_config',JSON.stringify({scriptUrl:endpoint}));localStorage.setItem('erp_token',token);},{endpoint,token});
+ await page.goto('/#/repairs');await expect(page.locator('.repair-period')).toHaveCount(8);
+ await expect(page.getByRole('button',{name:`Today Complete: ${completed}`,exact:true})).toBeVisible();
+ await expect(page.locator('.repair-dashboard')).not.toContainText('All time');
+ await page.screenshot({path:'../verification/repair-dashboard-review.png',fullPage:true});
+ await page.getByRole('button',{name:`Today Complete: ${completed}`,exact:true}).click();
+ await expect(page.locator('.filters').getByRole('tab',{name:'Completed',exact:true})).toHaveAttribute('aria-selected','true');
+ await page.locator('table').getByText(job.job_no,{exact:true}).click();
+ const detail=page.getByRole('dialog',{name:`Repair job ${job.job_no}`,exact:true});await expect(detail).toContainText('Dashboard laptop');
+ await detail.getByRole('button',{name:'Close',exact:true}).click();
+ await page.getByRole('button',{name:'Repair dashboard',exact:true}).click();
+ await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
+ await page.getByRole('button',{name:'View Last Month repair jobs',exact:true}).click();
+ await expect(page.getByText(/Last Month · Received/)).toBeVisible();
+});

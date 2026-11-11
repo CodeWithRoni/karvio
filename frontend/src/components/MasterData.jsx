@@ -22,7 +22,7 @@ const Svg = ({ name, size = 13 }) => (
 /** Small outlined action button: tone = edit | delete | add */
 function ActBtn({ tone, icon, children, className, ...p }) {
   // title = tooltip, so the button still explains itself when only its icon is shown
-  return <button type="button" className={className || `act-btn act-${tone}`} title={typeof children === 'string' ? children : undefined} {...p}><Svg name={icon} />{children}</button>;
+  return <button type="button" className={className || `act-btn act-${tone} act-icon`} title={p['aria-label'] || (typeof children === 'string' ? children : undefined)} {...p}><Svg name={icon} /></button>;
 }
 
 /* Export (Excel / PDF / Print), Import from Excel or CSV, and a demo file to copy the layout from. */
@@ -54,7 +54,7 @@ function mapRows(kind, raw) {
   }).filter((r) => Object.values(r).some((v) => v !== ''));
 }
 
-function PanelTools({ kind, title, rows, onImport, busy }) {
+function PanelTools({ kind, title, rows, onImport, busy, selectedCount, onDelete }) {
   const [open, setOpen] = useState(false);
   const box = useRef(), file = useRef();
   useEffect(() => {
@@ -82,7 +82,8 @@ function PanelTools({ kind, title, rows, onImport, busy }) {
   };
   return (
     <div className="md-tools" ref={box}>
-      <button type="button" className="md-tool" onClick={() => setOpen(!open)} aria-haspopup="menu" aria-expanded={open} aria-label={`Export ${title}`}><Svg name="download" size={12} />Export</button>
+      {!!selectedCount && <><span className="md-count">{selectedCount} selected</span><ActBtn tone="delete" icon="trash" disabled={busy} aria-label={`Delete selected ${title}`} onClick={onDelete} /></>}
+      <button type="button" className="md-tool" title={selectedCount ? `Export ${selectedCount} selected ${title}` : `Export ${title}`} onClick={() => setOpen(!open)} aria-haspopup="menu" aria-expanded={open} aria-label={`Export ${title}`}><Svg name="download" size={14} /></button>
       {open && (
         <div className="md-menu" role="menu">
           <button type="button" role="menuitem" onClick={() => run(exportExcel)}>Excel (.xlsx)</button>
@@ -90,9 +91,9 @@ function PanelTools({ kind, title, rows, onImport, busy }) {
           <button type="button" role="menuitem" onClick={() => run(printTable)}>Print</button>
         </div>
       )}
-      <button type="button" className="md-tool" disabled={busy} onClick={() => file.current?.click()} aria-label={`Import ${title}`}><Svg name="upload" size={12} />{busy ? 'Importing…' : 'Import'}</button>
+      <button type="button" className="md-tool" title={`Import ${title}`} disabled={busy} onClick={() => file.current?.click()} aria-label={`Import ${title}`}><Svg name="upload" size={14} /></button>
       <input ref={file} type="file" hidden accept=".xlsx,.xls,.csv,.ods" onChange={pickFile} />
-      <button type="button" className="md-info" data-tip="Download demo import" aria-label={`Download demo import file for ${title}`} onClick={demo}><Svg name="info" size={15} /></button>
+      <button type="button" className="md-info" title="Download demo import" data-tip="Download demo import" aria-label={`Download demo import file for ${title}`} onClick={demo}><Svg name="info" size={15} /></button>
     </div>
   );
 }
@@ -124,7 +125,8 @@ export default function MasterData() {
   const [busyWarranty, runWarranty] = useAction();
   const [busyUnit, runUnit] = useAction();
   const [busyEdit, runEdit] = useAction();
-  const [, runDel] = useAction();
+  const [busyDelete, runDel] = useAction();
+  const [selected, setSelected] = useState({});
   const runners = { group: runGroup, category: runCat, brand: runBrand, warranty_period: runWarranty, unit: runUnit };
   const [confirmUI, ask] = useConfirm();
   const [ng, setNg] = useState('');
@@ -148,7 +150,10 @@ export default function MasterData() {
       if (r.skipped.length) setImportResult({ kind, fileName, ...r });
     } catch (e) { useStore.getState().toast(e.message, 'err'); } finally { setImporting(''); }
   };
-  const tools = (kind, title, rows) => <PanelTools kind={kind} title={title} rows={rows} onImport={doImport} busy={importing === kind} />;
+  const tools = (kind, title, rows) => {
+    const ids = new Set(selected[kind] || []), chosen = rows.filter(r => ids.has(r.id));
+    return <PanelTools kind={kind} title={title} rows={chosen.length ? chosen : rows} selectedCount={chosen.length} onDelete={()=>deleteSelected(kind, chosen)} onImport={doImport} busy={importing === kind || busyDelete} />;
+  };
 
   const tops = categories.filter((c) => !c.parent_id);
   const subsOf = (id) => categories.filter((c) => c.parent_id === id);
@@ -179,6 +184,18 @@ export default function MasterData() {
     if (!ok) return;
     try { await runDel(async () => { await api('master.delete', { kind, id: item.id }); await refresh('all'); }, `${name} deleted`); } catch { /* error shown as a toast */ }
   };
+  const deleteSelected = async (kind, rows) => {
+    if (busyDelete || !rows.length) return;
+    if (rows.length > 200) return useStore.getState().toast('Select up to 200 items at a time', 'err');
+    const ok = await ask({title:'Delete selected items?',message:<><b>{rows.length}</b> {KIND[kind]} items will be deleted. Items in use cannot be deleted; if any item is blocked, the entire selection stays unchanged.</>});
+    if (!ok) return;
+    try { await runDel(async()=>{
+      await api('master.deleteMany',{kind,ids:rows.map(r=>r.id)});
+      setSelected(s=>({...s,[kind]:[]})); await refresh('all');
+    }, 'Selected items deleted'); } catch { /* Preserve selection for retry; toast explains the failure. */ }
+  };
+  const tick = (kind, item) => <input type="checkbox" className="md-select" aria-label={`Select ${item.name || item.label}`} checked={(selected[kind] || []).includes(item.id)} onChange={e=>setSelected(s=>({...s,[kind]:e.target.checked?[...(s[kind]||[]),item.id]:(s[kind]||[]).filter(id=>id!==item.id)}))} />;
+  const selectAll = (kind, rows, title) => rows.length > 0 && <label className="check md-select-all"><input type="checkbox" aria-label={`Select all ${title}`} checked={rows.every(r=>(selected[kind]||[]).includes(r.id))} ref={el=>{if(el)el.indeterminate=rows.some(r=>(selected[kind]||[]).includes(r.id))&&!rows.every(r=>(selected[kind]||[]).includes(r.id));}} onChange={e=>{const checked=e.target.checked;setSelected(s=>{const ids=new Set(s[kind]||[]);rows.forEach(r=>checked?ids.add(r.id):ids.delete(r.id));return {...s,[kind]:[...ids]};});}} /> Select all shown</label>;
   const saveEdit = async (e) => {
     e?.preventDefault();
     const v = String(edit.value).trim();
@@ -196,7 +213,7 @@ export default function MasterData() {
 
   return (
     <div className="md-grid">
-      <Panel title="Product groups" count={tops.length} tools={tools('group', 'Product groups', tops.map((g) => ({ name: g.name })))} hint="Create a group such as PROCESSOR. Its categories can be INTEL or AMD." search={qg} setSearch={setQg}
+      <Panel title="Product groups" count={tops.length} tools={tools('group', 'Product groups', tops.map((g) => ({ id:g.id, name: g.name })))} hint="Create a group such as PROCESSOR. Its categories can be INTEL or AMD." search={qg} setSearch={setQg}
         form={
           <form className="md-form" onSubmit={(e) => { e.preventDefault(); save({ kind: 'group', name: ng }, 'Product group added').then(() => setNg('')).catch(() => {}); }}>
             <div className="md-form-row">
@@ -206,8 +223,10 @@ export default function MasterData() {
           </form>
         }
         empty={!shownGroups.length && <p className="md-empty">{qg ? 'No group matches your search.' : 'Add a product group first.'}</p>}>
+        {selectAll('group', shownGroups, 'Product groups')}
         <ul className="md-list">
           {shownGroups.map((g) => <li className="md-row" key={g.id}>
+              {tick('group', g)}
             <div className="md-name"><b title={g.name}>{g.name}</b><small className="md-category-group">{subsOf(g.id).length} {subsOf(g.id).length === 1 ? "category" : "categories"}</small></div>
             <div className="md-actions">
               <ActBtn tone="add" icon="plus" className="act-btn act-add act-icon" title={`Add a category under ${g.name}`} aria-label={`Add category to ${g.name}`} onClick={() => { setNc({ name: '', parent_id: g.id }); document.querySelector('.md-form-cat input')?.focus(); }} />
@@ -219,7 +238,7 @@ export default function MasterData() {
       </Panel>
 
       {/* ---------------- Categories ---------------- */}
-      <Panel title="Categories" count={childCategories.length} tools={tools('category', 'Categories', [...childCategories].sort((a, b) => (groupNames[a.parent_id] || '').localeCompare(groupNames[b.parent_id] || '') || a.name.localeCompare(b.name)).map((c) => ({ group: groupNames[c.parent_id] || '', name: c.name })))} hint="Select a product group, then add its category." search={qc} setSearch={setQc}
+      <Panel title="Categories" count={childCategories.length} tools={tools('category', 'Categories', [...childCategories].sort((a, b) => (groupNames[a.parent_id] || '').localeCompare(groupNames[b.parent_id] || '') || a.name.localeCompare(b.name)).map((c) => ({ id:c.id, group: groupNames[c.parent_id] || '', name: c.name })))} hint="Select a product group, then add its category." search={qc} setSearch={setQc}
         form={
           <form className="md-form md-form-cat" onSubmit={(e) => { e.preventDefault(); if (!nc.parent_id) return; save({ kind: 'category', ...nc }, 'Category added').then(() => setNc({ name: '', parent_id: nc.parent_id })).catch(() => {}); }}>
             <select required value={nc.parent_id} onChange={(e) => setNc({ ...nc, parent_id: e.target.value })} aria-label="Category group">
@@ -233,8 +252,10 @@ export default function MasterData() {
           </form>
         }
         empty={!shownCategories.length && <p className="md-empty">{q ? 'No category matches your search.' : 'No categories yet. Choose a group above to add one.'}</p>}>
+        {selectAll('category', shownCategories, 'Categories')}
         <ul className="md-list">
           {shownCategories.map((c) => <li className="md-row" key={c.id}>
+              {tick('category', c)}
             <div className="md-name"><span title={c.name}>{c.name}</span><small className="md-category-group" title={groupNames[c.parent_id]}>{groupNames[c.parent_id] || 'Unknown group'}</small></div>
             <div className="md-actions">
               <ActBtn tone="edit" icon="edit" onClick={() => setEdit({ kind: 'category', item: c, field: 'name', value: c.name })} aria-label={`Rename ${c.name}`}>Rename</ActBtn>
@@ -245,7 +266,7 @@ export default function MasterData() {
       </Panel>
 
       {/* ---------------- Brands ---------------- */}
-      <Panel title="Brands" count={brands.length} tools={tools('brand', 'Brands', shownBrands.map((b) => ({ name: b.name })))} search={qb} setSearch={setQb}
+      <Panel title="Brands" count={brands.length} tools={tools('brand', 'Brands', shownBrands.map((b) => ({ id:b.id, name: b.name })))} search={qb} setSearch={setQb}
         form={
           <form className="md-form" onSubmit={(e) => { e.preventDefault(); save({ kind: 'brand', name: nb }, 'Brand added').then(() => setNb('')).catch(() => {}); }}>
             <div className="md-form-row">
@@ -255,9 +276,11 @@ export default function MasterData() {
           </form>
         }
         empty={!shownBrands.length && <p className="md-empty">{qb ? 'No brand matches your search.' : 'No brands yet. Add the brands you sell, like Kingston, TP-Link or Gigabyte.'}</p>}>
+        {selectAll('brand', shownBrands, 'Brands')}
         <ul className="md-list">
           {shownBrands.map((b) => (
             <li className="md-row" key={b.id}>
+              {tick('brand', b)}
               <span className="md-name" title={b.name}>{b.name}</span>
               {used[b.id] > 0 && <span className="md-pill md-used">{used[b.id]} product{used[b.id] === 1 ? "" : "s"}</span>}
               <div className="md-actions">
@@ -270,7 +293,7 @@ export default function MasterData() {
       </Panel>
 
       {/* ---------------- Warranty periods ---------------- */}
-      <Panel title="Warranty periods" count={periods.length} tools={tools('warranty_period', 'Warranty periods', periods.map((w) => ({ days: w.days, label: w.label })))} hint="Shown as choices on products and at the POS."
+      <Panel title="Warranty periods" count={periods.length} tools={tools('warranty_period', 'Warranty periods', periods.map((w) => ({ id:w.id, days: w.days, label: w.label })))} hint="Shown as choices on products and at the POS."
         form={
           <form className="md-form" onSubmit={(e) => { e.preventDefault(); save({ kind: 'warranty_period', ...nw }, 'Warranty period added').then(() => setNw({ days: '', label: '' })).catch(() => {}); }}>
             <div className="md-form-row">
@@ -281,9 +304,11 @@ export default function MasterData() {
           </form>
         }
         empty={!periods.length && <p className="md-empty">No warranty periods yet.</p>}>
+        {selectAll('warranty_period', periods, 'Warranty periods')}
         <ul className="md-list">
           {periods.map((w) => (
             <li className="md-row" key={w.id}>
+              {tick('warranty_period', w)}
               <span className="md-name" title={w.label}>{w.label}</span>
               {String(w.label).trim().toLowerCase() !== `${w.days} days` && <span className="md-pill">{w.days} days</span>}
               <div className="md-actions">
@@ -296,7 +321,7 @@ export default function MasterData() {
       </Panel>
 
       {/* ---------------- Selling units ---------------- */}
-      <Panel title="Selling units" count={unitList.length} tools={tools('unit', 'Selling units', unitList.map((u) => ({ name: u.name, label: u.label, decimal: u.decimal ? 'Yes' : 'No' })))} hint="Choices for “Selling unit” when you add a product. Tick Decimal for units sold in parts, like 1.5 meter."
+      <Panel title="Selling units" count={unitList.length} tools={tools('unit', 'Selling units', unitList.map((u) => ({ id:u.id, name: u.name, label: u.label, decimal: u.decimal ? 'Yes' : 'No' })))} hint="Choices for “Selling unit” when you add a product. Tick Decimal for units sold in parts, like 1.5 meter."
         form={
           <form className="md-form" onSubmit={(e) => { e.preventDefault(); save({ kind: 'unit', ...nu }, 'Selling unit added').then(() => setNu({ name: '', label: '', decimal: false })).catch(() => {}); }}>
             <div className="md-form-row">
@@ -308,9 +333,11 @@ export default function MasterData() {
           </form>
         }
         empty={!unitList.length && <p className="md-empty">No selling units yet.</p>}>
+        {selectAll('unit', unitList, 'Selling units')}
         <ul className="md-list">
           {unitList.map((u) => (
             <li className="md-row" key={u.id}>
+              {tick('unit', u)}
               <span className="md-name" title={u.label}>{u.label}</span>
               {u.label.toLowerCase() !== u.name && <span className="md-pill">{u.name}</span>}
               {u.decimal && <span className="md-pill">decimal</span>}

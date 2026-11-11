@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { Btn } from './ui';
 import { isOffline } from '../lib/api';
+import NavIcon from './NavIcon';
 
 // Karvio app mark (files in public/, so they work on GitHub Pages, desktop and mobile builds).
 export const Logo = ({ size = 28 }) => (
@@ -35,6 +36,7 @@ export const NAV = [
   { to: '/pc-builder', label: 'PC Builder & Quotes', perm: 'pos' },
   { to: '/customers', label: 'Customers & Dues', key: '4' },
   { to: '/repairs', label: 'Repairs', perm: 'repairs' },
+  { to: '/service', label: 'Service', perm: 'repairs' },
   { group: 'Stock' },
   { to: '/stock', label: 'Products & Stock', key: '5' },
   { to: '/barcodes', label: 'Barcode Labels' },
@@ -100,8 +102,8 @@ export default function Layout() {
         <nav className="nav">
           {groups.map((g) => (
             <section className={`nav-card ${tone[g.title] || ''}`} key={g.title}>
-              <div className="nav-group"><i />{g.title}</div>
-              {g.links.map((n) => <NavLink key={n.to} to={n.to} end={n.end}>{n.label}{n.key && <kbd>Alt {n.key}</kbd>}</NavLink>)}
+              <div className="nav-group"><NavIcon name={g.title} group />{g.title}</div>
+              {g.links.map((n) => <NavLink key={n.to} to={n.to} end={n.end}><NavIcon name={n.to} /><span className="nav-item-label">{n.label}</span>{n.key && <kbd>Alt {n.key}</kbd>}</NavLink>)}
             </section>
           ))}
         </nav>

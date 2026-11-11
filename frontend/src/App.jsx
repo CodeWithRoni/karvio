@@ -20,6 +20,7 @@ const Prices = lazy(() => import('./pages/Prices'));
 const Barcodes = lazy(() => import('./pages/Barcodes'));
 const Warranty = lazy(() => import('./pages/Warranty'));
 const Repairs = lazy(() => import('./pages/Repairs'));
+const Service = lazy(() => import('./pages/Service'));
 const History = lazy(() => import('./pages/History'));
 const Accounts = lazy(() => import('./pages/Accounts'));
 const Expenses = lazy(() => import('./pages/Expenses'));
@@ -41,6 +42,18 @@ function Guard({ perm, children }) {
 export default function App() {
   const { theme, token, user, booting, bootError, boot, logout } = useStore();
   const [pub, setPub] = useState(linkToken);
+  useEffect(() => {
+    // Capture also covers lazy pages, portal dialogs and future native inputs.
+    // Blur before the browser's wheel step; keep the wheel passive so the page scrolls.
+    const guard = () => {
+      const active = document.activeElement;
+      const steppedInput = active instanceof HTMLInputElement && ['number', 'range', 'date', 'time', 'datetime-local', 'month', 'week'].includes(active.type);
+      const closedSelect = active instanceof HTMLSelectElement && active.size <= 1;
+      if (steppedInput || closedSelect) active.blur();
+    };
+    document.addEventListener('wheel', guard, {capture:true, passive:true});
+    return () => document.removeEventListener('wheel', guard, true);
+  }, []);
   useEffect(() => { const h = () => setPub(linkToken()); window.addEventListener('hashchange', h); return () => window.removeEventListener('hashchange', h); }, []);
 
   useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
@@ -77,6 +90,7 @@ export default function App() {
               <Route path="warranty" element={<Guard perm="warranty"><Warranty /></Guard>} />
               <Route path="repairs" element={<Guard perm="repairs"><Repairs /></Guard>} />
               <Route path="repairs/:id" element={<Guard perm="repairs"><Repairs /></Guard>} />
+              <Route path="service" element={<Guard perm="repairs"><Service /></Guard>} />
               <Route path="history" element={<History />} />
               <Route path="accounts" element={<Guard perm="accounts"><Accounts /></Guard>} />
               <Route path="profit" element={<Guard perm={['reports', 'cost']}><Profit /></Guard>} />

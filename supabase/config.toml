@@ -1,0 +1,6 @@
+project_id = "karvio"
+
+[functions.karvio-api]
+# The gateway authenticates existing Karvio username/password sessions in its body.
+# Database RPCs remain service-role-only and are never called by the browser.
+verify_jwt = false

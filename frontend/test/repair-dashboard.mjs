@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {repairPeriods,jobsInPeriod,repairCounts} from '../src/lib/repairDashboard.js';
+let n=0;const eq=(a,b)=>{assert.deepEqual(a,b);n++;};
+const at=date=>Object.fromEntries(repairPeriods(date).map(p=>[p.key,p]));
+const p=at('2026-11-11');eq(Object.keys(p).length,8);eq(p.week.from,'2026-11-07');eq(p.three.from,'2026-09-01');eq(p.six.from,'2026-06-01');eq(p.lastMonth.to,'2026-10-31');eq(p.lastYear.to,'2025-12-31');
+eq(at('2026-01-01').three.from,'2025-11-01');eq(at('2026-01-01').week.from,'2025-12-27');eq(at('2024-03-01').lastMonth.to,'2024-02-29');eq(at('2026-11-07').week.from,'2026-11-07');eq(repairPeriods(''),[]);
+const jobs=[{date:'2026-11-11',status:'Received'},{date:'2026-11-11',status:'Completed'},{date:'2026-11-11',status:'Failed'},{date:'2026-11-11',status:'Delivered'},{date:'2026-11-10',status:'Received'},{date:'2026-11-12',status:'Failed'}];
+eq(jobsInPeriod(jobs,p.today).length,4);eq(repairCounts(jobsInPeriod(jobs,p.today)),{pending:1,complete:1,failed:1});
+eq(jobsInPeriod(jobs,p.week).length,5);eq(repairCounts([{status:'Ready'},{status:'Cancelled'}]),{pending:0,complete:1,failed:0});
+console.log(`Repair dashboard ranges and counts: ${n} checks passed`);

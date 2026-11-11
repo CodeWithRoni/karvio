@@ -92,6 +92,7 @@ test('repairs-only staff can complete work but cannot deliver a sale', async ({ 
   await page.addInitScript(t => localStorage.setItem('erp_token', t), login.token);
   await page.goto('/#/repairs');
   await expect(page.locator('.who .muted')).toHaveText('Technician');
+  await page.getByRole('button',{name:'All repair jobs',exact:true}).click();
   await page.locator('table').getByText(job.job_no).click();
   const dialog = page.getByRole('dialog', { name: `Repair job ${job.job_no}` });
   await expect(dialog.getByRole('button', { name: 'Mark completed', exact: true })).toBeVisible();
