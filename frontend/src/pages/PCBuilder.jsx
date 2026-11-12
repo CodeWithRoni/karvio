@@ -3,7 +3,7 @@ import { shopStorageKey } from '../lib/shopStorage';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../lib/store';
-import { money, qty as fqty } from '../lib/format';
+import { money, qty as fqty, today } from '../lib/format';
 import { printQuotation } from '../lib/receipt';
 import { textOf, cpuInfo, boardInfo, ramInfo, boardFitsCpu, ramFits } from '../lib/compat';
 import { PageHead, Btn, Field, noWheel, useConfirm } from '../components/ui';
@@ -75,7 +75,7 @@ function Builder() {
   const quote = () => { if (!pricing.valid) return useStore.getState().toast(pricing.error, 'err'); return printQuotation({ ...meta, discount: Number(meta.discount) || 0, lines: filled.map((l) => ({ ...l, price: Number(l.price) || 0 })) }); };
   const save = () => {
     if (!pricing.valid) return useStore.getState().toast(pricing.error, 'err');
-    const q = { id: Date.now(), date: new Date().toISOString().slice(0, 10), meta, lines };
+    const q = { id: Date.now(), date: today(), meta, lines };
     const next = [q, ...saved].slice(0, 30); setSaved(next);
     try { if (!savedKey()) throw new Error(); localStorage.setItem(savedKey(), JSON.stringify(next)); } catch { setSaved(saved); return useStore.getState().toast('Could not save the quote on this device', 'err'); }
     useStore.getState().toast('Quote saved for this user and shop');

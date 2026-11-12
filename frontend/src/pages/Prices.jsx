@@ -32,6 +32,7 @@ export default function Prices() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [products, f]);
 
+  const visibleRows = rows.slice(0, 500);
   const changes = Object.entries(draft).map(([id, d]) => {
     const p = products.find((x) => x.id === id); if (!p) return null;
     const sale = d.sale !== undefined ? num(d.sale) : p.sale_price, whole = d.whole !== undefined ? num(d.whole) : p.wholesale_price;
@@ -45,7 +46,7 @@ export default function Prices() {
   const applyMarkup = () => {
     const next = { ...draft };
     let n = 0;
-    rows.forEach((p) => {
+    visibleRows.forEach((p) => {
       if (!(p.cost_price > 0)) return;
       const d = { ...next[p.id] };
       if (markup.sale !== '') d.sale = Math.round(p.cost_price * (1 + Number(markup.sale) / 100));
@@ -92,7 +93,7 @@ export default function Prices() {
           <b>Quick fill from cost</b>
           <label>Retail = cost +<input type="number" step="any" value={markup.sale} onChange={(e) => setMarkup({ ...markup, sale: e.target.value })} placeholder="%" aria-label="Retail markup percent" />%</label>
           <label>Wholesale = cost +<input type="number" step="any" value={markup.whole} onChange={(e) => setMarkup({ ...markup, whole: e.target.value })} placeholder="%" aria-label="Wholesale markup percent" />%</label>
-          <Btn size="sm" disabled={!rows.length || (markup.sale === '' && markup.whole === '')} onClick={applyMarkup}>Apply to {rows.length} shown</Btn>
+          <Btn size="sm" disabled={!rows.length || (markup.sale === '' && markup.whole === '')} onClick={applyMarkup}>Apply to {visibleRows.length} shown</Btn>
           <span className="muted">Rounded to whole taka. Nothing is saved until you press Save changes.</span>
         </div>
       )}
@@ -102,7 +103,7 @@ export default function Prices() {
           <th>Product</th><th>Group / category</th><th>Brand</th><th className="r">Stock</th>
           {showCost && <th className="r">Cost</th>}<th className="r" style={{ width: 140 }}>Retail price</th><th className="r" style={{ width: 140 }}>Wholesale</th>{showCost && <th className="r">Margin</th>}
         </tr></thead>
-        <tbody>{rows.slice(0, 500).map((p) => {
+        <tbody>{visibleRows.map((p) => {
           const sale = value(p, 'sale'), whole = value(p, 'whole');
           const dirty = changes.some((c) => c.id === p.id);
           const m = showCost && p.cost_price > 0 && Number(sale) > 0 ? Math.round(((sale - p.cost_price) / p.cost_price) * 100) : null;

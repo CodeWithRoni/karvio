@@ -1046,6 +1046,7 @@ function stockAdjust_(p, user) {
  * ========================================================================== */
 /** Changing an opening balance rewrites every later balance, so each change is written to the audit log. */
 function auditOpening_(user, kind, rec, from, to) {
+  if (lockedUntil_() && num_(from) !== num_(to)) fail_('Opening balances cannot change while books are closed. Reopen the books first, or enter a dated payment instead');
   if (Math.abs(num_(from) - num_(to)) < 0.005) return;
   audit_(user, kind + '_opening_balance', { id: rec.id, name: rec.name, from: round_(num_(from)), to: round_(num_(to)) });
 }
@@ -2580,7 +2581,7 @@ function sreturnsList_(p, user, allRows) {
   return all_('SalesReturns').filter(function (r) {
     if (!can_(user, 'sales.all') && (!sales[r.sale_id] || sales[r.sale_id].user_id !== user.id)) return false;
     return inRange_(r.date, p.from, p.to) && (!p.status || r.status === p.status) && (!q || (r.return_no + ' ' + r.invoice_no + ' ' + r.customer_name).toLowerCase().indexOf(q) >= 0);
-  }).sort(function (a, b) { return b._row - a._row; }).slice(0, allRows === true ? Infinity : 500).map(function (r) {
+  }).sort(function (a, b) { return b._row - a._row; }).map(function (r) {
     var o = Object.assign({}, r); delete o._row;
     o.items_text = (items[r.id] || []).join(', ');
     return o;
@@ -2668,7 +2669,7 @@ function preturnsList_(p, user, allRows) {
   all_('PurchaseReturnItems').forEach(function (i) { (items[i.return_id] = items[i.return_id] || []).push(i.name + ' x' + i.qty); });
   return all_('PurchaseReturns').filter(function (r) {
     return inRange_(r.date, p.from, p.to) && (!p.status || r.status === p.status) && (!q || (r.return_no + ' ' + r.invoice_no + ' ' + r.supplier_name).toLowerCase().indexOf(q) >= 0);
-  }).sort(function (a, b) { return b._row - a._row; }).slice(0, allRows === true ? Infinity : 500).map(function (r) {
+  }).sort(function (a, b) { return b._row - a._row; }).map(function (r) {
     var o = Object.assign({}, r); delete o._row;
     o.items_text = (items[r.id] || []).join(', ');
     return o;
@@ -2717,10 +2718,13 @@ function customerStatement_(p) { return statement_('CustomerLedger', 'customer_i
 function supplierStatement_(p) { return statement_('SupplierLedger', 'supplier_id', all_('Suppliers'), -1, p); }
 /** Statements of several customers / suppliers at once, for exporting the selected parties. */
 function partyStatements_(kind, p) {
-  var ids = Array.isArray(p.ids) ? p.ids.slice(0, 300) : [];
+  var ids = Array.isArray(p.ids) ? p.ids : [];
+  if (ids.length > 300) fail_('Export at most 300 statements per request; use batched export');
+  if (ids.some(function(id, i) { return typeof id !== 'string' || !id || ids.indexOf(id) !== i; })) fail_('Invalid or duplicate statement selection');
   if (!ids.length) fail_('Select at least one ' + kind);
   var parties = kind === 'customer' ? customersList_() : suppliersList_(), map = indexBy_(parties);
-  return ids.filter(function (id) { return map[id]; }).map(function (id) {
+  if (ids.some(function(id) { return !map[id]; })) fail_('A selected party no longer exists. Refresh the list before exporting');
+  return ids.map(function (id) {
     var st = kind === 'customer' ? customerStatement_({ customer_id: id }) : supplierStatement_({ supplier_id: id });
     st.info = map[id]; return st;
   });
@@ -2753,7 +2757,7 @@ function expenseCreate_(p, user) {
 function expensesList_(p, user, allRows) {
   var accs = indexBy_(all_('Accounts'));
   return all_('Expenses').filter(function (e) { return inRange_(e.date, p.from, p.to) && (!p.category || e.category === p.category) && (!p.status || e.status === p.status); })
-    .sort(function (a, b) { return b._row - a._row; }).slice(0, allRows === true ? Infinity : 1000)
+    .sort(function (a, b) { return b._row - a._row; })
     .map(function (e) { var o = Object.assign({}, e); delete o._row; o.account_name = accs[e.account_id] ? accs[e.account_id].name : ''; return o; });
 }
 
@@ -2783,6 +2787,8 @@ function reverseSale_(p, user, reason) {
   if (!s) fail_('Invoice not found'); if (s.status !== 'active') fail_('Invoice is already cancelled');
   if (all_('SalesReturns').some(function (r) { return r.sale_id === s.id && r.status === 'active'; })) fail_('Cancel the return(s) of this invoice first');
   if (all_('WarrantyClaims').some(function (c) { return c.sale_id === s.id && c.status !== 'Delivered' && c.status !== 'Rejected'; })) fail_('This invoice has open warranty claims');
+  if (all_('WarrantyClaims').some(function(c) { var rep = valuation_(c.replacement); return c.sale_id === s.id && rep && (rep.kind === 'unit' || rep.kind === 'serial'); }))
+    fail_('Cannot cancel an invoice with stock warranty replacement history. The replacement and vendor recovery must remain in the accounting history');
   var pmap = indexBy_(all_('Products')), sidx = serialIndex_(), events = [];
   var items = all_('SaleItems').filter(function (i) { return i.sale_id === s.id; });
   items.forEach(function (i) {
@@ -3133,7 +3139,7 @@ function claimsList_(p, user, allRows) {
     if (p.status === 'open') { if (c.status === 'Delivered' || c.status === 'Rejected') return false; }
     else if (p.status && c.status !== p.status) return false;
     return !q || (c.claim_no + ' ' + c.serial + ' ' + c.invoice_no + ' ' + c.product_name + ' ' + c.customer_name + ' ' + c.phone).toLowerCase().indexOf(q) >= 0;
-  }).sort(function (a, b) { return b._row - a._row; }).slice(0, allRows === true ? Infinity : 500).map(function (c) { var o = Object.assign({}, c); delete o._row; try { o.log = JSON.parse(c.log || '[]'); } catch (e) { o.log = []; } return o; });
+  }).sort(function (a, b) { return b._row - a._row; }).map(function (c) { var o = Object.assign({}, c); delete o._row; try { o.log = JSON.parse(c.log || '[]'); } catch (e) { o.log = []; } return o; });
 }
 
 /* ============================================================================
@@ -3976,10 +3982,13 @@ function reportsRaw_(p, user) {
 
   if (T === 'product_sales') {
     var sm = indexBy_(all_('Sales').filter(function (s) { return s.status === 'active' && inRange_(s.date, from, to); })), pg2 = {};
-    all_('SaleItems').forEach(function (i) {
+    var reportItems = all_('SaleItems'), invoiceItems = {};
+    reportItems.forEach(function(i) { (invoiceItems[i.sale_id] = invoiceItems[i.sale_id] || []).push(i); });
+    reportItems.forEach(function (i) {
       if (!sm[i.sale_id]) return;
       var r = pg2[i.product_id] = pg2[i.product_id] || { name: i.name, unit: i.unit, qty: 0, revenue: 0, cost: 0, profit: 0 };
-      r.qty += i.qty; r.revenue += i.total; r.cost += i.cost; r.profit += i.total - i.cost;
+      var net = invoiceLineNet_(i, invoiceItems[i.sale_id], sm[i.sale_id]);
+      r.qty += i.qty; r.revenue += net; r.cost += i.cost; r.profit += net - i.cost;
     });
     var pcol = [col_('name', 'Product'), col_('unit', 'Unit'), col_('qty', 'Qty Sold', 'num', 1), col_('revenue', 'Revenue', 'money', 1)];
     if (cost) pcol.push(col_('profit', 'Profit', 'money', 1));

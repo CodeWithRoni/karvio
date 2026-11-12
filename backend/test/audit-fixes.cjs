@@ -106,7 +106,7 @@ same(JSON.parse(Q('claim.restock',{id:claim.id,serial:'AUDIT-C'},clerk).replacem
 // Report totals include rows beyond UI list limits; list endpoints keep their existing limits.
 sandbox._mem={};
 sandbox.insertMany_('Expenses',Array.from({length:1001},()=>({date:sandbox.today_(),category:'Audit',amount:1,account_id:cash.id,status:'active'})));
-same(Q('expenses.list').length,1000,'expense UI list remains bounded');
+same(Q('expenses.list').length,1001,'expense UI list includes every matching record');
 same(Q('reports',{type:'expenses',group:'category'}).totals.amount,1001,'expense aggregation includes every matching row');
 sandbox._mem={};
 sandbox.insertMany_('SalesReturns',Array.from({length:501},()=>({date:sandbox.today_(),total:1,status:'active'})));

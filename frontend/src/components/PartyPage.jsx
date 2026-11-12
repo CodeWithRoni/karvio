@@ -1,6 +1,7 @@
 // Shared directory + ledger page for customers (Bakir Khata) and suppliers.
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { partyStatements } from '../lib/partyStatements';
 import { useStore } from '../lib/store';
 import { api } from '../lib/api';
 import { money, fdate, splitList } from '../lib/format';
@@ -54,7 +55,7 @@ export default function PartyPage({ kind }) {
 const PER = 10;
 async function exportParties(kind, ids, how) {
   const c = CFG[kind];
-  const docs = await api(c.statements, { ids });
+  const docs = await partyStatements(c.statements, ids);
   const name = docs.length === 1 ? `${kind}-${docs[0].party.replace(/[^\w\u0980-\u09ff]+/g, '-')}` : `${kind}s-${docs.length}`;
   if (how === 'excel') return excelParties(kind, docs, `${name}.xlsx`);
   if (how === 'pdf') return pdfParties(kind, docs, `${name}.pdf`);
@@ -133,6 +134,7 @@ function PartyList({ kind, rows, loading, onOpen }) {
 function PartyForm({ kind, initial, onClose, onSaved }) {
   const c = CFG[kind];
   const can = useStore((s) => s.can);
+  const booksClosed = useStore((s) => !!s.settings.books_locked_until);
   const [f, setF] = useState({ ...initial, phones: initial.phones?.length ? initial.phones : [''], addresses: initial.addresses?.length ? initial.addresses : [''] });
   const [busy, run] = useAction();
   const save = async () => {
@@ -159,7 +161,7 @@ function PartyForm({ kind, initial, onClose, onSaved }) {
         <Field label="Name" wide><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus /></Field>
         {listEdit('phones', 'Phone numbers', '01XXXXXXXXX')}
         {kind === 'customer' ? listEdit('addresses', 'Addresses', 'House, road, area') : <Field label="Address" wide><input value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} /></Field>}
-        {can(c.perm) && <Field label="Opening balance" hint={kind === 'customer' ? 'Old due carried over (negative = advance).' : 'Amount we already owed (negative = advance paid).'}><input type="number" step="any" value={f.opening_balance} onChange={(e) => setF({ ...f, opening_balance: e.target.value })} /></Field>}
+        {can(c.perm) && <Field label="Opening balance" hint={booksClosed ? 'Books are closed. Reopen them before changing opening balances.' : kind === 'customer' ? 'Old due carried over (negative = advance).' : 'Amount we already owed (negative = advance paid).'}><input type="number" step="any" value={f.opening_balance} disabled={booksClosed} onChange={(e) => setF({ ...f, opening_balance: e.target.value })} /></Field>}
         <Field label="Note" wide><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} /></Field>
         {(can('customers') && can('suppliers')) && (
           <div className="wide combined-box">

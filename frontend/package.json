@@ -28,7 +28,7 @@
     "desktop:online": "npm run build && electron . --online",
     "test:offline": "node ../backend/test/offline.cjs",
     "verify:build": "node scripts/verify-build.mjs",
-    "test:supabase": "node ../backend/test/supabase.mjs && node ../backend/test/urgent-fixes.mjs && node ../backend/test/remaining-audit.mjs && node ../backend/test/followup-fixes.mjs && node ../backend/test/history-retention.mjs"
+    "test:supabase": "node ../backend/test/supabase.mjs && node ../backend/test/urgent-fixes.mjs && node ../backend/test/remaining-audit.mjs && node ../backend/test/followup-fixes.mjs && node ../backend/test/history-retention.mjs && node ../backend/test/final-audit-fixes.mjs"
   },
   "dependencies": {
     "@capacitor/app": "8.1.2",

@@ -28,4 +28,9 @@ html=renderToStaticMarkup(React.createElement(Public,{token:'fixture'}));assert.
 // Complete purchase exports use bounded batches and reject incomplete server replies.
 (async()=>{const ids=Array.from({length:501},(_,i)=>'id-'+i),batches=[];const batch=load('lib/purchaseDetails.js',{'./api':{api:async(action,payload)=>{eq(action,'purchases.details');batches.push(payload.ids);return payload.ids.map(id=>({purchase:{id}}));}}});eq((await batch.purchaseDetails(ids)).map(d=>d.purchase.id),ids);eq(batches.map(b=>b.length),[200,200,101]);
 const missing=load('lib/purchaseDetails.js',{'./api':{api:async()=>[]}});await assert.rejects(()=>missing.purchaseDetails(['one']),/incomplete/);checks++;
+// Statements preserve selection order across 300-party batches and reject partial/mismatched responses.
+const selected=Array.from({length:601},(_,i)=>'party-'+i),calls=[];
+const statements=load('lib/partyStatements.js',{'./api':{api:async(action,{ids})=>{eq(action,'customer.statements');calls.push(ids.length);return ids.map(id=>({info:{id},rows:[]}));}}});
+eq((await statements.partyStatements('customer.statements',selected)).map(d=>d.info.id),selected);eq(calls,[300,300,1]);
+for(const reply of [[],[{info:{id:'wrong'}}]]){const broken=load('lib/partyStatements.js',{'./api':{api:async()=>reply}});await assert.rejects(()=>broken.partyStatements('supplier.statements',['expected']),/incomplete/);checks++;}
 console.log('Follow-up client calculation, invoice rendering and export regressions: '+checks+' checks passed');})().catch(e=>{console.error(e);process.exitCode=1});

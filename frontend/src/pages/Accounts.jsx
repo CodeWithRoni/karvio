@@ -53,6 +53,7 @@ function AccountForm({ initial, onClose, onDone }) {
   const [f, setF] = useState(initial);
   const [busy, run] = useAction();
   const boot = useStore((s) => s.boot);
+  const booksClosed = useStore((s) => !!s.settings.books_locked_until);
   const save = async () => { await run(() => api('account.save', f), 'Account saved'); onDone(); boot(); onClose(); };
   return (
     <Modal open onClose={onClose} size="sm" title={f.id ? `Edit ${f.name}` : 'Add account'} footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={save}>Save account</Btn></>}>
@@ -61,7 +62,7 @@ function AccountForm({ initial, onClose, onDone }) {
         <Field label="Account name" wide><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="e.g. bKash Merchant, Islami Bank" autoFocus /></Field>
         <Field label="Type" wide><select value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>{TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
         <Field label="Account / wallet number" wide><input value={f.number} onChange={(e) => setF({ ...f, number: e.target.value })} /></Field>
-        <Field label="Opening balance" wide hint="The balance on the day you start using Karvio."><input type="number" step="any" value={f.opening_balance} onChange={(e) => setF({ ...f, opening_balance: e.target.value })} /></Field>
+        <Field label="Opening balance" wide hint={booksClosed ? "Books are closed. Reopen them before changing opening balances." : "The balance on the day you start using Karvio."}><input type="number" step="any" value={f.opening_balance} disabled={booksClosed} onChange={(e) => setF({ ...f, opening_balance: e.target.value })} /></Field>
         {f.id && <label className="check"><input type="checkbox" checked={f.active} onChange={(e) => setF({ ...f, active: e.target.checked })} /> Active</label>}
       </div>
     </Modal>

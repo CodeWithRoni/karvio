@@ -1,3 +1,40 @@
+Owner authorized publication of the eight follow-up fixes. Supabase API version15 is ACTIVE, all deployed files match tested source, and public ping passed. Frontend main/Pages publication follows. No schema migration or business-data reset. Earlier local-only notes are historical.
+
+## Eight follow-up audit fixes — 12 November 2026 — LOCAL ONLY
+
+All eight latest requested corrections are implemented and tested locally. No push, API deployment, schema migration or production data reset was performed. Live baseline is main e25449d8d9ee30bc1611d7d0457fe19c17e96b74 and Supabase version13. Older publication/local-only notes below are historical.
+
+1. Reports hub Product-wise Sales allocates invoice discounts to each line using the existing exact net allocation. Revenue and profit reconcile with invoices, including cent remainders. The Profit page's separately labeled pre-discount product breakdown remains as documented.
+2. Cancellation of invoices with stock warranty replacement history is rejected, including delivered and vendor-restocked claims. This preserves the replacement cost and vendor recovery history instead of allowing a financially inconsistent reversal. Ordinary invoices remain cancellable. This is a dependency guard, not an automatic warranty reversal or a rewrite of earlier records.
+3. Any opening balance change (customer/supplier/account, including nonzero new openings) is rejected while books are closed; reopen explicitly to change it. Unchanged openings and ordinary profile edits still work. UI disables opening inputs and explains why. Failed requests roll back the whole profile update.
+4. Party statement exports use batches of300 and validate count, identity and order before creating a file. Oversized direct API calls, missing IDs and duplicate IDs fail explicitly instead of truncating or skipping records.
+5. Expense list returns all matching rows for table totals/export; category/date/status filtering remains.
+6. Sales return, purchase return and warranty lists likewise return all matches instead of silently dropping rows above500.
+7. Price Quick fill targets the same first500 visible rows that render in the table. The button states500 shown; hidden matches keep their original prices.
+8. Saving a quotation uses the server-adjusted shop day. A browser test at01:30 Bangladesh time confirms the new day is stored despite the previous UTC date.
+
+Validation: complete regular suite passed; complete Supabase backend suite including final-audit-fixes.mjs passed; client export regressions passed; all78 Edge browser workflows passed; production build and generated assets verified. Backend tests use only isolated in-memory data. Browser reset/restore tests target only the local test server. No live business records were read or changed.
+
+```json
+{
+  "scope": "eight follow-up audit fixes: reporting, warranty cancellation, closed openings, complete lists/exports, visible price fill and shop-day quotations",
+  "deployment": "owner-authorized publication; API version15 verified; frontend publication in progress",
+  "regularSuite": "passed",
+  "supabaseGatewayChecks": 63,
+  "allPriorBackendRegressions": "passed",
+  "finalAuditBackend": "passed including rollback and valid operations",
+  "clientExportChecks": "37 follow-up checks passed, including complete 601-party batches and incomplete-response rejection",
+  "browser": {
+    "engine": "Microsoft Edge",
+    "passed": 78,
+    "failed": 0
+  },
+  "productionBuild": "passed",
+  "schemaMigrationRequired": false,
+  "productionResetPerformed": false
+}
+```
+
 Owner authorized live publication on 12 November 2026. Supabase API version 13 deployed and source verified; public ping passed. No schema migration, production reset or business-data edit. Earlier local-only status below records pre-publication validation.
 
 ## Local history-retention rules — 12 November 2026 (NOT DEPLOYED)
