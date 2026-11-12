@@ -1024,12 +1024,20 @@ function serialFind_(p) {
   var h = hits.filter(function (s) { return s.status === 'in_stock'; })[0] || hits[0];
   return { product_id: h.product_id, serial: h.serial, status: h.status };
 }
+/** Numeric inventory columns retain four decimals; reject quantities that would be lost. */
+function inventoryQuantity_(value, label, allowZero) {
+  var n = Number(value), stored = round_(n, 4);
+  if (!isFinite(n) || n < 0 || (!allowZero && n <= 0)) fail_('Invalid quantity for ' + label);
+  if ((n > 0 && stored <= 0) || Math.abs(n - stored) > Number.EPSILON * Math.max(1, Math.abs(n)) * 4)
+    fail_('Quantity for ' + label + ' supports at most 4 decimal places (minimum 0.0001)');
+  return stored;
+}
 function stockAdjust_(p, user) {
   if (p.new_stock === null || p.new_stock === undefined || String(p.new_stock).trim() === '' || !isFinite(Number(p.new_stock))) fail_('Enter the counted stock quantity (use 0 explicitly for zero stock)');
   var pr = all_('Products').filter(function (x) { return x.id === p.product_id; })[0]; if (!pr) fail_('Product not found');
   if (isService_(pr)) fail_(pr.name + ' is a service (no inventory), so it has no stock to adjust');
   if (pr.has_warranty && pr.warranty_type === 'serial') fail_('Serial-tracked items must be adjusted through purchases / returns');
-  var newStock = num_(p.new_stock); if (newStock < 0) fail_('Stock cannot be negative');
+  var newStock = inventoryQuantity_(p.new_stock, pr.name, true); if (newStock < 0) fail_('Stock cannot be negative');
   if (!isDecimalUnit_(pr.unit) && newStock % 1 !== 0) fail_('Stock of ' + pr.name + ' must be a whole number');
   var diff = round_(newStock - pr.stock, 4), oldStock = pr.stock;
   if (Math.abs(diff) < 1e-9) fail_('The stock is already ' + newStock);
@@ -1204,13 +1212,13 @@ function accountEntry_(p, user) { // owner deposit / withdrawal / transfer
   var date = bookDate_(p.date, 'account entry');
   audit_(user, 'account_' + (p.kind || 'deposit'), { amount: amt, from: p.account_id, to: p.to_account_id || '', note: p.note || '' });
   if (p.kind === 'transfer') {
-    if (!accs[p.account_id] || !accs[p.to_account_id]) fail_('Select both accounts');
+    if (!accs[p.account_id] || !accs[p.account_id].active || !accs[p.to_account_id] || !accs[p.to_account_id].active) fail_('Select two active accounts');
     if (p.account_id === p.to_account_id) fail_('Choose two different accounts');
     var ref = uid_();
     acctTxn_(p.account_id, 'out', amt, 'transfer', ref, 'Transfer to ' + accs[p.to_account_id].name + (p.note ? ' — ' + p.note : ''), user, date);
     acctTxn_(p.to_account_id, 'in', amt, 'transfer', ref, 'Transfer from ' + accs[p.account_id].name + (p.note ? ' — ' + p.note : ''), user, date);
   } else {
-    if (!accs[p.account_id]) fail_('Select an account');
+    if (!accs[p.account_id] || !accs[p.account_id].active) fail_('Select an active account');
     var dir = p.kind === 'withdraw' ? 'out' : 'in';
     acctTxn_(p.account_id, dir, amt, 'manual', uid_(), (dir === 'in' ? 'Deposit' : 'Withdrawal') + (p.note ? ' — ' + p.note : ''), user, date);
   }
@@ -1860,7 +1868,7 @@ function repairPartsClean_(list, exceptId) {
   var pmap = indexBy_(all_('Products')), sidx = serialIndex_(), seen = {}, quantities = {}, reserved = repairReservations_(exceptId);
   return (list || []).map(function (it) {
     var pr = pmap[it.product_id]; if (!pr || !pr.active) fail_('Part not found or inactive');
-    var qty = num_(it.qty); if (qty <= 0) fail_('Invalid quantity for ' + pr.name);
+    var qty = inventoryQuantity_(it.qty, pr.name); if (qty <= 0) fail_('Invalid quantity for ' + pr.name);
     if (!isDecimalUnit_(pr.unit) && qty % 1 !== 0) fail_('Quantity for ' + pr.name + ' must be a whole number');
     var price = round_(it.price); if (price < 0) fail_('Invalid price for ' + pr.name);
     quantities[pr.id] = (quantities[pr.id] || 0) + qty;
@@ -2214,7 +2222,7 @@ function purchaseCreate_(p, user) {
   items.forEach(function (it) {
     var pr = pmap[it.product_id]; if (!pr) fail_('Product not found');
     if (isService_(pr)) fail_(pr.name + ' is a service (no inventory) and does not need to be purchased');
-    var qty = num_(it.qty); if (qty <= 0) fail_('Invalid quantity for ' + pr.name);
+    var qty = inventoryQuantity_(it.qty, pr.name); if (qty <= 0) fail_('Invalid quantity for ' + pr.name);
     var cost = num_(it.cost); if (cost <= 0) fail_('Enter the unit cost for ' + pr.name);
     var newSale = it.sale_price === '' || it.sale_price == null ? 0 : num_(it.sale_price);
     var newWhole = it.wholesale_price === '' || it.wholesale_price == null ? null : num_(it.wholesale_price);
@@ -2385,7 +2393,7 @@ function saleCreate_(p, user) {
 
   items.forEach(function (it) {
     var pr = pmap[it.product_id]; if (!pr || !pr.active) fail_('Product is not available');
-    var qty = num_(it.qty); if (qty <= 0) fail_('Invalid quantity for ' + pr.name);
+    var qty = inventoryQuantity_(it.qty, pr.name); if (qty <= 0) fail_('Invalid quantity for ' + pr.name);
     if (!isDecimalUnit_(pr.unit) && qty % 1 !== 0) fail_('Quantity for ' + pr.name + ' must be a whole number');
     need[pr.id] = (need[pr.id] || 0) + qty;
   });
@@ -2394,7 +2402,7 @@ function saleCreate_(p, user) {
   });
 
   items.forEach(function (it) {
-    var pr = pmap[it.product_id], qty = num_(it.qty), price = num_(it.price), sers = [], cost = 0;
+    var pr = pmap[it.product_id], qty = inventoryQuantity_(it.qty, pr.name), price = num_(it.price), sers = [], cost = 0;
     if (price < 0) fail_('Invalid price for ' + pr.name);
     if (isSerialProduct_(pr)) {
       sers = splitSerials_(it.serials);
@@ -2526,6 +2534,39 @@ function salesList_(p, user) {
 /* ============================================================================
  *  14. SALES RETURN / EXCHANGE
  * ========================================================================== */
+/** Replay customer-held nonserial value, including replacements and return reversals. */
+function customerHeldReturnCost_(si, quantity) {
+  var claims = {}, lineItems = all_('SaleItems').filter(function(i) { return i.sale_id === si.sale_id && i.product_id === si.product_id; });
+  all_('WarrantyClaims').forEach(function(c) {
+    var replacement = valuation_(c.replacement);
+    if (c.sale_id !== si.sale_id || c.product_id !== si.product_id || !replacement || replacement.kind !== 'unit') return;
+    var log = repairLog_(c), lineId = replacement.sale_item_id || (log[0] && log[0].sale_item_id);
+    if (!lineId) { if (lineItems.length !== 1) fail_('Legacy replacement invoice line is ambiguous; review it before returning stock'); lineId = lineItems[0].id; }
+    if (lineId === si.id) claims[c.id] = replacement;
+  });
+  if (!Object.keys(claims).length) return null;
+  var returns = {}, returnItems = {};
+  all_('SalesReturns').forEach(function(r) { if (r.sale_id === si.sale_id) returns[r.id] = r; });
+  all_('SalesReturnItems').forEach(function(i) { if (returns[i.return_id] && i.sale_item_id === si.id) returnItems[i.return_id] = i; });
+  var heldQty = num_(si.qty), heldCost = num_(si.cost), seen = {}, replaced = {};
+  all_('ItemEvents').forEach(function(e) {
+    if (e.product_id !== si.product_id) return;
+    if (e.event === 'warranty_replacement_out' && e.ref_type === 'claim' && claims[e.ref_id] && !replaced[e.ref_id]) {
+      if (heldQty < 1 - 1e-9) fail_('Replacement/return history is inconsistent; review this invoice before returning stock');
+      heldCost = round_(heldCost - heldCost / heldQty + num_(claims[e.ref_id].cost), 4); replaced[e.ref_id] = true;
+    }
+    var item = returnItems[e.ref_id], kind = e.event;
+    if (e.ref_type !== 'sreturn' || !item || (kind !== 'sale_return' && kind !== 'return_cancelled') || seen[kind + '|' + e.ref_id]) return;
+    seen[kind + '|' + e.ref_id] = true;
+    var direction = kind === 'sale_return' ? -1 : 1;
+    heldQty = round_(heldQty + direction * num_(item.qty), 4); heldCost = round_(heldCost + direction * num_(item.cost), 4);
+  });
+  var remaining = num_(si.qty);
+  Object.keys(returnItems).forEach(function(id) { if (returns[id].status === 'active') remaining -= num_(returnItems[id].qty); });
+  if (Object.keys(claims).some(function(id) { return !replaced[id]; }) || Math.abs(heldQty - remaining) > 0.00001 || heldQty <= 0 || heldCost < -0.0001)
+    fail_('Replacement cost history is incomplete; review this invoice before returning stock');
+  return round_(Math.max(heldCost, 0) * quantity / heldQty, 4);
+}
 function sreturnCreate_(p, user) {
   var sale = all_('Sales').filter(function (s) { return s.id === p.sale_id; })[0];
   if (!sale || sale.status !== 'active') fail_('Invoice not found or already cancelled');
@@ -2538,6 +2579,7 @@ function sreturnCreate_(p, user) {
 
   (p.items || []).forEach(function (it) {
     var qty = num_(it.qty); if (qty <= 0) return;
+    qty = inventoryQuantity_(it.qty, 'return');
     var si = sitems.filter(function (x) { return x.id === it.sale_item_id; })[0]; if (!si) fail_('Invoice line not found');
     if (seenLines[si.id]) fail_('Duplicate return line for ' + si.name);
     seenLines[si.id] = true;
@@ -2555,7 +2597,10 @@ function sreturnCreate_(p, user) {
         if (sold.indexOf(s) < 0 || !rec || rec.status !== 'sold' || rec.sale_id !== sale.id) fail_('Serial ' + s + ' cannot be returned on this invoice');
         cost += rec.cost;
       });
-    } else cost = round_(si.cost * ((retQty[si.id] || 0) + qty) / si.qty, 4) - round_(si.cost * (retQty[si.id] || 0) / si.qty, 4);
+    } else {
+      var replacementCost = customerHeldReturnCost_(si, qty);
+      cost = replacementCost === null ? round_(si.cost * ((retQty[si.id] || 0) + qty) / si.qty, 4) - round_(si.cost * (retQty[si.id] || 0) / si.qty, 4) : replacementCost;
+    }
     var value = returnLineValue_(invoiceLineNet_(si, sitems, sale), si.qty, retQty[si.id] || 0, retValue[si.id] || 0, qty);
     lines.push({ si: si, pr: pmap[si.product_id], qty: qty, value: value, cost: round_(cost, 4), serials: sers });
     total += value; costTotal += cost;
@@ -2638,6 +2683,7 @@ function preturnCreate_(p, user) {
 
   (p.items || []).forEach(function (it) {
     var qty = num_(it.qty); if (qty <= 0) return;
+    qty = inventoryQuantity_(it.qty, 'return');
     var pi = pitems.filter(function (x) { return x.id === it.purchase_item_id; })[0]; if (!pi) fail_('Purchase line not found');
     if (seenLines[pi.id]) fail_('Duplicate return line for ' + pi.name);
     seenLines[pi.id] = true;
@@ -3135,7 +3181,7 @@ function claimReplace_(c, p, user) {
   var cost = num_(pr.cost_price);
   update_('Products', pr.id, { stock: round_(pr.stock - 1, 4) });
   return {
-    record: { kind: 'unit', cost: cost, restocked: false },
+    record: { kind: 'unit', cost: cost, sale_item_id: claimedLine.id, restocked: false },
     events: [{ serial: '', product_id: pr.id, product_name: pr.name, event: 'warranty_replacement_out', ref_type: 'claim', ref_id: c.id, ref_no: c.claim_no, party: c.customer_name, qty: -1, amount: 0, note: 'Replacement unit given from stock' }],
     text: 'Replacement unit given from stock'
   };

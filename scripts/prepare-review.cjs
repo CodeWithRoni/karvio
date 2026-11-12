@@ -37,16 +37,16 @@ if (process.argv.includes('--check')) {
   if (!verification) throw new Error('Record the current checks in VERIFICATION.md before preparing the package.');
   const manifest = {
     product: 'Karvio', version: JSON.parse(fs.readFileSync(path.join(root, 'frontend/package.json'))).version,
-    preparedDate: '2026-11-12', state: 'owner-authorized-v1.2.2-release',
-    baseCommit: '22172bdb1d8e088e105ade9f73d34c483aa8795e',
+    preparedDate: '2026-11-12', state: 'owner-authorized-post-release-fixes-publication',
+    baseCommit: '771bad49cbb2c39b501bed14f9edc7a092fd8408',
     validation: JSON.parse(verification[1]),
     excluded: ['backend/parts (legacy duplicate backend)', 'node_modules', 'verification artifacts', 'test results', 'release installers', 'user databases/backups', 'credentials'],
     fileCount: files.length, files,
     checksumPolicy: 'SHA256SUMS.txt covers every listed file except itself, including this manifest.',
-    uploadOrder: ['Publish v1.2.2 version and README on main', 'Create release/v1.2.2 from the exact main commit to run all platform builds', 'Verify gated release assets/checksums and Pages; no API/database changes'],
+    uploadOrder: ['Owner authorized publication of the five audit fixes', 'Deploy tested updated API before frontend; no schema migration required', 'Publish main, verify CI/Pages and live build; native release only when requested'],
     onlineUploadPerformed: true,
     appsScriptVersion: 42,
-    supabase: { project: 'svqhlotlzgmwjneuphpe', edgeFunction: 'karvio-api', deployedVersion: 19, businessTables: 29, ownerSetup: 'created by owner', liveFrontendCutover: true }
+    supabase: { project: 'svqhlotlzgmwjneuphpe', edgeFunction: 'karvio-api', deployedVersion: 21, businessTables: 29, ownerSetup: 'created by owner', liveFrontendCutover: true }
   };
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
   fs.writeFileSync(sumsPath, files.filter(name => name !== 'SHA256SUMS.txt').map(name => digest(name) + '  ' + name).join('\n') + '\n');

@@ -1,3 +1,17 @@
+Owner authorized publication of the five post-release audit fixes. Supabase API version21 is ACTIVE; all deployed source files match the tested local build and public read-only ping passed. Frontend publication follows. No schema migration, production reset or business-data edit. Earlier local-only notes are historical.
+
+## Five post-release audit fixes — LOCAL ONLY
+
+Implemented against main771bad49cbb2c39b501bed14f9edc7a092fd8408 (v1.2.2). Not pushed/deployed; no production rows/reset/migration changed. Publish generated API before frontend when owner authorizes. Earlier status notes below are historical.
+
+1. Nonserial warranty returns replay customer-held cost using original invoice value, replacement costs and return/cancellation events. Partial multi-unit returns use weighted customer-held value; repeated replacements and return reversals preserve cost. New unit replacement JSON records the sale line ID; exact legacy log IDs/single-line fallback remain supported. Ambiguous/incomplete legacy history is rejected for review instead of guessing. Original invoice cost/profit and prior stored transactions are not rewritten.
+2. POS and purchase subtotals sum individually rounded currency lines, matching the backend. POS also clamps negative discount consistently with the server. Three half-unit lines at0.01 now complete at0.03 without an accidental due.
+3. All stock-moving quantities validate supported four-decimal precision before totals/persistence: purchase, sale, sales/purchase returns, repair parts and manual stock adjustment. A positive quantity that would serialize aszero is rejected;0.0001 is supported. Existing historical malformed quantities are not silently altered.
+4. Manual deposit/withdraw/transfer requires active account(s), including both transfer ends. Failed attempts roll back all ledger/audit writes; historical reversal remains available.
+5. POS/Purchase clear previous-payment toggle/input when balance reaches zero/advance or permission/capability is lost. Hidden drafts cannot contribute to preview or payload. Positive but insufficient balances still show the editable section for correction.
+
+Validation: complete regular regression suite passed; complete hosted/Supabase suite plus post-release-fixes.mjs passed (replacement full/partial/repeated/legacy/distinct-line/vendor-stock/return-reversal cases, rejected precision across write routes, valid boundary and inactive-account rollback/reactivation). All92 Microsoft Edge browser workflows passed, including corrected decimal POS/purchase checkout and saving after old due is fully settled elsewhere. Final production build/assets passed. Financial fixtures and reset/restore browser checks ran only locally, never on the live shop.
+
 ## v1.2.2 release preparation — owner authorized
 
 README rewritten for the current Supabase/online-only architecture, updated features, exact download platforms and signing requirements. Application/package lock and Tauri versions aligned at1.2.2; dependency versions and business rules unchanged. Build Karvio apps also accepts release/* branches, allowing an explicit release build from the exact reviewed commit; all platforms must succeed before publication. Current release notes are in RELEASE-1.2.2.md. Production web build/assets and workflow/version validation passed. Platform builds/publication are pending CI. No API/database changes or reset. Earlier status notes below are historical.

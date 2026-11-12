@@ -204,13 +204,16 @@ function NewPurchase({ onDone }) {
   };
   const dropSerial = (id, sn) => setLines((ls) => ls.map((l) => (l.product_id === id ? { ...l, serials: l.serials.filter((x) => x !== sn), qty: l.serials.length - 1 } : l)));
 
-  const sub = round2(lines.reduce((a, l) => a + (Number(l.qty) || 0) * (Number(l.cost) || 0), 0));
+  const sub = round2(lines.reduce((a, l) => a + round2((Number(l.qty) || 0) * (Number(l.cost) || 0)), 0));
   const total = round2(Math.max(sub - (Number(discount) || 0), 0));
   const paid = round2(cleanPays(pays).reduce((a, p) => a + p.amount, 0));
   const due = round2(Math.max(total - paid, 0));
   const prev = Number(sup?.balance) || 0; // > 0: you owe the supplier, < 0: supplier owes you (advance)
+  useEffect(() => {
+    if (!sup || prev <= 0.004 || !canPayPrevious) { setPayPrevious(false); setPreviousPays(defaultPay('')); }
+  }, [supplier, prev, canPayPrevious]);
   const previousPayments = cleanPays(previousPays).map((p) => ({...p, amount: round2(p.amount)})).filter((p) => p.amount > 0);
-  const previousPaid = payPrevious && canPayPrevious ? round2(previousPayments.reduce((a, p) => a + p.amount, 0)) : 0;
+  const previousPaid = payPrevious && canPayPrevious && prev > 0.004 ? round2(previousPayments.reduce((a, p) => a + p.amount, 0)) : 0;
   const after = round2(prev + total - paid - previousPaid);
 
   const bad = (l) => ({
@@ -230,7 +233,7 @@ function NewPurchase({ onDone }) {
       return toast(b.qty ? (isSerial(p) ? `Scan the serial numbers for ${p.name}` : `Enter the quantity for ${p.name}`) : `Enter the unit cost and retail price for ${p.name}`, 'err');
     }
     if (paid > total + 0.004) return toast(`Paid (${money(paid, false)}) is more than the purchase total (${money(total, false)})`, 'err');
-    if (payPrevious && canPayPrevious) {
+    if (payPrevious && canPayPrevious && prev > 0.004) {
       if (previousPays.some((p) => !Number.isFinite(Number(p.amount)) || Number(p.amount) < 0)) return toast('Enter a valid previous due payment amount', 'err');
       if (previousPaid > Math.max(prev, 0) + 0.004) return toast('Previous due payment cannot exceed the previous due. Refresh the supplier balance if needed.', 'err');
     }

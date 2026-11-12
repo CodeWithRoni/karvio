@@ -1,3 +1,8 @@
+# Unreleased — five post-release audit fixes (local only)
+
+- Correct nonserial replacement-return cost, per-line POS/purchase rounding, four-decimal inventory precision, inactive account posting and hidden previous-due drafts after balance refresh.
+- All92 browser tests and the regular/hosted regression suites passed locally. No push/deployment or live-data migration performed.
+
 # Karvio 1.2.2
 
 See [release notes](RELEASE-1.2.2.md) for the current online-only release. Entries below describe earlier development snapshots and releases.

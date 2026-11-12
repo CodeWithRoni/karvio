@@ -107,8 +107,8 @@ export default function POS() {
   const upd = (i, patch) => setCart((c) => c.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const del = (i) => setCart((c) => c.filter((_, j) => j !== i));
 
-  const subtotal = round2(cart.reduce((a, l) => a + (Number(l.qty) || 0) * (Number(l.price) || 0), 0));
-  const disc = Math.min(Number(discount) || 0, subtotal);
+  const subtotal = round2(cart.reduce((a, l) => a + round2((Number(l.qty) || 0) * (Number(l.price) || 0)), 0));
+  const disc = Math.min(Math.max(Number(discount) || 0, 0), subtotal);
   const total = round2(subtotal - disc);
   const advance = customer && customer.balance < 0 ? -customer.balance : 0;
   const credit = useCredit ? Math.min(advance, total) : 0;
@@ -121,10 +121,13 @@ export default function POS() {
     if (!payTouched) setPaysRaw((p) => (p.length ? [{ ...p[0], amount: total - credit > 0 ? round2(total - credit) : '' }] : p));
   }, [total, credit, payTouched]);
 
+  useEffect(() => {
+    if (!customer || customer.balance <= 0.004 || !canPayPrevious) { setPayPrevious(false); setPreviousPays(defaultPay('')); }
+  }, [customerId, customer?.balance, canPayPrevious]);
   const previousPayments = cleanPays(previousPays).map((p) => ({...p,amount:round2(p.amount)})).filter((p) => p.amount > 0);
-  const previousPaid = payPrevious && canPayPrevious ? round2(previousPayments.reduce((s,p) => s+p.amount,0)) : 0;
+  const previousPaid = payPrevious && canPayPrevious && customer?.balance > 0.004 ? round2(previousPayments.reduce((s,p) => s+p.amount,0)) : 0;
   const problems = [];
-  if (payPrevious && canPayPrevious && previousPays.some((p) => !Number.isFinite(Number(p.amount)) || Number(p.amount) < 0)) problems.push('Enter a valid previous due payment amount');
+  if (payPrevious && canPayPrevious && customer?.balance > 0.004 && previousPays.some((p) => !Number.isFinite(Number(p.amount)) || Number(p.amount) < 0)) problems.push('Enter a valid previous due payment amount');
   if (previousPaid > Math.max(Number(customer?.balance)||0,0) + 0.004) problems.push('Previous due payment exceeds the previous due. Refresh the customer balance.');
   cart.forEach((l) => {
     const p = pmap[l.product_id];
