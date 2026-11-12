@@ -14,7 +14,7 @@ export function createHandler({rpc,dispatch=()=>{}}) {
    if(!body||typeof body.action!=='string'||body.action.length>100)return reply({ok:false,error:'Invalid action'},400);
    for(let attempt=0;attempt<4;attempt++) {
     const snapshot=await rpc('karvio_snapshot',{});
-    if(body.action==='ping')return reply({ok:true,data:{app:'Karvio',version:'1.2.0',backend:'supabase',requiresSetup:snapshot.requiresSetup,apiCapabilities:{idempotency:true,durableRecovery:true,credentialSessions:true,chunkedRestore:{maxBytes:16*1024*1024,partChars:128*1024}}}});
+    if(body.action==='ping')return reply({ok:true,data:{app:'Karvio',version:'1.2.0',backend:'supabase',requiresSetup:snapshot.requiresSetup,apiCapabilities:{idempotency:true,durableRecovery:true,credentialSessions:true,purchaseDuePayment:true,chunkedRestore:{maxBytes:16*1024*1024,partChars:128*1024}}}});
     const initializing=body.action==='owner.initialize';
     if(snapshot.requiresSetup&&!initializing)return reply({ok:false,error:'The owner must initialize this fresh database first.'});
     if(initializing&&!snapshot.requiresSetup)return reply({ok:false,error:'The owner account is already initialized.'});

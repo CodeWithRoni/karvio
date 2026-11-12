@@ -137,6 +137,9 @@ function NewPurchase({ onDone }) {
   const [openId, setOpenId] = useState(''); // the line whose serial box is expanded
   const [discount, setDiscount] = useState('');
   const [pays, setPays] = useState(() => defaultPay(''));
+  const [payPrevious, setPayPrevious] = useState(false);
+  const [previousPays, setPreviousPays] = useState(() => defaultPay(''));
+  const canPayPrevious = useStore((st) => st.can('suppliers') && st.apiCapabilities?.purchaseDuePayment === true);
   const [note, setNote] = useState('');
   const [supInv, setSupInv] = useState(''); // the supplier's own invoice / bill number
   const [confirmDlg, ask] = useConfirm();
@@ -206,7 +209,9 @@ function NewPurchase({ onDone }) {
   const paid = round2(cleanPays(pays).reduce((a, p) => a + p.amount, 0));
   const due = round2(Math.max(total - paid, 0));
   const prev = Number(sup?.balance) || 0; // > 0: you owe the supplier, < 0: supplier owes you (advance)
-  const after = round2(prev + total - paid);
+  const previousPayments = cleanPays(previousPays).map((p) => ({...p, amount: round2(p.amount)})).filter((p) => p.amount > 0);
+  const previousPaid = payPrevious && canPayPrevious ? round2(previousPayments.reduce((a, p) => a + p.amount, 0)) : 0;
+  const after = round2(prev + total - paid - previousPaid);
 
   const bad = (l) => ({
     cost: !(Number(l.cost) > 0),
@@ -225,7 +230,12 @@ function NewPurchase({ onDone }) {
       return toast(b.qty ? (isSerial(p) ? `Scan the serial numbers for ${p.name}` : `Enter the quantity for ${p.name}`) : `Enter the unit cost and retail price for ${p.name}`, 'err');
     }
     if (paid > total + 0.004) return toast(`Paid (${money(paid, false)}) is more than the purchase total (${money(total, false)})`, 'err');
+    if (payPrevious && canPayPrevious) {
+      if (previousPays.some((p) => !Number.isFinite(Number(p.amount)) || Number(p.amount) < 0)) return toast('Enter a valid previous due payment amount', 'err');
+      if (previousPaid > Math.max(prev, 0) + 0.004) return toast('Previous due payment cannot exceed the previous due. Refresh the supplier balance if needed.', 'err');
+    }
     const payload = {
+      ...(previousPaid > 0 ? {previous_due_payments: previousPayments, expected_previous_due: prev} : {}),
       supplier_id: supplier, date, discount: Number(discount) || 0, note, supplier_invoice: supInv.trim(), payments: cleanPays(pays),
       items: lines.map((l) => ({ product_id: l.product_id, qty: Number(l.qty), cost: Number(l.cost), sale_price: l.sale === '' ? '' : Number(l.sale), wholesale_price: l.whole === '' ? '' : Number(l.whole), serials: l.serials.join('\n') }))
     };
@@ -327,7 +337,7 @@ function NewPurchase({ onDone }) {
       <div className="card">
         <div className="form">
           <Field label={<>Supplier <span className="req">*</span></>} wide error={needSupplier && !supplier ? 'Select the supplier you are buying from' : undefined}>
-            <select ref={supplierRef} value={supplier} onChange={(e) => { setSupplier(e.target.value); setNeedSupplier(false); }} aria-label="Supplier" className={needSupplier && !supplier ? 'invalid' : ''}>
+            <select ref={supplierRef} value={supplier} onChange={(e) => { setSupplier(e.target.value); setNeedSupplier(false); setPayPrevious(false); setPreviousPays(defaultPay('')); }} aria-label="Supplier" className={needSupplier && !supplier ? 'invalid' : ''}>
               <option value="">Select a supplier…</option>
               {suppliers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
             </select>
@@ -339,6 +349,14 @@ function NewPurchase({ onDone }) {
             </div>
           )}
           {sup && prev === 0 && <div className="wide sup-bal clear"><span>No previous balance with this supplier</span></div>}
+          {sup && prev > 0 && canPayPrevious && <div className="wide">
+            <label className="check"><input type="checkbox" checked={payPrevious} onChange={(e) => { setPayPrevious(e.target.checked); setPreviousPays(defaultPay('')); }} /> Make due payment to the supplier</label>
+            {payPrevious && <div className="previous-due-payment" style={{ marginTop: 10 }}>
+              <PaymentSplit value={previousPays} onChange={setPreviousPays} total={prev} label="Pay previous due (optional)" />
+              <p className="muted" style={{fontSize:12,marginTop:6}}>Saved with this purchase as a separate supplier payment. Leave blank to keep the previous due unchanged.</p>
+            </div>}
+          </div>}
+          {sup && <div className="wide"><button type="button" className="link" onClick={() => refresh('suppliers').catch(() => toast('Could not refresh supplier balance', 'err'))}>Refresh supplier balance</button></div>}
           <Field label="Purchase date"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
           <Field label="Discount"><input type="number" min="0" step="any" value={discount} onChange={(e) => setDiscount(e.target.value)} /></Field>
         </div>
@@ -352,6 +370,7 @@ function NewPurchase({ onDone }) {
           <span>Due on this purchase</span><span className="due num">{money(due)}</span>
           {sup && <>
             <span>Previous balance</span><span className="num">{prev < 0 ? `-${money(-prev, false)}` : money(prev, false)}</span>
+            {previousPaid > 0 && <><span>Previous due payment</span><span className="num">{money(previousPaid, false)}</span><span>Previous due remaining</span><span className="num">{money(Math.max(prev - previousPaid, 0), false)}</span></>}
             <span><b>{after >= 0 ? 'Total payable to supplier' : 'Advance left with supplier'}</b></span><b className="num" style={{ color: after > 0 ? 'var(--bad)' : 'var(--ok)' }}>{money(Math.abs(after))}</b>
           </>}
         </div>

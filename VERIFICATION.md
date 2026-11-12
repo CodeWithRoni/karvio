@@ -1,3 +1,36 @@
+Owner authorized publishing purchase previous-due payments. Supabase API version17 is ACTIVE; all source files match the tested build and read-only ping confirms purchaseDuePayment support. Frontend publication follows. No schema migration, data reset or business-data edit. Earlier local-only notes are historical.
+
+## Purchase form: optional previous supplier due payment — LOCAL ONLY
+
+Implemented without publication. Baseline main:0745837777e37ebe4aaa76956d33b42a7bdd5e08. No live business rows, database schema, migrations, API deployment or reset changed. Publish backend BEFORE frontend when owner requests deployment.
+
+- A positive previous supplier balance offers Make due payment to the supplier. Checking opens the existing split-payment design directly below previous due. Empty/zero amounts or an unchecked section do not settle any old debt. Supplier changes and unchecking clear payment drafts.
+- Current invoice payments and previous-due payments remain separate. Combined supplier payable subtracts both; the preview also shows previous due payment and remaining old due. Previous payment amounts are rounded per line to match server accounting. A Refresh supplier balance control preserves purchase inputs.
+- purchase.create accepts previous_due_payments and expected_previous_due. It validates active accounts, non-negative finite amounts, supplier permission in addition to purchase permission, current balance and no overpayment of old due. A changed balance fails with refresh instructions. All writes share one transaction and one replay receipt: no partial purchase/payment and no duplicate payment on retry.
+- Old due payments use ordinary separate SupplierLedger / AccountTxns payment receipts, with the purchase number in their note. They do not inflate purchase.paid or change its original due. Cancelling the new purchase retains those independent supplier payment receipts, which can be reviewed/cancelled using the existing supplier-payment workflow.
+- Bootstrap and Supabase ping advertise purchaseDuePayment support. The frontend only offers the option with that capability and supplier-payment permission, so an older API cannot silently ignore a payment selected in this UI. Existing purchase requests remain compatible. No new tables or columns.
+
+Validation: complete regular suite passed; complete Supabase suite and purchase-due-payment.mjs passed (split accounts, allocation, rollback, stale/invalid/overpayment rejection, permission, blank option, idempotent replay and independent cancellation). All84 Microsoft Edge browser workflows passed, including four new purchase due-payment/blank/supplier-change-refresh/rounding cases. Final production build and assets passed. All financial tests ran against isolated local data, never the production shop.
+
+```json
+{
+  "scope": "optional atomic previous-supplier-due payment in New purchase",
+  "deployment": "owner-authorized publication; API version17 verified before frontend",
+  "regularSuite": "passed",
+  "supabaseGatewayChecks": 63,
+  "allBackendRegressions": "passed",
+  "purchaseDuePaymentRegression": "passed",
+  "browser": {
+    "engine": "Microsoft Edge",
+    "passed": 84,
+    "failed": 0
+  },
+  "productionBuild": "passed",
+  "schemaMigrationRequired": false,
+  "productionResetPerformed": false
+}
+```
+
 Owner authorized publishing stock footer alignment. Frontend-only publication in progress; no API deployment, database migration or data reset. Earlier local-only notes are historical.
 
 ## Stock total alignment — LOCAL ONLY

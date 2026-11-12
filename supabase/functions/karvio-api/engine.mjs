@@ -22,7 +22,7 @@ var APP_VERSION = '1.2.0';
 // Your Karvio database spreadsheet. Lets this script also run as a standalone project.
 var DEFAULT_SHEET_ID = '1r7WI5GNHtppUCtCu_rZUmvfum92i0HZdK298Z4uZH7w';
 var SESSION_TTL = 21600; // 6 hours (CacheService maximum)
-var API_CAPABILITIES = { idempotency: true, durableRecovery: true, credentialSessions: true };
+var API_CAPABILITIES = { idempotency: true, durableRecovery: true, credentialSessions: true, purchaseDuePayment: true };
 
 /* ---------------------------------------------------------------------------
  *  SHEET SCHEMA  —  "column" or "column:type"   (types: s=text, n=number, b=boolean)
@@ -2262,6 +2262,22 @@ function purchaseCreate_(p, user) {
     if (dup) fail_('DUPLICATE_SUPPLIER_INVOICE: Supplier invoice ' + supInv + ' is already entered on purchase ' + dup.invoice_no + ' (' + dup.date + ')' + (dup.supplier_name ? ' from ' + dup.supplier_name : '') + '.');
   }
 
+  // Settle old debt separately from this invoice, in the same atomic request.
+  var previousPays = p.previous_due_payments === undefined ? [] : p.previous_due_payments;
+  if (!Array.isArray(previousPays) || previousPays.length > 20) fail_('Invalid previous due payments');
+  previousPays.forEach(function(x) {
+    if (!x || !isFinite(Number(x.amount)) || Number(x.amount) < 0) fail_('Previous due payment must be a valid non-negative amount');
+  });
+  previousPays = payList_(previousPays);
+  var previousPaid = round_(sum_(previousPays, function(x) { return x.amount; }));
+  var previousBalance = supplier ? round_(supplierBalances_()[supplier.id] || 0) : 0;
+  if (previousPaid > 0) {
+    need_(user, 'suppliers');
+    if (!supplier) fail_('Select a supplier for previous due payment');
+    if (!isFinite(Number(p.expected_previous_due)) || Math.abs(Number(p.expected_previous_due) - previousBalance) > 0.005)
+      fail_('Supplier balance changed. Refresh the supplier balance and check the previous due payment before saving');
+    if (previousBalance <= 0 || previousPaid > previousBalance + 0.005) fail_('Previous due payment cannot exceed the current previous due (' + Math.max(previousBalance, 0) + ')');
+  }
   var inv = nextNo_('seq_purchase', 'PUR-');
   var pur = insert_('Purchases', {
     invoice_no: inv, date: date, supplier_id: supplier ? supplier.id : '', supplier_name: supplier ? supplier.name : '',
@@ -2299,8 +2315,13 @@ function purchaseCreate_(p, user) {
   if (supplier) insert_('SupplierLedger', { date: date, supplier_id: supplier.id, type: 'purchase', ref_id: pur.id, ref_no: inv, debit: paid, credit: total, note: 'Purchase ' + inv + (supInv ? ' · Supplier invoice ' + supInv : ''), voided: false });
   evBatch_(user, events);
   syncSerialCost_(serialIds_(lines));
+  var previousReceipts = previousPays.map(function(x) {
+    return supplierPayment_({supplier_id:supplier.id,account_id:x.account_id,amount:x.amount,date:date,note:'Previous due paid while entering purchase ' + inv},user);
+  });
   audit_(user, 'purchase_create', inv);
-  return purchaseDetail_({ id: pur.id });
+  var detail = purchaseDetail_({ id: pur.id });
+  if (previousPaid > 0) detail.previous_due_payment = {amount:previousPaid,previous_balance:previousBalance,receipts:previousReceipts};
+  return detail;
 }
 
 function purchaseDetail_(p) {
