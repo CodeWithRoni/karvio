@@ -49,7 +49,7 @@ export async function exportPdf(title, columns, rows, totals) {
   doc.setFontSize(10); doc.text(title, 40, 58);
   doc.setFontSize(8); doc.text(`Generated ${new Date().toLocaleString()}`, 40, 72);
   const body = rows.map((r) => columns.map((c) => cell(c, r)));
-  const foot = totals ? [columns.map((c, i) => (i === 0 ? 'Total' : totals[c.key] !== undefined ? money(totals[c.key], false) : ''))] : undefined;
+  const foot = totals ? [columns.map((c, i) => (i === 0 ? 'Total' : totals[c.key] !== undefined ? (typeof totals[c.key] === 'string' ? totals[c.key] : money(totals[c.key], false)) : ''))] : undefined;
   autoTable(doc, {
     startY: 84, head: [columns.map((c) => c.label)], body, foot,
     styles: { fontSize: 7.5, cellPadding: 3 }, headStyles: { fillColor: [13, 27, 42] }, footStyles: { fillColor: [230, 236, 245], textColor: 20, fontStyle: 'bold' },
@@ -115,7 +115,7 @@ export function printTable(title, columns, rows, totals, subtitle = '') {
   const s = useStore.getState().settings;
   const head = columns.map((c) => `<th class="${c.type === 'money' || c.type === 'num' ? 'r' : ''}">${esc(c.label)}</th>`).join('');
   const body = rows.map((r) => `<tr>${columns.map((c) => `<td class="${c.type === 'money' || c.type === 'num' ? 'r' : ''}">${esc(cell(c, r))}</td>`).join('')}</tr>`).join('');
-  const foot = totals ? `<tfoot><tr>${columns.map((c, i) => `<td class="r">${i === 0 ? 'Total' : totals[c.key] !== undefined ? esc(money(totals[c.key], false)) : ''}</td>`).join('')}</tr></tfoot>` : '';
+  const foot = totals ? `<tfoot><tr>${columns.map((c, i) => `<td class="r">${i === 0 ? 'Total' : totals[c.key] !== undefined ? esc((typeof totals[c.key] === 'string' ? totals[c.key] : money(totals[c.key], false))) : ''}</td>`).join('')}</tr></tfoot>` : '';
   return printHtml(`
     <style>
       body{font:11px/1.4 system-ui,'Hind Siliguri',sans-serif;margin:24px;color:#111}

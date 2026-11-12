@@ -1,3 +1,17 @@
+Owner authorized publishing filtered stock totals. Frontend-only publication in progress; no API deployment, database migration or business-data reset. Earlier local-only notes below record pre-publication validation.
+
+## Filtered stock totals — LOCAL ONLY
+
+Requested stock explorer totals are implemented; not pushed or deployed. Baseline main is fedc4134f4489132e3c96b574fe7405a6c8d391b. No backend, API, database schema or business-data change is required. Earlier publication/local-only notes below are historical.
+
+- Footer totals follow product group/category/brand/exact quantity/low-stock/inactive filters AND table search, across all pages.
+- Stock, reserved and available quantities are grouped by selling unit (pcs/meter/etc. are never added as one quantity); service products are excluded.
+- Cost and Stock value totals use stock times unit cost. Price total uses stock times selling price, including reserved inventory. The existing unit cost/price cells stay unchanged. Cost totals remain hidden without cost permission.
+- DataTable supports per-column total functions for the filtered footer and selected-row exports. Excel preserves numeric money totals and unit-qualified quantities; PDF/print preserve text totals instead of formatting them as zero.
+- A short note explains calculation and scope. Selection affects exported totals; the on-screen footer still describes all matching rows.
+
+Validation: full regular regression suite passed; all80 Microsoft Edge browser tests passed, including new mixed-unit/filter/search/selected-Excel and 101-row pagination/cost-permission cases; final production build/assets passed. Tests used only the local test server and mocked fixtures. No production reset or live data edit.
+
 Owner authorized publication of the eight follow-up fixes. Supabase API version15 is ACTIVE, all deployed files match tested source, and public ping passed. Frontend main/Pages publication follows. No schema migration or business-data reset. Earlier local-only notes are historical.
 
 ## Eight follow-up audit fixes — 12 November 2026 — LOCAL ONLY

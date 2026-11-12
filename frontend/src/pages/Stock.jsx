@@ -4,6 +4,7 @@ import { useStore } from '../lib/store';
 import { api } from '../lib/api';
 import { money, qty as fqty, isDecimalUnit } from '../lib/format';
 import DataTable from '../components/DataTable';
+import { stockQuantityTotal, stockMoneyTotal } from '../lib/stockTotals';
 import MasterData from '../components/MasterData';
 import { PageHead, Tabs, Modal, Btn, Field, Badge, Select, useAction, noWheel } from '../components/ui';
 
@@ -40,12 +41,12 @@ export default function Stock() {
     { key: 'group', label: 'Product group' },
     { key: 'category', label: 'Category' },
     { key: 'brand', label: 'Brand' },
-    { key: 'stock', label: 'Stock', type: 'num', render: (r) => r.service ? <Badge tone="info">Service</Badge> : <b style={{ color: r.stock <= 0 ? 'var(--bad)' : r.stock <= (r.low_stock > 0 ? r.low_stock : lowDef) ? 'var(--warn)' : undefined }}>{fqty(r.stock, r.unit)}</b> },
+    { key: 'stock', label: 'Stock', type: 'num', sum: true, total: (rows) => stockQuantityTotal(rows, 'stock'), render: (r) => r.service ? <Badge tone="info">Service</Badge> : <b style={{ color: r.stock <= 0 ? 'var(--bad)' : r.stock <= (r.low_stock > 0 ? r.low_stock : lowDef) ? 'var(--warn)' : undefined }}>{fqty(r.stock, r.unit)}</b> },
     { key: 'unit', label: 'Unit' },
-    { key: 'reserved', label: 'Reserved for repairs', type: 'num' },
-    { key: 'available', label: 'Available to sell', type: 'num' },
-    ...(can('cost') ? [{ key: 'cost_price', label: 'Cost', type: 'money' }] : []),
-    { key: 'sale_price', label: 'Price', type: 'money' },
+    { key: 'reserved', label: 'Reserved for repairs', type: 'num', sum: true, total: (rows) => stockQuantityTotal(rows, 'reserved') },
+    { key: 'available', label: 'Available to sell', type: 'num', sum: true, total: (rows) => stockQuantityTotal(rows, 'available') },
+    ...(can('cost') ? [{ key: 'cost_price', label: 'Cost', type: 'money', sum: true, total: (rows) => stockMoneyTotal(rows, 'cost_price') }] : []),
+    { key: 'sale_price', label: 'Price', type: 'money', sum: true, total: (rows) => stockMoneyTotal(rows, 'sale_price') },
     ...(can('cost') ? [{ key: 'value', label: 'Stock value', type: 'money', sum: true }] : []),
     { key: 'warranty', label: 'Warranty', value: (r) => (r.has_warranty ? `${r.warranty_days}d ${r.warranty_type === 'serial' ? 'serial' : 'invoice'}` : ''), render: (r) => r.has_warranty ? <Badge tone="violet">{r.warranty_days}d · {r.warranty_type === 'serial' ? 'serial' : 'invoice'}</Badge> : '' },
     ...(can('products') ? [{ key: 'act', label: '', noSort: true, noExport: true, render: (r) => !r.service && !(r.has_warranty && r.warranty_type === 'serial') && <Btn size="sm" onClick={(e) => { e.stopPropagation(); setAdj(r); }}>Adjust</Btn> }] : [])
@@ -69,7 +70,8 @@ export default function Stock() {
             <label className="check" style={{ paddingBottom: 8 }}><input type="checkbox" checked={f.inactive} onChange={(e) => setF({ ...f, inactive: e.target.checked })} /> Show inactive</label>
             {(f.cat || f.sub || f.brand || f.qty !== '' || f.low) && <button className="link" style={{ paddingBottom: 10 }} onClick={() => setF({ cat: '', sub: '', brand: '', qty: '', low: false, inactive: false })}>Clear filters</button>}
           </div>
-          <DataTable title="Stock report" rows={rows} columns={cols} onRowClick={can('products') ? (r) => setEdit(r) : undefined} pageSize={100} />
+          <DataTable title="Stock report" rows={rows} columns={cols} sumFilter={(r) => !r.service} onRowClick={can('products') ? (r) => setEdit(r) : undefined} pageSize={100} />
+          <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>Totals include all matching stock products across pages and table search. Quantities are grouped by unit; services are excluded. Cost and Stock value totals = stock × unit cost; Price total = stock × selling price, including reserved stock.</p>
         </>
       ) : <MasterData />}
 
