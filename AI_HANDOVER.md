@@ -1,3 +1,9 @@
+Owner authorized publishing stock footer alignment. Frontend-only publication in progress; no API deployment, database migration or data reset. Earlier local-only notes are historical.
+
+## Stock total alignment — LOCAL ONLY
+
+Single-unit pcs totals now display plain numbers, aligned right under Stock, Reserved for repairs and Available to sell. Mixed-unit totals retain explicit units to avoid combining incompatible quantities. Selected Excel exports keep pcs totals numeric. No calculation, backend or live data change. Two focused stock browser tests passed (including right-alignment checks), and production build/assets passed. Full80-browser validation below belongs to the preceding stock-total implementation. Not pushed or deployed.
+
 Owner authorized publishing filtered stock totals. Frontend-only publication in progress; no API deployment, database migration or business-data reset. Earlier local-only notes below record pre-publication validation.
 
 ## Filtered stock totals — LOCAL ONLY

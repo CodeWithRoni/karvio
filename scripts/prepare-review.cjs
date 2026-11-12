@@ -37,13 +37,13 @@ if (process.argv.includes('--check')) {
   if (!verification) throw new Error('Record the current checks in VERIFICATION.md before preparing the package.');
   const manifest = {
     product: 'Karvio', version: JSON.parse(fs.readFileSync(path.join(root, 'frontend/package.json'))).version,
-    preparedDate: '2026-11-12', state: 'owner-authorized-stock-totals-publication',
-    baseCommit: 'fedc4134f4489132e3c96b574fe7405a6c8d391b',
+    preparedDate: '2026-11-12', state: 'owner-authorized-stock-alignment-publication',
+    baseCommit: '08c8f4260a36107282f7d624bc89602b1610e97e',
     validation: JSON.parse(verification[1]),
     excluded: ['backend/parts (legacy duplicate backend)', 'node_modules', 'verification artifacts', 'test results', 'release installers', 'user databases/backups', 'credentials'],
     fileCount: files.length, files,
     checksumPolicy: 'SHA256SUMS.txt covers every listed file except itself, including this manifest.',
-    uploadOrder: ['Owner authorized publishing filtered stock totals', 'Frontend-only change; no API deployment or database migration required', 'Publish main and verify CI/Pages and live assets'],
+    uploadOrder: ['Owner authorized publishing stock total alignment', 'Frontend-only change; no API deployment or database migration required', 'Publish main and verify CI/Pages and live assets'],
     onlineUploadPerformed: true,
     appsScriptVersion: 42,
     supabase: { project: 'svqhlotlzgmwjneuphpe', edgeFunction: 'karvio-api', deployedVersion: 15, businessTables: 29, ownerSetup: 'created by owner', liveFrontendCutover: true }
