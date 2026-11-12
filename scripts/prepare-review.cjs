@@ -37,16 +37,16 @@ if (process.argv.includes('--check')) {
   if (!verification) throw new Error('Record the current checks in VERIFICATION.md before preparing the package.');
   const manifest = {
     product: 'Karvio', version: JSON.parse(fs.readFileSync(path.join(root, 'frontend/package.json'))).version,
-    preparedDate: '2026-11-12', state: 'owner-authorized-purchase-due-payment-publication',
-    baseCommit: '0745837777e37ebe4aaa76956d33b42a7bdd5e08',
+    preparedDate: '2026-11-12', state: 'owner-authorized-pos-due-payment-publication',
+    baseCommit: 'd6bdb7f619203cb6e15f418e94a9d19fc14c9437',
     validation: JSON.parse(verification[1]),
     excluded: ['backend/parts (legacy duplicate backend)', 'node_modules', 'verification artifacts', 'test results', 'release installers', 'user databases/backups', 'credentials'],
     fileCount: files.length, files,
     checksumPolicy: 'SHA256SUMS.txt covers every listed file except itself, including this manifest.',
-    uploadOrder: ['Owner authorized publishing purchase previous-due payments', 'Deploy tested Supabase API before frontend to advertise purchaseDuePayment; no schema migration required', 'Publish main and verify CI/Pages and live assets'],
+    uploadOrder: ['Owner authorized publishing POS previous-due collection', 'Deploy tested Supabase API before frontend to advertise saleDuePayment; no schema migration required', 'Publish main and verify CI/Pages and live assets'],
     onlineUploadPerformed: true,
     appsScriptVersion: 42,
-    supabase: { project: 'svqhlotlzgmwjneuphpe', edgeFunction: 'karvio-api', deployedVersion: 17, businessTables: 29, ownerSetup: 'created by owner', liveFrontendCutover: true }
+    supabase: { project: 'svqhlotlzgmwjneuphpe', edgeFunction: 'karvio-api', deployedVersion: 19, businessTables: 29, ownerSetup: 'created by owner', liveFrontendCutover: true }
   };
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
   fs.writeFileSync(sumsPath, files.filter(name => name !== 'SHA256SUMS.txt').map(name => digest(name) + '  ' + name).join('\n') + '\n');

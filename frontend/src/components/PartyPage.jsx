@@ -226,6 +226,7 @@ function PartyDetail({ kind, id, onClose, onEdit, onChanged, onDeleted }) {
               { key: 'date', label: 'Date', type: 'date' }, { key: 'ref_no', label: 'Ref' }, { key: 'note', label: 'Details', className: 'clip' },
               { key: 'debit', label: c.debit, type: 'money', sum: true }, { key: 'credit', label: c.credit, type: 'money', sum: true },
               { key: 'balance', label: 'Balance', type: 'money' },
+              ...(kind === 'customer' ? [{key:'receipt',label:'',noSort:true,noExport:true,render:(r)=>r.type==='payment' && <button className="link" onClick={()=>printMoneyReceipt({receipt_no:r.ref_no,customer:st.data.party,amount:r.credit,balance:r.balance,account:r.note.match(/\[([^\]]+)\]$/)?.[1] || r.note,date:r.date})}>Print receipt</button>}] : []),
               ...(can('cancel') ? [{ key: 'x', label: '', noSort: true, noExport: true, render: (r) => (r.type === 'payment' || r.type === 'refund') && <button className="link" style={{ color: 'var(--bad)' }} onClick={() => setRev({ type: c.revType, id: r.id, label: `payment ${r.ref_no}` })}>Void</button> }] : [])
             ]} />
         </>

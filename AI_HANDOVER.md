@@ -1,3 +1,17 @@
+Owner authorized publishing POS previous-due collection and separate CP receipts. Supabase API version19 is ACTIVE; all deployed files match tested source, and read-only ping confirms saleDuePayment support. Frontend publication follows. No migration, reset or business-data edit. Earlier local-only notes are historical.
+
+## POS separate previous-due collection — LOCAL ONLY
+
+Requested POS checkbox and independent due-payment receipts implemented locally. Baseline main:d6bdb7f619203cb6e15f418e94a9d19fc14c9437. No push, live API deployment, database migration, production reset or business-data edit. Deploy tested backend BEFORE frontend when authorized; earlier status notes below are historical.
+
+- Positive customer debt offers Make previous due payment. The separate split-account section starts blank, is optional, clears on customer change/uncheck/reset, and supports refreshing customer balance. It never consumes sale change automatically. Sale payments, credit and refund limits remain separate.
+- sale.create validates previous_due_payments and expected_previous_due, active accounts, positive current debt, no overpayment, finite amounts, stale balance and customers permission alongside pos. UI requires saleDuePayment capability and customers permission. Bootstrap and Supabase ping advertise the capability.
+- Independent customerPayment_ CP receipts are inserted BEFORE the sale's ledger entry within its one atomic, idempotent request. The frozen invoice balance snapshot reflects the previous-debt payment; purchase/sale payment amounts are not combined. Errors roll back every financial/stock row, and replay cannot collect twice.
+- Return/cancellation of the sale cannot void the CP payment refs. In particular, a partially paid sale cannot refund old-debt cash as invoice cash. CP receipts remain visible in the customer ledger and independently cancellable only via the existing authorized payment reversal.
+- Sale completed shows CP receipt numbers and Print due payment receipt; split accounts print one separate money receipt listing the CP numbers and account amounts. Complete & print also retains this receipt action after printing the sale. Customer ledger payment rows offer Print receipt for later reprints even after sale cancellation/return; dated reprints use the payment date.
+
+Validation: full regular suite passed; complete Supabase gateway/earlier financial suites/new pos-due-payment.mjs passed, including atomic split accounts, replay, original debt allocation/snapshot, cancel/full return/partial-payment refund cap, blank defaults and invalid/stale/permission rollback. All88 Microsoft Edge browser workflows passed, including separate receipt printing/reprinting after cancellation, full return retention, blank toggle and stale refresh. Final production build/assets passed. All financial test data was local and isolated.
+
 Owner authorized publishing purchase previous-due payments. Supabase API version17 is ACTIVE; all source files match the tested build and read-only ping confirms purchaseDuePayment support. Frontend publication follows. No schema migration, data reset or business-data edit. Earlier local-only notes are historical.
 
 ## Purchase form: optional previous supplier due payment — LOCAL ONLY

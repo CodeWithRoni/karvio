@@ -150,7 +150,14 @@ export function printMoneyReceipt(r) {
   const s = useStore.getState().settings;
   const w = Number(s.receipt_width || 80), paper = w === 58 ? 48 : 72;
   printHtml(`<style>@page{size:${w}mm auto;margin:0}body{margin:0;width:${paper}mm;padding:3mm ${(w - paper) / 2}mm;font:11px/1.4 'Courier New','Hind Siliguri',monospace}.c{text-align:center}hr{border:0;border-top:1px dashed #000}</style>
-  ${shopHead(s)}<hr><div class="c"><b>MONEY RECEIPT</b></div><div>No: ${esc(r.receipt_no)}</div><div>Date: ${esc(new Date().toLocaleString())}</div>
+  ${shopHead(s)}<hr><div class="c"><b>MONEY RECEIPT</b></div><div>No: ${esc(r.receipt_no)}</div><div>Date: ${esc(r.date ? fdate(r.date) : new Date().toLocaleString())}</div>
   <div>Received from: <b>${esc(r.customer)}</b></div><div>Amount: <b>${esc(money(r.amount))}</b></div><div>Via: ${esc(r.account)}</div><hr>
   <div>Remaining balance: <b>${esc(money(r.balance))}</b></div><hr><div class="c">${esc(s.shop_footer || '')}</div>`);
+}
+
+/** A separate collection document; each CP number remains in the customer ledger. */
+export function printPreviousDueReceipt(payment) {
+  const receipts = payment.receipts || [];
+  if (!receipts.length) throw new Error('Due payment receipt is missing');
+  printMoneyReceipt({receipt_no:receipts.map(r=>r.receipt_no).join(', '),customer:receipts[0].customer,amount:payment.amount,account:receipts.map(r=>r.account+' '+money(r.amount)).join(' + '),balance:receipts.at(-1).balance});
 }

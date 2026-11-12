@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore, shopDay } from '../lib/store';
 import { api } from '../lib/api';
 import { money, qty as fqty, round2, isDecimalUnit, fdate } from '../lib/format';
-import { printReceipt, printInvoice } from '../lib/receipt';
+import { printReceipt, printInvoice, printPreviousDueReceipt } from '../lib/receipt';
 import { Btn, Modal, Field, Tabs, useAction, useHotkeys, useConfirm, noWheel } from '../components/ui';
 import { ProductSearch, PaymentSplit, defaultPay, cleanPays, QuickCustomer, CustomerPicker, SerialChooser } from '../components/widgets';
 import { loadPosDraft, savePosDraft } from '../lib/posDraft';
@@ -21,6 +21,9 @@ export default function POS() {
   const [payTouched, setPayTouched] = useState(!!draft?.customerId);
   const setPays = (v) => { setPayTouched(true); setPaysRaw(v); };
   const [useCredit, setUseCredit] = useState(false);
+  const [payPrevious, setPayPrevious] = useState(false);
+  const [previousPays, setPreviousPays] = useState(() => defaultPay(''));
+  const canPayPrevious = useStore((st) => st.can('customers') && st.apiCapabilities?.saleDuePayment === true);
   const [tier, setTier] = useState('retail');
   const [note, setNote] = useState('');
   const [sendSms, setSendSms] = useState(false); // SMS to the customer is off unless switched on for this sale
@@ -118,7 +121,11 @@ export default function POS() {
     if (!payTouched) setPaysRaw((p) => (p.length ? [{ ...p[0], amount: total - credit > 0 ? round2(total - credit) : '' }] : p));
   }, [total, credit, payTouched]);
 
+  const previousPayments = cleanPays(previousPays).map((p) => ({...p,amount:round2(p.amount)})).filter((p) => p.amount > 0);
+  const previousPaid = payPrevious && canPayPrevious ? round2(previousPayments.reduce((s,p) => s+p.amount,0)) : 0;
   const problems = [];
+  if (payPrevious && canPayPrevious && previousPays.some((p) => !Number.isFinite(Number(p.amount)) || Number(p.amount) < 0)) problems.push('Enter a valid previous due payment amount');
+  if (previousPaid > Math.max(Number(customer?.balance)||0,0) + 0.004) problems.push('Previous due payment exceeds the previous due. Refresh the customer balance.');
   cart.forEach((l) => {
     const p = pmap[l.product_id];
     if (!p) return problems.push('A cart item no longer exists');
@@ -128,13 +135,13 @@ export default function POS() {
   if (due > 0.004 && !customer) problems.push('Cash sales must be fully paid — select a customer to sell on due');
 
   const selectCustomer = (id) => {
-    setCustomerId(id); setUseCredit(false);
+    setCustomerId(id); setUseCredit(false); setPayPrevious(false); setPreviousPays(defaultPay(''));
     if (id) { setPaysRaw(defaultPay('')); setPayTouched(true); refresh('customers'); }
     else setPayTouched(false); // back to a cash sale: auto-fill the full amount again
   };
 
   const [confirmUI, ask] = useConfirm();
-  const reset = () => { setNextPay(''); setSendSms(false); setCart([]); setCustomerId(''); setDiscount(''); setPaysRaw(defaultPay()); setPayTouched(false); setUseCredit(false); setNote(''); searchRef.current?.focus(); };
+  const reset = () => { setPayPrevious(false); setPreviousPays(defaultPay('')); setNextPay(''); setSendSms(false); setCart([]); setCustomerId(''); setDiscount(''); setPaysRaw(defaultPay()); setPayTouched(false); setUseCredit(false); setNote(''); searchRef.current?.focus(); };
 
   const gatewayOn = settings.sms_enabled === 'true';
   const phone = customer?.phones?.split(',')[0]?.trim() || '';
@@ -152,6 +159,7 @@ export default function POS() {
     checkingOut.current = true;
     try {
       const res = await run(() => api('sale.create', {
+        ...(previousPaid > 0 ? {previous_due_payments:previousPayments,expected_previous_due:customer.balance} : {}),
         customer_id: customerId, discount: disc, note, send_sms: smsReady && sendSms, credit_used: credit,
         next_payment_date: due > 0.004 ? nextPay : '',
         items: cart.map((l) => ({ product_id: l.product_id, qty: Number(l.qty), price: Number(l.price), serials: l.serials, warranty_days: l.warranty_days === '' ? 0 : l.warranty_days })),
@@ -160,6 +168,7 @@ export default function POS() {
       if (print) {
         // Complete & print: straight to the print dialog, no summary window.
         printInvoice(res);
+        if (res.previous_due_payment) setDone({...res,change});
         toast(`${res.sale.invoice_no} saved${change > 0 ? ` — return change ${money(change)}` : ''}${res.sms && !res.sms.ok ? ' (SMS failed)' : ''}`, 'ok');
         searchRef.current?.focus();
       } else setDone({ ...res, change });
@@ -269,9 +278,18 @@ export default function POS() {
                 <div className="prev-due" role="status">
                   {customer.balance > 0.004 && <div className="row"><span>Previous due</span><b>{money(customer.balance)}</b></div>}
                   {total > 0 && due > 0.004 && <div className="row"><span>Due on this sale</span><b>{money(due)}</b></div>}
-                  {customer.balance > 0.004 && total > 0 && due > 0.004 && <div className="row total-due"><span>Total due</span><b>{money(customer.balance + due)}</b></div>}
+                  {customer.balance > 0.004 && total > 0 && due > 0.004 && <div className="row total-due"><span>Total due</span><b>{money(Math.max(customer.balance - previousPaid, 0) + due)}</b></div>}
                 </div>
               )}
+              {customer.balance > 0.004 && canPayPrevious && <div className="pos-previous-payment" style={{marginTop:10}}>
+                <label className="check"><input type="checkbox" checked={payPrevious} onChange={(e) => {setPayPrevious(e.target.checked);setPreviousPays(defaultPay(''));}} /> Make previous due payment</label>
+                {payPrevious && <div className="previous-due-payment" style={{marginTop:8}}>
+                  <PaymentSplit value={previousPays} onChange={setPreviousPays} total={customer.balance} label="Previous due collection (separate receipt)" />
+                  <p className="muted" style={{fontSize:12}}>Separate from this sale's collected balance. Leave blank to keep previous due unchanged. Sale returns or cancellation will keep this payment.</p>
+                  <div className="row"><span>Previous due remaining</span><b>{money(Math.max(customer.balance-previousPaid,0))}</b></div>
+                </div>}
+                <button type="button" className="link" style={{marginTop:6}} onClick={() => refresh('customers').catch(() => toast('Could not refresh customer balance','err'))}>Refresh customer balance</button>
+              </div>}
               {total > 0 && due > 0.004 && (
                 <div className="next-pay">
                   <label htmlFor="pos-next-pay">Next payment date</label>
@@ -367,6 +385,7 @@ export default function POS() {
       <Modal open={!!done} onClose={() => { setDone(null); searchRef.current?.focus(); }} title="Sale completed" size="sm"
         footer={<>
           <Btn kind="primary" onClick={() => printInvoice(done)}>Print invoice</Btn>
+          {done?.previous_due_payment && <Btn onClick={() => printPreviousDueReceipt(done.previous_due_payment)}>Print due payment receipt</Btn>}
           <Btn onClick={() => printReceipt(done, 58)}>Print 58mm</Btn>
           <Btn onClick={() => printReceipt(done, 80)}>Print 80mm</Btn>
           <Btn kind="primary" onClick={() => { setDone(null); searchRef.current?.focus(); }}>Next sale</Btn>
@@ -377,6 +396,7 @@ export default function POS() {
             <div><span>Customer</span><b>{done.sale.customer_name}</b></div>
             <div><span>Total</span><b>{money(done.sale.total)}</b></div>
             <div><span>Due</span><b>{money(done.sale.due)}</b></div>
+            {done.previous_due_payment && <div><span>Previous due receipt</span><b>{done.previous_due_payment.receipts.map((r) => r.receipt_no).join(", ")} · {money(done.previous_due_payment.amount)}</b></div>}
             {done.change > 0 && <div><span>Change to return</span><b style={{ color: 'var(--ok)' }}>{money(done.change)}</b></div>}
             {done.sms && <div><span>SMS</span><b style={{ color: done.sms.ok ? 'var(--ok)' : 'var(--bad)' }}>{done.sms.ok ? 'Sent' : 'Failed — check SMS settings'}</b></div>}
           </div>

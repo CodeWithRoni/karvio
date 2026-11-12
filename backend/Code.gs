@@ -19,7 +19,7 @@ var APP_VERSION = '1.2.0';
 // Your Karvio database spreadsheet. Lets this script also run as a standalone project.
 var DEFAULT_SHEET_ID = '1r7WI5GNHtppUCtCu_rZUmvfum92i0HZdK298Z4uZH7w';
 var SESSION_TTL = 21600; // 6 hours (CacheService maximum)
-var API_CAPABILITIES = { idempotency: true, durableRecovery: true, credentialSessions: true, purchaseDuePayment: true };
+var API_CAPABILITIES = { idempotency: true, durableRecovery: true, credentialSessions: true, purchaseDuePayment: true, saleDuePayment: true };
 
 /* ---------------------------------------------------------------------------
  *  SHEET SCHEMA  —  "column" or "column:type"   (types: s=text, n=number, b=boolean)
@@ -2431,7 +2431,21 @@ function saleCreate_(p, user) {
   if (due > 0.005 && !customer) fail_('Attach a customer profile to sell on credit (walk-in sales must be fully paid)');
   var nextPay = due > 0.005 ? promiseDate_(p.next_payment_date, date) : '';
 
+  var oldPays = p.previous_due_payments === undefined ? [] : p.previous_due_payments;
+  if (!Array.isArray(oldPays) || oldPays.length > 20) fail_('Invalid previous due payments');
+  oldPays.forEach(function(x) { if (!x || !isFinite(Number(x.amount)) || Number(x.amount) < 0) fail_('Previous due payment must be a valid non-negative amount'); });
+  oldPays = payList_(oldPays);
+  var oldPaid = round_(sum_(oldPays, function(x) { return x.amount; }));
+  var oldBalance = customer ? round_(customerBalances_()[customer.id] || 0) : 0;
+  if (oldPaid > 0) {
+    need_(user, 'customers');
+    if (!customer) fail_('Select a customer for previous due payment');
+    if (!isFinite(Number(p.expected_previous_due)) || Math.abs(Number(p.expected_previous_due) - oldBalance) > 0.005) fail_('Customer balance changed. Refresh the customer balance and check the previous due payment before saving');
+    if (oldBalance <= 0 || oldPaid > oldBalance + 0.005) fail_('Previous due payment cannot exceed the current previous due (' + Math.max(oldBalance, 0) + ')');
+  }
   var inv = nextNo_('seq_sale', getSetting_('invoice_prefix', 'INV-'));
+  // Separate CP receipts precede the sale: cancellation/return of the sale never voids them.
+  var oldReceipts = oldPays.map(function(x) { return customerPayment_({customer_id:customer.id,account_id:x.account_id,amount:x.amount,date:date,note:'Previous due collected while entering sale ' + inv},user); });
   var previousBalance = customer ? (customerBalances_()[customer.id] || 0) : 0;
   var profit = round_(total - costTotal);
   var sale = insert_('Sales', {
@@ -2464,6 +2478,7 @@ function saleCreate_(p, user) {
     try { sms = sendSaleSms_(sale, lines.map(function (l) { return { name: l.pr.name, qty: l.qty }; }), customer); } catch (e) { sms = { ok: false, status: 'failed', response: String(e.message || e) }; }
   }
   detail.sms = sms;
+  if (oldPaid > 0) detail.previous_due_payment = {amount:oldPaid,previous_balance:oldBalance,receipts:oldReceipts};
   return detail;
 }
 function addDays_(dateStr, days) {
