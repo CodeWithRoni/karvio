@@ -1,331 +1,88 @@
-# KARVIO ERP
+# Karvio ERP
 
-# Current online backend — Supabase
+Online shop management and point of sale for computer, IT, electronics and networking businesses.
 
-The online app now defaults to the dedicated Karvio Supabase project (`svqhlotlzgmwjneuphpe`). Sign in with the owner-created account; there is no default online password. See [SUPABASE-SETUP.md](SUPABASE-SETUP.md) for backend architecture, migrations, private backups and deployment. Google Sheets instructions and default credentials below apply to the legacy Apps Script/offline setup, not this fresh Supabase shop.
+**Current release: [v1.2.2](https://github.com/CodeWithRoni/karvio/releases/tag/v1.2.2)** · [Open web app](https://codewithroni.github.io/karvio/) · [All downloads](https://github.com/CodeWithRoni/karvio/releases/latest)
 
-Current application version: **1.2.0**. Earlier 1.0.6 documents are retained as release history; use SETUP.md and FIXES-REVIEW.md for current setup and pending fixes.
-### Smart Business Management & Point of Sale System
+## Online only
 
-**A Modern, Powerful & Flexible ERP Solution for Retail, Computer, IT, Electronics and Networking Businesses.**
+The web, desktop and mobile apps connect to the same online shop through the Supabase API. Internet access and an existing shop account are required. There is no offline sales mode, local shop database or automatic import of old offline data. Older local databases are left untouched.
 
-Karvio ERP is a business management and Point of Sale (POS) application designed to simplify daily business operations, improve inventory control, manage financial transactions and provide useful business insights through a unified system.
+The current online backend is **Supabase Edge Functions + PostgreSQL**. Google Sheets / Apps Script and offline-runtime files remain in the repository for compatibility/history and regression tests; they are not the active production database.
 
-The project supports web-based operations and an offline desktop environment, allowing businesses to choose the setup that best fits their workflow.
+## Downloads
 
----
+| Platform | File | Installation |
+| --- | --- | --- |
+| Windows x64 | Karvio-1.2.2-win-x64.exe | Run the installer. |
+| macOS Apple Silicon | Karvio-1.2.2-mac-arm64.dmg | Open the disk image and move Karvio to Applications. |
+| macOS Intel | Karvio-1.2.2-mac-x64.dmg | Open the disk image and move Karvio to Applications. |
+| Linux x64, Debian/Ubuntu | Karvio-1.2.2-linux-amd64.deb | Install with your package manager. |
+| Android | Karvio-1.2.2-android.apk | Sideload the APK; it is debug-signed. |
+| iOS | Karvio-1.2.2-ios-unsigned.ipa | Sign with your Apple ID / developer account before installing. |
 
-## 🚀 Key Features
+Download installers from the [release page](https://github.com/CodeWithRoni/karvio/releases/tag/v1.2.2). SHA256SUMS.txt lists file checksums. Desktop binaries are unsigned; macOS builds are not notarized. The iOS file is not an App Store or directly installable signed distribution. Linux packaging currently targets Debian-based x64 systems.
 
-### 🛒 Point of Sale (POS)
-- Fast and efficient sales processing
-- Product search and barcode/serial-based selection
-- Sales invoices and printable receipts
-- Multiple payment and transaction records
-- Customer information management
-- Sales returns and invoice history
-- Serial number tracking for applicable products
+## What is included
 
-### 📦 Inventory Management
-- Product and category management
-- Brand and unit management
-- Stock tracking and inventory updates
-- Purchase and supplier management
-- Serial-number-based product management
-- Purchase returns
-- Product cost and stock valuation tracking
+- **POS and sales:** barcode/serial/name search, retail/wholesale prices, split payments, customer advance, invoices, thermal receipts, returns and authorized cancellation.
+- **Separate due collection:** POS can collect previous customer due with independent CP money receipts. Purchase entry can separately pay previous supplier due. Returning/cancelling the new invoice preserves those independent payments.
+- **Products and stock:** product groups, categories, brands, warranty periods, units, serial tracking and repair reservations. Filtered totals show stock, reserved and available quantities plus weighted cost/retail values; different selling units are kept separate.
+- **Purchases and suppliers:** supplier invoice numbers, split payments, current and historical due, purchase returns and supplier statements.
+- **Customers and accounts:** customer statements, due receipts, cash/bank/MFS ledgers, transfers, deposits and withdrawals.
+- **Repairs and warranty:** job cards, technician assignment, status dashboards, parts, advance, delivery invoices and warranty replacement/vendor recovery records.
+- **Reports:** business dashboard, profit, expenses, stock and transaction reports with Excel/PDF/print exports.
+- **Administration:** role permissions, working hours, shop/invoice settings, configurable SMS gateway, backups/restore and owner-only reset. Used products, parties, accounts and expense history are retained; closed books protect opening balances.
 
-### 💰 Finance & Accounting
-- Sales and purchase records
-- Expense management
-- Customer and supplier balances
-- Payment and due tracking
-- Gross profit and net profit reporting
-- Financial summaries and business performance monitoring
+The **Service** menu is currently a placeholder for future work, not a completed service-management workflow.
 
-### 📊 Dashboard & Reports
-- Business overview dashboard
-- Sales and purchase summaries
-- Inventory reports
-- Profit analysis
-- Expense reporting
-- Transaction history
-- Advanced product, invoice and serial search
+Read [v1.2.2 release notes](RELEASE-1.2.2.md) for the latest corrections.
 
-### 👥 User & Access Management
-- Administrator account
-- Role-based permissions
-- Controlled access to business information
-- Protected administrative operations
-- User and session management
+## Sign in and setup
 
-### 🔐 Database & Backup
-- Database backup and restore functionality
-- Administrative database reset
-- Data validation and recovery mechanisms
-- Transaction integrity protections
-- Persistent local storage for offline desktop usage
+Use the same online credentials on every platform. The fresh Supabase shop is initialized with an owner-chosen password; there is **no default online password**. Configure a different shop endpoint through **Settings → API connection** when needed.
 
----
+See [SUPABASE-SETUP.md](SUPABASE-SETUP.md) for the authoritative online architecture, fresh setup, private backups and deployment. Follow current Supabase setup rather than legacy Google Sheets/offline instructions in historical documents. Installing a new app version does not reset the online shop.
 
-## 🖥️ Supported Environments
+## Development
 
-| Platform | Technology |
-|---|---|
-| Web Application | React |
-| Online Backend | Google Apps Script |
-| Online Database | Google Sheets |
-| Desktop Application | Electron |
-| Offline Storage | Local persistent data |
-| Frontend Build Tool | Vite |
-| Mobile-oriented UI | React web interface |
+Use Node.js 22 and npm. Point development at an isolated API/test shop for sample transactions; the built-in default endpoint is the production Karvio shop.
 
-Native application packaging depends on the appropriate platform toolchains and build configuration.
-
----
-
-## 🏗️ Project Architecture
-
-Karvio ERP contains two primary operating environments.
-
-**Online Mode**
-
-The frontend communicates with a Google Apps Script backend, which manages business operations and stores records in Google Sheets.
-
-**Offline Desktop Mode**
-
-The Electron desktop application operates using a local backend and persistent local data storage.
-
-Offline and online databases are separate. Automatic synchronization between them is not currently provided.
-
-### Repository Structure
-
-```text
-karvio/
-├── backend/
-│   ├── Code.gs
-│   └── test/
-├── frontend/
-│   ├── src/
-│   ├── desktop/
-│   ├── dist/
-│   ├── package.json
-│   └── ...
-├── README.md
-├── SETUP.md
-├── AI_HANDOVER.md
-├── VERIFICATION.md
-└── ...
-```
-
----
-
-## ⚙️ Installation & Development
-
-### Prerequisites
-
-- Node.js
-- npm
-- Git
-- Modern web browser
-- Google account and Google Apps Script access for online deployment
-- Electron-compatible desktop environment for offline desktop use
-
-### Clone the Repository
-
-```bash
+```sh
 git clone https://github.com/CodeWithRoni/karvio.git
-cd karvio
-```
-
-### Install Dependencies
-
-```bash
-cd frontend
+cd karvio/frontend
 npm ci
-```
-
-### Start Development Server
-
-```bash
 npm run dev
 ```
 
-### Build the Frontend
+| Command (from frontend) | Purpose |
+| --- | --- |
+| npm test | Business-rule and client regressions |
+| npm run test:supabase | Hosted transactional gateway and accounting regressions |
+| npm run test:e2e | Browser workflows against the local test server |
+| npm run build | Production frontend plus asset verification |
+| npm run desktop | Start the online Electron app |
+| npm run desktop:build:win | Windows installer |
+| npm run desktop:build:mac | macOS disk images |
+| npm run desktop:build:linux | Debian package |
 
-```bash
-npm run build
-```
+Browser tests use Microsoft Edge locally by default. CI installs Chromium and sets KARVIO_BROWSER_CHANNEL=chromium. Financial regression fixtures are isolated from the live shop. See [VERIFICATION.md](VERIFICATION.md) for recorded checks.
 
-### Run Automated Tests
+## Repository map
 
-```bash
-npm test
-```
+- frontend/src — React UI, API transport and document/export rendering.
+- frontend/desktop — online Electron wrapper; legacy test runtimes are not shipped as offline features.
+- frontend/src-tauri — alternative native wrapper configuration.
+- backend/Code.gs — authoritative ERP business rules and legacy Apps Script adapter.
+- supabase/functions/karvio-api — generated business engine and hosted gateway/runtime.
+- supabase/migrations — versioned PostgreSQL schema and private transactional storage.
+- backend/test and frontend/test — accounting, access, recovery and browser regressions.
+- .github/workflows — Pages deployment and installers for all listed platforms.
 
-### Run Browser Tests
+After editing business rules, regenerate the hosted engine with node scripts/generate-supabase.cjs. Applied database migrations remain immutable. Backend/API changes must be deployed before a frontend feature that depends on them.
 
-```bash
-npm run test:e2e
-```
+## Release process
 
-### Start Offline Desktop Application
+The Build Karvio apps workflow builds all desktop/mobile targets. It can run manually, on a version tag, or from a release/* branch. A release is published only when every platform build succeeds; installers and their checksums are attached together. Main also runs the complete test/build/browser checks before publishing GitHub Pages.
 
-```bash
-npm run desktop
-```
-
-### Start Online Desktop Application
-
-```bash
-npm run desktop:online
-```
-
----
-
-## ☁️ Online Backend Setup
-
-Karvio ERP uses Google Apps Script and Google Sheets for its online backend.
-
-Basic setup procedure:
-
-1. Create or prepare a Google Apps Script project.
-2. Configure the required Google Sheets database.
-3. Use the authoritative backend source from `backend/Code.gs`.
-4. Deploy the Apps Script project as a Web App with appropriate access settings.
-5. Configure the frontend API endpoint.
-6. Build and deploy the frontend.
-7. Verify authentication, inventory, sales and financial operations.
-
-For an existing installation, back up the database before upgrading. Do not overwrite production records or reset administrator credentials without an intentional migration plan.
-
-Detailed instructions are available in `SETUP.md` and `UPLOAD_GUIDE-বাংলা.md`.
-
----
-
-## 💾 Offline Desktop Application
-
-Karvio works online only, including the Electron desktop app. An internet connection and your online shop account are required. Legacy offline flags and profiles cannot enable offline mode. Existing local data is left untouched; it is not imported or synced. Replace older downloaded installers with a newly built version.
-
-Key capabilities:
-
-- Local business data storage
-- Offline POS operations
-- Persistent application data
-- Local backup and restore support
-- Independent offline operation
-
-The desktop application uses the `Karvio Offline` data directory.
-
-**Important:** Offline and online data are not automatically synchronized. Keep backups of each environment separately.
-
----
-
-## 🔒 Security & Data Protection
-
-Karvio ERP includes mechanisms for authentication, access control and transaction consistency.
-
-Security practices:
-
-- Protect administrator credentials.
-- Restrict access to business data.
-- Never commit real customer records or production databases.
-- Never expose API credentials or private tokens.
-- Maintain regular database backups.
-- Test updates before deploying to production.
-- Follow least-privilege access principles.
-
-Production security depends on correct deployment, configuration and operational maintenance.
-
----
-
-## 🧪 Testing & Verification
-
-The project includes automated tests covering important application workflows and data integrity behavior.
-
-Testing areas include:
-
-- Sales and purchase operations
-- Inventory and serial management
-- Financial calculations
-- Backup and restore
-- Database recovery
-- Access permissions
-- Offline data compatibility
-- Browser workflows
-
-Run the relevant tests after making changes to the application.
-
-For additional technical details, see `VERIFICATION.md`.
-
----
-
-## 🔄 Development Principles
-
-Karvio ERP is maintained with the following goals:
-
-- Reliable business transactions
-- Consistent inventory records
-- Clear financial calculations
-- User-friendly interfaces
-- Maintainable source code
-- Safe database operations
-- Cross-platform usability
-- Backward compatibility where possible
-
-Every major change should be tested before release.
-
----
-
-## 📚 Documentation
-
-| File | Purpose |
-|---|---|
-| `README.md` | Project introduction and overview |
-| `SETUP.md` | Installation and setup instructions |
-| `AI_HANDOVER.md` | Technical architecture and maintenance notes |
-| `VERIFICATION.md` | Testing and verification information |
-| `CHANGES.md` | Project change history |
-| `UPLOAD_GUIDE-বাংলা.md` | Bengali deployment instructions |
-
----
-
-## 🛣️ Future Development
-
-Potential future improvements include:
-
-- Enhanced reporting and analytics
-- Improved mobile experience
-- Additional business automation
-- Extended integrations
-- Performance optimization
-- More deployment options
-- Additional security and backup capabilities
-
-These are development directions, not promises of currently available functionality.
-
----
-
-## 👨‍💻 Developer
-
-**CodeWithRoni**
-
-GitHub: https://github.com/CodeWithRoni
-
-Repository: https://github.com/CodeWithRoni/karvio
-
----
-
-## 📌 Project Status
-
-**Project:** Karvio ERP  
-**Category:** Business Management / ERP / POS  
-**Primary Technologies:** React, Google Apps Script, Google Sheets, Electron  
-**Development:** Actively maintained project  
-**Deployment:** Online Web and Offline Desktop
-
-For release-specific information, consult the repository's release notes and verification documents.
-
----
-
-**KARVIO ERP — Manage Smarter. Work Faster. Grow Better.**
+Keep credentials and production backups out of the repository. Database reset and restore are explicit owner operations, separate from application upgrades.

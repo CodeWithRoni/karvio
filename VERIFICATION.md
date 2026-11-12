@@ -1,3 +1,26 @@
+## v1.2.2 release preparation — owner authorized
+
+README rewritten for the current Supabase/online-only architecture, updated features, exact download platforms and signing requirements. Application/package lock and Tauri versions aligned at1.2.2; dependency versions and business rules unchanged. Build Karvio apps also accepts release/* branches, allowing an explicit release build from the exact reviewed commit; all platforms must succeed before publication. Current release notes are in RELEASE-1.2.2.md. Production web build/assets and workflow/version validation passed. Platform builds/publication are pending CI. No API/database changes or reset. Earlier status notes below are historical.
+
+```json
+{
+  "scope": "v1.2.2 all-platform release and current online-only README",
+  "deployment": "owner authorized main publication and all-platform release",
+  "version": "1.2.2",
+  "productionBuild": "passed",
+  "versionConsistency": "passed: npm lock/package and Tauri manifests",
+  "workflowSyntax": "passed; gated on all desktop/android/ios builds",
+  "priorERPValidation": {
+    "regularSuite": "passed",
+    "supabaseSuite": "passed",
+    "browserPassed": 88
+  },
+  "platformBuilds": "pending GitHub Actions",
+  "schemaMigrationRequired": false,
+  "productionResetPerformed": false
+}
+```
+
 Owner authorized publishing POS previous-due collection and separate CP receipts. Supabase API version19 is ACTIVE; all deployed files match tested source, and read-only ping confirms saleDuePayment support. Frontend publication follows. No migration, reset or business-data edit. Earlier local-only notes are historical.
 
 ## POS separate previous-due collection — LOCAL ONLY

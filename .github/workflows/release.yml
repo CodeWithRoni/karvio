@@ -8,6 +8,7 @@ on:
   workflow_dispatch:
   push:
     tags: ['v*']
+    branches: ['release/**']
 
 permissions:
   contents: write
@@ -121,21 +122,18 @@ jobs:
         run: |
           VERSION=$(node -p "require('./frontend/package.json').version")
           TAG="${GITHUB_REF_NAME}"; case "$TAG" in v*) ;; *) TAG="v$VERSION" ;; esac
+          for FILE in "Karvio-$VERSION-win-x64.exe" "Karvio-$VERSION-mac-arm64.dmg" "Karvio-$VERSION-mac-x64.dmg" "Karvio-$VERSION-linux-amd64.deb" "Karvio-$VERSION-android.apk" "Karvio-$VERSION-ios-unsigned.ipa"; do
+            test -s "out/$FILE" || { echo "Missing installer: $FILE"; exit 1; }
+          done
           (cd out && sha256sum * > SHA256SUMS.txt)
           ls -la out
-          NOTES="Karvio $TAG — online-only installers for every platform.
-
-          Internet access and your existing online shop account are required. Offline database mode is disabled. Legacy local data is left untouched and is not imported. Includes the latest ERP fixes and interface updates.
-
-          - **Windows:** Karvio-*-win-x64.exe — run the installer.
-          - **macOS:** Karvio-*-mac-arm64.dmg (Apple Silicon) or Karvio-*-mac-x64.dmg (Intel). First open: right-click → Open (the app is not notarized).
-          - **Linux:** Karvio-*-linux-amd64.deb — \`sudo apt install ./Karvio-*.deb\`
-          - **Android:** Karvio-*-android.apk — allow installing from this source, then open the file.
-          - **iOS:** Karvio-*-ios-unsigned.ipa — must be signed (Sideloadly / AltStore with your Apple ID, or an Apple Developer account) before it installs.
-
-          Built from commit ${GITHUB_SHA::7}."
+          NOTES_FILE="RELEASE-$VERSION.md"
+          if [ ! -f "$NOTES_FILE" ]; then
+            echo "Karvio $TAG — online-only installers. Internet access and an existing shop account are required. iOS is unsigned; Android is debug-signed; desktop apps are unsigned." > "$NOTES_FILE"
+          fi
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" out/* --clobber
+            gh release edit "$TAG" --title "Karvio $TAG" --notes-file "$NOTES_FILE"
           else
-            gh release create "$TAG" out/* --title "Karvio $TAG" --notes "$NOTES" --target "$GITHUB_SHA"
+            gh release create "$TAG" out/* --title "Karvio $TAG" --notes-file "$NOTES_FILE" --target "$GITHUB_SHA"
           fi

@@ -1,22 +1,22 @@
 {
   "product": "Karvio",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "preparedDate": "2026-11-12",
-  "state": "owner-authorized-pos-due-payment-publication",
-  "baseCommit": "d6bdb7f619203cb6e15f418e94a9d19fc14c9437",
+  "state": "owner-authorized-v1.2.2-release",
+  "baseCommit": "22172bdb1d8e088e105ade9f73d34c483aa8795e",
   "validation": {
-    "scope": "POS optional previous due collection with independent CP receipts",
-    "deployment": "owner-authorized publication; API version19 verified before frontend",
-    "regularSuite": "passed",
-    "supabaseGatewayChecks": 63,
-    "allBackendRegressions": "passed",
-    "posDuePaymentRegression": "passed including partial-return cash cap and independent receipts",
-    "browser": {
-      "engine": "Microsoft Edge",
-      "passed": 88,
-      "failed": 0
-    },
+    "scope": "v1.2.2 all-platform release and current online-only README",
+    "deployment": "owner authorized main publication and all-platform release",
+    "version": "1.2.2",
     "productionBuild": "passed",
+    "versionConsistency": "passed: npm lock/package and Tauri manifests",
+    "workflowSyntax": "passed; gated on all desktop/android/ios builds",
+    "priorERPValidation": {
+      "regularSuite": "passed",
+      "supabaseSuite": "passed",
+      "browserPassed": 88
+    },
+    "platformBuilds": "pending GitHub Actions",
     "schemaMigrationRequired": false,
     "productionResetPerformed": false
   },
@@ -29,7 +29,7 @@
     "user databases/backups",
     "credentials"
   ],
-  "fileCount": 289,
+  "fileCount": 290,
   "files": [
     ".github/workflows/deploy.yml",
     ".github/workflows/release.yml",
@@ -39,6 +39,7 @@
     "FIXES-1.0.6.md",
     "FIXES-REVIEW.md",
     "README.md",
+    "RELEASE-1.2.2.md",
     "RELEASE-MANIFEST.json",
     "SETUP.md",
     "SHA256SUMS.txt",
@@ -323,9 +324,9 @@
   ],
   "checksumPolicy": "SHA256SUMS.txt covers every listed file except itself, including this manifest.",
   "uploadOrder": [
-    "Owner authorized publishing POS previous-due collection",
-    "Deploy tested Supabase API before frontend to advertise saleDuePayment; no schema migration required",
-    "Publish main and verify CI/Pages and live assets"
+    "Publish v1.2.2 version and README on main",
+    "Create release/v1.2.2 from the exact main commit to run all platform builds",
+    "Verify gated release assets/checksums and Pages; no API/database changes"
   ],
   "onlineUploadPerformed": true,
   "appsScriptVersion": 42,

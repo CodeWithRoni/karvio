@@ -1,3 +1,7 @@
+# Karvio 1.2.2
+
+See [release notes](RELEASE-1.2.2.md) for the current online-only release. Entries below describe earlier development snapshots and releases.
+
 # Unreleased — local review fixes (11 November 2026)
 
 - Restore/reset keep a durable full-table recovery snapshot before changing online records; failed recovery blocks reads until it can finish.

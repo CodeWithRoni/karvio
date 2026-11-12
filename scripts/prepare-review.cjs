@@ -7,7 +7,7 @@ const manifestPath = path.join(root, 'RELEASE-MANIFEST.json');
 const sumsPath = path.join(root, 'SHA256SUMS.txt');
 const roots = ['.github', 'backend/test', 'frontend/src', 'frontend/src-tauri', 'frontend/desktop', 'frontend/public', 'frontend/branding', 'frontend/scripts', 'frontend/test', 'frontend/dist', 'scripts', 'supabase'];
 const fixed = ['.gitignore', 'README.md', 'AI_HANDOVER.md', 'CHANGES.md', 'FIXES-1.0.6.md', 'FIXES-REVIEW.md', 'SETUP.md', 'UPLOAD_GUIDE-বাংলা.md', 'VERIFICATION.md', 'VERIFICATION-1.0.6.md', 'backend/Code.gs', 'backend/appsscript.json', 'frontend/.gitignore', 'frontend/.env.example', 'frontend/package.json', 'frontend/package-lock.json', 'frontend/index.html', 'frontend/vite.config.js', 'frontend/playwright.config.js', 'frontend/capacitor.config.json'];
-fixed.push('SUPABASE-SETUP.md');
+fixed.push('SUPABASE-SETUP.md', 'RELEASE-1.2.2.md');
 const excluded = new Set(['node_modules', 'target', '.git', '.temp', 'test-results', 'playwright-report', 'release', 'android', 'ios']);
 function walk(relative) {
   return fs.readdirSync(path.join(root, relative), { withFileTypes: true }).flatMap(entry => {
@@ -37,13 +37,13 @@ if (process.argv.includes('--check')) {
   if (!verification) throw new Error('Record the current checks in VERIFICATION.md before preparing the package.');
   const manifest = {
     product: 'Karvio', version: JSON.parse(fs.readFileSync(path.join(root, 'frontend/package.json'))).version,
-    preparedDate: '2026-11-12', state: 'owner-authorized-pos-due-payment-publication',
-    baseCommit: 'd6bdb7f619203cb6e15f418e94a9d19fc14c9437',
+    preparedDate: '2026-11-12', state: 'owner-authorized-v1.2.2-release',
+    baseCommit: '22172bdb1d8e088e105ade9f73d34c483aa8795e',
     validation: JSON.parse(verification[1]),
     excluded: ['backend/parts (legacy duplicate backend)', 'node_modules', 'verification artifacts', 'test results', 'release installers', 'user databases/backups', 'credentials'],
     fileCount: files.length, files,
     checksumPolicy: 'SHA256SUMS.txt covers every listed file except itself, including this manifest.',
-    uploadOrder: ['Owner authorized publishing POS previous-due collection', 'Deploy tested Supabase API before frontend to advertise saleDuePayment; no schema migration required', 'Publish main and verify CI/Pages and live assets'],
+    uploadOrder: ['Publish v1.2.2 version and README on main', 'Create release/v1.2.2 from the exact main commit to run all platform builds', 'Verify gated release assets/checksums and Pages; no API/database changes'],
     onlineUploadPerformed: true,
     appsScriptVersion: 42,
     supabase: { project: 'svqhlotlzgmwjneuphpe', edgeFunction: 'karvio-api', deployedVersion: 19, businessTables: 29, ownerSetup: 'created by owner', liveFrontendCutover: true }
