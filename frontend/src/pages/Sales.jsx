@@ -101,7 +101,7 @@ function SaleDetail({ id, onClose, onChanged }) {
       footer={s && <>
         {can('cancel') && s.status === 'active' && <Btn kind="danger" onClick={() => setRev(true)}>Cancel invoice</Btn>}
         {can('sales.return') && s.status === 'active' && <Btn onClick={() => setRet(true)}>Return / exchange</Btn>}
-        {can('pos') && <Btn busy={linkBusy} onClick={makeLink} title="A private link to this invoice for the customer (WhatsApp, Messenger…). Works for 15 days.">Customer link</Btn>}
+        {can('pos') && s.customer_id && <Btn busy={linkBusy} onClick={makeLink} title="A private link to this invoice for the customer (WhatsApp, Messenger…). Works for 15 days.">Customer link</Btn>}
         <span className="spacer" />
         <div className="seg">
           <button onClick={() => excelSales([data], `invoice-${s.invoice_no}.xlsx`)}>Excel</button>
@@ -209,7 +209,7 @@ function ReturnForm({ detail, onClose, onDone }) {
       if (!(Number(l.price) >= 0) || l.price === '') problems.push(`Enter a price for ${l.name}`);
     });
     if (diff > 0 && paidNow > diff + 0.004) problems.push(`Payment is more than the difference (${money(diff)})`);
-    if (diff > 0 && walkIn && Math.abs(unpaid) > 0.004) problems.push(`Walk-in customer must pay the full difference of ${money(diff)}`);
+    if (diff > 0 && walkIn && Math.abs(unpaid) > 0.004) problems.push(`A cash sale must pay the full difference of ${money(diff)}`);
     if (diff < 0 && !walkIn && surplusMode === 'refund' && (Number(refundAmt) > refundMax + 0.004 || !(Number(refundAmt) > 0))) problems.push(`Refund must be between 0 and ${money(refundMax)}`);
   }
 
@@ -328,7 +328,7 @@ function ReturnForm({ detail, onClose, onDone }) {
               <option value="adjust">Adjust customer balance (reduce due / add credit)</option>
             </select>
           </Field>
-        ) : <Field label="Settle as"><input value="Refund money (walk-in sale)" readOnly /></Field>}
+        ) : <Field label="Settle as"><input value="Refund money (cash sale)" readOnly /></Field>}
         {mode === 'cash' && <>
           <Field label="Refund from"><Select value={acc} onChange={setAcc} options={accounts} allowEmpty={false} /></Field>
           <Field label="Refund amount" hint={sale.customer_id ? (owed > 0 ? `${money(Math.min(owed, value))} of this return clears the unpaid due on this invoice, so at most ${money(maxCash)} can be refunded. Anything not refunded is credited to the customer.` : 'Any amount not refunded is credited to the customer.') : ''}><input type="number" min="0" max={maxCash} step="any" value={amount} onChange={(e) => setAmount(e.target.value)} disabled={!sale.customer_id} /></Field>

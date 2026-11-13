@@ -47,3 +47,18 @@ test('customer exchange to a cheaper product refunds the difference',async({page
  expect(await balance(request,cash)-cashBefore).toBe(-150);
  expect((await call(request,'customers.list')).find(c=>c.id===cust.id).balance).toBe(0);
 });
+
+test('cash sales show Cash and offer no customer link; customer sales keep the link',async({page,request})=>{
+ const m=await product(request,'CASHNAME Mouse',550,400);
+ const cust=await call(request,'customer.save',{name:'CASHNAME Customer',phones:['01799654321']});
+ const cashSale=await call(request,'sale.create',{items:[{product_id:m.id,qty:1,price:550}],payments:[{account_id:cash,amount:550}],send_sms:false});
+ const custSale=await call(request,'sale.create',{customer_id:cust.id,items:[{product_id:m.id,qty:1,price:550}],payments:[{account_id:cash,amount:550}],send_sms:false});
+ await page.goto('/#/sales/'+cashSale.sale.id);
+ let dialog=page.getByRole('dialog');
+ await expect(dialog).toContainText('Cash');await expect(dialog).not.toContainText('Walk-in');
+ await expect(dialog.getByRole('button',{name:'Return / exchange',exact:true})).toBeVisible();
+ await expect(dialog.getByRole('button',{name:'Customer link',exact:true})).toHaveCount(0);
+ await page.goto('/#/sales/'+custSale.sale.id);
+ dialog=page.getByRole('dialog');
+ await expect(dialog.getByRole('button',{name:'Customer link',exact:true})).toBeVisible();
+});

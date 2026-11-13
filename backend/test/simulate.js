@@ -136,7 +136,7 @@ eq(s1.stock['Kingston 512GB SSD'], 2, 'SSD stock reduced');
 const walk = ok(A('sale.create', { items: [{ product_id: mouse.id, qty: 1, price: 600 }], payments: [{ account_id: cash.id, amount: 600 }] }), 'walk-in sale');
 eq(walk.sms, null, 'no SMS for walk-in sale');
 eq(fetchLog.length, 1, 'still one SMS fetch');
-eq(walk.sale.customer_name, 'Walk-in', 'walk-in label');
+eq(walk.sale.customer_name, 'Cash', 'cash sale label');
 
 section('Sales return + exchange credit');
 const retPayload = { sale_id: sale1.sale.id, items: [{ sale_item_id: sale1.items[0].id, qty: 1, serials: ['S1'] }, { sale_item_id: sale1.items[1].id, qty: 1 }], refund: { mode: 'cash', account_id: bkash.id, amount: 1987.81 }, type: 'exchange' };

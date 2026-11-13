@@ -63,7 +63,7 @@ eq([x1.summary.return_value, x1.summary.replacement_total, x1.summary.difference
 eq([stock(mouse620.id), stock(mouse900.id)], [10, 9], 'returned 620D back in stock, 900X out');
 eq([await balance(cash.id) - before.cash, await balance(bkash.id) - before.bkash], [550, 150], 'cash keeps the 550, bKash gets the 150 difference');
 eq(grossProfit() - before.profit, 200, 'profit is the 900X profit only (700 - 500)');
-eq([x1.sale.sale.total, x1.sale.sale.paid, x1.sale.sale.due, x1.sale.sale.customer_name], [700, 700, 0, 'Walk-in'], 'new invoice fully paid');
+eq([x1.sale.sale.total, x1.sale.sale.paid, x1.sale.sale.due, x1.sale.sale.customer_name], [700, 700, 0, 'Cash'], 'new invoice fully paid');
 ok(x1.sale.sale.note.includes(x1.return.return_no) && x1.sale.sale.note.includes(w1.sale.invoice_no), 'new invoice names the return and old invoice');
 const r1 = snapshot.tables.SalesReturns.find(r => r.id === x1.return.id);
 eq([r1.type, r1.total, r1.refund, r1.note], ['exchange', 550, 550, 'Exchanged for ' + x1.sale.sale.invoice_no], 'return row is an exchange that names the new invoice');

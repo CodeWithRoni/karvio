@@ -157,7 +157,7 @@ export function saleInvoiceHtml(d) {
   return `<div class="sdoc tpl-${esc(tpl)}">${head('INVOICE', `<b>${esc(s.invoice_no)}</b><br>${esc(fdatetime(s.created_at || s.date))}<br><span class="sm">Served by ${esc(s.user_name || '')}</span>`, st)}
     ${s.status === 'cancelled' ? `<div class="cx">CANCELLED — ${esc(s.cancel_reason || '')}</div>` : ''}
     <div class="meta">
-      <div class="box"><b class="t">Customer</b><b>${esc(s.customer_name || 'Walk-in')}</b>${c.phones ? `<div>Phone: ${esc(splitList(c.phones).join(', '))}</div>` : ''}${c.addresses ? `<div>${esc(String(c.addresses).split('|').join('; '))}</div>` : ''}</div>
+      <div class="box"><b class="t">Customer</b><b>${esc(s.customer_name || 'Cash')}</b>${c.phones ? `<div>Phone: ${esc(splitList(c.phones).join(', '))}</div>` : ''}${c.addresses ? `<div>${esc(String(c.addresses).split('|').join('; '))}</div>` : ''}</div>
       <div class="box"><b class="t">${s.live_invoice ? 'Payments at sale' : 'Payment'}</b>${pl.length ? pl.map((x) => `<div>${esc(x.account_name || 'Paid')}: <b>${esc(money(x.amount, false))}</b></div>`).join('') : ''}${s.credit_used ? `<div>Advance used: <b>${esc(money(s.credit_used, false))}</b></div>` : ''}${!pl.length && !s.credit_used ? '<div>Sold on due</div>' : ''}${s.note ? `<div class="sm">Note: ${esc(s.note)}</div>` : ''}</div>
     </div>
     <table><thead><tr><th style="width:28px">#</th><th>Product / serial / warranty</th><th style="width:56px">Unit</th><th class="r" style="width:60px">Qty</th><th class="r" style="width:90px">Price</th><th class="r" style="width:96px">Amount</th></tr></thead><tbody>${rows}</tbody></table>
@@ -222,7 +222,7 @@ export function salesReturnHtml(d) {
   return `<div class="sdoc">${head(title, `<b>${esc(r.return_no)}</b><br>${esc(fdatetime(r.created_at || r.date))}<br><span class="sm">By ${esc(r.user || '')}</span>`)}
     ${r.status === 'cancelled' ? `<div class="cx">CANCELLED — ${esc(r.cancel_reason || '')}</div>` : ''}
     <div class="meta">
-      <div class="box"><b class="t">Customer</b><b>${esc(r.customer_name || 'Walk-in')}</b>${c.phones ? `<div>Phone: ${esc(splitList(c.phones).join(', '))}</div>` : ''}${c.addresses ? `<div>${esc(String(c.addresses).split('|').join('; '))}</div>` : ''}</div>
+      <div class="box"><b class="t">Customer</b><b>${esc(r.customer_name || 'Cash')}</b>${c.phones ? `<div>Phone: ${esc(splitList(c.phones).join(', '))}</div>` : ''}${c.addresses ? `<div>${esc(String(c.addresses).split('|').join('; '))}</div>` : ''}</div>
       <div class="box"><b class="t">Original invoice</b><b>${esc(r.invoice_no || '—')}</b><div>${r.type === 'exchange' ? 'Exchange — value kept as customer credit' : 'Return'}</div>${r.note ? `<div class="sm">Note: ${esc(r.note)}</div>` : ''}</div>
     </div>
     <table><thead><tr><th style="width:28px">#</th><th>Product / serial</th><th class="r" style="width:60px">Qty</th><th class="r" style="width:90px">Price</th><th class="r" style="width:96px">Value</th></tr></thead><tbody>${rows}</tbody></table>

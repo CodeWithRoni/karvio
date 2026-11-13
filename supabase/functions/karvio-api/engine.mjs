@@ -22,6 +22,7 @@ var APP_VERSION = '1.2.2';
 // Your Karvio database spreadsheet. Lets this script also run as a standalone project.
 var DEFAULT_SHEET_ID = '1r7WI5GNHtppUCtCu_rZUmvfum92i0HZdK298Z4uZH7w';
 var SESSION_TTL = 21600; // 6 hours (CacheService maximum)
+var CASH_SALE_NAME = 'Cash'; // sales without a customer profile (older data says "Walk-in")
 var SESSION_REFRESH_MS = 15 * 60 * 1000; // extend an active session at most once per 15 minutes
 var API_CAPABILITIES = { idempotency: true, durableRecovery: true, credentialSessions: true, purchaseDuePayment: true, saleDuePayment: true };
 
@@ -183,6 +184,7 @@ function all_(name) {
       if (r[0] === '' || r[0] === null) return;
       var o = { _row: i + 2 };
       cs.forEach(function (c, j) { o[c.k] = cast_(r[j], c.t); });
+      cashSaleName_(name, o);
       rows.push(o);
     });
   }
@@ -190,6 +192,11 @@ function all_(name) {
   return rows;
 }
 
+/** Older cash sales were saved as "Walk-in"; every screen, report and print shows them as "Cash". */
+function cashSaleName_(table, o) {
+  if ((table === 'Sales' || table === 'SalesReturns' || table === 'WarrantyClaims') && !o.customer_id && o.customer_name === 'Walk-in') o.customer_name = CASH_SALE_NAME;
+  else if (table === 'ItemEvents' && o.party === 'Walk-in' && (o.ref_type === 'sale' || o.ref_type === 'sreturn' || o.ref_type === 'claim')) o.party = CASH_SALE_NAME;
+}
 /** The real sheet is untouched until the complete row plan has been durably prepared. */
 function flush_() { if (SpreadsheetApp.flush) SpreadsheetApp.flush(); }
 function dataLastRow_(name) {
@@ -1806,6 +1813,7 @@ function dailyReceiptPrune_() {
 function saleLink_(p, user) {
   var s = all_('Sales').filter(function (x) { return x.id === p.id; })[0];
   if (!s) fail_('Invoice not found');
+  if (!s.customer_id) fail_('Cash sales have no customer, so no customer link is made');
   if (!can_(user, 'sales.all') && s.user_id !== user.id) fail_('Permission denied: this invoice belongs to another user');
   var l = invoiceLinkCreate_(s.id);
   audit_(user, 'invoice_link', s.invoice_no);
@@ -2479,7 +2487,7 @@ function saleCreate_(p, user) {
   var paid = round_(cashPaid + creditUsed);
   if (paid > total + 0.005) fail_('Paid amount (' + paid + ') exceeds the invoice total (' + total + ')');
   var due = round_(total - paid);
-  if (due > 0.005 && !customer) fail_('Attach a customer profile to sell on credit (walk-in sales must be fully paid)');
+  if (due > 0.005 && !customer) fail_('Attach a customer profile to sell on credit (cash sales must be fully paid)');
   var nextPay = due > 0.005 ? promiseDate_(p.next_payment_date, date) : '';
 
   var oldPays = p.previous_due_payments === undefined ? [] : p.previous_due_payments;
@@ -2500,7 +2508,7 @@ function saleCreate_(p, user) {
   var previousBalance = customer ? (customerBalances_()[customer.id] || 0) : 0;
   var profit = round_(total - costTotal);
   var sale = insert_('Sales', {
-    invoice_no: inv, date: date, customer_id: customer ? customer.id : '', customer_name: customer ? customer.name : 'Walk-in',
+    invoice_no: inv, date: date, customer_id: customer ? customer.id : '', customer_name: customer ? customer.name : CASH_SALE_NAME,
     subtotal: subtotal, discount: discount, total: total, paid: paid, credit_used: creditUsed, due: due, cost: round_(costTotal), profit: profit,
     note: p.note || '', status: 'active', user_id: user.id, user_name: user.name, created_at: now_(), payments: pays, next_payment_date: nextPay,
     balance_snapshot: { previous: round_(previousBalance), outstanding: round_(previousBalance + total - cashPaid) }
@@ -2655,13 +2663,13 @@ function sreturnCreate_(p, user) {
   var maxCash = sale.customer_id ? round_(Math.max(total - (saleOpenDues_()[sale.id] || 0), 0)) : total;
   var rf = p.refund || {}, refund = 0, accId = '';
   if (rf.mode === 'adjust') {
-    if (!sale.customer_id) fail_('Walk-in invoices must be refunded from an account');
+    if (!sale.customer_id) fail_('Cash-sale invoices must be refunded from an account');
   } else {
     accId = rf.account_id; refund = round_(rf.amount === undefined ? maxCash : rf.amount);
     if (refund > 0.005 && !all_('Accounts').some(function (a) { return a.id === accId && a.active; })) fail_('Select the account used for the refund');
     if (refund < 0 || refund > total + 0.005) fail_('Refund must be between 0 and ' + total);
     if (refund > maxCash + 0.005) fail_('Cash refund can be at most ' + maxCash + ': ' + round_(total - maxCash) + ' of this return only clears the unpaid due on invoice ' + sale.invoice_no);
-    if (!sale.customer_id && Math.abs(refund - total) > 0.005) fail_('Walk-in returns must be refunded in full');
+    if (!sale.customer_id && Math.abs(refund - total) > 0.005) fail_('Cash-sale returns must be refunded in full');
     if (refund <= 0.005) accId = '';
   }
 
@@ -2737,7 +2745,7 @@ function saleExchange_(p, user) {
   } else {
     var acc = all_('Accounts').filter(function (a) { return a.id === p.account_id && a.active; })[0];
     if (!acc) fail_('Select the account used for the exchange money');
-    if (refundWanted > 0) fail_('Walk-in exchanges settle through the selected account; leave the refund empty');
+    if (refundWanted > 0) fail_('Cash-sale exchanges settle through the selected account; leave the refund empty');
     ret = sreturnCreate_({ sale_id: sale.id, items: p.items, type: 'exchange', refund: { mode: 'cash', account_id: acc.id }, note: p.note || '' }, user).return;
     returnTotal = round_(ret.total);
     if (p.expected_return_value !== undefined && Math.abs(num_(p.expected_return_value) - returnTotal) > 0.005) fail_('The return value changed. Reopen the exchange and check it again');
@@ -3612,9 +3620,9 @@ function historyDoc_(type, d, lines, cx, whole) {
   var q = round_(sum_(lines, function (i) { return i.qty; }), 3), amt = round_(sum_(lines, function (i) { return i.total; }));
   var names = []; lines.forEach(function (i) { if (names.indexOf(i.name) < 0) names.push(i.name); });
   var o = { type: type, id: d.id, date: d.date, status: d.status, qty: q, items: names.slice(0, 3).join(', ') + (names.length > 3 ? ' +' + (names.length - 3) + ' more' : ''), whole: !!whole, _r: d._row };
-  if (type === 'sale') { o.no = d.invoice_no; o.party = d.customer_name || 'Walk-in'; o.amount = whole ? d.total : amt; if (whole) { o.paid = d.paid; o.due = d.due; o.due_now = saleOpenDues_()[d.id] || 0; } o.staff = d.user_name || ''; }
+  if (type === 'sale') { o.no = d.invoice_no; o.party = d.customer_name || CASH_SALE_NAME; o.amount = whole ? d.total : amt; if (whole) { o.paid = d.paid; o.due = d.due; o.due_now = saleOpenDues_()[d.id] || 0; } o.staff = d.user_name || ''; }
   if (type === 'purchase') { o.no = d.invoice_no; o.party = d.supplier_name || '—'; o.supplier_invoice = d.supplier_invoice || ''; if (cx.money) { o.amount = whole ? d.total : amt; if (whole) { o.paid = d.paid; o.due = d.due; } } }
-  if (type === 'sreturn') { o.no = d.return_no; o.party = d.customer_name || 'Walk-in'; o.invoice_no = d.invoice_no; o.kind = d.type; o.amount = whole ? d.total : amt; o.refund = d.refund; }
+  if (type === 'sreturn') { o.no = d.return_no; o.party = d.customer_name || CASH_SALE_NAME; o.invoice_no = d.invoice_no; o.kind = d.type; o.amount = whole ? d.total : amt; o.refund = d.refund; }
   if (type === 'preturn') { o.no = d.return_no; o.party = d.supplier_name || '—'; o.invoice_no = d.invoice_no; if (cx.money) { o.amount = whole ? d.total : amt; o.received = d.received; } }
   return o;
 }

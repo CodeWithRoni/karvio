@@ -227,7 +227,7 @@ function SmsSettings() {
     <div className="split">
       <div className="card form">
         <label className="check wide"><input type="checkbox" checked={f.sms_enabled === 'true'} onChange={(e) => setF({ ...f, sms_enabled: String(e.target.checked) })} /> Send an SMS after every sale that has a named customer</label>
-        <p className="muted wide" style={{ margin: 0 }}>Walk-in sales never trigger an SMS. Gateway credentials stay in your shop backend and are hidden from users without Settings permission.</p>
+        <p className="muted wide" style={{ margin: 0 }}>Cash sales (no customer selected) never trigger an SMS. Gateway credentials stay in your shop backend and are hidden from users without Settings permission.</p>
         <Field label="1. Choose your gateway" wide>
           {/* The list shows only real providers. "Choose…" / "Custom" are status labels for the closed box,
               added (hidden) only while they are the current state, so they never appear as dead rows in the list. */}

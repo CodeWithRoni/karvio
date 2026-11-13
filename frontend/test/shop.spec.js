@@ -639,7 +639,7 @@ test('working hours: set in Users, refused at sign-in outside them, and signed o
 });
 
 test('customer invoice link: opens without signing in, downloads a PDF, bad links explain themselves', async ({ request, browser }) => {
-  const sale = (await call(request, 'sales.list', {})).find((s) => s.status === 'active');
+  const sale = (await call(request, 'sales.list', {})).find((s) => s.status === 'active' && s.customer_id); // cash sales have no customer link
   const l = await call(request, 'sale.link', { id: sale.id });
   expect(l.url).toMatch(/^https:\/\/codewithroni\.github\.io\/karvio\/#\/i\/[A-Za-z0-9]{22}$/);
   expect(l.days).toBe(15);
