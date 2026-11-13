@@ -130,7 +130,7 @@ export function printTable(title, columns, rows, totals, subtitle = '') {
 }
 
 /** Print arbitrary HTML via a hidden iframe (works in browsers, Electron and Tauri). */
-export async function printHtml(html) {
+export async function printHtml(html, prepare) {
   const f = document.createElement('iframe');
   Object.assign(f.style, { position: 'fixed', right: '0', bottom: '0', width: '0', height: '0', border: '0' });
   document.body.appendChild(f);
@@ -141,6 +141,7 @@ export async function printHtml(html) {
     await d.fonts.load("600 12px 'Hind Siliguri'", 'বাংলা');
     await d.fonts.ready;
     await new Promise((resolve) => f.contentWindow.requestAnimationFrame(() => f.contentWindow.requestAnimationFrame(resolve)));
+    if (prepare) { try { prepare(d); } catch { /* layout helper only: print anyway */ } }
     f.contentWindow.addEventListener('afterprint', () => f.remove(), { once: true });
     f.contentWindow.focus();
     f.contentWindow.print();

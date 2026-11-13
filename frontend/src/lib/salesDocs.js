@@ -33,7 +33,7 @@ const tplCss = `
 `;
 const pageCss = (paper) => paper === 'a5' ? '@page{size:A5;margin:8mm}.sdoc{font-size:10.5px}.sdoc h1{font-size:16px}.sdoc h2{font-size:16px}' : '@page{size:A4;margin:12mm}';
 const isBiz = (list = []) => list.length ? list.some(d => (d.shop || useStore.getState().settings).invoice_template === 'business') : useStore.getState().settings.invoice_template === 'business';
-const wrap = (blocks, paper = 'a4', biz = false) => `<style>${biz && paper !== 'a5' ? bizPageCss() : pageCss(paper) + (biz ? '.bdoc{--bdoc-h:193mm}' : '')}body{margin:0}${css}${tplCss}${biz ? bizCss : ''}.sdoc+.sdoc,.bdoc+.bdoc{page-break-before:always;break-before:page}</style>${blocks.join('')}`;
+const wrap = (blocks, paper = 'a4', biz = false) => `<style>${biz && paper !== 'a5' ? bizPageCss() : pageCss(paper) + (biz ? '.bdoc{--bdoc-h:194mm;--bdoc-w:132mm}' : '')}body{margin:0}${css}${tplCss}${biz ? bizCss : ''}.sdoc+.sdoc,.bdoc+.bdoc{page-break-before:always;break-before:page}</style>${blocks.join('')}`;
 const noteHtml = (settings = useStore.getState().settings) => { const n = String(settings.invoice_note || '').trim(); return n ? `<div class="note-line"><b>Note:</b> ${esc(n)}</div>` : ''; };
 
 /* ---------------- "Business" template: centred letterhead, grey bill bar, boxed info, page footer ---------------- */
@@ -69,13 +69,13 @@ const bizCss = `
   .bdoc .bitems th{background:#d6d6d6;font-weight:700;text-align:center}.bdoc .bitems td.r{text-align:right}.bdoc .bitems td.cn{text-align:center}
   .bdoc .bitems thead{display:table-header-group}.bdoc .bitems tr{break-inside:avoid;page-break-inside:avoid}
   .bdoc .sn{font-size:11px;margin-top:2px;word-break:break-all}
-  .bdoc .bsum{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;margin-top:8px;break-inside:avoid;page-break-inside:avoid}
+  .bdoc .btail{margin-top:8px;break-inside:avoid;page-break-inside:avoid}
+  .bdoc .bsum{display:flex;justify-content:space-between;align-items:flex-start;gap:24px}
   .bdoc .btot td{padding:2px 0 2px 12px;border:0}.bdoc .btot td.k{font-weight:700;padding-left:0}.bdoc .btot td.r{text-align:right;min-width:110px}
   .bdoc .bdue{border:1.5px solid #000;padding:8px 10px;margin-top:10px;width:300px}.bdoc .bdue td{padding:2px 0;border:0}.bdoc .bdue td.k{font-weight:700}.bdoc .bdue td.r{text-align:right}
-  .bdoc .bend{display:flex;justify-content:space-between;align-items:flex-end;gap:28px;margin-top:auto;padding-top:56px;break-inside:avoid;page-break-inside:avoid}
+  .bdoc .bend{display:flex;justify-content:space-between;align-items:flex-end;gap:28px;padding-top:56px}
   .bdoc .bend .note-line{flex:1;margin:0;text-align:left;white-space:pre-wrap;font-size:11.5px}
   .bdoc .bsign{flex:none;width:230px;margin-left:auto;border-top:1px solid #000;text-align:center;padding-top:5px}
-  @media print{.bdoc{display:flex;flex-direction:column;min-height:var(--bdoc-h,268mm)}}
   .bdoc .cx{margin:8px 0;padding:6px 10px;border:2px solid #c0392b;color:#c0392b;font-weight:800;text-align:center}
   .bdoc .bfoot{display:flex;justify-content:space-between;border-top:1px solid #777;margin-top:22px;padding-top:5px;font-size:11px}
   @media print{.bdoc .bfoot{display:none}}
@@ -92,7 +92,7 @@ const bizPageCss = () => {
     @bottom-left{content:${q(`Print Date: ${fdate(today())}\u00a0\u00a0\u00a0\u00a0Print Time: ${now.toLocaleTimeString('en-US')}`)};${box}}
     @bottom-center{content:${q(SOFTWARE_LINE)};${box}}
     @bottom-right{content:"Page " counter(page) " of " counter(pages);${box}}}
-    .bdoc{--bdoc-h:268mm}`;
+    .bdoc{--bdoc-h:269mm;--bdoc-w:186mm}`;
 };
 function businessInvoiceHtml(d) {
   const st = d.shop || useStore.getState().settings;
@@ -122,7 +122,7 @@ function businessInvoiceHtml(d) {
     </div>
     ${s.status === 'cancelled' ? `<div class="cx">CANCELLED — ${esc(s.cancel_reason || '')}</div>` : ''}
     <table class="bitems"><thead><tr><th style="width:38px">S/L</th><th>Item Descriptions</th><th style="width:72px">Warranty Days</th><th style="width:96px">Unit Price</th><th style="width:72px">Quantity</th><th style="width:100px">Total</th></tr></thead><tbody>${rows}</tbody></table>
-    <div class="bsum">
+    <div class="btail"><div class="bsum">
       <div><div><b>Amount In Words :</b> ${esc(amountInWords(total))}</div>
         <table class="bdue">
           <tr><td class="k">${s.live_invoice ? 'Previous balance at sale' : 'Previous Due'}</td><td>:</td><td class="r">${prev === null ? 'Not recorded' : esc(m2(prev, false))}</td></tr>
@@ -138,7 +138,8 @@ function businessInvoiceHtml(d) {
         <tr><td class="k">Grand TOTAL :</td><td class="r"><b>${esc(m2(total, false))}</b></td></tr>
       </table>
     </div>
-    <div class="bend">${noteHtml(st)}<div class="bsign">Authorised Signature And Company Stamp</div></div>
+    <div class="bspace"></div>
+    <div class="bend">${noteHtml(st)}<div class="bsign">Authorised Signature And Company Stamp</div></div></div>
     <div class="bfoot"><span>Print Date: ${esc(fdate(today()))}</span><span>Print Time: ${esc(now.toLocaleTimeString('en-US'))}</span><span>${SOFTWARE_LINE}</span><span>Page 1 of 1</span></div>
   </div>`;
 }
@@ -175,7 +176,35 @@ export function saleInvoiceHtml(d) {
     ${d.returns && d.returns.length ? `<p class="sm">Returns: ${esc(d.returns.map((r) => `${r.return_no} (${money(r.total, false)}, ${r.status})`).join(', '))}</p>` : ''}
     <div class="foot"><span>Printed ${esc(new Date().toLocaleString())}</span><span>Customer signature: ____________________</span></div>${noteHtml(st)}</div>`;
 }
-export const printSales = (list, paper) => printHtml(wrap(list.map(saleInvoiceHtml), paper, isBiz(list)));
+export const printSales = (list, paper) => printHtml(wrap(list.map(saleInvoiceHtml), paper, isBiz(list)), fitBizEnd);
+/**
+ * Business invoices: push the note + signature row down so it sits at the bottom of the LAST printed page,
+ * right above the print-date line. Works out where the browser will break the item table (rows never split,
+ * the header row repeats on each page) and sizes the empty space before the row to fill that page.
+ */
+export function fitBizEnd(doc) {
+  const MM = 96 / 25.4, SAFE = 10;
+  doc.querySelectorAll('.bdoc').forEach((el) => {
+    const cs = doc.defaultView.getComputedStyle(el);
+    const P = parseFloat(cs.getPropertyValue('--bdoc-h')) * MM, W = parseFloat(cs.getPropertyValue('--bdoc-w')) * MM;
+    const tbl = el.querySelector('.bitems'), tail = el.querySelector('.btail'), sp = el.querySelector('.bspace');
+    if (!P || !W || !tbl || !tail || !sp) return;
+    Object.assign(el.style, { width: W + 'px', boxSizing: 'border-box' }); sp.style.height = '0px';
+    const box = (n) => n.getBoundingClientRect(), top = box(el).top;
+    const th = tbl.tHead ? box(tbl.tHead).height : 0, rows = [...(tbl.tBodies[0]?.rows || [])];
+    let pos = box(tbl).top - top + th, onPage = 0, lastBottom = box(tbl).top + th;
+    for (const r of rows) {
+      const h = box(r).height;
+      if (pos + h > P && onPage) { pos = th; onPage = 0; }
+      pos += h; onPage++; lastBottom = box(r).bottom;
+    }
+    let start = pos + (box(tail).top - lastBottom);
+    const T = box(tail).height;
+    if (start + T > P) start = 0; // the whole totals + signature block moves to a new page
+    sp.style.height = Math.max(0, Math.floor(P - start - T - SAFE)) + 'px';
+    Object.assign(el.style, { width: '', boxSizing: '' });
+  });
+}
 /** One sale invoice as the full document printSales prints (A4 / A5, with the chosen template). */
 export const saleDocHtml = (d, paper = 'a4') => wrap([saleInvoiceHtml(d)], paper, isBiz([d]));
 export const pdfSales = (list, filename) => pdfPages(list.map(saleInvoiceHtml), css + tplCss + (isBiz(list) ? bizCss : ''), filename);
