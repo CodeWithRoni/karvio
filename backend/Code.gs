@@ -2503,7 +2503,7 @@ function purchasesList_(p) {
   var dueNow = purchaseOpenDues_();
   var clean = function (x) { var o = Object.assign({}, x); delete o._row; o.items_text = (items[x.id] || []).join(', '); o.due_now = dueNow[x.id] || 0; return o; };
   if (p.page) { // paged: newest first, `per` rows per page, with grand totals of everything that matches
-    var per = Math.min(Math.max(Math.round(num_(p.per)) || 20, 1), 1000), page = Math.max(Math.round(num_(p.page)), 1);
+    var per = Math.min(Math.max(Math.round(num_(p.per)) || 10, 1), 1000), page = Math.max(Math.round(num_(p.page)), 1);
     var active = rows.filter(function (x) { return x.status === 'active'; });
     return {
       rows: rows.slice((page - 1) * per, page * per).map(clean), total: rows.length, page: page, per: per,

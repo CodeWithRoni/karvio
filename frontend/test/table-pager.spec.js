@@ -4,20 +4,21 @@ async function call(request,action,payload={}){const r=await request.post(endpoi
 test.beforeAll(async({request})=>{token=(await call(request,'login',{username:'admin',password:'admin123'})).token;});
 test.beforeEach(async({page})=>{await page.addInitScript(({endpoint,token})=>{localStorage.setItem('erp_api_config',JSON.stringify({scriptUrl:endpoint}));localStorage.setItem('erp_token',token);},{endpoint,token});});
 
-test('tables show 20 rows per page with page numbers and a 20 / 50 / 100 / custom size choice',async({page})=>{
+test('tables show 10 rows per page with page numbers and a 10 / 20 / 50 / 100 / custom size choice',async({page})=>{
  const rows=Array.from({length:125},(_,i)=>({id:'PG-'+i,name:'Pager customer '+String(i).padStart(3,'0'),phones:'01700'+String(100000+i),addresses:'Area',opening_balance:0,balance:0,active:true}));
  await page.route(endpoint,async route=>{const req=route.request().postDataJSON();if(req.action==='customers.list')return route.fulfill({json:{ok:true,data:rows}});return route.continue();});
  await page.goto('/#/customers');
  const body=page.locator('table tbody tr'),pager=page.locator('.pager'),size=page.getByLabel(/per page/).first();
- await expect(body).toHaveCount(20);
- await expect(pager).toContainText('Showing 1–20 of 125');
- await expect(size).toHaveValue('20');
- await expect(size.locator('option')).toHaveText(['20 Reports','50 Reports','100 Reports','Custom Range']);
+ await expect(body).toHaveCount(10);
+ await expect(pager).toContainText('Showing 1–10 of 125');
+ await expect(size).toHaveValue('10');
+ await expect(size.locator('option')).toHaveText(['10 Reports','20 Reports','50 Reports','100 Reports','Custom Range']);
  await pager.getByRole('button',{name:'Next ›'}).click();
- await expect(pager).toContainText('Showing 21–40 of 125');await expect(body.first()).toContainText('Pager customer 020');
- await pager.getByRole('button',{name:'7',exact:true}).click();
+ await expect(pager).toContainText('Showing 11–20 of 125');await expect(body.first()).toContainText('Pager customer 010');
+ await pager.getByRole('button',{name:'13',exact:true}).click();
  await expect(pager).toContainText('Showing 121–125 of 125');await expect(body).toHaveCount(5);
  await expect(pager.getByRole('button',{name:'Next ›'})).toBeDisabled();
+ await size.selectOption('20');await expect(body).toHaveCount(20);await expect(pager).toContainText('Showing 1–20 of 125');
  await size.selectOption('50');
  await expect(body).toHaveCount(50);await expect(pager).toContainText('Showing 1–50 of 125');
  await size.selectOption('100');await expect(body).toHaveCount(100);
@@ -30,11 +31,11 @@ test('tables show 20 rows per page with page numbers and a 20 / 50 / 100 / custo
 test('purchases and the price manager use the same pager',async({page,request})=>{
  await page.goto('/#/purchases');
  const pager=page.locator('.pager');
- const total=(await call(request,'purchases.list',{page:1,per:20})).total;
- if(total){await expect(pager.getByLabel(/per page/)).toHaveValue('20');await expect(page.locator('table tbody tr')).toHaveCount(Math.min(total,20));}
+ const total=(await call(request,'purchases.list',{page:1,per:10})).total;
+ if(total){await expect(pager.getByLabel(/per page/)).toHaveValue('10');await expect(page.locator('table tbody tr')).toHaveCount(Math.min(total,10));}
  await page.goto('/#/prices');
  await expect(page.locator('.price-table tbody tr').first()).toBeVisible();
- await expect(page.locator('.pager').getByLabel(/per page/)).toHaveValue('20');
- const shown=await page.locator('.price-table tbody tr').count();expect(shown).toBeGreaterThan(0);expect(shown).toBeLessThanOrEqual(20);
+ await expect(page.locator('.pager').getByLabel(/per page/)).toHaveValue('10');
+ const shown=await page.locator('.price-table tbody tr').count();expect(shown).toBeGreaterThan(0);expect(shown).toBeLessThanOrEqual(10);
  await expect(page.getByRole('button',{name:new RegExp('^Apply to '+shown+' shown$')})).toBeVisible();
 });

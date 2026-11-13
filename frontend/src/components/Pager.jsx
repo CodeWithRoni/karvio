@@ -1,8 +1,8 @@
 import { useState } from 'react';
 
 /** Rows per page offered under every table. "Custom Range" lets the user type any number from 1 to 1000. */
-export const PAGE_SIZES = [20, 50, 100];
-export const DEFAULT_PAGE_SIZE = 20;
+export const PAGE_SIZES = [10, 20, 50, 100];
+export const DEFAULT_PAGE_SIZE = 10;
 const MAX_PAGE_SIZE = 1000;
 
 /** Page numbers to show: first, last and two either side of the current page (0-based). */
