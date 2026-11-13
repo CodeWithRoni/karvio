@@ -501,7 +501,8 @@ function setupDatabase() {
     sms_template: 'Dear {name}, thank you for shopping at {shop}. Items: {items}. Invoice {invoice}, Total {total}, Paid {paid}, Due {due}. View: {link}',
     sms_invoice_link: 'true', invoice_link_base: DEFAULT_LINK_BASE,
     sms_repair_template: 'Dear {name}, your {device} (Job {job}) is ready at {shop}. Charge {total}, Advance {advance}, Due {due}.',
-    sms_technician_template: '{technician}, new repair job {job} for you: {device} - {problem}. Customer {name} {phone}. {shop}'
+    sms_technician_template: '{technician}, new repair job {job} for you: {device} - {problem}. Customer {name} {phone}. {shop}',
+    sms_quote_template: DEFAULT_QUOTE_SMS
   };
   Object.keys(defaults).forEach(function (k) { if (getSetting_(k, null) === null) setSetting_(k, defaults[k]); });
   // getSetting_ returns '' for blanks; make sure all keys exist
@@ -1403,7 +1404,7 @@ function wipeAll_(ss) {
     var sh = sheet_(name), last = sh.getLastRow(), w = cols_(name).length;
     if (last > 1) sh.getRange(2, 1, last - 1, w).setValues(blankRows_(last - 1, w));
   });
-  [[JOURNAL_SHEET, 1], [RECEIPT_SHEET, 3]].forEach(function (x) {
+  [[JOURNAL_SHEET, 1], [RECEIPT_SHEET, 3], [QUOTE_SHEET, 3]].forEach(function (x) {
     if (_maintenance && x[0] === JOURNAL_SHEET) return;
     var sh = ss.getSheetByName(x[0]), last = sh ? sh.getLastRow() : 0;
     if (last) sh.getRange(1, 1, last, x[1]).setValues(blankRows_(last, x[1]));
@@ -1618,7 +1619,7 @@ function expenseCategoriesSave_(p, user) {
 }
 function settingsSave_(p, user) {
   var allowed = ['shop_name', 'shop_phone', 'shop_tel', 'shop_email', 'shop_web', 'shop_social', 'shop_address', 'shop_footer', 'currency', 'invoice_prefix', 'receipt_width', 'low_stock_default', 'expense_categories',
-    'sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_repair_template', 'sms_technician_template', 'sms_headers',
+    'sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_repair_template', 'sms_technician_template', 'sms_quote_template', 'sms_headers',
     'dashboard_hidden', 'invoice_template', 'invoice_paper', 'invoice_custom_width', 'invoice_custom_height', 'invoice_note',
     'sms_invoice_link', 'invoice_link_base', 'books_locked_until'];
   var vals = Object.assign({}, p.values || {});
@@ -1797,6 +1798,7 @@ function dailyLinkCleanup_() {
     var props = PropertiesService.getScriptProperties(), day = today_();
     if (props.getProperty('links_cleaned') === day) return;
     cleanupLinks_();
+    cleanupQuoteLinks_();
     props.setProperty('links_cleaned', day);
   } catch (e) {}
 }
@@ -1847,6 +1849,86 @@ function invoicePublic_(p) {
     shop: shop,
     expires_at: link.expires_at
   };
+}
+/* ============================================================================
+ *  10c. QUOTATION LINKS — a PC-builder quote sent to the customer by SMS.
+ *  The customer opens it without signing in for QUOTE_LINK_DAYS days; then it is deleted.
+ *  Quotes live in a private table (not a business table), and only a SHA-256 hash of the link key is kept.
+ *  Rows: [key hash, expiry (ms), quote JSON]. Expired rows are removed when a quote is sent or opened, and
+ *  once a day on any save.
+ * ========================================================================== */
+var QUOTE_LINK_DAYS = 3, QUOTE_SHEET = '__KarvioQuoteLinks', QUOTE_LINK_MAX = 300;
+var DEFAULT_QUOTE_SMS = 'Dear {name}, your quotation from {shop}: {title}, total {total}. View it here (valid {days} days): {link}';
+function quoteLinkHash_(token) { return hash_('karvio-quote-link', token); }
+function quoteLinkRows_() {
+  var sh = privateSheet_(QUOTE_SHEET), last = sh.getLastRow();
+  return { sh: sh, rows: last ? sh.getRange(1, 1, last, 3).getValues().filter(function (r) { return r[0]; }) : [] };
+}
+function cleanupQuoteLinks_() {
+  var q = quoteLinkRows_(), now = Date.now(), live = q.rows.filter(function (r) { return num_(r[1]) > now; });
+  if (live.length !== q.rows.length) {
+    q.sh.clearContents();
+    if (live.length) q.sh.getRange(1, 1, live.length, 3).setValues(live);
+    flush_();
+  }
+  return live;
+}
+function quoteText_(v, max) { return String(v === undefined || v === null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, max); }
+function quoteSend_(p, user) {
+  if (getSetting_('sms_enabled', 'false') !== 'true') fail_('SMS is turned off. Turn it on in Settings → SMS before sending a quotation');
+  var digits = String(p.phone || '').replace(/\D/g, '');
+  if (!/^(?:01\d{9}|8801\d{9})$/.test(digits)) fail_('Enter the customer\'s mobile number (01XXXXXXXXX) to send the quotation');
+  var lines = Array.isArray(p.lines) ? p.lines : [];
+  if (!lines.length || lines.length > 60) fail_('A quotation needs 1 to 60 parts');
+  var clean = lines.map(function (l) {
+    var name = quoteText_(l && l.name, 200), qty = Number(l && l.qty), price = Number(l && l.price);
+    if (!name) fail_('Every part on the quotation needs a name');
+    if (!isFinite(qty) || qty <= 0 || qty > 100000) fail_('Invalid quantity for ' + name);
+    if (!isFinite(price) || price < 0 || price > 1e9) fail_('Invalid price for ' + name);
+    return { group: quoteText_(l.group, 60), name: name, warranty: quoteText_(l.warranty, 40), qty: round_(qty, 4), price: round_(price), total: round_(qty * price) };
+  });
+  var subtotal = round_(sum_(clean, function (l) { return l.total; }));
+  var discount = round_(Math.max(num_(p.discount), 0));
+  if (discount > subtotal + 0.005) fail_('Discount cannot be more than the subtotal');
+  var validDays = Math.round(num_(p.valid_days)); if (validDays < 1 || validDays > 365) validDays = 7;
+  var live = cleanupQuoteLinks_();
+  if (live.length >= QUOTE_LINK_MAX) fail_('Too many quotation links are open right now. Try again after some expire');
+  var token = newLinkToken_(), created = Date.now(), expires = created + QUOTE_LINK_DAYS * 864e5;
+  var quote = {
+    no: 'Q-' + String(created).slice(-7), date: today_(), customer: quoteText_(p.customer, 100), phone: digits.length === 13 ? '0' + digits.slice(3) : digits,
+    title: quoteText_(p.title, 120) || 'Custom PC build', valid_days: validDays, lines: clean, subtotal: subtotal, discount: discount,
+    total: round_(subtotal - discount), note: String(p.note || '').trim().slice(0, 1000), sent_by: user.name,
+    expires_at: Utilities.formatDate(new Date(expires), TZ_(), "yyyy-MM-dd'T'HH:mm:ss")
+  };
+  var json = JSON.stringify(quote);
+  if (json.length > 40000) fail_('This quotation is too long to send by link');
+  var sh = privateSheet_(QUOTE_SHEET), row = sh.getLastRow() + 1;
+  ensureRows_(sh, row);
+  sh.getRange(row, 1, 1, 3).setValues([[quoteLinkHash_(token), expires, json]]);
+  flush_();
+  var url = linkBase_() + '#/q/' + token;
+  var tpl = getSetting_('sms_quote_template', DEFAULT_QUOTE_SMS);
+  var msg = fillTpl_(tpl, { name: quote.customer || 'customer', shop: getSetting_('shop_name'), title: quote.title, total: quote.total, days: QUOTE_LINK_DAYS, link: url }, 'raw');
+  if (String(tpl).indexOf('{link}') < 0) msg += ' View: ' + url;
+  var masked = msg.split(url).join(url.replace(/(#\/q\/[A-Za-z0-9]{4})[A-Za-z0-9]+/, '$1…'));
+  var sms = sendSms_(quote.phone, msg, masked);
+  if (sms && (sms.status === 'failed' || sms.status === 'skipped')) fail_('SMS could not be sent: ' + (sms.response || sms.status) + '. The quotation link was not kept');
+  audit_(user, 'quote_send', { no: quote.no, phone: quote.phone, total: quote.total, parts: clean.length });
+  // The working link goes only to the customer's phone; it is not returned, so request receipts never hold it.
+  return { no: quote.no, phone: quote.phone, expires_at: quote.expires_at, days: QUOTE_LINK_DAYS, sms: sms };
+}
+/** Public (no sign-in): the quotation behind a link, while it is valid. */
+function quotePublic_(p) {
+  var token = String(p.token || '');
+  var bad = 'This quotation link has expired or is not valid. Please contact the shop for a new quotation.';
+  if (!/^[A-Za-z0-9]{20,40}$/.test(token)) fail_(bad);
+  var h = quoteLinkHash_(token), row = cleanupQuoteLinks_().filter(function (r) { return r[0] === h; })[0];
+  // Answer (not throw) so the clean-up of expired quotes above is kept.
+  if (!row) return { expired: true, message: bad };
+  var quote; try { quote = JSON.parse(row[2]); } catch (e) { return { expired: true, message: bad }; }
+  var st = settingsMap_(), shop = {};
+  ['shop_name', 'shop_address', 'shop_phone', 'shop_tel', 'shop_email', 'shop_web', 'shop_social', 'shop_footer', 'currency'].forEach(function (k) { shop[k] = st[k] || ''; });
+  return { quote: quote, shop: shop, expires_at: quote.expires_at };
 }
 function smsTest_(p, user) {
   var r = sendSms_(p.phone, 'Test SMS from ' + getSetting_('shop_name') + ' - Karvio');
@@ -4230,6 +4312,8 @@ var ROUTES = {
   ping:               { public: true, noLock: true, fn: function () { return { app: 'Karvio', version: APP_VERSION, time: now_(), apiCapabilities: API_CAPABILITIES }; } },
   // Expiry cleanup is idempotent housekeeping; a rejected public link must still stay deleted.
   'invoice.public':   { public: true, fn: invoicePublic_, write: false },
+  'quote.public':     { public: true, fn: quotePublic_, write: false },
+  'quote.send':       r_('pos', quoteSend_, true),
   login:              { public: true, lockIfDirty: true, fn: login_, write: false },
   logout:             r_(null, logout_),
   'password.change':  r_(null, changePassword_, true),

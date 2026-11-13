@@ -6,7 +6,8 @@ import { useStore } from '../lib/store';
 import { money, qty as fqty, today } from '../lib/format';
 import { printQuotation } from '../lib/receipt';
 import { textOf, cpuInfo, boardInfo, ramInfo, boardFitsCpu, ramFits } from '../lib/compat';
-import { PageHead, Btn, Field, noWheel, useConfirm } from '../components/ui';
+import { PageHead, Btn, Field, noWheel, useConfirm, useAction } from '../components/ui';
+import { api } from '../lib/api';
 import { loadPosDraft, savePosDraft } from '../lib/posDraft';
 
 // Suggest parts using their product group, category or product name.
@@ -24,7 +25,8 @@ export default function PCBuilder() {
   return <Builder key={userId + ':' + savedKey()} />;
 }
 function Builder() {
-  const { products, categories, brands, warrantyPeriods } = useStore();
+  const { products, categories, brands, warrantyPeriods, settings } = useStore();
+  const [sending, runSend] = useAction();
   const nav = useNavigate();
   const [confirmDialog, ask] = useConfirm();
   const [lines, setLines] = useState(newLines);
@@ -80,6 +82,23 @@ function Builder() {
     try { if (!savedKey()) throw new Error(); localStorage.setItem(savedKey(), JSON.stringify(next)); } catch { setSaved(saved); return useStore.getState().toast('Could not save the quote on this device', 'err'); }
     useStore.getState().toast('Quote saved for this user and shop');
   };
+  // Send the quotation to the customer's mobile: an SMS with a private link that works for 3 days.
+  const phoneDigits = String(meta.phone || '').replace(/\D/g, '');
+  const phoneOk = /^(?:01\d{9}|8801\d{9})$/.test(phoneDigits);
+  const smsOn = settings.sms_enabled === 'true';
+  const sendTitle = !smsOn ? 'Turn on SMS in Settings to send quotations' : !phoneOk ? 'Enter the customer\'s mobile number (01XXXXXXXXX)' : 'Send this quotation to the customer by SMS (link valid 3 days)';
+  const toCustomer = async () => {
+    if (!pricing.valid) return useStore.getState().toast(pricing.error, 'err');
+    if (!phoneOk) return useStore.getState().toast('Enter the customer\'s mobile number (01XXXXXXXXX)', 'err');
+    if (!await ask({ title: 'Send quotation by SMS?', message: <>Send <b>{meta.title || 'this quotation'}</b> ({money(total)}) to <b>{meta.phone}</b>? The customer gets a link that works for <b>3 days</b>; then it is deleted.</>, confirmLabel: 'Send SMS' })) return;
+    try {
+      const r = await runSend(() => api('quote.send', {
+        customer: meta.customer, phone: meta.phone, title: meta.title, valid_days: Number(meta.validDays) || 7, discount: Number(meta.discount) || 0, note: meta.note,
+        lines: filled.map((l) => ({ group: l.group, name: l.name, warranty: l.warranty || '', qty: Number(l.qty), price: Number(l.price) || 0 }))
+      }));
+      useStore.getState().toast(`Quotation ${r.no} ${r.sms?.status === 'sent' ? 'sent' : 'queued for SMS'} to ${r.phone} — link valid 3 days`, 'ok');
+    } catch { /* toast shown */ }
+  };
   const toPos = async () => {
     if (!pricing.valid) return useStore.getState().toast(pricing.error, 'err');
     const inStock = filled.filter((l) => l.product_id);
@@ -98,6 +117,7 @@ function Builder() {
       <PageHead title="PC builder & quotations" sub="Build a setup part by part, print a quote for the customer, or send it straight to the POS.">
         <Btn onClick={() => setLines(newLines())}>Start over</Btn>
         <Btn onClick={save} disabled={!filled.length || !pricing.valid}>Save quote</Btn>
+        <Btn onClick={toCustomer} busy={sending} disabled={!filled.length || !pricing.valid || !phoneOk || !smsOn} title={sendTitle}>Send to customer</Btn>
         <Btn onClick={toPos} disabled={!filled.some((l) => l.product_id) || !pricing.valid}>Send to POS</Btn>
         <Btn kind="primary" onClick={quote} disabled={!filled.length || !pricing.valid}>Print / PDF quote</Btn>
       </PageHead>

@@ -97,9 +97,9 @@ export function receiptHtml(detail, widthOverride, height = 0) {
 function safeJson(s, d) { try { return JSON.parse(s); } catch { return d; } }
 
 /** A4 quotation for the PC builder. lines = [{name, qty, price, warranty}] */
-export function printQuotation({ title, customer, phone, lines, discount = 0, note = '', validDays = 7 }) {
+export function printQuotation({ title, customer, phone, lines, discount = 0, note = '', validDays = 7, no: quoteNo, date: quoteDate }) {
   const s = useStore.getState().settings;
-  const no = 'Q-' + Date.now().toString().slice(-7);
+  const no = quoteNo || 'Q-' + Date.now().toString().slice(-7);
   const pricing = quotationTotals(lines, discount), sub = pricing.subtotal;
   if (!pricing.valid) throw new Error(pricing.error);
   const rows = lines.map((l, i) => `<tr><td>${i + 1}</td><td><b>${esc(l.group || '')}</b>${l.group ? '<br>' : ''}${esc(l.name)}</td><td class="r">${esc(l.warranty || '—')}</td><td class="r">${esc(l.qty)}</td><td class="r">${esc(money(l.price, false))}</td><td class="r">${esc(money(l.qty * l.price, false))}</td></tr>`).join('');
@@ -113,7 +113,7 @@ export function printQuotation({ title, customer, phone, lines, discount = 0, no
     .meta{display:grid;grid-template-columns:1fr 1fr;gap:4px 24px}.note{margin-top:18px;color:#444}
   </style>
   <div class="top"><div><h1>${esc(s.shop_name || 'Karvio')}</h1><div>${esc(s.shop_address || '')}</div><div>${shopContacts(s)}</div></div>
-  <div class="r"><h2>QUOTATION</h2><div>${esc(no)}</div><div>${esc(fdate(today()))}</div></div></div>
+  <div class="r"><h2>QUOTATION</h2><div>${esc(no)}</div><div>${esc(fdate(quoteDate || today()))}</div></div></div>
   <div class="meta"><div><b>Prepared for:</b> ${esc(customer || '—')}</div><div><b>Phone:</b> ${esc(phone || '—')}</div>
   <div><b>Subject:</b> ${esc(title || 'Custom PC build')}</div><div><b>Valid for:</b> ${esc(validDays)} days</div></div>
   <table><thead><tr><th>#</th><th>Item</th><th class="r">Warranty</th><th class="r">Qty</th><th class="r">Unit price</th><th class="r">Amount</th></tr></thead>

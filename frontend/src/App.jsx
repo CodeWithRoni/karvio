@@ -29,9 +29,12 @@ const Reports = lazy(() => import('./pages/Reports'));
 const Users = lazy(() => import('./pages/Users'));
 const Settings = lazy(() => import('./pages/Settings'));
 const PublicInvoice = lazy(() => import('./pages/PublicInvoice'));
+const PublicQuote = lazy(() => import('./pages/PublicQuote'));
 
 /** #/i/<key>: a customer's invoice link (from the sale SMS) — shown without signing in. */
 const linkToken = () => (/^#\/i\/([A-Za-z0-9]{1,64})\/?$/.exec(window.location.hash) || [])[1] || '';
+/** #/q/<key>: a quotation link (from the PC builder SMS) — shown without signing in, valid 3 days. */
+const quoteToken = () => (/^#\/q\/([A-Za-z0-9]{1,64})\/?$/.exec(window.location.hash) || [])[1] || '';
 
 function Guard({ perm, children }) {
   const can = useStore((s) => s.can);
@@ -48,6 +51,7 @@ export default function App() {
     return () => { window.removeEventListener('online', update); window.removeEventListener('offline', update); };
   }, []);
   const [pub, setPub] = useState(linkToken);
+  const [pubQuote, setPubQuote] = useState(quoteToken);
   useEffect(() => {
     // Capture also covers lazy pages, portal dialogs and future native inputs.
     // Blur before the browser's wheel step; keep the wheel passive so the page scrolls.
@@ -60,13 +64,14 @@ export default function App() {
     document.addEventListener('wheel', guard, {capture:true, passive:true});
     return () => document.removeEventListener('wheel', guard, true);
   }, []);
-  useEffect(() => { const h = () => setPub(linkToken()); window.addEventListener('hashchange', h); return () => window.removeEventListener('hashchange', h); }, []);
+  useEffect(() => { const h = () => { setPub(linkToken()); setPubQuote(quoteToken()); }; window.addEventListener('hashchange', h); return () => window.removeEventListener('hashchange', h); }, []);
 
   useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
-  useEffect(() => { if (!pub && token && !user && endpoint()) boot().catch(() => {}); }, [pub, token, user, boot]);
+  useEffect(() => { if (!pub && !pubQuote && token && !user && endpoint()) boot().catch(() => {}); }, [pub, pubQuote, token, user, boot]);
 
   let body;
-  if (pub) body = <Suspense fallback={<Loading />}><PublicInvoice token={pub} /></Suspense>;
+  if (pubQuote) body = <Suspense fallback={<Loading />}><PublicQuote token={pubQuote} /></Suspense>;
+  else if (pub) body = <Suspense fallback={<Loading />}><PublicInvoice token={pub} /></Suspense>;
   else if (!token || !endpoint()) body = <Login />;
   else if (!user) {
     body = (

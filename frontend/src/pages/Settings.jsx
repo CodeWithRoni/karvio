@@ -203,8 +203,9 @@ export function smsParts(text) {
   return { unicode, count: n <= one ? 1 : Math.ceil(n / multi) };
 }
 
+const DEFAULT_QUOTE_SMS = 'Dear {name}, your quotation from {shop}: {title}, total {total}. View it here (valid {days} days): {link}';
 function SmsSettings() {
-  const { f, setF, bind, save, busy } = useSettingsForm(['sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_repair_template', 'sms_technician_template', 'sms_headers', 'sms_invoice_link', 'invoice_link_base']);
+  const { f, setF, bind, save, busy } = useSettingsForm(['sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_repair_template', 'sms_technician_template', 'sms_quote_template', 'sms_headers', 'sms_invoice_link', 'invoice_link_base']);
   const [builderVersion, setBuilderVersion] = useState(0);
   const [showKey, setShowKey] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -219,9 +220,10 @@ function SmsSettings() {
   const [tbusy, run] = useAction();
   const log = useApi('sms.log', {}, [], {refreshMs:5000});
   const sampleLink = `${linkBaseOf(f.invoice_link_base)}#/i/Ab12Cd34Ef56Gh78Ij90Kl`;
-  let sample = (f[preview] || '').replace(/\{(\w+)\}/g, (m, k) => ({ name: 'Rahim', shop: useStore.getState().settings.shop_name, items: 'Kingston 512GB SSD x1, Cat6 Cable x15', invoice: 'INV-000123', total: '5,250', paid: '5,000', due: '250', device:'Laptop', job:'REP-000123', advance:'500', technician:'Karim', problem:'No display', phone:'01700000000', date: new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Dhaka'}).format(new Date()), link: linkOn ? sampleLink : '' }[k] ?? m));
+  const quotePreview = preview === 'sms_quote_template';
+  let sample = (f[preview] || (quotePreview ? DEFAULT_QUOTE_SMS : '')).replace(/\{(\w+)\}/g, (m, k) => (quotePreview && k === 'link' ? `${linkBaseOf(f.invoice_link_base)}#/q/Ab12Cd34Ef56Gh78Ij90Kl` : quotePreview && k === 'title' ? 'Gaming PC — Ryzen 5' : quotePreview && k === 'days' ? '3' : m)).replace(/\{(\w+)\}/g, (m, k) => ({ name: 'Rahim', shop: useStore.getState().settings.shop_name, items: 'Kingston 512GB SSD x1, Cat6 Cable x15', invoice: 'INV-000123', total: '5,250', paid: '5,000', due: '250', device:'Laptop', job:'REP-000123', advance:'500', technician:'Karim', problem:'No display', phone:'01700000000', date: new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Dhaka'}).format(new Date()), link: linkOn ? sampleLink : '' }[k] ?? m));
   if (preview==='sms_template' && linkOn && !/\{link\}/.test(f.sms_template || '')) sample += ` Invoice: ${sampleLink}`;
-  if (!linkOn) sample = sample.replace(/\s*(View|Invoice|Link):?\s*$/i, '');
+  if (!linkOn && !quotePreview) sample = sample.replace(/\s*(View|Invoice|Link):?\s*$/i, '');
   const parts = smsParts(sample);
   return (
     <div className="split">
@@ -259,6 +261,7 @@ function SmsSettings() {
         <Field label="3. Sale message template" wide hint="Placeholders: {name} {shop} {items} {invoice} {total} {paid} {due} {date} {link}"><textarea {...bind('sms_template')} /></Field>
         <Field label="Repair completed message" wide hint="Sent to the customer when a repair job is marked Completed. Placeholders: {name} {device} {job} {shop} {total} {advance} {due}"><textarea {...bind('sms_repair_template')} /></Field>
         <Field label="Technician job message" wide hint="Sent to the technician when a repair job is given to them. Placeholders: {technician} {job} {device} {problem} {name} {phone} {shop}"><textarea {...bind('sms_technician_template')} /></Field>
+        <Field label="Quotation message" wide hint="Sent from PC builder → Send to customer. The link works for 3 days. Placeholders: {name} {shop} {title} {total} {days} {link}"><textarea {...bind('sms_quote_template')} placeholder={DEFAULT_QUOTE_SMS} /></Field>
         <div className="wide sms-link">
           <label className="check"><input type="checkbox" checked={linkOn} onChange={(e) => setF({ ...f, sms_invoice_link: String(e.target.checked) })} /> <b>Add a link to the invoice</b></label>
           <p className="muted" style={{ margin: '4px 0 0', fontSize: 12.5 }}>The customer taps it to see (and download) only their own invoice. Each link works for <b>15 days</b>, then it expires. Put <code>{'{link}'}</code> in the template to choose where it goes — otherwise it is added at the end.</p>
@@ -270,7 +273,7 @@ function SmsSettings() {
             </details>
           )}
         </div>
-        <Field label="Preview message" wide><select aria-label="Preview message" value={preview} onChange={e=>setPreview(e.target.value)}><option value="sms_template">Sale invoice</option><option value="sms_repair_template">Repair completed</option><option value="sms_technician_template">Technician assignment</option></select></Field>
+        <Field label="Preview message" wide><select aria-label="Preview message" value={preview} onChange={e=>setPreview(e.target.value)}><option value="sms_template">Sale invoice</option><option value="sms_repair_template">Repair completed</option><option value="sms_technician_template">Technician assignment</option><option value="sms_quote_template">Quotation (PC builder)</option></select></Field>
         <div className="wide note sms-preview">Preview ({[...sample].length} characters · estimated {parts.count} SMS{parts.unicode ? ' · Bangla / Unicode' : ''}): {sample}</div>
         <div className="wide row end"><span className="muted">{dirty?'Unsaved changes':'Settings saved'}</span><Btn kind="primary" disabled={!!configError || !dirty} busy={busy} onClick={()=>save().catch(()=>{})}>Save SMS settings</Btn></div>
       </div>
