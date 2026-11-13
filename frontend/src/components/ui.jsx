@@ -156,14 +156,18 @@ export function Tabs({ tabs, value, onChange }) {
 
 export function Modal({ open, title, onClose, children, footer, size = 'md' }) {
   const ref = useRef();
+  // Pages that refresh in the background pass a new onClose on every render; keep the latest in a ref so
+  // a refresh never re-runs the "focus the first field" step and pulls the cursor out of what is being typed.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
     if (!open) return;
-    const h = (e) => e.key === 'Escape' && onClose?.();
+    const h = (e) => e.key === 'Escape' && closeRef.current?.();
     window.addEventListener('keydown', h);
-    const first = ref.current?.querySelector('input,select,textarea,button:not(.x)');
-    first?.focus();
+    // Only when the dialog opens, and never if the user has already moved into it.
+    if (!ref.current?.contains(document.activeElement)) ref.current?.querySelector('input,select,textarea,button:not(.x)')?.focus();
     return () => window.removeEventListener('keydown', h);
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
   return (
     <div className="modal-bg" onMouseDown={(e) => e.target === e.currentTarget && onClose?.()}>
