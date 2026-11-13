@@ -15,7 +15,7 @@ export function isDecimalUnit(code) {
 }
 export function qty(n, unit) {
   const v = Number(n) || 0;
-  const s = v.toLocaleString('en-IN', { maximumFractionDigits: 3 });
+  const s = v.toLocaleString('en-IN', { maximumFractionDigits: 4 });
   return unit && unit !== 'pcs' ? `${s} ${SHORT[unit] || unit}` : s;
 }
 export function fdate(d) {

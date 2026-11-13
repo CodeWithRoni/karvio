@@ -3,6 +3,7 @@ import { useStore } from '../lib/store';
 import { api } from '../lib/api';
 import { money, qty as fqty, round2 } from '../lib/format';
 import { Modal, Btn, Field, useAction } from './ui';
+import CameraScanButton from './CameraScanButton';
 
 
 /** Suggestion lists show 10 rows; the rest scroll. Keeps the highlighted row in view while using the arrow keys. */
@@ -28,7 +29,7 @@ function useTenRows(ref, list, hi) {
  * Product search box with barcode support.
  * Typing a barcode / SKU and pressing Enter adds it straight away.
  * ---------------------------------------------------------------- */
-export function ProductSearch({ onPick, onCode, inStockOnly = false, noServices = false, autoFocus, placeholder = 'Search product by name, model or brand (F2)', inputRef }) {
+export function ProductSearch({ onPick, onCode, camera = false, inStockOnly = false, noServices = false, autoFocus, placeholder = 'Search product by name, model or brand (F2)', inputRef }) {
   const products = useStore((s) => s.products);
   const brands = useStore((s) => s.brands);
   const brandMap = useMemo(() => Object.fromEntries((brands || []).map((b) => [b.id, b.name])), [brands]);
@@ -48,7 +49,14 @@ export function ProductSearch({ onPick, onCode, inStockOnly = false, noServices 
 
   const listRef = useRef();
   useTenRows(listRef, list, hi);
-  const pick = (p) => { onPick(p); setQ(''); setHi(0); ref.current?.focus(); };
+  const pick = (p, focus = true) => { onPick(p); setQ(''); setHi(0); if (focus) ref.current?.focus(); };
+  const scanCamera = async (raw) => {
+    const code = raw.trim().toLowerCase();
+    const exact = products.find(p => p.active && (!noServices || !p.service) && ((p.barcode && p.barcode.toLowerCase() === code) || (p.sku && p.sku.toLowerCase() === code)));
+    if (exact) return pick(exact, false);
+    try { if (onCode && await onCode(raw)) { setQ(''); setHi(0); return; } } catch { useStore.getState().toast('Could not check this code. Try again or type it.', 'err'); return; }
+    setQ(raw); setHi(0); useStore.getState().toast('No exact product found for this code. Check the code or choose the product manually.', 'err');
+  };
   const onKey = (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); setHi((h) => Math.min(h + 1, list.length - 1)); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setHi((h) => Math.max(h - 1, 0)); }
@@ -66,9 +74,10 @@ export function ProductSearch({ onPick, onCode, inStockOnly = false, noServices 
   };
 
   return (
-    <div className="psearch">
+    <div className={`psearch ${camera ? 'camera-field' : ''}`}>
       <input ref={ref} value={q} autoFocus={autoFocus} onChange={(e) => { setQ(e.target.value); setHi(0); }} onKeyDown={onKey}
         placeholder={placeholder} aria-label="Search product" role="combobox" aria-expanded={list.length > 0} />
+      {camera && <CameraScanButton onScan={scanCamera} label="Scan product barcode or serial with camera" title="Scan product or serial"/>}
       {list.length > 0 && (
         <ul ref={listRef} className="psearch-list" role="listbox">
           {list.map((p, i) => (

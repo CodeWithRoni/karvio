@@ -1025,3 +1025,46 @@ body::before { content: ''; position: fixed; top: 0; left: 0; right: 0; height: 
 .select-pop li.hi { background: color-mix(in srgb, var(--aqua) 18%, transparent); color: var(--text); }
 .select-pop li.off { opacity: .45; cursor: default; }
 .select-pop li.grp { cursor: default; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+/* Camera entry stays in the input gutter on phones/tablets, without shifting desktop inputs. */
+.camera-trigger { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 42px; width: 42px; height: 40px; border: 1px solid var(--line); border-radius: 8px; color: var(--aqua); background: var(--panel-2); cursor: pointer; touch-action: manipulation; }
+.camera-trigger:hover { border-color: var(--aqua); background: color-mix(in srgb, var(--aqua) 12%, var(--panel-2)); }
+.camera-trigger:focus-visible { outline: 2px solid var(--aqua); outline-offset: 2px; }
+.camera-trigger:disabled { opacity: .5; cursor: default; }
+.camera-field:has(> .camera-trigger) > input { padding-right: 52px; }
+.camera-field > .camera-trigger { position: absolute; right: 3px; top: 3px; height: 36px; width: 38px; border-color: transparent; }
+.camera-overlay .modal-bg { z-index: 120; }
+.camera-overlay .modal { width: min(100%, 520px); }
+.camera-intro { color: var(--muted); margin: 0 0 12px; }
+.camera-view { position: relative; aspect-ratio: 4 / 3; border-radius: 12px; overflow: hidden; background: #07111d; border: 1px solid var(--line); }
+.camera-view video { display: block; width: 100%; height: 100%; object-fit: cover; }
+.camera-guide { position: absolute; inset: 24% 8%; border: 2px solid var(--aqua); border-radius: 10px; box-shadow: 0 0 0 120px #030a1455; pointer-events: none; }
+.camera-guide span { position: absolute; left: 8%; right: 8%; top: 50%; height: 1px; background: var(--aqua); opacity: .7; }
+.camera-live { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); padding: 5px 12px; border-radius: 20px; background: #07111ddd; color: #fff; font-size: 12px; white-space: nowrap; }
+.camera-help { margin-top: 12px; font-size: 13px; }
+.camera-private { color: var(--muted); font-size: 12px; margin-top: 8px; }
+.camera-error { color: var(--bad); margin-top: 12px; }
+@media(max-width:640px) { .camera-overlay .modal-bg { padding: calc(18px + var(--sat)) 12px calc(18px + var(--sab)); } }
+.sn-scan-row { display: contents; }
+.sn-scan-row:has(.camera-trigger) { display: flex; gap: 8px; align-items: center; width: 100%; max-width: min(520px, calc(100vw - 100px)); margin-top: 8px; }
+.sn-scan-row:has(.camera-trigger) .sn-input { flex: 1; min-width: 0; width: 0; }
+/* Purchase entries use the full card width for names on phones and tablets. */
+@media (max-width: 1024px) {
+  .pur-table { display: block; width: 100%; min-width: 0; }
+  .pur-table > thead { display: none; }
+  .pur-table tbody.pur-line { display: block; width: 100%; border-bottom: 1px solid var(--line); }
+  .pur-table tbody.pur-line:last-child { border-bottom: 0; }
+  .pur-table tbody.pur-line > tr:first-child { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 10px; padding: 14px; }
+  .pur-table tbody.pur-line > tr:first-child > td { display: block; min-width: 0; border: 0; padding: 0; text-align: left; }
+  .pur-table tbody.pur-line > tr:first-child > td.pur-product { grid-column: 1 / -1; padding-right: 28px; }
+  .pur-product-name { display: block; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+  .pur-table .last-buy { margin-top: 6px; line-height: 1.5; }
+  .pur-table .last-buy small { display: block; white-space: normal; overflow-wrap: anywhere; }
+  .pur-table td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 5px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .035em; text-transform: uppercase; }
+  .pur-table td input { width: 100%; min-width: 0; min-height: 40px; }
+  .pur-table tbody.pur-line > tr:first-child > td.pur-remove { position: absolute; top: 12px; right: 10px; }
+  .pur-table .sn-row, .pur-table .sn-row > td { display: block; width: 100%; min-width: 0; }
+  .pur-table .sn-row > td { padding: 0 14px 14px; border: 0; }
+  .pur-table .sn-head { flex-wrap: wrap; }
+  .pur-table .sn-head .muted { flex-basis: 100%; min-width: 0; white-space: normal; }
+  .pur-table .sn-scan-row:has(.camera-trigger) { max-width: 100%; }
+}

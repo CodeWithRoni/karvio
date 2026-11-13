@@ -1,3 +1,37 @@
+## Owner authorized publication — 13 November 2026
+
+Publishing all pending five audit fixes, four mobile/tablet camera entry points and responsive Purchase product cards. Supabase version37 deployed first. main baseline5913d44df606269c68da55deddd3544197c1a0b9 unchanged by others at preflight. Frontend publication/CI verification follows; no migration/reset/business-data edit, and no native release requested. Earlier LOCAL ONLY / do-not-push notes below are historical and superseded by this authorization.
+
+## Purchase product name layout — LOCAL ONLY
+
+On viewports up to 1024px, new-purchase lines now use a responsive card: full-width product name/history/stock first, labeled quantity and price inputs below, then full-width serial entry. Long names wrap naturally instead of being squeezed into a narrow product column. Desktop table structure remains. Camera controls and purchase calculations are retained.
+
+Validation: five viewport cases (320, 390, 768, 1024, 1440) and all eight camera tests passed together (13 passed); serial camera remains visible without horizontal scrolling; production build/assets passed. Updated local screenshot: verification/camera-purchase-mobile.png (also the combined camera-mobile-preview.png). No push, deployment, API, database or saved business-data change. Prior five audit fixes and camera feature remain pending the owner's push instruction.
+
+## Mobile/tablet camera scanning — LOCAL ONLY
+
+Four requested entry points now have icon-only camera controls on phone/tablet devices: POS product/serial search, purchase product barcode search, purchase serial input, and Advance Search. Desktop/narrow desktop/touch Windows devices keep their keyboard-only interface; iPad desktop-style user agents are recognized with multitouch. Device detection remains a browser heuristic, not an identity/security boundary.
+
+The scanner lazily loads pinned @zxing/browser 0.2.1 and reads camera frames locally. Back camera is preferred; audio is disabled. A single successful scan closes and releases the camera. Closing, Escape, hiding the page, going offline, unmounting, and a late permission result release tracks. Permission errors preserve manual entry and offer retry. Unknown product codes never auto-select a partial match. Existing stock/serial and duplicate validations are reused; scans only change drafts/search, not completed financial records.
+
+Future Capacitor Android/iOS builds get camera permission / usage description through native-icons.mjs plus native-camera.mjs. Existing native binaries are not rebuilt in this task. Desktop camera access stays unavailable. No database or API changes for the camera feature.
+
+Validation: all 116 Edge browser tests passed, including eight new camera tests with actual Code128 barcode frames delivered through a synthetic MediaStream; regular suite/device/native-permission fixture checks passed; production build/assets passed. Real physical phone/tablet camera and rebuilt native installers have not been tested. Local screenshots: verification/camera-mobile-preview.png and individual camera-*-mobile.png. Earlier five audit fixes remain included locally (below).
+
+Do not push/deploy until the owner explicitly asks. Nothing was uploaded, released or deployed. Publish the pending five-fix backend before the frontend when authorized. Latest synchronized GitHub baseline remains 5913d44df606269c68da55deddd3544197c1a0b9; recheck main before publication to preserve other edits.
+
+## Five audit fixes — 13 November 2026 — LOCAL ONLY
+
+Based on current GitHub main 5913d44df606269c68da55deddd3544197c1a0b9. The workspace was synchronized from that reviewed revision before applying these fixes, preserving the other AI's Exchange, quotation, pagination, dropdown, expense and CI work. No push or deployment authorized/performed in this step. No schema migration or production data rewrite is needed.
+
+- Sales return create/detail/batched detail and Exchange responses redact cost recursively for staff without Cost permission. Authorized cost viewers retain those fields; stored accounting values are unchanged.
+- Repair form, job summary and delivery use the same individually rounded line extensions as sales invoices. Delivery with/without an advance no longer creates a rounding-only due.
+- Exchange payment uses available customer credit after old debt is cleared; unpaid, partly paid, equal-price and lower-price exchanges show the actual payment and remaining-due input. A stale expected-credit check rolls back the entire exchange and asks the user to review. Cash exchange and customer surplus refund behavior remain covered.
+- Returnable quantities preserve four decimal places; decimal inputs accept the supported precision and quantities display up to four decimals.
+- Expenses/Purchase/Supplier/Customer payment permissions receive active payment-account IDs/names/types without balances; full account ledger access still requires Accounts permission.
+
+Validation: regular suite and hosted/Supabase suite passed; focused browser checks 10 passed; production build/assets passed. Final complete Microsoft Edge browser run: all 108 tests passed (verification/nov13-browser-final.log). New regressions: backend/test/nov13-fixes.mjs and frontend/test/nov13-fixes.spec.js. Backend generated engine rebuilt; existing migrations unchanged. Older status notes below are historical.
+
 Owner authorized publication of the five post-release audit fixes. Supabase API version21 is ACTIVE; all deployed source files match the tested local build and public read-only ping passed. Frontend publication follows. No schema migration, production reset or business-data edit. Earlier local-only notes are historical.
 
 ## Five post-release audit fixes — LOCAL ONLY

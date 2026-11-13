@@ -183,13 +183,16 @@ function ReturnForm({ detail, onClose, onDone }) {
   const [nextPay, setNextPay] = useState('');
   const replTotal = round2(repl.reduce((a, l) => a + round2((Number(l.qty) || 0) * (Number(l.price) || 0)), 0));
   const diff = round2(replTotal - value);
-  const paidNow = diff > 0 ? round2(cleanPays(pays).reduce((a, p) => a + p.amount, 0)) : 0;
-  const unpaid = diff > 0 ? round2(diff - paidNow) : 0;
-  // What the customer will hold as credit after the exchange (their old dues are cleared first).
+  // A return clears existing debt before it becomes spendable credit, matching saleExchange_.
   const custBal = Number(detail.customer?.balance) || 0;
+  const creditUsed = walkIn ? Math.min(value, replTotal) : round2(Math.min(value, replTotal, Math.max(value - custBal, 0)));
+  const paymentNeeded = round2(Math.max(replTotal - creditUsed, 0));
+  const paidNow = paymentNeeded > 0 ? round2(cleanPays(pays).reduce((a, p) => a + p.amount, 0)) : 0;
+  const unpaid = round2(Math.max(paymentNeeded - paidNow, 0));
+  // Only the surplus left after other customer debt can be refunded.
   const holding = round2(Math.max(-(custBal - value + replTotal), 0));
   const refundMax = diff < 0 ? round2(Math.min(-diff, holding)) : 0;
-  useEffect(() => { if (!payTouched) setPays(defaultPay(diff > 0 ? diff : '')); }, [diff, payTouched]);
+  useEffect(() => { if (!payTouched) setPays(defaultPay(paymentNeeded > 0 ? paymentNeeded : '')); }, [paymentNeeded, payTouched]);
   useEffect(() => { setRefundAmt(refundMax > 0 ? refundMax : ''); }, [refundMax]);
 
   const addRepl = (p) => {
@@ -208,8 +211,8 @@ function ReturnForm({ detail, onClose, onDone }) {
       if (!(Number(l.qty) > 0)) problems.push(l.serial ? `Pick the serial number(s) for ${l.name}` : `Enter a quantity for ${l.name}`);
       if (!(Number(l.price) >= 0) || l.price === '') problems.push(`Enter a price for ${l.name}`);
     });
-    if (diff > 0 && paidNow > diff + 0.004) problems.push(`Payment is more than the difference (${money(diff)})`);
-    if (diff > 0 && walkIn && Math.abs(unpaid) > 0.004) problems.push(`A cash sale must pay the full difference of ${money(diff)}`);
+    if (paidNow > paymentNeeded + 0.004) problems.push(`Payment is more than the amount payable (${money(paymentNeeded)})`);
+    if (paymentNeeded > 0 && walkIn && Math.abs(unpaid) > 0.004) problems.push(`A cash sale must pay the full difference of ${money(paymentNeeded)}`);
     if (diff < 0 && !walkIn && surplusMode === 'refund' && (Number(refundAmt) > refundMax + 0.004 || !(Number(refundAmt) > 0))) problems.push(`Refund must be between 0 and ${money(refundMax)}`);
   }
 
@@ -222,14 +225,14 @@ function ReturnForm({ detail, onClose, onDone }) {
           sale_id: sale.id, note, expected_return_value: value, expected_total: replTotal,
           items: lines.map((l) => ({ sale_item_id: l.id, qty: Number(l.qty) || 0, serials: l.serials })).filter((l) => l.qty > 0),
           replacement: repl.map((l) => ({ product_id: l.product_id, qty: Number(l.qty), price: Number(l.price), serials: l.serials })),
-          payments: diff > 0 ? cleanPays(pays) : [],
-          ...(walkIn ? { account_id: settleAcc } : {}),
+          payments: paymentNeeded > 0 ? cleanPays(pays) : [],
+          ...(walkIn ? { account_id: settleAcc } : { expected_credit: creditUsed }),
           ...(!walkIn && diff < 0 && surplusMode === 'refund' ? { refund: { account_id: refundAcc, amount: round2(Number(refundAmt)) } } : {}),
           next_payment_date: unpaid > 0.004 ? nextPay : ''
         }));
       } catch { return; }
       const d = res.summary;
-      toast(`Exchanged: ${res.return.return_no} → ${res.sale.sale.invoice_no}` + (d.difference > 0 ? ` · received ${money(d.paid_now)}${d.due > 0 ? `, ${money(d.due)} due` : ''}` : d.difference < 0 ? (d.refund > 0 || walkIn ? ` · gave back ${money(walkIn ? -d.difference : d.refund)}` : ` · ${money(-d.difference)} kept as customer credit`) : ''), 'ok');
+      toast(`Exchanged: ${res.return.return_no} → ${res.sale.sale.invoice_no}` + (d.paid_now > 0 ? ` · received ${money(d.paid_now)}` : '') + (d.due > 0 ? ` · ${money(d.due)} due` : '') + (d.refund > 0 || (walkIn && d.difference < 0) ? ` · gave back ${money(walkIn ? -d.difference : d.refund)}` : ''), 'ok');
       if (print) printInvoice(res.sale);
       refresh('products', 'customers');
       return onDone();
@@ -256,12 +259,12 @@ function ReturnForm({ detail, onClose, onDone }) {
       <div className="dt"><div className="dt-scroll"><table>
         <thead><tr><th>Item</th><th className="r">Sold</th><th className="r">Returnable</th><th style={{ width: 110 }} className="r">Return qty</th><th>Serials returned</th></tr></thead>
         <tbody>{items.map((it, i) => {
-          const left = round2(it.qty - (it.returned_qty || 0));
+          const left = Math.max(0, Math.round((it.qty - (it.returned_qty || 0)) * 10000) / 10000);
           const sers = splitList(it.serials);
           return (
             <tr key={it.id}>
               <td>{it.name}</td><td className="r num">{fqty(it.qty, it.unit)}</td><td className="r num">{fqty(left, it.unit)}</td>
-              <td><input type="number" min="0" max={left} step={isDecimalUnit(it.unit) ? 0.5 : 1} value={lines[i].qty} disabled={left <= 0}
+              <td><input type="number" min="0" max={left} step={isDecimalUnit(it.unit) ? 'any' : 1} value={lines[i].qty} disabled={left <= 0}
                 onChange={(e) => set(i, { qty: e.target.value, serials: lines[i].serials.slice(0, Number(e.target.value) || 0) })} onWheel={noWheel} aria-label={`Return quantity for ${it.name}`} /></td>
               <td>{sers.length > 0 && <div className="serial-grid">{sers.map((sn) => (
                 <button type="button" key={sn} className={lines[i].serials.includes(sn) ? 'on' : ''}
@@ -295,12 +298,13 @@ function ReturnForm({ detail, onClose, onDone }) {
         <div className="xch-sum">
           <div><span>Returned value</span><b>{money(value)}</b></div>
           <div><span>Replacement total</span><b>{money(replTotal)}</b></div>
-          <div className={diff > 0 ? 'due' : diff < 0 ? 'back' : ''}><span>{diff > 0 ? 'Customer pays' : diff < 0 ? 'Shop gives back' : 'Difference'}</span><b>{money(Math.abs(diff))}</b></div>
+          <div className={paymentNeeded > 0 ? 'due' : refundMax > 0 || (walkIn && diff < 0) ? 'back' : ''}><span>{paymentNeeded > 0 ? 'Customer pays' : walkIn && diff < 0 ? 'Shop gives back' : refundMax > 0 ? 'Available surplus' : 'Amount payable'}</span><b>{money(paymentNeeded > 0 ? paymentNeeded : walkIn && diff < 0 ? -diff : refundMax)}</b></div>
         </div>
+        {!walkIn && <p className="muted" style={{ marginTop: 8 }}>Credit applied to replacement: {money(creditUsed)}. Returned value clears existing customer dues first.</p>}
         <div className="form" style={{ marginTop: 12 }}>
           {walkIn && <Field label="Counter account" hint="The returned value and the replacement pass through this account, so only the difference actually changes hands."><Select value={settleAcc} onChange={setSettleAcc} options={accounts} allowEmpty={false} /></Field>}
-          {diff > 0 && <div className="wide"><PaymentSplit value={pays} onChange={(v) => { setPayTouched(true); setPays(v); }} total={diff} label="Customer pays the difference" /></div>}
-          {diff > 0 && !walkIn && unpaid > 0.004 && <Field label="Next payment date" hint={`${money(unpaid)} stays due on the new invoice.`}><input type="date" min={today()} value={nextPay} onChange={(e) => setNextPay(e.target.value)} /></Field>}
+          {paymentNeeded > 0 && <div className="wide"><PaymentSplit value={pays} onChange={(v) => { setPayTouched(true); setPays(v); }} total={paymentNeeded} label="Customer payment for replacement" /></div>}
+          {paymentNeeded > 0 && !walkIn && unpaid > 0.004 && <Field label="Next payment date" hint={`${money(unpaid)} stays due on the new invoice.`}><input type="date" min={today()} value={nextPay} onChange={(e) => setNextPay(e.target.value)} /></Field>}
           {diff < 0 && walkIn && <p className="wide muted">Give {money(-diff)} back to the customer from the counter account.</p>}
           {diff < 0 && !walkIn && <>
             <Field label="The extra value">

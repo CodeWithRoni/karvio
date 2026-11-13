@@ -198,7 +198,7 @@ export default function POS() {
     <div className="pos">
       <div className="pos-left">
         <div className="row">
-          <div style={{ flex: 1 }}><ProductSearch onPick={(p) => add(p)} onCode={addBySerial} placeholder="Search Product With Serial / Name / Model / Brand (F2)" inputRef={searchRef} autoFocus /></div>
+          <div style={{ flex: 1 }}><ProductSearch camera onPick={(p) => add(p)} onCode={addBySerial} placeholder="Search Product With Serial / Name / Model / Brand (F2)" inputRef={searchRef} autoFocus /></div>
           <Tabs tabs={[['retail', 'Retail'], ['wholesale', 'Wholesale']]} value={tier} onChange={setTier} />
         </div>
         <div className="cart">

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import CameraScanButton from '../components/CameraScanButton';
 import { api } from '../lib/api';
 import { useStore } from '../lib/store';
 import { money, fdate, fdatetime, qty as fqty } from '../lib/format';
@@ -55,7 +56,7 @@ export default function History() {
     <>
       <PageHead title="Advance Search" sub="Search a serial number, product (name, model or barcode), invoice or purchase number to see its complete life cycle." />
       <form className="row" onSubmit={go} style={{ marginBottom: 16 }}>
-        <div className="psearch" style={{ flex: 1 }}><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Serial / IMEI, product name, model, barcode, INV-000123, PUR-000045 or supplier invoice" aria-label="Search" autoFocus /></div>
+        <div className="psearch camera-field" style={{ flex: 1 }}><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Serial / IMEI, product name, model, barcode, INV-000123, PUR-000045 or supplier invoice" aria-label="Search" autoFocus /><CameraScanButton label="Scan barcode or serial to search" title="Scan to search history" onScan={code=>go(null,code)} disabled={loading}/></div>
         <Btn kind="primary" size="lg" busy={loading} type="submit">Search</Btn>
       </form>
       <ErrorBox error={err} />

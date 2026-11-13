@@ -1965,7 +1965,7 @@ function repairOut_(r, sales) {
   var o = Object.assign({}, r); delete o._row;
   o.status = repairStatusOf_(r);
   o.parts = repairParts_(r); o.log = repairLog_(r).map(function (l) { return l.status === 'Ready' ? Object.assign({}, l, { status: 'Completed' }) : l; });
-  o.parts_total = round_(sum_(o.parts, function (x) { return num_(x.qty) * num_(x.price); }));
+  o.parts_total = round_(sum_(o.parts, function (x) { return round_(num_(x.qty) * num_(x.price)); }));
   o.total = round_(o.parts_total + num_(r.charge));
   var balances = _txn ? customerBalances_() : (_mem.__repairCreditBalances || (_mem.__repairCreditBalances = customerBalances_()));
   o.available_advance = round_(Math.min(num_(r.advance), Math.max(-(balances[r.customer_id] || 0), 0)));
@@ -2181,7 +2181,7 @@ function repairDeliver_(p, user) {
   if (num_(r.charge) > 0) items.push({ product_id: repairServiceProduct_().id, qty: 1, price: num_(r.charge) });
   var sale = null, log = repairLog_(r);
   if (items.length) {
-    var total = round_(sum_(items, function (x) { return num_(x.qty) * num_(x.price); }));
+    var total = round_(sum_(items, function (x) { return round_(num_(x.qty) * num_(x.price)); }));
     var discount = Math.min(Math.max(round_(p.discount), 0), total);
     var avail = Math.max(-(customerBalances_()[cust.id] || 0), 0);
     var credit = round_(Math.min(num_(r.advance), avail, total - discount));
@@ -2229,7 +2229,7 @@ function repairCancel_(p, user) {
  * ========================================================================== */
 function bootstrap_(p, user) {
   var settings = settingsGet_({}, user);
-  var accounts = (can_(user, 'accounts') || can_(user, 'pos')) ? accountsList_().filter(function (a) { return a.active; }) : [];
+  var accounts = ['accounts', 'pos', 'expenses', 'purchase', 'suppliers', 'customers'].some(function (perm) { return can_(user, perm); }) ? accountsList_().filter(function (a) { return a.active; }) : [];
   if (!can_(user, 'accounts')) accounts = accounts.map(function (a) { return { id: a.id, name: a.name, type: a.type, active: a.active }; });
   var cats = all_('Categories').map(function (c) { return { id: c.id, name: c.name, parent_id: c.parent_id }; });
   return {
@@ -2641,7 +2641,7 @@ function saleDetail_(p, user) {
   s = Object.assign({}, s, { due_now: saleOpenDues_()[s.id] || 0 }); // copy: rows come from the shared per-request cache
   var out = { sale: s, items: itemsOut, customer: customer, returns: returns };
   if (customer) { out.customer = Object.assign({}, customer); out.customer.balance = customerBalances_()[customer.id] || 0; }
-  if (!user || !can_(user, 'cost')) { out.sale = stripCost_(s, user || { role: 'sales' }); out.items = stripCost_(itemsOut, user || { role: 'sales' }); }
+  if (!user || !can_(user, 'cost')) out = stripCost_(out, user || { role: 'sales' });
   return out;
 }
 
@@ -2814,6 +2814,8 @@ function saleExchange_(p, user) {
     if (p.expected_return_value !== undefined && Math.abs(num_(p.expected_return_value) - returnTotal) > 0.005) fail_('The return value changed. Reopen the exchange and check it again');
     var avail = Math.max(-(customerBalances_()[sale.customer_id] || 0), 0);
     creditUsed = round_(Math.min(returnTotal, replTotal, avail));
+    if (p.expected_credit !== undefined && (!isFinite(Number(p.expected_credit)) || Math.abs(Number(p.expected_credit) - creditUsed) > 0.005))
+      fail_('Customer balance changed. Reopen the exchange and check the available credit and payment');
     detail = saleCreate_({ customer_id: sale.customer_id, items: repl, payments: diffPays, credit_used: creditUsed, next_payment_date: p.next_payment_date,
       note: 'Exchange ' + ret.return_no + ' for ' + sale.invoice_no + (p.note ? ' · ' + p.note : ''), send_sms: false }, user);
     if (refundWanted > 0) {
@@ -4371,8 +4373,8 @@ var ROUTES = {
   'sale.detail':      r_('pos', saleDetail_),
   'sales.details':    r_('pos', function (p, u) { var ids = Array.isArray(p.ids) ? p.ids : []; if (ids.length > 200) fail_('Export at most 200 invoices per request; use batched export'); if (!ids.length) fail_('Select at least one invoice'); return ids.map(function (id) { return saleDetail_({ id: id }, u); }); }),
   'sales.list':       r_('pos', salesList_),
-  'sreturn.create':   r_('sales.return', sreturnCreate_, true),
-  'sale.exchange':    r_('sales.return', saleExchange_, true),
+  'sreturn.create':   r_('sales.return', function (p, u) { return stripCost_(sreturnCreate_(p, u), u); }, true),
+  'sale.exchange':    r_('sales.return', function (p, u) { return stripCost_(saleExchange_(p, u), u); }, true),
   'sreturns.list':    r_('sales.return', function (p, u) { return stripCost_(sreturnsList_(p, u), u); }),
 
   'expense.create':   r_('expenses', expenseCreate_, true),

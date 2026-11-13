@@ -177,20 +177,27 @@ function iconChecks() {
   try {
     fs.mkdirSync(path.join(project, 'scripts'), { recursive: true });
     fs.copyFileSync(path.join(root, 'scripts/native-icons.mjs'), path.join(project, 'scripts/native-icons.mjs'));
+    fs.copyFileSync(path.join(root, 'scripts/native-camera.mjs'), path.join(project, 'scripts/native-camera.mjs'));
     const values = path.join(project, 'android/app/src/main/res/values');
     fs.mkdirSync(values, { recursive: true });
+    const manifest = path.join(project, 'android/app/src/main/AndroidManifest.xml');
+    fs.writeFileSync(manifest, '<manifest xmlns:android="http://schemas.android.com/apk/res/android"><application /></manifest>');
     fs.writeFileSync(path.join(values, 'strings.xml'), '<resources><string name="app_name">Old</string><string name="title_activity_main">Old</string></resources>');
     fs.mkdirSync(path.join(project, 'branding/android/res/mipmap-mdpi'), { recursive: true });
     fs.writeFileSync(path.join(project, 'branding/android/res/mipmap-mdpi/ic_launcher.png'), 'test-icon');
     execFileSync(process.execPath, [path.join(project, 'scripts/native-icons.mjs'), 'android'], { stdio: 'pipe' });
     eq(fs.readFileSync(path.join(project, 'android/app/src/main/res/mipmap-mdpi/ic_launcher.png'), 'utf8'), 'test-icon');
+    assert.match(fs.readFileSync(manifest, 'utf8'), /android.permission.CAMERA/); checks++;
     assert.match(fs.readFileSync(path.join(values, 'strings.xml'), 'utf8'), /<string name="app_name">Karvio<\/string>/); checks++;
     const set = path.join(project, 'ios/App/App/Assets.xcassets/AppIcon.appiconset');
     fs.mkdirSync(set, { recursive: true }); fs.writeFileSync(path.join(set, 'old.png'), 'old');
+    const plist = path.join(project, 'ios/App/App/Info.plist');
+    fs.writeFileSync(plist, '<plist><dict></dict></plist>');
     fs.mkdirSync(path.join(project, 'branding/ios/AppIcon.appiconset'), { recursive: true });
     fs.writeFileSync(path.join(project, 'branding/ios/AppIcon.appiconset/Contents.json'), '{"images":[]}');
     execFileSync(process.execPath, [path.join(project, 'scripts/native-icons.mjs'), 'ios'], { stdio: 'pipe' });
     eq(fs.existsSync(path.join(set, 'old.png')), false);
+    assert.match(fs.readFileSync(plist, 'utf8'), /NSCameraUsageDescription/); checks++;
     eq(fs.readFileSync(path.join(set, 'Contents.json'), 'utf8'), '{"images":[]}');
   } finally {
     const resolved = path.resolve(temp);

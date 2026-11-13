@@ -21,7 +21,7 @@ const smsNote = (r, who) => {
   if (r.ok) toast(`SMS sent to ${who}`); else if (r.status !== 'queued') toast(`SMS to ${who}: ${r.status}${r.response ? ` — ${r.response}` : ''}`, 'err');
 };
 const isSerial = (p) => !!p && !p.service && p.has_warranty && p.warranty_type === 'serial';
-const partsTotal = (parts) => round2(parts.reduce((a, x) => a + (Number(x.qty) || 0) * (Number(x.price) || 0), 0));
+const partsTotal = (parts) => round2(parts.reduce((a, x) => a + round2((Number(x.qty) || 0) * (Number(x.price) || 0)), 0));
 
 export default function Repairs() {
   const [tab, setTab] = useState('open');

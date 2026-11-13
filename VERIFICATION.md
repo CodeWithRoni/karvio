@@ -1,3 +1,23 @@
+# 13 November 2026 — audit fixes, mobile camera and Purchase layout
+
+Verified against main 5913d44df606269c68da55deddd3544197c1a0b9. Isolated local data only. Existing SQL migrations unchanged. Supabase API version 37 deployed before frontend; no reset or business-data edit. GitHub/Pages validation follows publication.
+
+```json
+{
+  "regularRegression": "passed",
+  "hostedRegression": "passed",
+  "fullEdgeBrowserTests": 116,
+  "cameraAndPurchaseViewportTests": 13,
+  "productionBuild": "passed",
+  "physicalCameraTested": false,
+  "nativeInstallersRebuilt": false,
+  "schemaMigration": false,
+  "productionReset": false
+}
+```
+
+Older verification entries below are historical.
+
 Owner authorized publication of the five post-release audit fixes. Supabase API version21 is ACTIVE; all deployed source files match the tested local build and public read-only ping passed. Frontend publication follows. No schema migration, production reset or business-data edit. Earlier local-only notes are historical.
 
 ## Five post-release audit fixes — LOCAL ONLY

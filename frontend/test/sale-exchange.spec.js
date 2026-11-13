@@ -40,7 +40,7 @@ test('customer exchange to a cheaper product refunds the difference',async({page
  await dialog.getByLabel('Return quantity for XCH2 Mouse 620D').fill('1');
  await dialog.getByPlaceholder('Search the replacement product (name, model, brand, barcode)').fill('XCH2 Mouse 100');
  await dialog.getByText('XCH2 Mouse 100',{exact:false}).last().click();
- await expect(dialog.locator('.xch-sum')).toContainText('Shop gives back');
+ await expect(dialog.locator('.xch-sum')).toContainText('Available surplus');
  await dialog.getByLabel('What to do with the extra value').selectOption('refund');
  await dialog.getByRole('button',{name:'Record exchange',exact:true}).click();
  await expect(page.getByText(/Exchanged: SR-\d+ → .*gave back/)).toBeVisible();

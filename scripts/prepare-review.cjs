@@ -37,16 +37,15 @@ if (process.argv.includes('--check')) {
   if (!verification) throw new Error('Record the current checks in VERIFICATION.md before preparing the package.');
   const manifest = {
     product: 'Karvio', version: JSON.parse(fs.readFileSync(path.join(root, 'frontend/package.json'))).version,
-    preparedDate: '2026-11-12', state: 'owner-authorized-post-release-fixes-publication',
-    baseCommit: '771bad49cbb2c39b501bed14f9edc7a092fd8408',
+    preparedDate: '2026-11-13', state: 'owner-authorized-audit-camera-purchase-layout-publication',
+    baseCommit: '5913d44df606269c68da55deddd3544197c1a0b9',
     validation: JSON.parse(verification[1]),
     excluded: ['backend/parts (legacy duplicate backend)', 'node_modules', 'verification artifacts', 'test results', 'release installers', 'user databases/backups', 'credentials'],
     fileCount: files.length, files,
     checksumPolicy: 'SHA256SUMS.txt covers every listed file except itself, including this manifest.',
-    uploadOrder: ['Owner authorized publication of the five audit fixes', 'Deploy tested updated API before frontend; no schema migration required', 'Publish main, verify CI/Pages and live build; native release only when requested'],
-    onlineUploadPerformed: true,
-    appsScriptVersion: 42,
-    supabase: { project: 'svqhlotlzgmwjneuphpe', edgeFunction: 'karvio-api', deployedVersion: 21, businessTables: 29, ownerSetup: 'created by owner', liveFrontendCutover: true }
+    uploadOrder: ['Owner authorized publication of five audit fixes, mobile camera scanning and purchase layout', 'Deploy tested updated API before frontend; no schema migration required', 'Publish main, verify CI/Pages and live build; native release only when requested'],
+    frontendPublication: 'Publish through main and verify GitHub Actions / Pages',
+    supabase: { project: 'svqhlotlzgmwjneuphpe', edgeFunction: 'karvio-api', deployedVersion: 37, businessTables: 29, ownerSetup: 'created by owner', liveFrontendCutover: true }
   };
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
   fs.writeFileSync(sumsPath, files.filter(name => name !== 'SHA256SUMS.txt').map(name => digest(name) + '  ' + name).join('\n') + '\n');

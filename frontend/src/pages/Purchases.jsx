@@ -1,3 +1,4 @@
+import CameraScanButton from '../components/CameraScanButton';
 import { purchaseDetails } from '../lib/purchaseDetails';
 import { Pager, DEFAULT_PAGE_SIZE } from '../components/Pager';
 import { returnValue } from '../lib/returnValue';
@@ -256,9 +257,10 @@ function NewPurchase({ onDone }) {
     <div className="split">
       <div className="grid">
         {supplier
-          ? <ProductSearch onPick={add} noServices placeholder="Scan or search the product you received" />
-          : <div className="psearch">
+          ? <ProductSearch camera onPick={add} noServices placeholder="Scan or search the product you received" />
+          : <div className="psearch camera-field">
               <input readOnly value="" placeholder="Select a supplier first, then search products" onFocus={blockSearch} onMouseDown={blockSearch} aria-label="Search product (select a supplier first)" className={needSupplier ? 'invalid' : ''} />
+              <CameraScanButton disabled onScan={()=>{}} label="Select a supplier before scanning a product"/>
               {needSupplier && <div className="pur-warn" role="alert">Please select the supplier on the right before adding products.</div>}
             </div>}
         <div className="dt"><div className="dt-scroll"><table className="pur-table" ref={tableRef}>
@@ -268,7 +270,7 @@ function NewPurchase({ onDone }) {
             return (
               <tbody key={l.product_id} data-line={l.product_id} className={`pur-line ${open ? 'open' : ''}`}>
                 <tr onClick={() => serial && setOpenId(l.product_id)} className={serial ? 'clickable' : ''}>
-                  <td><b>{p?.name}</b>
+                  <td className="pur-product"><b className="pur-product-name">{p?.name}</b>
                     {(() => {
                       const lp = lastBuy[l.product_id];
                       if (lp === undefined) return <div className="last-buy muted">Last purchase: …</div>;
@@ -284,9 +286,9 @@ function NewPurchase({ onDone }) {
                       {serial && !open && <> · <span className={l.serials.length ? 'sn-count' : 'sn-count bad'}>{l.serials.length ? `${l.serials.length} serial${l.serials.length === 1 ? '' : 's'} — click to edit` : 'serials missing'}</span></>}
                     </div>
                   </td>
-                  <td><input type="number" min="0" step={isDecimalUnit(p?.unit) ? 'any' : 1} value={l.qty} readOnly={serial} title={serial ? 'Counted from the serial numbers' : undefined}
+                  <td data-label="Qty"><input type="number" min="0" step={isDecimalUnit(p?.unit) ? 'any' : 1} value={l.qty} readOnly={serial} title={serial ? 'Counted from the serial numbers' : undefined}
                     className={`${serial ? 'readonly-qty' : ''} ${tried && b.qty ? 'invalid' : ''}`} onChange={(e) => upd(l.product_id, { qty: e.target.value })} onWheel={noWheel} aria-label={`Quantity of ${p?.name}`} /></td>
-                  <td><input type="number" min="0" step="any" value={l.cost} onChange={(e) => upd(l.product_id, { cost: e.target.value, costTyped: true })} aria-label={`Unit cost for ${p?.name}`} className={tried && b.cost ? 'invalid' : ''} />
+                  <td data-label="Unit cost"><input type="number" min="0" step="any" value={l.cost} onChange={(e) => upd(l.product_id, { cost: e.target.value, costTyped: true })} aria-label={`Unit cost for ${p?.name}`} className={tried && b.cost ? 'invalid' : ''} />
                     {(() => {
                       // The product cost after this purchase: weighted average of the stock on hand and this purchase.
                       const st = Number(p?.stock) || 0, avg = Number(p?.cost_price) || 0, q = Number(l.qty) || 0, c = Number(l.cost) || 0;
@@ -295,11 +297,11 @@ function NewPurchase({ onDone }) {
                       return <small className="avg-next" title={`Average cost after this purchase: (${fqty(st)} × ${money(avg, false)} + ${fqty(q)} × ${money(c, false)}) ÷ ${fqty(st + q)}`}>New avg <b>{money(Math.round(next * 100) / 100, false)}</b><span className="muted">now {money(avg, false)}</span></small>;
                     })()}
                   </td>
-                  <td><input type="number" min="0" step="any" value={l.sale} onChange={(e) => upd(l.product_id, { sale: e.target.value })} aria-label={`Retail price for ${p?.name}`} className={tried && b.sale ? 'invalid' : ''} placeholder="Retail" />
+                  <td data-label="Retail price"><input type="number" min="0" step="any" value={l.sale} onChange={(e) => upd(l.product_id, { sale: e.target.value })} aria-label={`Retail price for ${p?.name}`} className={tried && b.sale ? 'invalid' : ''} placeholder="Retail" />
                     {Number(l.cost) > 0 && Number(l.sale) > 0 && <small className={Number(l.sale) < Number(l.cost) ? 'margin bad' : 'margin'}>{Math.round(((l.sale - l.cost) / l.cost) * 100)}% margin</small>}</td>
-                  <td><input type="number" min="0" step="any" value={l.whole} onChange={(e) => upd(l.product_id, { whole: e.target.value })} aria-label={`Wholesale price for ${p?.name}`} placeholder="—" /></td>
-                  <td className="r num">{money((Number(l.qty) || 0) * (Number(l.cost) || 0), false)}</td>
-                  <td><button className="x" onClick={(e) => { e.stopPropagation(); remove(l.product_id); }} aria-label={`Remove ${p?.name}`}>×</button></td>
+                  <td data-label="Wholesale"><input type="number" min="0" step="any" value={l.whole} onChange={(e) => upd(l.product_id, { whole: e.target.value })} aria-label={`Wholesale price for ${p?.name}`} placeholder="—" /></td>
+                  <td className="r num" data-label="Amount">{money((Number(l.qty) || 0) * (Number(l.cost) || 0), false)}</td>
+                  <td className="pur-remove"><button type="button" className="x" onClick={(e) => { e.stopPropagation(); remove(l.product_id); }} aria-label={`Remove ${p?.name}`}>×</button></td>
                 </tr>
                 {open && (
                   <tr className="sn-row"><td colSpan={7}>
@@ -309,6 +311,9 @@ function NewPurchase({ onDone }) {
                         {l.serials.map((sn) => (
                           <span className="sn-chip" key={sn}>{sn}<button type="button" onClick={() => dropSerial(l.product_id, sn)} aria-label={`Remove serial ${sn}`}>×</button></span>
                         ))}
+                      </div>
+                      <div className="sn-scan-row">
+                        <CameraScanButton label={`Scan serial for ${p?.name} with camera`} title="Scan purchase serial" onScan={code=>addSerials(l.product_id, code)}/>
                         <input className="sn-input" autoFocus placeholder={l.serials.length ? 'Next serial…' : 'Scan or type serial, then Enter'} aria-label={`Add serial for ${p?.name}`}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' || e.key === 'Tab') {
