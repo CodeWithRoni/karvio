@@ -1,3 +1,52 @@
+Supabase API version 42 is ACTIVE; all six deployed files match the tested local source byte-for-byte. No schema/data change. Frontend publication and CI verification follow.
+
+Owner authorized publication of all pending fixes and stock reports on 13 November 2026. Local validation below passed; live verification follows deployment. No schema migration or production reset.
+
+# Product Summary and Stock summary report — LOCAL ONLY, 13 November 2026
+
+All prior seven audit fixes remain included locally. No push/deployment, schema change, production reset or live-data edit. Supplier warranty means current stock supplier expiry within today through the next 30 days, as clarified by the owner.
+
+```json
+{
+  "baseCommit": "da428a13a362c3d11645d6914fc00f4ca35568cf",
+  "regularRegression": "passed",
+  "hostedRegression": "passed",
+  "stockSummaryBackendRegression": "passed",
+  "fullEdgeBrowserTests": 132,
+  "stockSummaryWorkflowAndViewportTests": 4,
+  "productionBuild": "passed",
+  "schemaMigration": false,
+  "productionReset": false,
+  "published": false,
+  "nativeInstallersRebuilt": false
+}
+```
+
+Evidence: verification/stock-summary/{browser-final.log,hosted.log,regular.log,build.log,screenshots.log}. Screenshots use isolated sample data and were visually inspected. Backend tests cover FIFO receipts/remaining quantity, exact serial purchase linkage, supplier returns, calendar boundaries, 30-day warranty limits, explicit expiry edits without monetary/quantity changes, invalid dates, mixed units, inactive products, cancelled purchases, permissions and 3/6-month best sellers net of returns/cancellation. Full browser suite includes all earlier seven fixes.
+
+No old supplier expiry is fabricated. PurchaseItems.valuation JSON stores the optional expiry; SQL schema/migrations are unchanged. Serial-lot provenance is exact; nonserial remaining stock/warranty allocation is a disclosed FIFO estimate and untracked stock stays unknown. Dashboard quantities keep units separate. Age thresholds are cumulative/overlapping, not mutually exclusive. Reports use current inventory, not a historical as-of snapshot. New API must be deployed before frontend when publication is authorized.
+
+# Seven deep-audit fixes — LOCAL ONLY, 13 November 2026
+
+Baseline: published v1.2.3 / da428a13a362c3d11645d6914fc00f4ca35568cf. All tests use isolated local data. No GitHub push, API deployment, schema migration, production reset or live business-data modification. Historical notes below are superseded only for the current unpublished patch.
+
+```json
+{
+  "baseCommit": "da428a13a362c3d11645d6914fc00f4ca35568cf",
+  "regularRegression": "passed",
+  "hostedRegression": "passed",
+  "deepFinancialBackendRegression": "passed",
+  "fullEdgeBrowserTests": 128,
+  "productionBuild": "passed",
+  "schemaMigration": false,
+  "productionReset": false,
+  "published": false,
+  "nativeInstallersRebuilt": false
+}
+```
+
+Tests added for fractional POS re-addition, zero-total sale/purchase stock returns, advance payout validation and atomic rejection, ledger receipt dates, old/new quotation print consistency, current serial status, cost/profit reconciliation, partial-return cancellation/retry, and four-decimal cost boundaries. Raw stock valuation costs are preserved. Source and generated hosted engine are synchronized. See verification/audit-v1.2.3/FIXES.md for details.
+
 # v1.2.3 packaging preparation — 13 November 2026
 
 Version-only packaging update from published main48171560b9e27255cc2cdcf2be9480a5977fce4b. Production build/assets passed. Application code and dependencies unchanged; the source commit passed 121 browser tests in GitHub Actions run43408930567 plus regular/hosted suites. Native builds are required before publication.

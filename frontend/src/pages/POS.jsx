@@ -71,7 +71,7 @@ export default function POS() {
         setCart(cart.map((x, j) => (j === i ? { ...x, serials, qty: serials.length } : x)));
         return;
       }
-      setCart(cart.map((x, j) => (j === i ? { ...x, qty: round2(Number(x.qty) + 1) } : x)));
+      setCart(cart.map((x, j) => (j === i ? { ...x, qty: Math.round((Number(x.qty) + 1) * 10000) / 10000 } : x)));
       return;
     }
     const serials = serial ? [serial] : [];

@@ -1068,3 +1068,15 @@ body::before { content: ''; position: fixed; top: 0; left: 0; right: 0; height: 
   .pur-table .sn-head .muted { flex-basis: 100%; min-width: 0; white-space: normal; }
   .pur-table .sn-scan-row:has(.camera-trigger) { max-width: 100%; }
 }
+
+/* Stock age and supplier warranty overview */
+.product-summary .period-stats{display:grid;grid-template-columns:repeat(6,minmax(0,1fr))}
+.product-summary .stat{min-width:0}.product-summary .stat b{font-size:23px;overflow-wrap:anywhere}
+.summary-note{font-size:12px;line-height:1.6;margin:9px 0 13px}
+.stock-report-summary{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.stock-report-summary .card{display:flex;flex-direction:column;gap:7px;padding:14px 18px;min-width:230px;flex:1}
+.stock-report-summary span{font-size:12px;color:var(--muted)}
+.supplier-warranty-input{font-size:12px;margin-top:7px}.supplier-warranty-input summary{color:var(--fiber);cursor:pointer}.supplier-warranty-input label{display:block;margin-top:7px}.supplier-warranty-input input{display:block;width:100%;max-width:190px;margin:5px 0}.supplier-warranty-input small{display:block}
+@media(max-width:1100px){.product-summary .period-stats{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:600px){.product-summary .period-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.product-summary .stat b{font-size:20px}.top-products .seg{max-width:100%;flex-wrap:wrap}}
+.stock-summary-report table{min-width:2100px;table-layout:auto}.stock-summary-report th{white-space:nowrap}.stock-summary-report th:nth-child(2),.stock-summary-report td:nth-child(2){min-width:235px}.stock-summary-report th:nth-child(3),.stock-summary-report td:nth-child(3),.stock-summary-report th:nth-child(4),.stock-summary-report td:nth-child(4){min-width:135px}

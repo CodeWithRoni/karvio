@@ -223,7 +223,7 @@ function PartyDetail({ kind, id, onClose, onEdit, onChanged, onDeleted }) {
             ]} />
         </>
       )}
-      {pay && <PaymentForm kind={kind} id={id} name={st.data?.party} balance={st.data?.closing} accounts={accounts} onClose={() => setPay(false)} onDone={() => { st.reload(); onChanged(); }} />}
+      {pay && <PaymentForm kind={kind} id={id} name={st.data?.party} balance={liveBal} accounts={accounts} onClose={() => setPay(false)} onDone={() => { st.reload(); onChanged(); }} />}
       <ReverseDialog open={!!rev} {...(rev || {})} onClose={() => setRev(null)} onDone={() => { st.reload(); onChanged(); }} />
       {confirmUI}
     </Modal>
@@ -237,6 +237,9 @@ function PaymentForm({ kind, id, name, balance, accounts, onClose, onDone }) {
   const [print, setPrint] = useState(kind === 'customer');
   const [busy, run] = useAction();
   useEffect(() => { if (!f.account_id && accounts[0]) setF((x) => ({ ...x, account_id: accounts[0].id })); }, [accounts, f.account_id]);
+  const returningAdvance = kind === 'customer' && f.direction === 'pay';
+  const availableAdvance = Math.max(-Number(balance || 0), 0);
+  const invalidAmount = !Number.isFinite(Number(f.amount)) || Number(f.amount) <= 0 || (returningAdvance && Number(f.amount) > availableAdvance + 0.005);
   const save = async () => {
     const r = await run(() => api(c.payment, { [c.key]: id, ...f, amount: Number(f.amount) }), 'Payment recorded');
     if (print && kind === 'customer' && f.direction === 'receive') printMoneyReceipt(r);
@@ -244,10 +247,10 @@ function PaymentForm({ kind, id, name, balance, accounts, onClose, onDone }) {
     onDone(); onClose();
   };
   return (
-    <Modal open onClose={onClose} size="sm" title={`${c.payLabel} — ${name}`} footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={save}>Save payment</Btn></>}>
+    <Modal open onClose={onClose} size="sm" title={`${c.payLabel} — ${name}`} footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} disabled={invalidAmount} onClick={save}>Save payment</Btn></>}>
       <div className="form">
         <Field label="Type" wide><select value={f.direction} onChange={(e) => setF({ ...f, direction: e.target.value })}>{c.dirs.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
-        <Field label="Amount" wide hint={`Current balance ${money(balance)}`}><input type="number" step="any" min="0" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></Field>
+        <Field label="Amount" wide hint={returningAdvance ? `Available advance ${money(availableAdvance)}. Refund cannot exceed this amount.` : `Current balance ${money(balance)}`}><input type="number" step="any" min="0" max={returningAdvance ? availableAdvance : undefined} value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></Field>
         <Field label="Account" wide><Select value={f.account_id} onChange={(v) => setF({ ...f, account_id: v })} options={accounts} allowEmpty={false} /></Field>
         <Field label="Note" wide><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} placeholder="e.g. part payment for INV-000123" /></Field>
         {kind === 'customer' && f.direction === 'receive' && <label className="check"><input type="checkbox" checked={print} onChange={(e) => setPrint(e.target.checked)} /> Print money receipt</label>}

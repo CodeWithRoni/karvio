@@ -5,7 +5,7 @@ import { money, qty, fdate } from '../lib/format';
 import { useApi, PageHead, Tabs, Loading, ErrorBox, Btn, Empty } from '../components/ui';
 import LiveClock from '../components/LiveClock';
 import { useCardOn } from '../lib/dashboardCards';
-import { CollectionReminders, RepairAlerts, StockSummary, TopProducts } from '../components/DashboardExtras';
+import { CollectionReminders, RepairAlerts, StockSummary, ProductSummary, TopProducts } from '../components/DashboardExtras';
 
 function Stat({ label, value, sub, tone }) {
   return <div className={`stat ${tone || ''}`}><span>{label}</span><b>{value}</b>{sub && <small>{sub}</small>}</div>;
@@ -105,6 +105,7 @@ export default function Dashboard() {
       ))}
 
       {on('stock_summary') && !d.limited && <StockSummary s={d.stock_summary} />}
+      {on('product_summary') && !d.limited && <ProductSummary data={d.product_summary} />}
 
       {on('balances') && d.accounts && (
         <section style={{ marginTop: 18 }}>

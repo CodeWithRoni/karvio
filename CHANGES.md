@@ -1,3 +1,25 @@
+# Unreleased — Product Summary and stock reports (local only)
+
+- Dashboard Product Summary beneath Stock summary: current stock over 3/6/12 calendar months, supplier warranty ending within 30 days, expired and not set, with quantities kept separate by unit. Cards open the matching report filter.
+- Reports Hub Stock summary: product/group/category/purchase-lot views; group/category/brand/product, age, no-net-sales, in/out-of-stock, reserved, unknown age and supplier-warranty filters. Cost remains permission protected; Excel/PDF/print use the full filtered table.
+- Supplier warranty is an explicit expiry on each purchase line. New purchases accept it; existing active purchases can update only the warranty metadata without changing valuation, quantities or payments. Unknown dates are never inferred from customer warranty.
+- Serial stock lots use exact purchase linkage; nonserial remaining lots use an explicitly disclosed FIFO estimate. Untracked stock is unknown; overlapping age thresholds are explained and mixed units are not added together.
+- Top selling products/groups add 3-month and 6-month periods including the current calendar month, net of returns and excluding cancelled sales.
+
+All previous seven audit fixes remain pending locally. No push, deployment, schema change, reset or live-data edit.
+
+# Unreleased — seven deep-audit fixes (local only, 13 November 2026)
+
+- Preserve four-decimal POS quantities when the same product is added again.
+- Limit customer advance refunds to current available credit on the server and in the payment dialog; use live balance with statement date filters.
+- Reconcile invoice profit with currency cost/total, including older invoices on read. Allocate return currency cost cumulatively; retain four-decimal line cost for inventory restoration.
+- Permit zero-total sale/purchase returns and exchanges when an item is selected.
+- Preserve quotation unit-price precision and print stored public-quote totals, including older links.
+- Print customer and previous-due receipt dates from their ledger entries.
+- Scan the latest serial lifecycle when no in-stock copy remains.
+
+No push, deployment, schema migration, reset or live business-data modification. Existing historical data is not rewritten.
+
 # Unreleased — five post-release audit fixes (local only)
 
 - Correct nonserial replacement-return cost, per-line POS/purchase rounding, four-decimal inventory precision, inactive account posting and hidden previous-due drafts after balance refresh.

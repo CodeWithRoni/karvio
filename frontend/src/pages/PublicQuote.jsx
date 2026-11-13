@@ -1,3 +1,4 @@
+import { quotationPrice } from '../lib/quotationTotals';
 // What a customer sees when they open the quotation link from their SMS: one quotation, read-only, no sign-in.
 // The link works for 3 days; then the shop's system deletes the quotation.
 import { useEffect, useState } from 'react';
@@ -40,7 +41,7 @@ export default function PublicQuote({ token }) {
   const q = d.quote, shop = d.shop;
   const contacts = [shop.shop_phone, shop.shop_tel, shop.shop_email, shop.shop_web].filter(Boolean);
   const print = () => {
-    try { printQuotation({ title: q.title, customer: q.customer, phone: q.phone, lines: q.lines, discount: q.discount, note: q.note, validDays: q.valid_days, no: q.no, date: q.date }); }
+    try { printQuotation({ title: q.title, customer: q.customer, phone: q.phone, lines: q.lines, discount: q.discount, note: q.note, validDays: q.valid_days, no: q.no, date: q.date, storedTotals: { subtotal: q.subtotal, discount: q.discount, total: q.total } }); }
     catch (e) { setErr(e.message); }
   };
   return (
@@ -70,7 +71,7 @@ export default function PublicQuote({ token }) {
               <div className="pi-name">{l.group && <div className="pi-war">{l.group}</div>}<b>{l.name}</b>
                 {l.warranty && <div className="pi-war">Warranty: {l.warranty}</div>}
               </div>
-              <div className="pi-qty">{l.qty} × {money(l.price, false)}</div>
+              <div className="pi-qty">{l.qty} × {quotationPrice(l.price)}</div>
               <div className="pi-amt">{money(l.total, false)}</div>
             </div>
           ))}

@@ -123,6 +123,16 @@ export function StockSummary({ s }) {
 }
 
 /** Best sellers, leaderboard style: Today / Month / All, by product or by product group. */
+export function ProductSummary({ data = [] }) {
+  const cards = [['age3','In stock over 3 months','Includes over 6 months / 1 year'],['age6','In stock over 6 months','Includes over 1 year'],['age12','In stock over 1 year','Current unsold quantity'],['expiring','Supplier warranty ending','Today through the next 30 days'],['expired','Supplier warranty expired','Stock still held in the shop'],['warranty_unknown','Supplier warranty not set','Add the expiry on the purchase']];
+  const quantity = key => data.filter(x => x[key] > 0).map(x => `${fqty(x[key])} ${x.unit}`).join(' · ') || '0';
+  return <section className="product-summary" aria-label="Product Summary" style={{ marginTop:18 }}>
+    <div className="card-head"><h2>Product Summary</h2><Link className="link" to="/reports?type=stock_summary">Open stock report</Link></div>
+    <div className="stats period-stats">{cards.map(([key,label,note]) => <Link className={`stat stat-link ${key==='expired'?'down':key==='expiring'?'warn':''}`} key={key} to={`/reports?type=stock_summary&filter=${key}`}><span>{label}</span><b>{quantity(key)}</b><small>{note}</small></Link>)}</div>
+    <p className="muted summary-note">Current stock quantities, kept separate by unit. Nonserial stock age and supplier warranty use a FIFO estimate; serial lots use their purchase records. Missing history stays unknown.</p>
+  </section>;
+}
+
 export function TopProducts({ data, showProfit }) {
   const [per, setPer] = useState('month');
   const [view, setView] = useState('products');
@@ -149,9 +159,10 @@ export function TopProducts({ data, showProfit }) {
         <h2>Top selling {view === 'groups' ? 'product groups' : 'products'}</h2>
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
           <Tabs tabs={[['products', 'Products'], ['groups', 'Groups']]} value={view} onChange={setView} />
-          <Tabs tabs={[['today', 'Today'], ['month', 'Month'], ['total', 'All']]} value={per} onChange={setPer} />
+          <Tabs tabs={[['today', 'Today'], ['month', 'Month'], ['three_months', '3 months'], ['six_months', '6 months'], ['total', 'All']]} value={per} onChange={setPer} />
         </div>
       </div>
+      {['three_months','six_months'].includes(per) && <p className="muted summary-note">Includes the current month and the preceding {per==='three_months'?2:5} calendar months, through today.</p>}
       {view === 'products' && allGroups.length > 1 && (
         <div className="tp-filter">
           <select value={group} onChange={(e) => setGroup(e.target.value)} aria-label="Product group">

@@ -1,3 +1,15 @@
+## Owner authorized publication — 13 November 2026
+
+Owner now requested push of all pending seven audit fixes and Product Summary/Stock reports/supplier warranty/3–6-month top sellers. Publish main and deploy API before frontend; verify CI, Pages and live assets. No native release, migration, reset or business-data edit is requested. Earlier local-only notes below are historical.
+
+## Current task — Product Summary and Stock summary report, LOCAL ONLY
+
+Owner explicitly said not to push. This patch also includes the preceding seven audit fixes. Supplier warranty means IN-STOCK supplier coverage expiring over the next 30 days (owner clarified), not sold-customer warranty. New per-purchase-line expiry is stored in existing PurchaseItems.valuation JSON, with a guarded purchase.warranty action for existing active lines. No SQL migration or reset. Deploy updated API before frontend only after owner instructs publication. Dashboard quantities separate units; serial receipt ages/expiry are exact, nonserial receipt allocation is disclosed FIFO estimation, and missing history/expiry stays unknown. Screenshots and test logs: verification/stock-summary/.
+
+## Current task — seven deep-audit fixes, LOCAL ONLY
+
+Owner requested fixes to the seven findings in verification/audit-v1.2.3/AUDIT.md, not publication. Do not infer push/deploy authorization from older notes below. Baseline published main/release: da428a13a362c3d11645d6914fc00f4ca35568cf (v1.2.3). Source fixes, generated hosted engine and production frontend build are prepared locally. No schema change or live business-data mutation is needed. Before publication deploy the updated API and then frontend together after owner instruction. See current VERIFICATION.md and CHANGES.md. Raw four-decimal return costs remain unchanged; report COGS uses cumulative currency allocations. Old sale profits are derived on read from stored cost/total, and older public quotation prints use the stored snapshot.
+
 ## v1.2.3 — owner authorized all-platform release
 
 Preparing new online-only installers from main48171560b9e27255cc2cdcf2be9480a5977fce4b. App/package lock/Tauri versions aligned at1.2.3, README download links updated and RELEASE-1.2.3.md added. No application rule or dependency change. Build via release/v1.2.3 branch; publish only after all Windows/macOS/Linux/Android/iOS jobs succeed. iOS unsigned, desktop unsigned, Android debug-signed as existing workflow. No schema/reset/business data change. Earlier publication/local-only notes below are historical.

@@ -249,8 +249,8 @@ function ReturnForm({ detail, onClose, onDone }) {
   return (
     <Modal open onClose={onClose} title={`Return items — ${sale.invoice_no}`} size="lg"
       footer={<><Btn onClick={onClose}>Cancel</Btn>
-        {exchanging && <Btn busy={busy} disabled={!value || problems.length > 0} onClick={() => submit(true)}>Exchange &amp; print invoice</Btn>}
-        <Btn kind="primary" busy={busy} disabled={!value || (exchanging && problems.length > 0)} onClick={() => submit(false)}>Record {type}</Btn></>}>
+        {exchanging && <Btn busy={busy} disabled={!lines.some(l => Number(l.qty) > 0) || problems.length > 0} onClick={() => submit(true)}>Exchange &amp; print invoice</Btn>}
+        <Btn kind="primary" busy={busy} disabled={!lines.some(l => Number(l.qty) > 0) || (exchanging && problems.length > 0)} onClick={() => submit(false)}>Record {type}</Btn></>}>
       <div className="row" style={{ marginBottom: 12 }}>
         <Tabs tabs={[['return', 'Return'], ['exchange', 'Exchange']]} value={type} onChange={setType} />
         {type === 'exchange' && <span className="muted">{can('pos') ? 'Pick what comes back, then add the product the customer takes instead. Stock, cash and profit follow both products.' : 'The returned value becomes customer credit; then sell the replacement in POS and tick “Use customer advance”.'}</span>}

@@ -231,7 +231,7 @@ function NewPurchase({ onDone }) {
     const payload = {
       ...(previousPaid > 0 ? {previous_due_payments: previousPayments, expected_previous_due: prev} : {}),
       supplier_id: supplier, date, discount: Number(discount) || 0, note, supplier_invoice: supInv.trim(), payments: cleanPays(pays),
-      items: lines.map((l) => ({ product_id: l.product_id, qty: Number(l.qty), cost: Number(l.cost), sale_price: l.sale === '' ? '' : Number(l.sale), wholesale_price: l.whole === '' ? '' : Number(l.whole), serials: l.serials.join('\n') }))
+      items: lines.map((l) => ({ product_id: l.product_id, qty: Number(l.qty), cost: Number(l.cost), sale_price: l.sale === '' ? '' : Number(l.sale), wholesale_price: l.whole === '' ? '' : Number(l.whole), serials: l.serials.join('\n'), supplier_warranty_expiry:l.supplier_warranty_expiry || '' }))
     };
     saving.current = true;
     try {
@@ -285,6 +285,7 @@ function NewPurchase({ onDone }) {
                     <div className="muted" style={{ fontSize: 12 }}>in stock {fqty(p?.stock, p?.unit)} · per {p?.unit}
                       {serial && !open && <> · <span className={l.serials.length ? 'sn-count' : 'sn-count bad'}>{l.serials.length ? `${l.serials.length} serial${l.serials.length === 1 ? '' : 's'} — click to edit` : 'serials missing'}</span></>}
                     </div>
+                    <details className="supplier-warranty-input" onClick={e=>e.stopPropagation()}><summary>Supplier warranty {l.supplier_warranty_expiry ? `· ${fdate(l.supplier_warranty_expiry)}` : '(optional)'}</summary><label>Expiry date<input type="date" aria-label={`Supplier warranty expiry for ${p?.name}`} value={l.supplier_warranty_expiry || ''} onChange={e=>upd(l.product_id,{supplier_warranty_expiry:e.target.value})}/></label><small className="muted">Use the supplier's actual expiry. Leave blank if not known.</small></details>
                   </td>
                   <td data-label="Qty"><input type="number" min="0" step={isDecimalUnit(p?.unit) ? 'any' : 1} value={l.qty} readOnly={serial} title={serial ? 'Counted from the serial numbers' : undefined}
                     className={`${serial ? 'readonly-qty' : ''} ${tried && b.qty ? 'invalid' : ''}`} onChange={(e) => upd(l.product_id, { qty: e.target.value })} onWheel={noWheel} aria-label={`Quantity of ${p?.name}`} /></td>
@@ -386,6 +387,7 @@ function PurchaseDetail({ id, onClose, onChanged }) {
   const { data, loading, error, reload } = useApi('purchase.detail', { id });
   const [ret, setRet] = useState(false);
   const [rev, setRev] = useState(false);
+  const [warranty, setWarranty] = useState(null);
   const p = data?.purchase;
   return (
     <Modal open onClose={onClose} size="lg" title={p ? `Purchase ${p.invoice_no}` : 'Purchase'}
@@ -413,16 +415,24 @@ function PurchaseDetail({ id, onClose, onChanged }) {
         </div>
         <div className="dt" style={{ marginTop: 14 }}><div className="dt-scroll"><table>
           <thead><tr><th>Item</th><th>Unit</th><th>Serial numbers</th><th className="r">Qty</th><th className="r">Purchase price</th><th className="r">Amount</th></tr></thead>
-          <tbody>{data.items.map((i) => <tr key={i.id}><td><b>{i.name}</b>{i.description && <div className="muted" style={{ fontSize: 12 }}>{i.description}</div>}</td><td>{i.unit}</td>
+          <tbody>{data.items.map((i) => <tr key={i.id}><td><b>{i.name}</b>{i.description && <div className="muted" style={{ fontSize: 12 }}>{i.description}</div>}<div className="muted" style={{fontSize:12}}>Supplier warranty: {i.supplier_warranty_expiry ? fdate(i.supplier_warranty_expiry) : 'Not set'}</div>{p.status==='active' && can('purchase') && <button className="link" onClick={()=>setWarranty(i)}>Set supplier warranty</button>}</td><td>{i.unit}</td>
             <td>{splitList(String(i.serials || '').replace(/\n/g, ',')).map((x) => <span key={x} className="sn-chip ro">{x}</span>)}</td>
             <td className="r num">{fqty(i.qty, i.unit)}</td><td className="r num">{money(i.cost, false)}</td><td className="r num">{money(i.total, false)}</td></tr>)}</tbody>
         </table></div></div>
         {data.returns.length > 0 && <p className="muted">Returns: {data.returns.map((r) => `${r.return_no} (${money(r.total, false)}, ${r.status})`).join(', ')}</p>}
       </>}
       {ret && <PReturnForm detail={data} onClose={() => setRet(false)} onDone={() => { setRet(false); reload(); onChanged(); }} />}
+      {warranty && <SupplierWarrantyForm item={warranty} onClose={()=>setWarranty(null)} onDone={()=>{setWarranty(null);reload();onChanged();}}/>}
       <ReverseDialog open={rev} type="purchase" id={p?.id} label={`purchase ${p?.invoice_no}`} onClose={() => setRev(false)} onDone={() => { reload(); onChanged(); }} />
     </Modal>
   );
+}
+
+function SupplierWarrantyForm({item,onClose,onDone}) {
+  const [expiry,setExpiry]=useState(item.supplier_warranty_expiry || '');
+  const [busy,run]=useAction();
+  const save=async()=>{await run(()=>api('purchase.warranty',{item_id:item.id,expiry}),'Supplier warranty updated');onDone();};
+  return <Modal open title="Supplier warranty expiry" size="sm" onClose={onClose} footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={save}>Save warranty date</Btn></>}><p>{item.name}</p><Field label="Supplier warranty expiry" hint="Leave empty if unknown. This changes the warranty date only; purchase quantity, cost and payments stay unchanged."><input type="date" value={expiry} onChange={e=>setExpiry(e.target.value)}/></Field></Modal>;
 }
 
 function PReturnForm({ detail, onClose, onDone }) {
@@ -445,7 +455,7 @@ function PReturnForm({ detail, onClose, onDone }) {
     await refresh('products', 'suppliers'); onDone();
   };
   return (
-    <Modal open onClose={onClose} size="lg" title={`Return to supplier — ${purchase.invoice_no}`} footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} disabled={!value} onClick={save}>Record return</Btn></>}>
+    <Modal open onClose={onClose} size="lg" title={`Return to supplier — ${purchase.invoice_no}`} footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} disabled={!lines.some(l => Number(l.qty) > 0)} onClick={save}>Record return</Btn></>}>
       <div className="dt"><div className="dt-scroll"><table>
         <thead><tr><th>Item</th><th className="r">Bought</th><th style={{ width: 110 }} className="r">Return qty</th><th>Serials</th></tr></thead>
         <tbody>{items.map((it, i) => (
