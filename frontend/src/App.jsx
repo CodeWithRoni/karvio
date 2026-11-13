@@ -6,6 +6,7 @@ import Layout from './components/Layout';
 import { Loading, Toasts, Btn } from './components/ui';
 import Login from './pages/Login';
 import { NativeShell } from './components/NativeShell';
+import SelectPopup from './components/SelectPopup';
 
 // Route-level code splitting keeps the first load fast.
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -116,5 +117,5 @@ export default function App() {
       </HashRouter>
     );
   }
-  return <><div className="online-app" inert={!connected ? '' : undefined} aria-hidden={!connected ? true : undefined}>{body}<Toasts /><NativeShell /></div>{!connected && <div role="alertdialog" aria-modal="true" aria-labelledby="connection-title" style={{position:'fixed',inset:0,zIndex:100000,display:'grid',placeItems:'center',background:'#0d1b2a',padding:24}}><div className="auth-card"><h2 id="connection-title">Internet connection required</h2><p>Karvio works online only. Reconnect to continue. Your current form stays open.</p></div></div>}</>;
+  return <><div className="online-app" inert={!connected ? '' : undefined} aria-hidden={!connected ? true : undefined}>{body}<Toasts /><NativeShell /><SelectPopup /></div>{!connected && <div role="alertdialog" aria-modal="true" aria-labelledby="connection-title" style={{position:'fixed',inset:0,zIndex:100000,display:'grid',placeItems:'center',background:'#0d1b2a',padding:24}}><div className="auth-card"><h2 id="connection-title">Internet connection required</h2><p>Karvio works online only. Reconnect to continue. Your current form stays open.</p></div></div>}</>;
 }

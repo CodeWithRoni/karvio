@@ -1,8 +1,28 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../lib/store';
 import { api } from '../lib/api';
 import { money, qty as fqty, round2 } from '../lib/format';
 import { Modal, Btn, Field, useAction } from './ui';
+
+
+/** Suggestion lists show 10 rows; the rest scroll. Keeps the highlighted row in view while using the arrow keys. */
+const LIST_ROWS = 10, LIST_MAX = 50;
+function useTenRows(ref, list, hi) {
+  useLayoutEffect(() => {
+    const ul = ref.current; if (!ul) return;
+    const li = ul.children;
+    ul.style.maxHeight = '';
+    if (li.length > LIST_ROWS) {
+      const last = li[LIST_ROWS - 1], pad = parseFloat(getComputedStyle(ul).paddingBottom) || 0;
+      ul.style.maxHeight = Math.min(last.offsetTop + last.offsetHeight + pad + 2, window.innerHeight * 0.75) + 'px';
+    }
+  }, [ref, list]);
+  useLayoutEffect(() => {
+    const ul = ref.current, li = ul?.children[hi]; if (!li) return;
+    if (li.offsetTop < ul.scrollTop) ul.scrollTop = li.offsetTop - 4;
+    else if (li.offsetTop + li.offsetHeight > ul.scrollTop + ul.clientHeight) ul.scrollTop = li.offsetTop + li.offsetHeight - ul.clientHeight + 4;
+  }, [ref, hi, list]);
+}
 
 /* ------------------------------------------------------------------
  * Product search box with barcode support.
@@ -23,9 +43,11 @@ export function ProductSearch({ onPick, onCode, inStockOnly = false, noServices 
     return products
       .filter((p) => p.active && (!noServices || !p.service) && (!inStockOnly || p.service || (p.available ?? p.stock) > 0))
       .filter((p) => { const hay = `${p.name} ${p.sku || ''} ${p.barcode || ''} ${brandMap[p.brand_id] || ''}`.toLowerCase(); return words.every((w) => hay.includes(w)); })
-      .slice(0, 12);
+      .slice(0, LIST_MAX);
   }, [q, products, inStockOnly, noServices, brandMap]);
 
+  const listRef = useRef();
+  useTenRows(listRef, list, hi);
   const pick = (p) => { onPick(p); setQ(''); setHi(0); ref.current?.focus(); };
   const onKey = (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); setHi((h) => Math.min(h + 1, list.length - 1)); }
@@ -48,7 +70,7 @@ export function ProductSearch({ onPick, onCode, inStockOnly = false, noServices 
       <input ref={ref} value={q} autoFocus={autoFocus} onChange={(e) => { setQ(e.target.value); setHi(0); }} onKeyDown={onKey}
         placeholder={placeholder} aria-label="Search product" role="combobox" aria-expanded={list.length > 0} />
       {list.length > 0 && (
-        <ul className="psearch-list" role="listbox">
+        <ul ref={listRef} className="psearch-list" role="listbox">
           {list.map((p, i) => (
             <li key={p.id} role="option" aria-selected={i === hi} className={i === hi ? 'hi' : ''} onMouseDown={(e) => { e.preventDefault(); pick(p); }} onMouseEnter={() => setHi(i)}>
               <span className="pn">{p.name}<small>{[p.sku, p.barcode].filter(Boolean).join(' / ')}</small></span>
@@ -176,9 +198,11 @@ export function CustomerPicker({ value, onChange, onAddNew }) {
       const hay = `${c.name} ${c.phones} ${String(c.addresses || '').replace(/\|/g, ' ')}`.toLowerCase();
       if (words.every((w) => hay.includes(w))) return true;
       return digits.length >= 3 && String(c.phones || '').replace(/\D/g, '').includes(digits);
-    }).slice(0, 12);
+    }).slice(0, LIST_MAX);
   }, [q, customers]);
 
+  const listRef = useRef();
+  useTenRows(listRef, open ? list : null, hi);
   const pick = (c) => { onChange(c.id); setQ(''); setOpen(false); setHi(0); };
   const onKey = (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); setHi((h) => Math.min(h + 1, list.length - 1)); }
@@ -207,7 +231,7 @@ export function CustomerPicker({ value, onChange, onAddNew }) {
         onBlur={() => setTimeout(() => setOpen(false), 150)} onKeyDown={onKey}
         placeholder="Cash / Search Customer - name/number/address (F4)" aria-label="Customer" id="pos-customer" autoComplete="off" />
       {open && (
-        <ul className="psearch-list cust-list" role="listbox">
+        <ul ref={listRef} className="psearch-list cust-list" role="listbox">
           {list.map((c, i) => (
             <li key={c.id} role="option" aria-selected={i === hi} className={i === hi ? 'hi' : ''} onMouseEnter={() => setHi(i)} onMouseDown={(e) => { e.preventDefault(); pick(c); }}>
               <span className="pn">{mark(c.name)}
