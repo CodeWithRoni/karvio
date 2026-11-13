@@ -49,3 +49,43 @@ jobs:
           git add -A
           git commit -q -m "Publish ${GITHUB_SHA::7}"
           git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+
+  # The Supabase backend (Edge Function karvio-api) ships only after every test above has passed.
+  # Needs the repository secret SUPABASE_ACCESS_TOKEN (a Supabase personal access token); without it this job is skipped with a warning.
+  deploy-backend:
+    needs: build-and-publish
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_ID: svqhlotlzgmwjneuphpe
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check deploy token
+        id: token
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "::warning::SUPABASE_ACCESS_TOKEN secret is not set, so the Supabase backend was not deployed."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: supabase/setup-cli@v1
+        if: steps.token.outputs.ready == 'true'
+        with:
+          version: 3.1.0
+      - name: Deploy karvio-api
+        if: steps.token.outputs.ready == 'true'
+        run: supabase functions deploy karvio-api --remote="$SUPABASE_PROJECT_ID" --no-verify-jwt --use-api --yes
+      - name: Check the live backend answers
+        if: steps.token.outputs.ready == 'true'
+        run: |
+          expected=$(sed -n "s/^var APP_VERSION = '\(.*\)';.*/\1/p" backend/Code.gs | tr -d '\r')
+          for i in 1 2 3 4 5 6; do
+            body=$(curl -fsS -X POST "https://${SUPABASE_PROJECT_ID}.supabase.co/functions/v1/karvio-api" -H 'Content-Type: application/json' -d '{"action":"ping"}' || true)
+            echo "$body"
+            if echo "$body" | grep -q "\"version\":\"$expected\""; then exit 0; fi
+            sleep 10
+          done
+          echo "::error::The live backend did not report version $expected after deploy"; exit 1
