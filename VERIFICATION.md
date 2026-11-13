@@ -1,3 +1,19 @@
+# v1.2.3 packaging preparation — 13 November 2026
+
+Version-only packaging update from published main48171560b9e27255cc2cdcf2be9480a5977fce4b. Production build/assets passed. Application code and dependencies unchanged; the source commit passed 121 browser tests in GitHub Actions run43408930567 plus regular/hosted suites. Native builds are required before publication.
+
+```json
+{
+  "sourceCommit": "48171560b9e27255cc2cdcf2be9480a5977fce4b",
+  "sourceBrowserTests": 121,
+  "releaseVersion": "1.2.3",
+  "productionBuild": "passed",
+  "nativeBuilds": "required-before-release",
+  "schemaMigration": false,
+  "productionReset": false
+}
+```
+
 # 13 November 2026 — audit fixes, mobile camera and Purchase layout
 
 Verified against main 5913d44df606269c68da55deddd3544197c1a0b9. Isolated local data only. Existing SQL migrations unchanged. Supabase API version 37 deployed before frontend; no reset or business-data edit. GitHub/Pages validation follows publication.

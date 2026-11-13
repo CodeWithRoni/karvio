@@ -1,17 +1,15 @@
 {
   "product": "Karvio",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "preparedDate": "2026-11-13",
-  "state": "owner-authorized-audit-camera-purchase-layout-publication",
-  "baseCommit": "5913d44df606269c68da55deddd3544197c1a0b9",
+  "state": "owner-authorized-v1.2.3-release-preparation",
+  "baseCommit": "48171560b9e27255cc2cdcf2be9480a5977fce4b",
   "validation": {
-    "regularRegression": "passed",
-    "hostedRegression": "passed",
-    "fullEdgeBrowserTests": 116,
-    "cameraAndPurchaseViewportTests": 13,
+    "sourceCommit": "48171560b9e27255cc2cdcf2be9480a5977fce4b",
+    "sourceBrowserTests": 121,
+    "releaseVersion": "1.2.3",
     "productionBuild": "passed",
-    "physicalCameraTested": false,
-    "nativeInstallersRebuilt": false,
+    "nativeBuilds": "required-before-release",
     "schemaMigration": false,
     "productionReset": false
   },
@@ -24,7 +22,7 @@
     "user databases/backups",
     "credentials"
   ],
-  "fileCount": 318,
+  "fileCount": 319,
   "files": [
     ".github/workflows/deploy.yml",
     ".github/workflows/release.yml",
@@ -35,6 +33,7 @@
     "FIXES-REVIEW.md",
     "README.md",
     "RELEASE-1.2.2.md",
+    "RELEASE-1.2.3.md",
     "RELEASE-MANIFEST.json",
     "SETUP.md",
     "SHA256SUMS.txt",
@@ -355,7 +354,7 @@
   "supabase": {
     "project": "svqhlotlzgmwjneuphpe",
     "edgeFunction": "karvio-api",
-    "deployedVersion": 37,
+    "deployedVersion": 39,
     "businessTables": 29,
     "ownerSetup": "created by owner",
     "liveFrontendCutover": true

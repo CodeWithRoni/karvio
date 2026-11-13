@@ -2,7 +2,7 @@
 
 Online shop management and point of sale for computer, IT, electronics and networking businesses.
 
-**Current release: [v1.2.2](https://github.com/CodeWithRoni/karvio/releases/tag/v1.2.2)** · [Open web app](https://codewithroni.github.io/karvio/) · [All downloads](https://github.com/CodeWithRoni/karvio/releases/latest)
+**Current release: [v1.2.3](https://github.com/CodeWithRoni/karvio/releases/tag/v1.2.3)** · [Open web app](https://codewithroni.github.io/karvio/) · [All downloads](https://github.com/CodeWithRoni/karvio/releases/latest)
 
 ## Online only
 
@@ -14,14 +14,14 @@ The current online backend is **Supabase Edge Functions + PostgreSQL**. Google S
 
 | Platform | File | Installation |
 | --- | --- | --- |
-| Windows x64 | Karvio-1.2.2-win-x64.exe | Run the installer. |
-| macOS Apple Silicon | Karvio-1.2.2-mac-arm64.dmg | Open the disk image and move Karvio to Applications. |
-| macOS Intel | Karvio-1.2.2-mac-x64.dmg | Open the disk image and move Karvio to Applications. |
-| Linux x64, Debian/Ubuntu | Karvio-1.2.2-linux-amd64.deb | Install with your package manager. |
-| Android | Karvio-1.2.2-android.apk | Sideload the APK; it is debug-signed. |
-| iOS | Karvio-1.2.2-ios-unsigned.ipa | Sign with your Apple ID / developer account before installing. |
+| Windows x64 | Karvio-1.2.3-win-x64.exe | Run the installer. |
+| macOS Apple Silicon | Karvio-1.2.3-mac-arm64.dmg | Open the disk image and move Karvio to Applications. |
+| macOS Intel | Karvio-1.2.3-mac-x64.dmg | Open the disk image and move Karvio to Applications. |
+| Linux x64, Debian/Ubuntu | Karvio-1.2.3-linux-amd64.deb | Install with your package manager. |
+| Android | Karvio-1.2.3-android.apk | Sideload the APK; it is debug-signed. |
+| iOS | Karvio-1.2.3-ios-unsigned.ipa | Sign with your Apple ID / developer account before installing. |
 
-Download installers from the [release page](https://github.com/CodeWithRoni/karvio/releases/tag/v1.2.2). SHA256SUMS.txt lists file checksums. Desktop binaries are unsigned; macOS builds are not notarized. The iOS file is not an App Store or directly installable signed distribution. Linux packaging currently targets Debian-based x64 systems.
+Download installers from the [release page](https://github.com/CodeWithRoni/karvio/releases/tag/v1.2.3). SHA256SUMS.txt lists file checksums. Desktop binaries are unsigned; macOS builds are not notarized. The iOS file is not an App Store or directly installable signed distribution. Linux packaging currently targets Debian-based x64 systems.
 
 ## What is included
 
@@ -36,7 +36,9 @@ Download installers from the [release page](https://github.com/CodeWithRoni/karv
 
 The **Service** menu is currently a placeholder for future work, not a completed service-management workflow.
 
-Read [v1.2.2 release notes](RELEASE-1.2.2.md) for the latest corrections.
+Mobile/tablet camera scanning is available in POS, purchase product/serial entry and Advance Search. Desktop devices keep keyboard/scanner entry. Camera permission is required; frames are decoded locally. Purchase product names now use the full card width on phones/tablets.
+
+Read [v1.2.3 release notes](RELEASE-1.2.3.md) for the latest corrections.
 
 ## Sign in and setup
 

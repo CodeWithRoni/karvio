@@ -7,7 +7,7 @@ const manifestPath = path.join(root, 'RELEASE-MANIFEST.json');
 const sumsPath = path.join(root, 'SHA256SUMS.txt');
 const roots = ['.github', 'backend/test', 'frontend/src', 'frontend/src-tauri', 'frontend/desktop', 'frontend/public', 'frontend/branding', 'frontend/scripts', 'frontend/test', 'frontend/dist', 'scripts', 'supabase'];
 const fixed = ['.gitignore', 'README.md', 'AI_HANDOVER.md', 'CHANGES.md', 'FIXES-1.0.6.md', 'FIXES-REVIEW.md', 'SETUP.md', 'UPLOAD_GUIDE-বাংলা.md', 'VERIFICATION.md', 'VERIFICATION-1.0.6.md', 'backend/Code.gs', 'backend/appsscript.json', 'frontend/.gitignore', 'frontend/.env.example', 'frontend/package.json', 'frontend/package-lock.json', 'frontend/index.html', 'frontend/vite.config.js', 'frontend/playwright.config.js', 'frontend/capacitor.config.json'];
-fixed.push('SUPABASE-SETUP.md', 'RELEASE-1.2.2.md');
+fixed.push('SUPABASE-SETUP.md', 'RELEASE-1.2.2.md', 'RELEASE-1.2.3.md');
 const excluded = new Set(['node_modules', 'target', '.git', '.temp', 'test-results', 'playwright-report', 'release', 'android', 'ios']);
 function walk(relative) {
   return fs.readdirSync(path.join(root, relative), { withFileTypes: true }).flatMap(entry => {
@@ -37,15 +37,15 @@ if (process.argv.includes('--check')) {
   if (!verification) throw new Error('Record the current checks in VERIFICATION.md before preparing the package.');
   const manifest = {
     product: 'Karvio', version: JSON.parse(fs.readFileSync(path.join(root, 'frontend/package.json'))).version,
-    preparedDate: '2026-11-13', state: 'owner-authorized-audit-camera-purchase-layout-publication',
-    baseCommit: '5913d44df606269c68da55deddd3544197c1a0b9',
+    preparedDate: '2026-11-13', state: 'owner-authorized-v1.2.3-release-preparation',
+    baseCommit: '48171560b9e27255cc2cdcf2be9480a5977fce4b',
     validation: JSON.parse(verification[1]),
     excluded: ['backend/parts (legacy duplicate backend)', 'node_modules', 'verification artifacts', 'test results', 'release installers', 'user databases/backups', 'credentials'],
     fileCount: files.length, files,
     checksumPolicy: 'SHA256SUMS.txt covers every listed file except itself, including this manifest.',
     uploadOrder: ['Owner authorized publication of five audit fixes, mobile camera scanning and purchase layout', 'Deploy tested updated API before frontend; no schema migration required', 'Publish main, verify CI/Pages and live build; native release only when requested'],
     frontendPublication: 'Publish through main and verify GitHub Actions / Pages',
-    supabase: { project: 'svqhlotlzgmwjneuphpe', edgeFunction: 'karvio-api', deployedVersion: 37, businessTables: 29, ownerSetup: 'created by owner', liveFrontendCutover: true }
+    supabase: { project: 'svqhlotlzgmwjneuphpe', edgeFunction: 'karvio-api', deployedVersion: 39, businessTables: 29, ownerSetup: 'created by owner', liveFrontendCutover: true }
   };
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
   fs.writeFileSync(sumsPath, files.filter(name => name !== 'SHA256SUMS.txt').map(name => digest(name) + '  ' + name).join('\n') + '\n');

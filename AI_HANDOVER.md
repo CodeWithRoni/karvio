@@ -1,3 +1,7 @@
+## v1.2.3 — owner authorized all-platform release
+
+Preparing new online-only installers from main48171560b9e27255cc2cdcf2be9480a5977fce4b. App/package lock/Tauri versions aligned at1.2.3, README download links updated and RELEASE-1.2.3.md added. No application rule or dependency change. Build via release/v1.2.3 branch; publish only after all Windows/macOS/Linux/Android/iOS jobs succeed. iOS unsigned, desktop unsigned, Android debug-signed as existing workflow. No schema/reset/business data change. Earlier publication/local-only notes below are historical.
+
 ## Owner authorized publication — 13 November 2026
 
 Publishing all pending five audit fixes, four mobile/tablet camera entry points and responsive Purchase product cards. Supabase version37 deployed first. main baseline5913d44df606269c68da55deddd3544197c1a0b9 unchanged by others at preflight. Frontend publication/CI verification follows; no migration/reset/business-data edit, and no native release requested. Earlier LOCAL ONLY / do-not-push notes below are historical and superseded by this authorization.
