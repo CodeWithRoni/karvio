@@ -633,6 +633,17 @@ small.margin.bad { color: var(--bad); }
 .exp-cats { max-width: 640px; }
 .exp-cat-list { list-style: none; margin: 14px 0 0; padding: 0; }
 .exp-cat-list li { display: flex; align-items: center; gap: 8px; padding: 8px 4px; border-bottom: 1px solid var(--line); }
+.exp-summary { margin-bottom: 14px; }
+.exp-sum-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.exp-sum-row { display: grid; grid-template-columns: minmax(110px, 1.2fr) 2fr 56px 82px minmax(90px, auto); align-items: center; gap: 12px; width: 100%; padding: 8px 6px; background: none; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.exp-sum-row:hover { background: var(--panel-2); }
+.exp-sum-row.on { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--aqua); }
+.exp-sum-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.exp-sum-bar { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.exp-sum-bar i { display: block; height: 100%; border-radius: 4px; background: var(--aqua); }
+.exp-sum-share, .exp-sum-amt { text-align: right; font-variant-numeric: tabular-nums; }
+.exp-sum-count { font-size: 12.5px; }
+@media (max-width: 640px) { .exp-sum-row { grid-template-columns: 1fr auto; } .exp-sum-bar, .exp-sum-share, .exp-sum-count { display: none; } }
 .exp-cat-list li:last-child { border-bottom: 0; }
 
 .dt-bar { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }

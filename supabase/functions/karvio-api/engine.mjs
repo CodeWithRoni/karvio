@@ -2879,6 +2879,36 @@ function expenseCreate_(p, user) {
   acctTxn_(acc.id, 'out', amt, 'expense', e.id, 'Expense: ' + cat + (p.note ? ' — ' + p.note : ''), user, date);
   return e;
 }
+/**
+ * Edit an active expense and its account entry together. Category and note are ordinary edits;
+ * a change of amount, account or date moves money, so it needs an admin password like a cancellation.
+ */
+function expenseUpdate_(p, user) {
+  var e = all_('Expenses').filter(function (x) { return x.id === p.id; })[0];
+  if (!e) fail_('Expense not found');
+  if (e.status !== 'active') fail_('A cancelled expense cannot be edited');
+  lockCheck_(e.date, 'an expense');
+  var amt = round_(p.amount); if (!(amt > 0)) fail_('Amount must be greater than 0');
+  var cat = String(p.category || '').trim().replace(/\s+/g, ' '); if (!cat) fail_('Select an expense category');
+  var cats = []; try { cats = JSON.parse(getSetting_('expense_categories', '[]')); } catch (err) {}
+  if (cat !== e.category && !cats.some(function (c) { return nameKey_(c) === nameKey_(cat); })) fail_('Select a category from the expense category list');
+  var accs = indexBy_(all_('Accounts')), acc = accs[p.account_id];
+  if (!acc) fail_('Select the account used for payment');
+  if (acc.id !== e.account_id && !acc.active) fail_('Select an active account');
+  var date = bookDate_(p.date, 'expense');
+  var note = String(p.note === undefined || p.note === null ? '' : p.note).trim().slice(0, 500);
+  var moneyChanged = Math.abs(amt - num_(e.amount)) > 0.004 || acc.id !== e.account_id || date !== e.date;
+  if (!moneyChanged && cat === e.category && note === String(e.note || '')) fail_('No changes to save');
+  if (moneyChanged) confirmAdmin_(user, p.password);
+  var txns = all_('AccountTxns').filter(function (t) { return t.ref_type === 'expense' && t.ref_id === e.id && !t.voided; });
+  if (txns.length !== 1) fail_('The account entry of this expense is missing or duplicated. Review it before editing');
+  var before = { date: e.date, category: e.category, amount: e.amount, account: accs[e.account_id] ? accs[e.account_id].name : e.account_id, note: e.note || '' };
+  update_('AccountTxns', txns[0].id, { account_id: acc.id, amount: amt, date: date, note: 'Expense: ' + cat + (note ? ' — ' + note : '') });
+  var upd = update_('Expenses', e.id, { date: date, category: cat, amount: amt, account_id: acc.id, note: note });
+  audit_(user, 'expense_update', { id: e.id, before: before, after: { date: date, category: cat, amount: amt, account: acc.name, note: note } });
+  var o = Object.assign({}, upd); delete o._row; o.account_name = acc.name;
+  return o;
+}
 function expensesList_(p, user, allRows) {
   var accs = indexBy_(all_('Accounts'));
   return all_('Expenses').filter(function (e) { return inRange_(e.date, p.from, p.to) && (!p.category || e.category === p.category) && (!p.status || e.status === p.status); })
@@ -4195,6 +4225,7 @@ var ROUTES = {
   'sreturns.list':    r_('sales.return', function (p, u) { return stripCost_(sreturnsList_(p, u), u); }),
 
   'expense.create':   r_('expenses', expenseCreate_, true),
+  'expense.update':   r_('expenses', expenseUpdate_, true),
   'expense.categories': r_('expenses', expenseCategoriesSave_, true),
   'expense.categories.usage': r_('expenses', expenseCategoryUsage_),
   'expenses.list':    r_('expenses', expensesList_),
