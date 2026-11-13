@@ -634,6 +634,14 @@ small.margin.bad { color: var(--bad); }
 .exp-cat-list { list-style: none; margin: 14px 0 0; padding: 0; }
 .exp-cat-list li { display: flex; align-items: center; gap: 8px; padding: 8px 4px; border-bottom: 1px solid var(--line); }
 .exp-summary { margin-bottom: 14px; }
+.xch-title { margin: 16px 0 8px; font-size: 14px; font-weight: 600; color: var(--muted, inherit); }
+.xch-sum { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.xch-sum > div { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
+.xch-sum > div span { font-size: 12.5px; opacity: .8; }
+.xch-sum > div b { font-size: 18px; font-variant-numeric: tabular-nums; }
+.xch-sum > div.due { box-shadow: inset 3px 0 0 var(--warn); }
+.xch-sum > div.back { box-shadow: inset 3px 0 0 var(--aqua); }
+@media (max-width: 640px) { .xch-sum { grid-template-columns: 1fr; } }
 .exp-sum-list { list-style: none; margin: 8px 0 0; padding: 0; }
 .exp-sum-row { display: grid; grid-template-columns: minmax(110px, 1.2fr) 2fr 56px 82px minmax(90px, auto); align-items: center; gap: 12px; width: 100%; padding: 8px 6px; background: none; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
 .exp-sum-row:hover { background: var(--panel-2); }

@@ -2698,6 +2698,64 @@ function sreturnCreate_(p, user) {
   return { return: ret, items: lines.map(function (l) { return { name: l.si.name, qty: l.qty, total: l.value }; }) };
 }
 
+/**
+ * Exchange in one atomic request: the returned items go back to stock at their original cost (an
+ * ordinary exchange return), and the replacement is sold on a new invoice at its own cost, so profit,
+ * stock and serials follow both products. The return value pays for the replacement first:
+ *  - customer profile: the return is credited to the customer and used on the new invoice; the
+ *    difference is paid now (or left due), and any surplus stays as credit or is refunded now;
+ *  - walk-in: the return is refunded through one account and the new invoice is paid through the same
+ *    account, so only the difference actually changes hands; walk-ins must settle in full.
+ */
+function saleExchange_(p, user) {
+  need_(user, 'pos'); // the replacement is a new sale
+  var sale = all_('Sales').filter(function (s) { return s.id === p.sale_id; })[0];
+  if (!sale || sale.status !== 'active') fail_('Invoice not found or already cancelled');
+  var repl = Array.isArray(p.replacement) ? p.replacement.filter(function (x) { return x && num_(x.qty) > 0; }) : [];
+  if (!repl.length) fail_('Add the replacement product(s). To take items back without a replacement, use Return');
+  var replTotal = round_(sum_(repl, function (x) { return round_(num_(x.qty) * num_(x.price)); }));
+  var diffPays = Array.isArray(p.payments) ? p.payments : [];
+  var refundIn = p.refund || {}, refundWanted = round_(Math.max(num_(refundIn.amount), 0));
+  var ret, detail, refundReceipt = null, creditUsed = 0, returnTotal;
+  if (sale.customer_id) {
+    ret = sreturnCreate_({ sale_id: sale.id, items: p.items, type: 'exchange', refund: { mode: 'adjust' }, note: p.note || '' }, user).return;
+    returnTotal = round_(ret.total);
+    if (p.expected_return_value !== undefined && Math.abs(num_(p.expected_return_value) - returnTotal) > 0.005) fail_('The return value changed. Reopen the exchange and check it again');
+    var avail = Math.max(-(customerBalances_()[sale.customer_id] || 0), 0);
+    creditUsed = round_(Math.min(returnTotal, replTotal, avail));
+    detail = saleCreate_({ customer_id: sale.customer_id, items: repl, payments: diffPays, credit_used: creditUsed, next_payment_date: p.next_payment_date,
+      note: 'Exchange ' + ret.return_no + ' for ' + sale.invoice_no + (p.note ? ' · ' + p.note : ''), send_sms: false }, user);
+    if (refundWanted > 0) {
+      need_(user, 'customers'); // money handed back to the customer
+      var surplus = round_(Math.max(returnTotal - replTotal, 0));
+      var holding = round_(Math.max(-(customerBalances_()[sale.customer_id] || 0), 0));
+      if (refundWanted > surplus + 0.005) fail_('Refund can be at most the exchange surplus of ' + surplus);
+      if (refundWanted > holding + 0.005) fail_('Refund can be at most ' + holding + ': the rest of the surplus clears what the customer still owes');
+      refundReceipt = customerPayment_({ customer_id: sale.customer_id, amount: refundWanted, account_id: refundIn.account_id, direction: 'pay', note: 'Exchange refund ' + ret.return_no }, user);
+    }
+  } else {
+    var acc = all_('Accounts').filter(function (a) { return a.id === p.account_id && a.active; })[0];
+    if (!acc) fail_('Select the account used for the exchange money');
+    if (refundWanted > 0) fail_('Walk-in exchanges settle through the selected account; leave the refund empty');
+    ret = sreturnCreate_({ sale_id: sale.id, items: p.items, type: 'exchange', refund: { mode: 'cash', account_id: acc.id }, note: p.note || '' }, user).return;
+    returnTotal = round_(ret.total);
+    if (p.expected_return_value !== undefined && Math.abs(num_(p.expected_return_value) - returnTotal) > 0.005) fail_('The return value changed. Reopen the exchange and check it again');
+    var covered = round_(Math.min(returnTotal, replTotal));
+    var pays = (covered > 0 ? [{ account_id: acc.id, amount: covered }] : []).concat(diffPays);
+    detail = saleCreate_({ items: repl, payments: pays, note: 'Exchange ' + ret.return_no + ' for ' + sale.invoice_no + (p.note ? ' · ' + p.note : ''), send_sms: false }, user);
+  }
+  if (Math.abs(num_(detail.sale.total) - replTotal) > 0.005) fail_('Replacement total mismatch; nothing was saved');
+  if (p.expected_total !== undefined && Math.abs(num_(p.expected_total) - replTotal) > 0.005) fail_('The replacement total changed. Reopen the exchange and check it again');
+  update_('SalesReturns', ret.id, { note: 'Exchanged for ' + detail.sale.invoice_no + (p.note ? ' · ' + p.note : '') });
+  audit_(user, 'sale_exchange', { from_invoice: sale.invoice_no, return_no: ret.return_no, new_invoice: detail.sale.invoice_no, return_value: returnTotal, replacement_total: replTotal, refund: refundWanted });
+  return {
+    return: { id: ret.id, return_no: ret.return_no, total: returnTotal },
+    sale: detail,
+    refund: refundReceipt ? { amount: refundReceipt.amount, account: refundReceipt.account, receipt_no: refundReceipt.receipt_no } : null,
+    summary: { return_value: returnTotal, replacement_total: replTotal, difference: round_(replTotal - returnTotal), credit_used: creditUsed,
+      paid_now: round_(num_(detail.sale.paid) - creditUsed - (sale.customer_id ? 0 : Math.min(returnTotal, replTotal))), refund: refundWanted, due: round_(num_(detail.sale.due)) }
+  };
+}
 function sreturnsList_(p, user, allRows) {
   var q = String(p.q || '').toLowerCase(), items = {}, sales = indexBy_(all_('Sales'));
   all_('SalesReturnItems').forEach(function (i) { (items[i.return_id] = items[i.return_id] || []).push(i.name + ' x' + i.qty); });
@@ -4221,6 +4279,7 @@ var ROUTES = {
   'sales.details':    r_('pos', function (p, u) { var ids = Array.isArray(p.ids) ? p.ids : []; if (ids.length > 200) fail_('Export at most 200 invoices per request; use batched export'); if (!ids.length) fail_('Select at least one invoice'); return ids.map(function (id) { return saleDetail_({ id: id }, u); }); }),
   'sales.list':       r_('pos', salesList_),
   'sreturn.create':   r_('sales.return', sreturnCreate_, true),
+  'sale.exchange':    r_('sales.return', saleExchange_, true),
   'sreturns.list':    r_('sales.return', function (p, u) { return stripCost_(sreturnsList_(p, u), u); }),
 
   'expense.create':   r_('expenses', expenseCreate_, true),

@@ -9,7 +9,7 @@ import { excelSales, pdfSales, printSales } from '../lib/salesDocs';
 // Full invoices for ticked rows (fetched in one call).
 const saleDocs = { excel: async (rows) => excelSales(await salesDetails(rows), `invoices-${rows.length}.xlsx`), pdf: async (rows) => pdfSales(await salesDetails(rows), `invoices-${rows.length}.pdf`), print: async (rows) => printSales(await salesDetails(rows)) };
 import { useApi, PageHead, Tabs, DateRange, Badge, statusTone, Modal, Btn, Field, Loading, ErrorBox, useAction, Select, noWheel } from '../components/ui';
-import { ReverseDialog } from '../components/widgets';
+import { ReverseDialog, ProductSearch, SerialChooser, PaymentSplit, defaultPay, cleanPays } from '../components/widgets';
 import { salesDetails } from '../lib/salesDetails';
 import { returnValue } from '../lib/returnValue';
 
@@ -150,8 +150,10 @@ function SaleDetail({ id, onClose, onChanged }) {
   );
 }
 
+const isSerialProduct = (p) => !p.service && p.has_warranty && p.warranty_type === 'serial';
+
 function ReturnForm({ detail, onClose, onDone }) {
-  const { accounts, refresh } = useStore();
+  const { accounts, refresh, can, toast } = useStore();
   const { sale, items } = detail;
   const [lines, setLines] = useState(() => items.map((i) => ({ id: i.id, qty: '', serials: [] })));
   const [type, setType] = useState('return');
@@ -167,7 +169,71 @@ function ReturnForm({ detail, onClose, onDone }) {
   useEffect(() => { setAmount(maxCash || (value ? 0 : '')); if (sale.customer_id && value > 0 && maxCash <= 0) setMode('adjust'); }, [value, maxCash]);
   const set = (i, patch) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
 
-  const submit = async () => {
+  // Exchange: the replacement products are sold on a new invoice in the same step.
+  const [repl, setRepl] = useState([]);
+  const exchanging = type === 'exchange' && repl.length > 0;
+  const walkIn = !sale.customer_id;
+  const cashAcc = (accounts.find((a) => a.type === 'cash') || accounts[0])?.id || '';
+  const [settleAcc, setSettleAcc] = useState(cashAcc);
+  const [pays, setPays] = useState(() => defaultPay(''));
+  const [payTouched, setPayTouched] = useState(false);
+  const [surplusMode, setSurplusMode] = useState('credit');
+  const [refundAcc, setRefundAcc] = useState(cashAcc);
+  const [refundAmt, setRefundAmt] = useState('');
+  const [nextPay, setNextPay] = useState('');
+  const replTotal = round2(repl.reduce((a, l) => a + round2((Number(l.qty) || 0) * (Number(l.price) || 0)), 0));
+  const diff = round2(replTotal - value);
+  const paidNow = diff > 0 ? round2(cleanPays(pays).reduce((a, p) => a + p.amount, 0)) : 0;
+  const unpaid = diff > 0 ? round2(diff - paidNow) : 0;
+  // What the customer will hold as credit after the exchange (their old dues are cleared first).
+  const custBal = Number(detail.customer?.balance) || 0;
+  const holding = round2(Math.max(-(custBal - value + replTotal), 0));
+  const refundMax = diff < 0 ? round2(Math.min(-diff, holding)) : 0;
+  useEffect(() => { if (!payTouched) setPays(defaultPay(diff > 0 ? diff : '')); }, [diff, payTouched]);
+  useEffect(() => { setRefundAmt(refundMax > 0 ? refundMax : ''); }, [refundMax]);
+
+  const addRepl = (p) => {
+    if (isSerialProduct(p)) {
+      if (repl.some((l) => l.product_id === p.id)) return toast(`${p.name} is already added — pick more serials on its line`, 'err');
+      return setRepl((r) => [...r, { product_id: p.id, name: p.name, unit: p.unit, serial: true, qty: 0, price: p.sale_price, serials: [] }]);
+    }
+    setRepl((r) => (r.some((l) => l.product_id === p.id) ? r.map((l) => (l.product_id === p.id ? { ...l, qty: (Number(l.qty) || 0) + 1 } : l)) : [...r, { product_id: p.id, name: p.name, unit: p.unit, serial: false, qty: 1, price: p.sale_price, serials: [] }]));
+  };
+  const setRepLine = (i, patch) => setRepl((r) => r.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+
+  const problems = [];
+  if (exchanging) {
+    if (!value) problems.push('Select the item(s) the customer is returning');
+    repl.forEach((l) => {
+      if (!(Number(l.qty) > 0)) problems.push(l.serial ? `Pick the serial number(s) for ${l.name}` : `Enter a quantity for ${l.name}`);
+      if (!(Number(l.price) >= 0) || l.price === '') problems.push(`Enter a price for ${l.name}`);
+    });
+    if (diff > 0 && paidNow > diff + 0.004) problems.push(`Payment is more than the difference (${money(diff)})`);
+    if (diff > 0 && walkIn && Math.abs(unpaid) > 0.004) problems.push(`Walk-in customer must pay the full difference of ${money(diff)}`);
+    if (diff < 0 && !walkIn && surplusMode === 'refund' && (Number(refundAmt) > refundMax + 0.004 || !(Number(refundAmt) > 0))) problems.push(`Refund must be between 0 and ${money(refundMax)}`);
+  }
+
+  const submit = async (print) => {
+    if (exchanging) {
+      if (problems.length) return toast(problems[0], 'err');
+      let res;
+      try {
+        res = await run(() => api('sale.exchange', {
+          sale_id: sale.id, note, expected_return_value: value, expected_total: replTotal,
+          items: lines.map((l) => ({ sale_item_id: l.id, qty: Number(l.qty) || 0, serials: l.serials })).filter((l) => l.qty > 0),
+          replacement: repl.map((l) => ({ product_id: l.product_id, qty: Number(l.qty), price: Number(l.price), serials: l.serials })),
+          payments: diff > 0 ? cleanPays(pays) : [],
+          ...(walkIn ? { account_id: settleAcc } : {}),
+          ...(!walkIn && diff < 0 && surplusMode === 'refund' ? { refund: { account_id: refundAcc, amount: round2(Number(refundAmt)) } } : {}),
+          next_payment_date: unpaid > 0.004 ? nextPay : ''
+        }));
+      } catch { return; }
+      const d = res.summary;
+      toast(`Exchanged: ${res.return.return_no} → ${res.sale.sale.invoice_no}` + (d.difference > 0 ? ` · received ${money(d.paid_now)}${d.due > 0 ? `, ${money(d.due)} due` : ''}` : d.difference < 0 ? (d.refund > 0 || walkIn ? ` · gave back ${money(walkIn ? -d.difference : d.refund)}` : ` · ${money(-d.difference)} kept as customer credit`) : ''), 'ok');
+      if (print) printInvoice(res.sale);
+      refresh('products', 'customers');
+      return onDone();
+    }
     await run(() => api('sreturn.create', {
       sale_id: sale.id, type, note,
       items: lines.map((l) => ({ sale_item_id: l.id, qty: Number(l.qty) || 0, serials: l.serials })).filter((l) => l.qty > 0),
@@ -179,11 +245,14 @@ function ReturnForm({ detail, onClose, onDone }) {
 
   return (
     <Modal open onClose={onClose} title={`Return items — ${sale.invoice_no}`} size="lg"
-      footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} disabled={!value} onClick={submit}>Record {type}</Btn></>}>
+      footer={<><Btn onClick={onClose}>Cancel</Btn>
+        {exchanging && <Btn busy={busy} disabled={!value || problems.length > 0} onClick={() => submit(true)}>Exchange &amp; print invoice</Btn>}
+        <Btn kind="primary" busy={busy} disabled={!value || (exchanging && problems.length > 0)} onClick={() => submit(false)}>Record {type}</Btn></>}>
       <div className="row" style={{ marginBottom: 12 }}>
         <Tabs tabs={[['return', 'Return'], ['exchange', 'Exchange']]} value={type} onChange={setType} />
-        {type === 'exchange' && <span className="muted">The returned value becomes customer credit; then sell the replacement in POS and tick “Use customer advance”.</span>}
+        {type === 'exchange' && <span className="muted">{can('pos') ? 'Pick what comes back, then add the product the customer takes instead. Stock, cash and profit follow both products.' : 'The returned value becomes customer credit; then sell the replacement in POS and tick “Use customer advance”.'}</span>}
       </div>
+      <h3 className="xch-title">{type === 'exchange' ? '1. Item(s) coming back' : 'Items'}</h3>
       <div className="dt"><div className="dt-scroll"><table>
         <thead><tr><th>Item</th><th className="r">Sold</th><th className="r">Returnable</th><th style={{ width: 110 }} className="r">Return qty</th><th>Serials returned</th></tr></thead>
         <tbody>{items.map((it, i) => {
@@ -193,7 +262,7 @@ function ReturnForm({ detail, onClose, onDone }) {
             <tr key={it.id}>
               <td>{it.name}</td><td className="r num">{fqty(it.qty, it.unit)}</td><td className="r num">{fqty(left, it.unit)}</td>
               <td><input type="number" min="0" max={left} step={isDecimalUnit(it.unit) ? 0.5 : 1} value={lines[i].qty} disabled={left <= 0}
-                onChange={(e) => set(i, { qty: e.target.value, serials: lines[i].serials.slice(0, Number(e.target.value) || 0) })} onWheel={noWheel} /></td>
+                onChange={(e) => set(i, { qty: e.target.value, serials: lines[i].serials.slice(0, Number(e.target.value) || 0) })} onWheel={noWheel} aria-label={`Return quantity for ${it.name}`} /></td>
               <td>{sers.length > 0 && <div className="serial-grid">{sers.map((sn) => (
                 <button type="button" key={sn} className={lines[i].serials.includes(sn) ? 'on' : ''}
                   onClick={() => { const cur = lines[i].serials; const next = cur.includes(sn) ? cur.filter((x) => x !== sn) : [...cur, sn]; set(i, { serials: next, qty: next.length || '' }); }}>{sn}</button>
@@ -202,6 +271,54 @@ function ReturnForm({ detail, onClose, onDone }) {
           );
         })}</tbody>
       </table></div></div>
+
+      {type === 'exchange' && can('pos') && <>
+        <h3 className="xch-title">2. Product the customer takes instead</h3>
+        <ProductSearch inStockOnly onPick={addRepl} placeholder="Search the replacement product (name, model, brand, barcode)" />
+        {repl.length > 0 && <div className="dt" style={{ marginTop: 10 }}><div className="dt-scroll"><table>
+          <thead><tr><th>Replacement</th><th style={{ width: 110 }} className="r">Qty</th><th style={{ width: 130 }} className="r">Price</th><th className="r">Amount</th><th /></tr></thead>
+          <tbody>{repl.map((l, i) => (
+            <tr key={l.product_id}>
+              <td>{l.name}{l.serial && <SerialChooser productId={l.product_id} value={l.serials} onChange={(sers) => setRepLine(i, { serials: sers, qty: sers.length })} />}</td>
+              <td>{l.serial ? <span className="num">{l.qty}</span> : <input type="number" min="0" step={isDecimalUnit(l.unit) ? 'any' : 1} value={l.qty} onChange={(e) => setRepLine(i, { qty: e.target.value })} onWheel={noWheel} aria-label={`Quantity of ${l.name}`} />}</td>
+              <td><input type="number" min="0" step="any" value={l.price} onChange={(e) => setRepLine(i, { price: e.target.value })} onWheel={noWheel} aria-label={`Price of ${l.name}`} /></td>
+              <td className="r num">{money(round2((Number(l.qty) || 0) * (Number(l.price) || 0)), false)}</td>
+              <td><button type="button" className="x" aria-label={`Remove ${l.name}`} onClick={() => setRepl((r) => r.filter((_, j) => j !== i))}>×</button></td>
+            </tr>
+          ))}</tbody>
+        </table></div></div>}
+        {!repl.length && <p className="muted" style={{ marginTop: 6 }}>No replacement yet. Leave it empty only if the customer will choose later — the returned value then stays as customer credit (or is refunded).</p>}
+      </>}
+
+      {exchanging ? <>
+        <h3 className="xch-title">3. Settle the difference</h3>
+        <div className="xch-sum">
+          <div><span>Returned value</span><b>{money(value)}</b></div>
+          <div><span>Replacement total</span><b>{money(replTotal)}</b></div>
+          <div className={diff > 0 ? 'due' : diff < 0 ? 'back' : ''}><span>{diff > 0 ? 'Customer pays' : diff < 0 ? 'Shop gives back' : 'Difference'}</span><b>{money(Math.abs(diff))}</b></div>
+        </div>
+        <div className="form" style={{ marginTop: 12 }}>
+          {walkIn && <Field label="Counter account" hint="The returned value and the replacement pass through this account, so only the difference actually changes hands."><Select value={settleAcc} onChange={setSettleAcc} options={accounts} allowEmpty={false} /></Field>}
+          {diff > 0 && <div className="wide"><PaymentSplit value={pays} onChange={(v) => { setPayTouched(true); setPays(v); }} total={diff} label="Customer pays the difference" /></div>}
+          {diff > 0 && !walkIn && unpaid > 0.004 && <Field label="Next payment date" hint={`${money(unpaid)} stays due on the new invoice.`}><input type="date" min={today()} value={nextPay} onChange={(e) => setNextPay(e.target.value)} /></Field>}
+          {diff < 0 && walkIn && <p className="wide muted">Give {money(-diff)} back to the customer from the counter account.</p>}
+          {diff < 0 && !walkIn && <>
+            <Field label="The extra value">
+              <select value={surplusMode} onChange={(e) => setSurplusMode(e.target.value)} aria-label="What to do with the extra value">
+                <option value="credit">Keep as customer credit</option>
+                <option value="refund" disabled={refundMax <= 0}>Refund money now</option>
+              </select>
+            </Field>
+            {surplusMode === 'refund' && <>
+              <Field label="Refund from"><Select value={refundAcc} onChange={setRefundAcc} options={accounts} allowEmpty={false} /></Field>
+              <Field label="Refund amount" hint={refundMax < -diff ? `At most ${money(refundMax)}: the rest clears what the customer still owes.` : ''}><input type="number" min="0" max={refundMax} step="any" value={refundAmt} onChange={(e) => setRefundAmt(e.target.value)} /></Field>
+            </>}
+            {refundMax < -diff && surplusMode === 'credit' && <p className="wide muted">The customer still owes money, so the extra value first reduces that due.</p>}
+          </>}
+          <Field label="Note" wide><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Reason for exchange" /></Field>
+        </div>
+        {problems.length > 0 && value > 0 && <p className="wide" style={{ color: 'var(--warn)', marginTop: 8 }}>{problems[0]}</p>}
+      </> : (
       <div className="form" style={{ marginTop: 14 }}>
         <Field label="Return value (after invoice discount)"><input value={money(value)} readOnly /></Field>
         {sale.customer_id ? (
@@ -217,7 +334,7 @@ function ReturnForm({ detail, onClose, onDone }) {
           <Field label="Refund amount" hint={sale.customer_id ? (owed > 0 ? `${money(Math.min(owed, value))} of this return clears the unpaid due on this invoice, so at most ${money(maxCash)} can be refunded. Anything not refunded is credited to the customer.` : 'Any amount not refunded is credited to the customer.') : ''}><input type="number" min="0" max={maxCash} step="any" value={amount} onChange={(e) => setAmount(e.target.value)} disabled={!sale.customer_id} /></Field>
         </>}
         <Field label="Note" wide><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Reason for return" /></Field>
-      </div>
+      </div>)}
     </Modal>
   );
 }
