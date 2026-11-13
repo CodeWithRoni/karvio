@@ -77,6 +77,7 @@ test('master data confirmation can cancel and then delete a brand', async ({ pag
 test('Bengali stock PDF and Excel download and thermal receipts keep their fonts', async ({ page }) => {
   const errors = []; page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/#/stock');
+  await page.getByPlaceholder('Search this table').fill('বাংলা'); // 20 rows per page: find the Bengali product
   await expect(page.getByText('বাংলা কেবল', { exact: true })).toBeVisible();
   const pdfDownload = page.waitForEvent('download');
   await page.getByRole('button', { name: 'PDF', exact: true }).click();

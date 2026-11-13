@@ -37,7 +37,7 @@ export default function Sales() {
       {tab === 'sales' ? (
         <>
           <ErrorBox error={sales.error} onRetry={sales.reload} />
-          <DataTable title={`Sales ${range.from} to ${range.to}`} loading={sales.loading} rows={sales.data || []} pageSize={10} docExport={saleDocs} sumFilter={(r) => r.status === 'active'} onRowClick={(r) => nav(`/sales/${r.id}`)}
+          <DataTable title={`Sales ${range.from} to ${range.to}`} loading={sales.loading} rows={sales.data || []} docExport={saleDocs} sumFilter={(r) => r.status === 'active'} onRowClick={(r) => nav(`/sales/${r.id}`)}
             rowClass={(r) => (r.status === 'cancelled' ? 'dim' : '')}
             columns={[
               { key: 'date', label: 'Date', type: 'date' },
@@ -55,7 +55,7 @@ export default function Sales() {
       ) : (
         <>
           <ErrorBox error={rets.error} onRetry={rets.reload} />
-          <DataTable title="Sales returns" sumFilter={(r) => r.status === 'active'} loading={rets.loading} rows={rets.data || []} pageSize={10} rowClass={(r) => (r.status === 'cancelled' ? 'dim' : '')}
+          <DataTable title="Sales returns" sumFilter={(r) => r.status === 'active'} loading={rets.loading} rows={rets.data || []} rowClass={(r) => (r.status === 'cancelled' ? 'dim' : '')}
             columns={[
               { key: 'date', label: 'Date', type: 'date' },
               { key: 'return_no', label: 'Return #' },

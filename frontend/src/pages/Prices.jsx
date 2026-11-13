@@ -1,5 +1,6 @@
 // Price manager: find products by group / category / brand / name and set retail & wholesale prices in bulk.
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Pager, DEFAULT_PAGE_SIZE } from '../components/Pager';
 import { useStore } from '../lib/store';
 import { api } from '../lib/api';
 import { money, qty as fqty } from '../lib/format';
@@ -32,7 +33,12 @@ export default function Prices() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [products, f]);
 
-  const visibleRows = rows.slice(0, 500);
+  // 20 products per page by default (20 / 50 / 100 / custom); quick fill applies to the products on this page.
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  useEffect(() => { setPage(0); }, [f]);
+  const curPage = Math.min(page, Math.max(0, Math.ceil(rows.length / pageSize) - 1));
+  const visibleRows = rows.slice(curPage * pageSize, curPage * pageSize + pageSize);
   const changes = Object.entries(draft).map(([id, d]) => {
     const p = products.find((x) => x.id === id); if (!p) return null;
     const sale = d.sale !== undefined ? num(d.sale) : p.sale_price, whole = d.whole !== undefined ? num(d.whole) : p.wholesale_price;
@@ -122,8 +128,9 @@ export default function Prices() {
         })}</tbody>
       </table>
       {!rows.length && <div className="empty"><b>No products match</b><div>Change the filters or search.</div></div>}
-      {rows.length > 500 && <div className="empty"><div>Showing the first 500 of {rows.length}. Narrow the filters to see the rest.</div></div>}
-      </div></div>
+      </div>
+      <Pager page={curPage} pageSize={pageSize} total={rows.length} label="products" onPage={setPage} onPageSize={(n) => { setPageSize(n); setPage(0); }} />
+      </div>
     </>
   );
 }

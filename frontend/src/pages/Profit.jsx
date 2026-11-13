@@ -79,7 +79,7 @@ function Report({ d, group, setGroup, view, setView }) {
         {view === 'timeline' && <Tabs tabs={[['auto', 'Auto'], ['day', 'Daily'], ['month', 'Monthly']]} value={group} onChange={setGroup} />}
       </div>
       <div style={{ marginTop: 10 }}>
-        {view === 'timeline' && <DataTable title={`Profit ${d.from} to ${d.to}`} rows={d.timeline} pageSize={31} empty={<Empty title="No sales, returns or expenses in this period" />}
+        {view === 'timeline' && <DataTable title={`Profit ${d.from} to ${d.to}`} rows={d.timeline} empty={<Empty title="No sales, returns or expenses in this period" />}
           columns={[
             { key: 'period', label: d.group === 'month' ? 'Month' : 'Date', render: (r) => periodLabel(r.period) },
             { key: 'invoices', label: 'Invoices', type: 'num', sum: true },
@@ -91,7 +91,7 @@ function Report({ d, group, setGroup, view, setView }) {
             { key: 'stock_adjust', label: 'Stock adjust', type: 'money', sum: true },
             { key: 'net', label: 'Net profit', type: 'money', sum: true, className: 'profit-net' }
           ]} />}
-        {view === 'products' && <DataTable title={`Profit by product ${d.from} to ${d.to}`} rows={d.products} pageSize={25} empty={<Empty title="Nothing sold in this period" />}
+        {view === 'products' && <DataTable title={`Profit by product ${d.from} to ${d.to}`} rows={d.products} empty={<Empty title="Nothing sold in this period" />}
           columns={[
             { key: 'name', label: 'Product' },
             { key: 'qty', label: 'Qty sold', type: 'num', sum: true },
@@ -102,7 +102,7 @@ function Report({ d, group, setGroup, view, setView }) {
             { key: 'margin', label: 'Margin %', type: 'num' }
           ]} />}
         {view === 'products' && d.products.length > 0 && s.discount > 0 && <p className="muted" style={{ fontSize: 12.5 }}>Product profit is before invoice discounts ({money(s.discount)} in this period), which are taken off in the gross profit above.</p>}
-        {view === 'staff' && <DataTable title={`Profit by staff ${d.from} to ${d.to}`} rows={d.staff} pageSize={25} empty={<Empty title="No sales in this period" />}
+        {view === 'staff' && <DataTable title={`Profit by staff ${d.from} to ${d.to}`} rows={d.staff} empty={<Empty title="No sales in this period" />}
           columns={[
             { key: 'name', label: 'Staff' },
             { key: 'invoices', label: 'Invoices', type: 'num', sum: true },
@@ -110,7 +110,7 @@ function Report({ d, group, setGroup, view, setView }) {
             { key: 'returns', label: 'Returns', type: 'money', sum: true },
             { key: 'gross', label: 'Gross profit', type: 'money', sum: true }
           ]} />}
-        {view === 'expenses' && <DataTable title={`Expenses by category ${d.from} to ${d.to}`} rows={d.expenses} pageSize={25} empty={<Empty title="No expenses in this period" />}
+        {view === 'expenses' && <DataTable title={`Expenses by category ${d.from} to ${d.to}`} rows={d.expenses} empty={<Empty title="No expenses in this period" />}
           columns={[
             { key: 'category', label: 'Category' },
             { key: 'count', label: 'Entries', type: 'num', sum: true },

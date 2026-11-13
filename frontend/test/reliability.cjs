@@ -163,7 +163,7 @@ async function componentChecks() {
   eq(selectedDate, 'new');
 
   refs = []; refIndex = 0; stateIndex = 0;
-  states = ['', new Set(), { key: 'invoice_no', dir: 1 }, 0, false];
+  states = ['', new Set(), { key: 'invoice_no', dir: 1 }, 0, false, 20];
   const table = load('components/DataTable.jsx').default;
   assert.doesNotThrow(() => table({ columns: [{ key: 'period', label: 'Day' }], rows: [{ period: '2026-11-06' }] })); checks++;
 }

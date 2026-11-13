@@ -99,7 +99,7 @@ export default function Expenses() {
           </ul>
         </div>
       )}
-      <DataTable title={catFilter ? `Expenses — ${catFilter}` : 'Expenses'} loading={list.loading} rows={rows} pageSize={10} rowClass={(r) => (r.status === 'cancelled' ? 'dim' : '')}
+      <DataTable title={catFilter ? `Expenses — ${catFilter}` : 'Expenses'} loading={list.loading} rows={rows} rowClass={(r) => (r.status === 'cancelled' ? 'dim' : '')}
         onRowClick={open}
         totals={{ amount: rows.filter((x) => x.status === 'active').reduce((a, x) => a + x.amount, 0) }}
         columns={[

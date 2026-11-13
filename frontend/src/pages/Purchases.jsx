@@ -1,4 +1,5 @@
 import { purchaseDetails } from '../lib/purchaseDetails';
+import { Pager, DEFAULT_PAGE_SIZE } from '../components/Pager';
 import { returnValue } from '../lib/returnValue';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -14,9 +15,9 @@ export default function Purchases() {
   const can = useStore((s) => s.can);
   const [tab, setTab] = useState('list');
   const [range, setRange] = useState({ from: monthStart(), to: today() });
-  // Purchase invoices: newest 10 per page; narrow by supplier and / or dates.
-  const [lf, setLf] = useState({ supplier_id: '', from: '', to: '', q: '', page: 1 });
-  const list = useApi('purchases.list', { ...lf, per: 10 }, [lf.supplier_id, lf.from, lf.to, lf.q, lf.page], { skip: tab !== 'list' });
+  // Purchase invoices: newest first, 20 per page by default (20 / 50 / 100 / custom); narrow by supplier and / or dates.
+  const [lf, setLf] = useState({ supplier_id: '', from: '', to: '', q: '', page: 1, per: DEFAULT_PAGE_SIZE });
+  const list = useApi('purchases.list', lf, [lf.supplier_id, lf.from, lf.to, lf.q, lf.page, lf.per], { skip: tab !== 'list' });
   const rets = useApi('preturns.list', range, [], { skip: tab !== 'returns' });
   const [open, setOpen] = useState(null);
   const [rev, setRev] = useState(null);
@@ -51,8 +52,7 @@ function PurchaseList({ list, f, setF, onOpen }) {
   const suppliers = useStore((st) => st.suppliers);
   const [sel, setSel] = useState({}); // id -> invoice_no, kept across pages
   const [busy, setBusy] = useState('');
-  const d = list.data && !Array.isArray(list.data) ? list.data : { rows: [], total: 0, page: 1, per: 10, sums: {} };
-  const pages = Math.max(1, Math.ceil(d.total / d.per));
+  const d = list.data && !Array.isArray(list.data) ? list.data : { rows: [], total: 0, page: 1, per: f.per || DEFAULT_PAGE_SIZE, sums: {} };
   const ids = Object.keys(sel);
   const allOnPage = d.rows.length > 0 && d.rows.every((r) => sel[r.id]);
   const toggle = (r) => setSel((x) => { const n = { ...x }; if (n[r.id]) delete n[r.id]; else n[r.id] = r.invoice_no; return n; });
@@ -71,8 +71,6 @@ function PurchaseList({ list, f, setF, onOpen }) {
       else await printPurchases(docs);
     } catch (e) { useStore.getState().toast(e.message, 'err'); } finally { setBusy(''); }
   };
-  // Page buttons: 1 … 4 5 [6] 7 8 … 20
-  const nums = [...new Set([1, pages, d.page - 2, d.page - 1, d.page, d.page + 1, d.page + 2])].filter((n) => n >= 1 && n <= pages).sort((a, b) => a - b);
 
   return (
     <>
@@ -83,7 +81,7 @@ function PurchaseList({ list, f, setF, onOpen }) {
         </select></Field>
         <Field label="From"><input type="date" value={f.from} onChange={(e) => set({ from: e.target.value })} aria-label="From date" /></Field>
         <Field label="To"><input type="date" value={f.to} onChange={(e) => set({ to: e.target.value })} aria-label="To date" /></Field>
-        {(f.supplier_id || f.from || f.to || f.q) && <button className="link" style={{ paddingBottom: 10 }} onClick={() => { setQ(''); setF({ supplier_id: '', from: '', to: '', q: '', page: 1 }); }}>Clear filters</button>}
+        {(f.supplier_id || f.from || f.to || f.q) && <button className="link" style={{ paddingBottom: 10 }} onClick={() => { setQ(''); setF({ supplier_id: '', from: '', to: '', q: '', page: 1, per: f.per }); }}>Clear filters</button>}
         <span className="spacer" />
         <div className="pl-export">
           <span className="muted">{ids.length ? `${ids.length} selected` : 'Tick invoices to export'}</span>
@@ -115,15 +113,7 @@ function PurchaseList({ list, f, setF, onOpen }) {
       {list.loading && !d.rows.length && <Loading />}
       {!list.loading && !d.rows.length && <div className="empty"><b>No purchases found</b><div>{f.supplier_id || f.from || f.to ? 'Change the supplier or dates.' : 'Record your first purchase in New purchase.'}</div></div>}
       </div>
-      {pages > 1 && (
-        <div className="pager">
-          <span className="muted">Showing {(d.page - 1) * d.per + 1}–{Math.min(d.page * d.per, d.total)} of {d.total}</span>
-          <span className="spacer" />
-          <button disabled={d.page <= 1} onClick={() => set({ page: d.page - 1 })}>‹ Prev</button>
-          {nums.map((n, i) => <span key={n} style={{ display: 'contents' }}>{i > 0 && n - nums[i - 1] > 1 && <span className="gap">…</span>}<button className={n === d.page ? 'on' : ''} onClick={() => set({ page: n })} aria-current={n === d.page ? 'page' : undefined}>{n}</button></span>)}
-          <button disabled={d.page >= pages} onClick={() => set({ page: d.page + 1 })}>Next ›</button>
-        </div>
-      )}
+      <Pager page={d.page - 1} pageSize={d.per} total={d.total} label="purchases" onPage={(n) => set({ page: n + 1 })} onPageSize={(n) => set({ per: n })} />
       </div>
     </>
   );

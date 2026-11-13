@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { money, fdate, qty as fqty } from '../lib/format';
 import { exportExcel, exportPdf, printTable } from '../lib/export';
 import { Empty, Loading } from './ui';
+import { Pager, DEFAULT_PAGE_SIZE } from './Pager';
 
 /**
  * Dense data table with search, sort, pagination and Excel / PDF / Print export.
@@ -9,7 +10,7 @@ import { Empty, Loading } from './ui';
  * selectable: tick rows; Excel / PDF / Print then export only the ticked rows.
  * docExport: { excel(rows), pdf(rows), print(rows) } — full documents (e.g. invoices) for the ticked rows.
  */
-export default function DataTable({ columns, rows, loading, title = 'Export', exportable = true, searchable = true, pageSize = 50, onRowClick, empty, totals: totalsProp, toolbar, rowClass, selectable = exportable, docExport, sumFilter }) {
+export default function DataTable({ columns, rows, loading, title = 'Export', exportable = true, searchable = true, onRowClick, empty, totals: totalsProp, toolbar, rowClass, selectable = exportable, docExport, sumFilter }) {
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(() => new Set());
   useEffect(() => { setSel(new Set()); }, [rows]);
@@ -18,6 +19,8 @@ export default function DataTable({ columns, rows, loading, title = 'Export', ex
   useEffect(() => { if (sort && !sortColumn) setSort(null); }, [sort, sortColumn]);
   const [page, setPage] = useState(0);
   const [exporting, setExporting] = useState(false);
+  // Every table opens with 20 rows per page; the size can be changed under the table (20 / 50 / 100 / custom).
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const download = async (fn) => {
     if (exporting) return;
     setExporting(true);
@@ -70,7 +73,6 @@ export default function DataTable({ columns, rows, loading, title = 'Export', ex
     if (kind === 'pdf') return download(() => exportPdf(title, expCols, outRows, outTotals));
     return download(() => printTable(title, expCols, outRows, outTotals));
   };
-  const nums = [...new Set([0, pages - 1, cur - 2, cur - 1, cur, cur + 1, cur + 2])].filter((n) => n >= 0 && n < pages).sort((a, b) => a - b);
 
   const fmt = (c, row) => {
     if (c.render) return c.render(row);
@@ -135,15 +137,7 @@ export default function DataTable({ columns, rows, loading, title = 'Export', ex
         {loading && <Loading />}
         {!loading && !filtered.length && (empty || <Empty title={q ? 'No rows match your search' : 'No records for this view'} />)}
       </div>
-      {pages > 1 && (
-        <div className="pager">
-          <span className="muted">Showing {cur * pageSize + 1}–{Math.min((cur + 1) * pageSize, filtered.length)} of {filtered.length}</span>
-          <span className="spacer" />
-          <button disabled={cur === 0} onClick={() => setPage(cur - 1)}>‹ Prev</button>
-          {nums.map((n, i) => <span key={n} style={{ display: 'contents' }}>{i > 0 && n - nums[i - 1] > 1 && <span className="gap">…</span>}<button className={n === cur ? 'on' : ''} onClick={() => setPage(n)} aria-current={n === cur ? 'page' : undefined}>{n + 1}</button></span>)}
-          <button disabled={cur >= pages - 1} onClick={() => setPage(cur + 1)}>Next ›</button>
-        </div>
-      )}
+      <Pager page={cur} pageSize={pageSize} total={filtered.length} onPage={setPage} onPageSize={(n) => { setPageSize(n); setPage(0); }} />
     </div>
   );
 }

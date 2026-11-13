@@ -101,7 +101,7 @@ function Ledger({ account, onClose }) {
       </div>
       {l.data && <p className="muted">Period opening {money(l.data.opening)} · Period closing {money(l.data.closing)}</p>}
       <ErrorBox error={l.error} onRetry={l.reload} />
-      <DataTable title={`${account.name} ledger`} loading={l.loading} rows={l.data?.rows || []} pageSize={200}
+      <DataTable title={`${account.name} ledger`} loading={l.loading} rows={l.data?.rows || []}
         columns={[
           { key: 'date', label: 'Date', type: 'date' }, { key: 'ref_type', label: 'Source' }, { key: 'note', label: 'Details', className: 'clip' },
           { key: 'in', label: 'In', type: 'money', sum: true }, { key: 'out', label: 'Out', type: 'money', sum: true },

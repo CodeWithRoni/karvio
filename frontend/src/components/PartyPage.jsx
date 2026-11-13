@@ -1,5 +1,6 @@
 // Shared directory + ledger page for customers (Bakir Khata) and suppliers.
 import { useEffect, useState } from 'react';
+import { Pager, DEFAULT_PAGE_SIZE } from './Pager';
 import { useNavigate, useParams } from 'react-router-dom';
 import { partyStatements } from '../lib/partyStatements';
 import { useStore } from '../lib/store';
@@ -52,7 +53,6 @@ export default function PartyPage({ kind }) {
   );
 }
 
-const PER = 10;
 async function exportParties(kind, ids, how) {
   const c = CFG[kind];
   const docs = await partyStatements(c.statements, ids);
@@ -62,11 +62,12 @@ async function exportParties(kind, ids, how) {
   return printParties(kind, docs);
 }
 
-/** Directory: search, 10 per page, tick parties to export their details and full ledger. */
+/** Directory: search, 20 per page by default (20 / 50 / 100 / custom), tick parties to export their details and full ledger. */
 function PartyList({ kind, rows, loading, onOpen }) {
   const c = CFG[kind];
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
+  const [PER, setPer] = useState(DEFAULT_PAGE_SIZE);
   const [sel, setSel] = useState({});
   const [busy, setBusy] = useState('');
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
@@ -79,7 +80,6 @@ function PartyList({ kind, rows, loading, onOpen }) {
   const toggle = (r) => setSel((x) => { const n = { ...x }; if (n[r.id]) delete n[r.id]; else n[r.id] = 1; return n; });
   const togglePage = () => setSel((x) => { const n = { ...x }; pageRows.forEach((r) => { if (allOnPage) delete n[r.id]; else n[r.id] = 1; }); return n; });
   const out = async (how) => { setBusy(how); try { await exportParties(kind, ids, how); } catch (e) { useStore.getState().toast(e.message, 'err'); } finally { setBusy(''); } };
-  const nums = [...new Set([1, pages, cur - 2, cur - 1, cur, cur + 1, cur + 2])].filter((n) => n >= 1 && n <= pages).sort((a, b) => a - b);
   const total = shown.reduce((a, r) => a + (Number(r.balance) || 0), 0);
   useEffect(() => { setPage(1); }, [q, rows.length]);
 
@@ -118,15 +118,7 @@ function PartyList({ kind, rows, loading, onOpen }) {
       {loading && !rows.length && <Loading />}
       {!loading && !shown.length && <div className="empty"><b>No {kind}s found</b><div>{q ? 'Try another search.' : `Add your first ${kind}.`}</div></div>}
       </div>
-      {pages > 1 && (
-        <div className="pager">
-          <span className="muted">Showing {(cur - 1) * PER + 1}–{Math.min(cur * PER, shown.length)} of {shown.length}</span>
-          <span className="spacer" />
-          <button disabled={cur <= 1} onClick={() => setPage(cur - 1)}>‹ Prev</button>
-          {nums.map((n, i) => <span key={n} style={{ display: 'contents' }}>{i > 0 && n - nums[i - 1] > 1 && <span className="gap">…</span>}<button className={n === cur ? 'on' : ''} onClick={() => setPage(n)} aria-current={n === cur ? 'page' : undefined}>{n}</button></span>)}
-          <button disabled={cur >= pages} onClick={() => setPage(cur + 1)}>Next ›</button>
-        </div>
-      )}
+      <Pager page={cur - 1} pageSize={PER} total={shown.length} label={`${kind}s`} onPage={(n) => setPage(n + 1)} onPageSize={(n) => { setPer(n); setPage(1); }} />
     </div>
   );
 }
@@ -221,7 +213,7 @@ function PartyDetail({ kind, id, onClose, onEdit, onChanged, onDeleted }) {
             </div>
             <DateRange {...range} onChange={setRange} />
           </div>
-          <DataTable title={`${st.data.party} statement`} rows={st.data.rows} searchable={false} pageSize={200}
+          <DataTable title={`${st.data.party} statement`} rows={st.data.rows} searchable={false}
             columns={[
               { key: 'date', label: 'Date', type: 'date' }, { key: 'ref_no', label: 'Ref' }, { key: 'note', label: 'Details', className: 'clip' },
               { key: 'debit', label: c.debit, type: 'money', sum: true }, { key: 'credit', label: c.credit, type: 'money', sum: true },

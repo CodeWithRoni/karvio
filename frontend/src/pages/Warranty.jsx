@@ -25,7 +25,7 @@ export default function Warranty() {
         <Tabs tabs={[['open', 'Open'], ...STATUSES.map((s) => [s, s]), ['all', 'All']]} value={status} onChange={setStatus} />
       </div>
       <ErrorBox error={list.error} onRetry={list.reload} />
-      <DataTable title="Warranty claims" loading={list.loading} rows={list.data || []} pageSize={10} docExport={claimDocs} onRowClick={setSel}
+      <DataTable title="Warranty claims" loading={list.loading} rows={list.data || []} docExport={claimDocs} onRowClick={setSel}
         columns={[
           { key: 'claim_no', label: 'Claim #' }, { key: 'date', label: 'Received', type: 'date' },
           { key: 'product_name', label: 'Product' }, { key: 'serial', label: 'Serial' }, { key: 'invoice_no', label: 'Invoice' },

@@ -70,7 +70,7 @@ export default function Stock() {
             <label className="check" style={{ paddingBottom: 8 }}><input type="checkbox" checked={f.inactive} onChange={(e) => setF({ ...f, inactive: e.target.checked })} /> Show inactive</label>
             {(f.cat || f.sub || f.brand || f.qty !== '' || f.low) && <button className="link" style={{ paddingBottom: 10 }} onClick={() => setF({ cat: '', sub: '', brand: '', qty: '', low: false, inactive: false })}>Clear filters</button>}
           </div>
-          <DataTable title="Stock report" rows={rows} columns={cols} sumFilter={(r) => !r.service} onRowClick={can('products') ? (r) => setEdit(r) : undefined} pageSize={100} />
+          <DataTable title="Stock report" rows={rows} columns={cols} sumFilter={(r) => !r.service} onRowClick={can('products') ? (r) => setEdit(r) : undefined} />
           <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>Totals include all matching stock products across pages and table search. Quantities are grouped by unit; services are excluded. Cost and Stock value totals = stock × unit cost; Price total = stock × selling price, including reserved stock.</p>
         </>
       ) : <MasterData />}

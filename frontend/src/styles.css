@@ -628,6 +628,8 @@ small.margin.bad { color: var(--bad); }
 .pager button.on { background: var(--accent, #f2c230); color: #111; border-color: transparent; }
 .pager button:disabled { opacity: .4; cursor: not-allowed; }
 .pager .gap { color: var(--muted); padding: 0 2px; }
+.pager .pager-size { width: auto; min-width: 0; height: 32px; padding: 0 8px; margin-left: 8px; }
+.pager .pager-custom { width: 90px; height: 32px; padding: 0 8px; }
 .sn-chip.ro { padding: 2px 8px; margin: 0 4px 4px 0; font-size: 12px; }
 
 .exp-cats { max-width: 640px; }

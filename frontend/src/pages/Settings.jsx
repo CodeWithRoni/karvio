@@ -285,7 +285,7 @@ function SmsSettings() {
             <Btn busy={tbusy} disabled={dirty || !!configError || !/^\+?\d{10,15}$/.test(phone.replace(/[\s-]/g,''))} onClick={async () => {try{const result=await run(()=>api('sms.test',{phone:phone.replace(/[\s-]/g,'')}));setTestResult(result);log.reload();}catch(error){setTestResult({status:'failed',response:error.message});}}}>Send test</Btn></div>
         </div>
         {testResult&&<div className="card" role="status"><Badge tone={testResult.status==='sent'?'ok':'muted'}>{testResult.status || (testResult.ok?'sent':'unknown')}</Badge><p>{testResult.status==='queued'?'Queued for delivery. Check the SMS log for the final result.':testResult.response || 'Check the SMS log for delivery details.'}</p></div>}
-        <DataTable title="SMS log" rows={log.data || []} loading={log.loading} pageSize={15} exportable={false}
+        <DataTable title="SMS log" rows={log.data || []} loading={log.loading} exportable={false}
           columns={[{ key: 'ts', label: 'Time', value: (r) => fdatetime(r.ts) }, { key: 'phone', label: 'Phone' }, { key: 'status', label: 'Status', render: (r) => <Badge tone={r.status === 'sent' ? 'ok' : r.status==='failed'?'bad':'muted'}>{r.status}</Badge> }, { key: 'response', label: 'Gateway reply', className: 'clip' }]} />
       </div>
     </div>
