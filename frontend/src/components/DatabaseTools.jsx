@@ -30,7 +30,7 @@ export function DatabaseOverview({ info }) {
   const shown = [...MAIN.map((n) => d.tables.find((t) => t.name === n)).filter(Boolean), ...d.tables.filter((t) => !MAIN.includes(t.name))];
   return (
     <div className="card db-overview">
-      <div className="card-head"><h2>Database</h2><span className="muted">{d.offline ? 'Saved on this computer' : 'Google Sheets'} · {d.total.toLocaleString('en-IN')} records in {d.tables.length} tables</span></div>
+      <div className="card-head"><h2>Database</h2><span className="muted">{d.offline ? 'Saved on this computer' : d.backend === 'supabase' ? 'Supabase (online database)' : 'Google Sheets'} · {d.total.toLocaleString('en-IN')} records in {d.tables.length} tables</span></div>
       <div className="db-stamps">
         <div className={`db-stamp ${age === null || age > 7 ? 'warn' : 'ok'}`}>
           <span>Last backup</span>
@@ -168,7 +168,7 @@ export function DatabaseTab({ Reset }) {
   );
 }
 
-/** Nightly copy of the Google Sheet to the Drive folder "Karvio backups"; old copies go to the trash. */
+/** Nightly backup: a private Supabase snapshot, or (Apps Script) a copy of the Google Sheet in the Drive folder "Karvio backups". */
 function DailyBackup({ info, onDone }) {
   const supabase = info.backend === 'supabase';
   const [on, setOn] = useState(!!info.daily_backup);

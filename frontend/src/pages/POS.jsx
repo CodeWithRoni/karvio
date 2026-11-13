@@ -98,6 +98,10 @@ export default function POS() {
     let hit = null;
     try { hit = await api('serials.find', { serial: code }); } catch { return false; }
     if (!hit) return false;
+    if (hit.ambiguous) {
+      toast(`Serial ${hit.serial} belongs to more than one product (${(hit.products || []).map((x) => x.name || 'unknown').join(', ')}). Search the product and pick the serial from it`, 'err');
+      return true;
+    }
     const p = products.find((x) => x.id === hit.product_id);
     if (!p) return false;
     if (hit.status !== 'in_stock') { toast(`Serial ${hit.serial} (${p.name}) is ${String(hit.status).replace(/_/g, ' ')} — not in stock`, 'err'); return true; }

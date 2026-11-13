@@ -15,10 +15,11 @@
  * ============================================================================
  */
 
-var APP_VERSION = '1.2.0';
+var APP_VERSION = '1.2.2';
 // Your Karvio database spreadsheet. Lets this script also run as a standalone project.
 var DEFAULT_SHEET_ID = '1r7WI5GNHtppUCtCu_rZUmvfum92i0HZdK298Z4uZH7w';
 var SESSION_TTL = 21600; // 6 hours (CacheService maximum)
+var SESSION_REFRESH_MS = 15 * 60 * 1000; // extend an active session at most once per 15 minutes
 var API_CAPABILITIES = { idempotency: true, durableRecovery: true, credentialSessions: true, purchaseDuePayment: true, saleDuePayment: true };
 
 /* ---------------------------------------------------------------------------
@@ -667,7 +668,9 @@ function authUser_(token) {
   // A reset/change invalidates every previously issued token, including tokens from older releases.
   if (!s.credential || s.credential !== hash_('karvio-session', u.salt + '|' + u.password_hash)) { cache.remove('tok_' + token); fail_('AUTH: Password changed; please sign in again'); }
   if (!accessAllowed_(u)) { cache.remove('tok_' + token); fail_('AUTH: ' + accessDenied_(u)); } // working hours ended: signed out
-  cache.put('tok_' + token, raw, SESSION_TTL); // sliding session
+  // Sliding session, refreshed at most every SESSION_REFRESH_MS so ordinary reads stay read-only.
+  var nowMs = Date.now(), last = num_(s.refreshed);
+  if (!last || nowMs - last > SESSION_REFRESH_MS || nowMs < last) { s.refreshed = nowMs; cache.put('tok_' + token, JSON.stringify(s), SESSION_TTL); }
   return u;
 }
 
@@ -681,7 +684,7 @@ function login_(p) {
   if (!/^v2\$/.test(String(u.password_hash))) update_('Users', u.id, { password_hash: pwHash_(u.salt, String(p.password || '')) });
   if (!accessAllowed_(u)) fail_(accessDenied_(u)); // checked after the password, so the hours are only shown to the right person
   var token = Utilities.getUuid() + Utilities.getUuid();
-  CacheService.getScriptCache().put('tok_' + token, JSON.stringify({ id: u.id, credential: hash_('karvio-session', u.salt + '|' + u.password_hash) }), SESSION_TTL);
+  CacheService.getScriptCache().put('tok_' + token, JSON.stringify({ id: u.id, credential: hash_('karvio-session', u.salt + '|' + u.password_hash), refreshed: Date.now() }), SESSION_TTL);
   return { token: token, user: pubUser_(u), perms: permsFor_(u.role) };
 }
 function logout_(p, user, token) { try { CacheService.getScriptCache().remove('tok_' + token); } catch (e) {} return true; }
@@ -829,6 +832,8 @@ function masterSave_(p, user) {
     row.decimal = row.decimal === true || row.decimal === 'true';
     if (curU && curU.decimal && !row.decimal && all_('Products').some(function (pr) { return pr.unit === curU.name && pr.stock % 1 !== 0; }))
       fail_('Some products in ' + curU.name + ' have fractional stock, so decimal quantity must stay on');
+    if (curU && curU.decimal && !row.decimal && unitHasFractionalHistory_(curU.name))
+      fail_('Some sales, purchases, returns, repairs or adjustments in ' + curU.name + ' use fractional quantities, so decimal quantity must stay on');
     if (units.some(function (u) { return u.id !== p.id && (u.name === row.name || u.label.trim().toLowerCase() === row.label.toLowerCase()); })) fail_('This selling unit already exists');
   } else if (!String(row.name || '').trim()) fail_('Name is required');
   if (p.kind === 'warranty_period' && all_(m.table).some(function (w) { return w.id !== p.id && num_(w.days) === row.days; }))
@@ -896,6 +901,21 @@ function masterDelete_(p, user) {
 /* ============================================================================
  *  6. PRODUCTS
  * ========================================================================== */
+/** True when any recorded quantity in this selling unit is fractional (turning decimal off would block its returns). */
+function unitHasFractionalHistory_(unitName) {
+  var frac = function (q) { var n = Math.abs(num_(q)); return Math.abs(n - Math.round(n)) > 1e-9; };
+  var products = {}; all_('Products').forEach(function (pr) { if (pr.unit === unitName) products[pr.id] = true; });
+  var inUnit = function (row) { return row.unit === unitName || (!row.unit && products[row.product_id]); };
+  var saleLines = {}, purchaseLines = {};
+  all_('SaleItems').forEach(function (i) { saleLines[i.id] = i; });
+  all_('PurchaseItems').forEach(function (i) { purchaseLines[i.id] = i; });
+  if (Object.keys(saleLines).some(function (id) { return inUnit(saleLines[id]) && frac(saleLines[id].qty); })) return true;
+  if (Object.keys(purchaseLines).some(function (id) { return inUnit(purchaseLines[id]) && frac(purchaseLines[id].qty); })) return true;
+  if (all_('SalesReturnItems').some(function (i) { var line = saleLines[i.sale_item_id]; return (line ? inUnit(line) : products[i.product_id]) && frac(i.qty); })) return true;
+  if (all_('PurchaseReturnItems').some(function (i) { var line = purchaseLines[i.purchase_item_id]; return (line ? inUnit(line) : products[i.product_id]) && frac(i.qty); })) return true;
+  if (all_('ItemEvents').some(function (e) { return products[e.product_id] && frac(e.qty); })) return true;
+  return all_('Repairs').some(function (job) { return repairParts_(job).some(function (part) { return products[part.product_id] && frac(part.qty); }); });
+}
 /** Any product history, including cancelled records, prevents deletion. */
 function productUsageIndex_() {
   if (!_txn && _mem.__productUsageIndex) return _mem.__productUsageIndex;
@@ -941,6 +961,9 @@ function productSave_(p, user) {
     // Prices are set in the Price manager and on purchases, never from the product form.
     delete row.cost_price; delete row.sale_price; delete row.wholesale_price;
     var cur = all_('Products').filter(function (x) { return x.id === p.id; })[0];
+    // Stored quantities, invoice lines and repair parts are measured in the old unit.
+    if (cur && unit !== cur.unit && (Math.abs(num_(cur.stock)) > 1e-9 || productUsageIndex_()[cur.id]))
+      fail_('The selling unit of ' + cur.name + ' cannot change after it has stock or history. Create a separate product for the new unit');
     if (cur && service && !isService_(cur) && cur.stock > 0) fail_('This product still has ' + cur.stock + ' in stock. Sell, return or adjust it to 0 before turning Inventory off');
     if (cur && service !== isService_(cur) && ['SaleItems', 'PurchaseItems'].some(function (table) {
       return all_(table).some(function (i) { return i.product_id === cur.id; });
@@ -1021,7 +1044,14 @@ function serialFind_(p) {
   var code = String(p.serial || '').trim().toLowerCase(); if (!code) return null;
   var hits = all_('SerialItems').filter(function (s) { return String(s.serial).trim().toLowerCase() === code; });
   if (!hits.length) return null;
-  var h = hits.filter(function (s) { return s.status === 'in_stock'; })[0] || hits[0];
+  // The same serial can exist on different products; never guess which one is being sold.
+  var live = hits.filter(function (s) { return s.status === 'in_stock'; }), pool = live.length ? live : hits, products = {};
+  pool.forEach(function (s) { products[s.product_id] = true; });
+  if (Object.keys(products).length > 1) {
+    var names = indexBy_(all_('Products'));
+    return { ambiguous: true, serial: pool[0].serial, products: Object.keys(products).map(function (id) { return { product_id: id, name: names[id] ? names[id].name : '' }; }) };
+  }
+  var h = pool[0];
   return { product_id: h.product_id, serial: h.serial, status: h.status };
 }
 /** Numeric inventory columns retain four decimals; reject quantities that would be lost. */
@@ -2136,6 +2166,14 @@ function serialCaseMatch_(productId, serial) {
   // An old supplier return must not hide a later live copy of the same serial.
   return hits.filter(function (s) { return s.status !== 'returned_supplier'; }).pop() || hits.pop() || null;
 }
+/** Name of another product that already holds this serial (live, sold or faulty), so a scan can never mean two products. */
+function serialOnOtherProduct_(productId, serial) {
+  var key = String(serial).trim().toLowerCase();
+  var hit = all_('SerialItems').filter(function (s) { return s.product_id !== productId && s.status !== 'cancelled' && s.status !== 'returned_supplier' && String(s.serial).trim().toLowerCase() === key; })[0];
+  if (!hit) return '';
+  var pr = indexBy_(all_('Products'))[hit.product_id];
+  return pr ? pr.name : 'another product';
+}
 function isSerialProduct_(pr) { return !pr.service && pr.has_warranty && pr.warranty_type === 'serial'; }
 /**
  * Serial-tracked products: the product's cost is the average of the purchase costs of the units now in stock.
@@ -2239,6 +2277,10 @@ function purchaseCreate_(p, user) {
         if (existing && (existing.status !== 'returned_supplier' || existing.serial !== s)) fail_('Serial already exists: ' + s);
         if (seen[folded]) fail_('Duplicate serial in list: ' + s);
         seen[folded] = 1;
+        var other = serialOnOtherProduct_(pr.id, s), anyKey = 'any|' + s.toLowerCase();
+        if (other) fail_('Serial ' + s + ' already belongs to ' + other + '. A serial number can belong to only one product');
+        if (seen[anyKey] && seen[anyKey] !== pr.id) fail_('Serial ' + s + ' is entered for two different products in this purchase');
+        seen[anyKey] = pr.id;
       });
     } else if (!isDecimalUnit_(pr.unit) && qty % 1 !== 0) fail_('Quantity for ' + pr.name + ' must be a whole number');
     var total = round_(qty * cost);
@@ -3130,7 +3172,8 @@ function claimUpdate_(p, user) {
   log.push({ ts: now_(), status: p.status, note: note, user: user.name });
   patch.log = log;
   if (p.vendor !== undefined && p.vendor !== null) patch.vendor = p.vendor;
-  if (p.status === 'Delivered') patch.delivered_date = today_();
+  // Only the move to Delivered sets the date; a later note keeps the original delivery date.
+  if (p.status === 'Delivered' && (c.status !== 'Delivered' || !c.delivered_date)) patch.delivered_date = today_();
   var r = update_('WarrantyClaims', c.id, patch);
   evBatch_(user, [{ serial: c.serial, product_id: c.product_id, product_name: c.product_name, event: 'warranty_' + p.status.toLowerCase().replace(/\s+/g, '_'), ref_type: 'claim', ref_id: c.id, ref_no: c.claim_no, party: p.vendor || c.vendor || c.customer_name, qty: 1, amount: 0, note: note || p.status }].concat(events));
   return r;
@@ -3199,6 +3242,8 @@ function claimRestock_(p, user) {
     var sidx = serialIndex_(), ex = serialCaseMatch_(pr.id, serial);
     if (ex && ex.serial !== serial) fail_('Serial already exists with different capitalization: ' + ex.serial);
     if (ex && ex.id && serial !== rep.faulty && ex.status !== 'returned_supplier') fail_('Serial already exists: ' + serial);
+    var otherProduct = serialOnOtherProduct_(pr.id, serial);
+    if (otherProduct) fail_('Serial ' + serial + ' already belongs to ' + otherProduct + '. A serial number can belong to only one product');
     if (serial === rep.faulty) update_('SerialItems', ex.id, { status: 'in_stock', sale_id: '', cost: rep.cost }); // repaired and returned
     else insert_('SerialItems', { product_id: pr.id, serial: serial, purchase_id: '', sale_id: '', status: 'in_stock', cost: rep.cost, created_at: now_() });
     delete _mem.__serialIdx;
@@ -3529,7 +3574,7 @@ function historyDoc_route_(p, user) {
 function promiseDate_(v, saleDate) {
   var d = String(v || '').trim().slice(0, 10);
   if (!d) return '';
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || isNaN(new Date(d + 'T12:00:00').getTime())) fail_('Next payment date is not a valid date');
+  if (!isDate_(d)) fail_('Next payment date is not a valid date');
   if (d < saleDate) fail_('Next payment date cannot be before ' + saleDate);
   return d;
 }

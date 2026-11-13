@@ -5,9 +5,17 @@ const localYmd = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).to
 const dayDiff = (a, b) => Math.round((Date.parse(a + 'T12:00:00Z') - Date.parse(b + 'T12:00:00Z')) / 864e5);
 /** The shop's date (server time zone) n days from today, as yyyy-mm-dd — use this instead of the browser clock. */
 export function shopDay(n = 0) {
-  const d = new Date(); d.setDate(d.getDate() + n + (useStore.getState().dayOffset || 0));
+  const { clockShift, dayOffset } = useStore.getState();
+  // Shop wall clock = this computer's clock + the shift measured at sign-in, so midnight follows the shop's time zone.
+  if (Number.isFinite(clockShift)) return new Date(Date.now() + clockShift + n * 864e5).toISOString().slice(0, 10);
+  const d = new Date(); d.setDate(d.getDate() + n + (dayOffset || 0));
   return localYmd(d);
 }
+/** Milliseconds to add to Date.now() to read the shop's wall clock (serverTime is shop-local, without an offset). */
+const clockShiftFrom = (serverTime) => {
+  const t = Date.parse(String(serverTime || '').slice(0, 19) + 'Z');
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(String(serverTime || '')) && Number.isFinite(t) ? t - Date.now() : null;
+};
 
 const loadTheme = () => { try { return localStorage.getItem('erp_theme') || 'dark'; } catch { return 'dark'; } };
 
@@ -60,7 +68,7 @@ export const useStore = create((set, get) => ({
     try {
       const d = await api('bootstrap');
       // The shop's date comes from the server (its time zone), not this computer's clock.
-      set({ ...d, dayOffset: d.serverToday ? dayDiff(d.serverToday, localYmd(new Date())) : 0, booting: false });
+      set({ ...d, dayOffset: d.serverToday ? dayDiff(d.serverToday, localYmd(new Date())) : 0, clockShift: d.serverToday && String(d.serverTime || '').slice(0, 10) === d.serverToday ? clockShiftFrom(d.serverTime) : null, booting: false });
     } catch (e) {
       set({ booting: false, bootError: e.message });
       throw e;

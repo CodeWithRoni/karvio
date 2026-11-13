@@ -69,7 +69,7 @@ export function ProductSearch({ onPick, onCode, inStockOnly = false, noServices 
 export function PaymentSplit({ value, onChange, total, label = 'Payment', allowZero = true }) {
   const accounts = useStore((s) => s.accounts).filter((a) => a.active !== false);
   const set = (i, patch) => onChange(value.map((p, j) => (j === i ? { ...p, ...patch } : p)));
-  const paid = value.reduce((a, p) => a + (Number(p.amount) || 0), 0);
+  const paid = value.reduce((a, p) => a + round2(Number(p.amount) || 0), 0);
   const rest = round2((total || 0) - paid);
   return (
     <div className="paysplit">
@@ -97,7 +97,8 @@ export const defaultPay = (amount = '') => {
   const cash = acc.find((a) => a.type === 'cash') || acc[0];
   return cash ? [{ account_id: cash.id, amount }] : [];
 };
-export const cleanPays = (arr) => arr.map((p) => ({ account_id: p.account_id, amount: Number(p.amount) || 0 })).filter((p) => p.amount > 0);
+// Each amount is rounded to paisa exactly as the server does, so the totals shown always match what is saved.
+export const cleanPays = (arr) => arr.map((p) => ({ account_id: p.account_id, amount: round2(Number(p.amount) || 0) })).filter((p) => p.amount > 0);
 
 /* ------------------------------------------------------------------
  * Admin-authorised reversal dialog
