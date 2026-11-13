@@ -33,7 +33,7 @@ const tplCss = `
 `;
 const pageCss = (paper) => paper === 'a5' ? '@page{size:A5;margin:8mm}.sdoc{font-size:10.5px}.sdoc h1{font-size:16px}.sdoc h2{font-size:16px}' : '@page{size:A4;margin:12mm}';
 const isBiz = (list = []) => list.length ? list.some(d => (d.shop || useStore.getState().settings).invoice_template === 'business') : useStore.getState().settings.invoice_template === 'business';
-const wrap = (blocks, paper = 'a4', biz = false) => `<style>${biz && paper !== 'a5' ? bizPageCss() : pageCss(paper)}body{margin:0}${css}${tplCss}${biz ? bizCss : ''}.sdoc+.sdoc,.bdoc+.bdoc{page-break-before:always;break-before:page}</style>${blocks.join('')}`;
+const wrap = (blocks, paper = 'a4', biz = false) => `<style>${biz && paper !== 'a5' ? bizPageCss() : pageCss(paper) + (biz ? '.bdoc{--bdoc-h:193mm}' : '')}body{margin:0}${css}${tplCss}${biz ? bizCss : ''}.sdoc+.sdoc,.bdoc+.bdoc{page-break-before:always;break-before:page}</style>${blocks.join('')}`;
 const noteHtml = (settings = useStore.getState().settings) => { const n = String(settings.invoice_note || '').trim(); return n ? `<div class="note-line"><b>Note:</b> ${esc(n)}</div>` : ''; };
 
 /* ---------------- "Business" template: centred letterhead, grey bill bar, boxed info, page footer ---------------- */
@@ -72,9 +72,10 @@ const bizCss = `
   .bdoc .bsum{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;margin-top:8px;break-inside:avoid;page-break-inside:avoid}
   .bdoc .btot td{padding:2px 0 2px 12px;border:0}.bdoc .btot td.k{font-weight:700;padding-left:0}.bdoc .btot td.r{text-align:right;min-width:110px}
   .bdoc .bdue{border:1.5px solid #000;padding:8px 10px;margin-top:10px;width:300px}.bdoc .bdue td{padding:2px 0;border:0}.bdoc .bdue td.k{font-weight:700}.bdoc .bdue td.r{text-align:right}
-  .bdoc .bsign{display:flex;justify-content:flex-end;margin-top:44px;break-inside:avoid;page-break-inside:avoid}
-  .bdoc .bsign span{width:220px;border-top:1px solid #000;text-align:center;padding-top:5px}
-  .bdoc .note-line{margin-top:16px;text-align:left;white-space:pre-wrap;font-size:11.5px;break-inside:avoid}
+  .bdoc .bend{display:flex;justify-content:space-between;align-items:flex-end;gap:28px;margin-top:auto;padding-top:56px;break-inside:avoid;page-break-inside:avoid}
+  .bdoc .bend .note-line{flex:1;margin:0;text-align:left;white-space:pre-wrap;font-size:11.5px}
+  .bdoc .bsign{flex:none;width:230px;margin-left:auto;border-top:1px solid #000;text-align:center;padding-top:5px}
+  @media print{.bdoc{display:flex;flex-direction:column;min-height:var(--bdoc-h,268mm)}}
   .bdoc .cx{margin:8px 0;padding:6px 10px;border:2px solid #c0392b;color:#c0392b;font-weight:800;text-align:center}
   .bdoc .bfoot{display:flex;justify-content:space-between;border-top:1px solid #777;margin-top:22px;padding-top:5px;font-size:11px}
   @media print{.bdoc .bfoot{display:none}}
@@ -90,7 +91,8 @@ const bizPageCss = () => {
     @top-left{content:' '}@top-center{content:' '}@top-right{content:' '}
     @bottom-left{content:${q(`Print Date: ${fdate(today())}\u00a0\u00a0\u00a0\u00a0Print Time: ${now.toLocaleTimeString('en-US')}`)};${box}}
     @bottom-center{content:${q(SOFTWARE_LINE)};${box}}
-    @bottom-right{content:"Page " counter(page) " of " counter(pages);${box}}}`;
+    @bottom-right{content:"Page " counter(page) " of " counter(pages);${box}}}
+    .bdoc{--bdoc-h:268mm}`;
 };
 function businessInvoiceHtml(d) {
   const st = d.shop || useStore.getState().settings;
@@ -115,7 +117,7 @@ function businessInvoiceHtml(d) {
     <div class="bh"><h1>${esc(st.shop_name || 'Karvio')}</h1>${st.shop_address ? `<div>${esc(st.shop_address)}</div>` : ''}${shopContacts(st) ? `<div>${shopContacts(st)}</div>` : ''}</div>
     <div class="bbar">Invoice/ Bill</div>
     <div class="binfo">
-      <table>${row('Sold To', `<b>${walkIn ? 'CASH' : esc(s.customer_name)}</b>${!walkIn && c.addresses ? `<div>${esc(String(c.addresses).split('|').join('; '))}</div>` : ''}`)}${row('Contact No', walkIn ? esc(st.shop_tel || st.shop_phone || '—') : phone || '—')}${row('Invoice No', esc(s.invoice_no))}</table>
+      <table>${row('Sold To', `<b>${walkIn ? 'CASH' : esc(s.customer_name)}</b>`)}${row('Address', !walkIn && c.addresses ? esc(String(c.addresses).split('|').map((x) => x.trim()).filter(Boolean).join('; ')) : '—')}${row('Contact No', walkIn ? esc(st.shop_tel || st.shop_phone || '—') : phone || '—')}${row('Invoice No', esc(s.invoice_no))}</table>
       <table>${row('Date', esc(fdate(s.date || s.created_at)))}${row('Sold By', user)}${row('Billing By', user)}${row('Sales Person By', user)}</table>
     </div>
     ${s.status === 'cancelled' ? `<div class="cx">CANCELLED — ${esc(s.cancel_reason || '')}</div>` : ''}
@@ -136,8 +138,7 @@ function businessInvoiceHtml(d) {
         <tr><td class="k">Grand TOTAL :</td><td class="r"><b>${esc(m2(total, false))}</b></td></tr>
       </table>
     </div>
-    <div class="bsign"><span>Authorised Signature And Company Stamp</span></div>
-    ${noteHtml(st)}
+    <div class="bend">${noteHtml(st)}<div class="bsign">Authorised Signature And Company Stamp</div></div>
     <div class="bfoot"><span>Print Date: ${esc(fdate(today()))}</span><span>Print Time: ${esc(now.toLocaleTimeString('en-US'))}</span><span>${SOFTWARE_LINE}</span><span>Page 1 of 1</span></div>
   </div>`;
 }
