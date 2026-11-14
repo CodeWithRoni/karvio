@@ -1,3 +1,31 @@
+Owner authorized publication of the three report audit fixes on 14 November 2026. Deployment verification follows. No database schema/data edits.
+
+# Three report audit fixes — LOCAL ONLY, 14 November 2026
+
+Baseline main `45dcc45ed5bec8abe2b5138896150cbe2d1b6cf4`, live API49. No push, deployment, schema migration/reset or historical transaction rewrite. Older publication notes below are historical.
+
+```json
+{
+  "baseCommit": "45dcc45ed5bec8abe2b5138896150cbe2d1b6cf4",
+  "regularRegression": "passed",
+  "hostedRegression": "passed",
+  "reportFollowupRegression": "passed",
+  "fullEdgeBrowserTests": 139,
+  "newReportBrowserTests": 2,
+  "productionBuild": "passed",
+  "schemaMigration": false,
+  "productionReset": false,
+  "published": false,
+  "nativeInstallersRebuilt": false
+}
+```
+
+- Report table search recalculates totals from matching rows; Excel/PDF/print reuse the same matching totals. Clearing search restores full report totals; selected exports retain their own totals.
+- Product profit and Product-wise sales use cumulative allocations of each invoice’s currency COGS. Profit return costs similarly reconcile with currency return profit, including returns outside the original sale period. Product Profit keeps its documented before-invoice-discount convention.
+- Daily Counts quantities are grouped by unit. Profit by product displays Unit and separates sold/returned quantity totals; search and selected exports use the same unit-aware aggregation. Return-only periods inherit units from the original sale lines.
+
+Evidence: verification/audit-nov14-second/{fix-runtime.log,fix-regular.log,final-hosted.log,fix-browser.log,full-browser.log,fix-build.log}. New maintained tests: backend/test/report-followup.mjs and frontend/test/report-followup.spec.js.
+
 Publication authorized by owner on 14 November 2026. These four fixes are being published from baseline 62925e3; deployment verification follows. No schema or business-data edits.
 
 # Four audit fixes — LOCAL ONLY, 14 November 2026

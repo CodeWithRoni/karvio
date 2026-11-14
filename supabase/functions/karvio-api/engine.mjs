@@ -4195,6 +4195,17 @@ function profitSummary_(from, to) {
   o.net_margin = o.net_sales > 0 ? round_(o.net / o.net_sales * 100, 1) : 0;
   return o;
 }
+/** Allocate each document's currency COGS cumulatively, preserving its exact total. */
+function reportItemCosts_(items, documents, foreignKey, targetCost) {
+  var grouped = {}, costs = {};
+  items.forEach(function(i) { if (documents[i[foreignKey]]) (grouped[i[foreignKey]] = grouped[i[foreignKey]] || []).push(i); });
+  Object.keys(grouped).forEach(function(id) {
+    var list = grouped[id], raw = sum_(list,function(i) { return num_(i.cost); }), target = targetCost(documents[id]), through = 0, allocated = 0;
+    list.forEach(function(i) { through += num_(i.cost); var next = raw > 0 ? round_(target * through / raw) : 0; costs[i.id] = round_(next - allocated); allocated = next; });
+  });
+  return costs;
+}
+function unitQuantityText_(units) { return Object.keys(units).sort().map(function(u) { return round_(units[u],4)+' '+u; }).join(' · '); }
 function profitReport_(p, user) {
   if (!can_(user, 'cost')) fail_('Permission denied');
   var today = today_(), from = String(p.from || today.slice(0, 8) + '01').slice(0, 10), to = String(p.to || today).slice(0, 10);
@@ -4220,8 +4231,11 @@ function profitReport_(p, user) {
   // Per product: item profit before invoice discounts, less profit on returned units.
   var sIds = indexBy_(sales), rIds = indexBy_(rets), pg = {};
   var prow = function (id, name, unit) { return pg[id] = pg[id] || { product_id: id, name: name, unit: unit || 'pcs', qty: 0, revenue: 0, cost: 0, returned_qty: 0, returns: 0, returns_profit: 0, profit: 0 }; };
-  all_('SaleItems').forEach(function (i) { if (!sIds[i.sale_id]) return; var r = prow(i.product_id, i.name, i.unit); r.qty += i.qty; r.revenue += i.total; r.cost += i.cost; r.profit += i.total - i.cost; });
-  all_('SalesReturnItems').forEach(function (i) { if (!rIds[i.return_id]) return; var r = prow(i.product_id, i.name, ''); r.returned_qty += i.qty; r.returns += i.total; r.returns_profit += i.total - i.cost; r.profit -= i.total - i.cost; });
+  var saleItems = all_('SaleItems'), returnItems = all_('SalesReturnItems'), saleItemMap = indexBy_(saleItems);
+  var saleCosts = reportItemCosts_(saleItems,sIds,'sale_id',function(s) { return s.cost; });
+  var returnCosts = reportItemCosts_(returnItems,rIds,'return_id',function(r) { return round_(r.total-returnProfit_(r)); });
+  saleItems.forEach(function (i) { if (!sIds[i.sale_id]) return; var r = prow(i.product_id, i.name, i.unit), cost = saleCosts[i.id] || 0; r.qty += i.qty; r.revenue += i.total; r.cost += cost; r.profit += i.total - cost; });
+  returnItems.forEach(function (i) { if (!rIds[i.return_id]) return; var r = prow(i.product_id, i.name, (saleItemMap[i.sale_item_id] || {}).unit), cost = returnCosts[i.id] || 0; r.returned_qty += i.qty; r.returns += i.total; r.returns_profit += i.total - cost; r.profit -= i.total - cost; });
   var products = Object.keys(pg).map(function (k) {
     var r = pg[k]; ['revenue', 'cost', 'returns', 'returns_profit', 'profit'].forEach(function (f) { r[f] = round_(r[f]); });
     r.qty = round_(r.qty, 4); r.returned_qty = round_(r.returned_qty, 4);
@@ -4464,18 +4478,19 @@ function reportsRaw_(p, user) {
 
   if (T === 'daily_summary') {
     var days = {};
-    function d_(k) { return days[k] = days[k] || { date: k, invoices: 0, items: 0, sales: 0, returns: 0, purchases: 0, purchase_returns: 0, expenses: 0, profit: 0 }; }
-    var sIt = {}; all_('SaleItems').forEach(function (i) { sIt[i.sale_id] = (sIt[i.sale_id] || 0) + i.qty; });
-    all_('Sales').forEach(function (s) { if (s.status === 'active' && inRange_(s.date, from, to)) { var r = d_(s.date); r.invoices++; r.items += sIt[s.id] || 0; r.sales += s.total; r.profit += s.profit; } });
+    function d_(k) { return days[k] = days[k] || { date: k, invoices: 0, items: 0, item_quantities: {}, sales: 0, returns: 0, purchases: 0, purchase_returns: 0, expenses: 0, profit: 0 }; }
+    var sIt = {}; all_('SaleItems').forEach(function (i) { var u=i.unit || 'pcs', units=sIt[i.sale_id]=sIt[i.sale_id] || {}; units[u]=(units[u] || 0)+i.qty; });
+    all_('Sales').forEach(function (s) { if (s.status === 'active' && inRange_(s.date, from, to)) { var r = d_(s.date); r.invoices++; Object.keys(sIt[s.id] || {}).forEach(function(u) { r.item_quantities[u]=(r.item_quantities[u] || 0)+sIt[s.id][u]; }); r.sales += s.total; r.profit += s.profit; } });
     all_('SalesReturns').forEach(function (s) { if (s.status === 'active' && inRange_(s.date, from, to)) { var r = d_(s.date); r.returns += s.total; r.profit -= returnProfit_(s); } });
     all_('Purchases').forEach(function (s) { if (s.status === 'active' && inRange_(s.date, from, to)) d_(s.date).purchases += s.total; });
     all_('PurchaseReturns').forEach(function (s) { if (s.status === 'active' && inRange_(s.date, from, to)) d_(s.date).purchase_returns += s.total; });
     all_('Expenses').forEach(function (s) { if (s.status === 'active' && inRange_(s.date, from, to)) { var r = d_(s.date); r.expenses += s.amount; r.profit -= s.amount; } });
     var adjD = stockAdjustValue_(from, to, function (d) { return d; });
     Object.keys(adjD).forEach(function (k) { var r = d_(k); r.stock_adjust = round_(adjD[k]); r.profit += adjD[k]; });
-    var dc = [col_('date', 'Date', 'date'), col_('invoices', 'Invoices', 'num', 1), col_('items', 'Items Sold', 'num', 1), col_('sales', 'Sales', 'money', 1), col_('returns', 'Sales Returns', 'money', 1), col_('purchases', 'Purchases', 'money', 1), col_('purchase_returns', 'Purchase Returns', 'money', 1), col_('expenses', 'Expenses', 'money', 1)];
+    var dc = [col_('date', 'Date', 'date'), col_('invoices', 'Invoices', 'num', 1), col_('items', 'Items Sold', 'text', 1), col_('sales', 'Sales', 'money', 1), col_('returns', 'Sales Returns', 'money', 1), col_('purchases', 'Purchases', 'money', 1), col_('purchase_returns', 'Purchase Returns', 'money', 1), col_('expenses', 'Expenses', 'money', 1)];
     if (cost) dc.push(col_('stock_adjust', 'Stock adjust', 'money', 1), col_('profit', 'Net Profit', 'money', 1));
-    return finishReport_('Daily Counts' + period, dc, Object.keys(days).sort().map(function (k) { return days[k]; }));
+    var dailyUnits = {}, dailyRows = Object.keys(days).sort().map(function(k) { var r=days[k]; r.items=unitQuantityText_(r.item_quantities); Object.keys(r.item_quantities).forEach(function(u) { dailyUnits[u]=(dailyUnits[u] || 0)+r.item_quantities[u]; }); return r; });
+    var dailyReport = finishReport_('Daily Counts' + period,dc,dailyRows); dailyReport.totals.items=unitQuantityText_(dailyUnits); return dailyReport;
   }
 
   if (T === 'payment_methods') {
@@ -4510,12 +4525,13 @@ function reportsRaw_(p, user) {
   if (T === 'product_sales') {
     var sm = indexBy_(all_('Sales').filter(function (s) { return s.status === 'active' && inRange_(s.date, from, to); })), pg2 = {};
     var reportItems = all_('SaleItems'), invoiceItems = {};
+    var itemCosts = reportItemCosts_(reportItems,sm,'sale_id',function(s) { return s.cost; });
     reportItems.forEach(function(i) { (invoiceItems[i.sale_id] = invoiceItems[i.sale_id] || []).push(i); });
     reportItems.forEach(function (i) {
       if (!sm[i.sale_id]) return;
       var r = pg2[i.product_id] = pg2[i.product_id] || { name: i.name, unit: i.unit, qty: 0, revenue: 0, cost: 0, profit: 0 };
       var net = invoiceLineNet_(i, invoiceItems[i.sale_id], sm[i.sale_id]);
-      r.qty += i.qty; r.revenue += net; r.cost += i.cost; r.profit += net - i.cost;
+      r.qty += i.qty; r.revenue += net; r.cost += itemCosts[i.id] || 0; r.profit += net - (itemCosts[i.id] || 0);
     });
     var pcol = [col_('name', 'Product'), col_('unit', 'Unit'), col_('qty', 'Qty Sold', 'num', 1), col_('revenue', 'Revenue', 'money', 1)];
     if (cost) pcol.push(col_('profit', 'Profit', 'money', 1));

@@ -49,12 +49,12 @@ export default function DataTable({ columns, rows, loading, title = 'Export', ex
   }, [rows, q, sort, sortColumn, columns]);
 
   const totals = useMemo(() => {
-    if (totalsProp !== undefined) return totalsProp;
+    if (totalsProp !== undefined && !q) return totalsProp;
     if (!columns.some((c) => c.sum)) return null;
     const t = {};
     columns.forEach((c) => { if (c.sum) t[c.key] = c.total ? c.total(filtered.filter((r) => !sumFilter || sumFilter(r))) : filtered.filter((r) => !sumFilter || sumFilter(r)).reduce((a, r) => a + (Number(c.value ? c.value(r) : r[c.key]) || 0), 0); });
     return t;
-  }, [filtered, columns, totalsProp, sumFilter]);
+  }, [filtered, columns, totalsProp, sumFilter, q]);
 
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const cur = Math.min(page, pages - 1);

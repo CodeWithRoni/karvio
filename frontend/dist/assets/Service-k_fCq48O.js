@@ -1,1 +1,0 @@
-import{j as e,P as s}from"./index-DPTFR3uF.js";function a(){return e.jsxs(e.Fragment,{children:[e.jsx(s,{title:"Service"}),e.jsxs("div",{className:"card",children:[e.jsx("h2",{children:"Service module"}),e.jsx("p",{className:"muted",children:"This module is ready for setup. Its workflow will be added later."})]})]})}export{a as default};

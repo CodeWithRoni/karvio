@@ -1,3 +1,4 @@
+import { quantityTotal } from '../lib/quantityTotals';
 import { useMemo, useState } from 'react';
 import { shopDay } from '../lib/store';
 import { money, fdate, addDays } from '../lib/format';
@@ -94,10 +95,11 @@ function Report({ d, group, setGroup, view, setView }) {
         {view === 'products' && <DataTable title={`Profit by product ${d.from} to ${d.to}`} rows={d.products} empty={<Empty title="Nothing sold in this period" />}
           columns={[
             { key: 'name', label: 'Product' },
-            { key: 'qty', label: 'Qty sold', type: 'num', sum: true },
+            { key: 'unit', label: 'Unit' },
+            { key: 'qty', label: 'Qty sold', type: 'num', sum: true, total: rows => quantityTotal(rows) },
             { key: 'revenue', label: 'Sales', type: 'money', sum: true },
             { key: 'cost', label: 'Cost', type: 'money', sum: true },
-            { key: 'returned_qty', label: 'Returned qty', type: 'num', sum: true },
+            { key: 'returned_qty', label: 'Returned qty', type: 'num', sum: true, total: rows => quantityTotal(rows, 'returned_qty') },
             { key: 'profit', label: 'Profit', type: 'money', sum: true },
             { key: 'margin', label: 'Margin %', type: 'num' }
           ]} />}
