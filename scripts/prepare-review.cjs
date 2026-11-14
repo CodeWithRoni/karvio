@@ -37,15 +37,15 @@ if (process.argv.includes('--check')) {
   if (!verification) throw new Error('Record the current checks in VERIFICATION.md before preparing the package.');
   const manifest = {
     product: 'Karvio', version: JSON.parse(fs.readFileSync(path.join(root, 'frontend/package.json'))).version,
-    preparedDate: '2026-11-14', state: 'owner-authorized-five-stock-audit-corrections-publication',
-    baseCommit: '044931d6fc391676e28319d0491861602363297c',
+    preparedDate: '2026-11-14', state: 'owner-authorized-four-nov14-audit-fixes-publication',
+    baseCommit: '62925e3b04ded236ed64730701e5987f32893970',
     validation: JSON.parse(verification[1]),
     excluded: ['backend/parts (legacy duplicate backend)', 'node_modules', 'verification artifacts', 'test results', 'release installers', 'user databases/backups', 'credentials'],
     fileCount: files.length, files,
     checksumPolicy: 'SHA256SUMS.txt covers every listed file except itself, including this manifest.',
-    uploadOrder: ['Owner authorized publication of five Stock Summary audit corrections', 'After authorization deploy tested updated API before frontend; no schema migration required', 'Publish main and verify CI/Pages; native release only when requested'],
+    uploadOrder: ['Owner authorized publication of four November 14 audit fixes', 'After authorization deploy tested updated API before frontend; no schema migration required', 'Publish main and verify CI/Pages; native release only when requested'],
     frontendPublication: 'Publish through main and verify GitHub Actions / Pages',
-    supabase: { project: 'svqhlotlzgmwjneuphpe', edgeFunction: 'karvio-api', deployedVersion: 45, businessTables: 29, ownerSetup: 'created by owner', liveFrontendCutover: true }
+    supabase: { project: 'svqhlotlzgmwjneuphpe', edgeFunction: 'karvio-api', deployedVersion: 47, businessTables: 29, ownerSetup: 'created by owner', liveFrontendCutover: true }
   };
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
   fs.writeFileSync(sumsPath, files.filter(name => name !== 'SHA256SUMS.txt').map(name => digest(name) + '  ' + name).join('\n') + '\n');

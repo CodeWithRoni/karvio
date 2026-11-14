@@ -77,6 +77,8 @@ export default function POS() {
     const serials = serial ? [serial] : [];
     setCart([...cart, { product_id: p.id, qty: isSerial(p) ? serials.length : 1, price: priceFor(p), serials, warranty_days: p.has_warranty ? p.warranty_days : '' }]);
     loadHist(p.id);
+    const rate = Number(l.price);
+    if (!Number.isFinite(rate) || rate < 0 || Math.abs(rate-Math.round(rate*10000)/10000) > Number.EPSILON*Math.max(1,Math.abs(rate))*4) problems.push(`Selling price for ${p.name} supports at most 4 decimal places`);
     if (isSerial(p) && !serial) setSerialFor(cart.length);
   };
   // A saved draft (or a PC Builder quote) may hold a serial product without its serials: quantity follows the serials,

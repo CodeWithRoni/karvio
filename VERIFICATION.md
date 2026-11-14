@@ -1,3 +1,26 @@
+Publication authorized by owner on 14 November 2026. These four fixes are being published from baseline 62925e3; deployment verification follows. No schema or business-data edits.
+
+# Four audit fixes — LOCAL ONLY, 14 November 2026
+
+Baseline main `62925e3b04ded236ed64730701e5987f32893970`, live API47. The following changes are not published. No database migration or historical transaction rewrite. Older notes below are historical.
+
+```json
+{
+  "baseCommit": "62925e3b04ded236ed64730701e5987f32893970",
+  "regularRegression": "passed",
+  "hostedRegression": "passed",
+  "nov14AuditRegression": "passed",
+  "targetedBrowserTests": 1,
+  "productionBuild": "passed",
+  "schemaMigration": false,
+  "productionReset": false,
+  "published": false,
+  "nativeInstallersRebuilt": false
+}
+```
+
+Sale rates above four decimals are rejected atomically; warranty claims match their invoice line (legacy unlinked claims remain conservative); Top selling group aggregates include all products; sales quantities remain separated by unit, including selected exports. Evidence: verification/audit-2026-11-14/fix-{regular,hosted,browser,build}.log and fixes.log.
+
 Owner authorized publication on 14 November 2026. Supabase API version45 is ACTIVE and all deployed files match tested source. Frontend CI/Pages verification follows. No schema or business-data edits.
 
 # Five Stock Summary audit corrections — LOCAL ONLY, 14 November 2026

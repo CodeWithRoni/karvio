@@ -142,7 +142,8 @@ export function TopProducts({ data, showProfit }) {
     const g = {};
     rows.forEach((r) => {
       const k = r.group_id || '-';
-      const x = g[k] = g[k] || { id: k, name: r.group, qty: 0, amount: 0, profit: 0, products: 0, top: r.name };
+      const x = g[k] = g[k] || { id: k, name: r.group, qty: 0, quantities: {}, amount: 0, profit: 0, products: 0, top: r.name };
+      x.quantities[r.unit || 'pcs'] = (x.quantities[r.unit || 'pcs'] || 0) + r.qty;
       x.qty += r.qty; x.amount += r.amount; x.profit += r.profit; x.products++;
     });
     return Object.values(g).sort((a, b) => b.amount - a.amount);
@@ -190,7 +191,7 @@ export function TopProducts({ data, showProfit }) {
                 <td className="tp-rank">{i + 1}</td>
                 <td><b>{g.name}</b><div className="muted" style={{ fontSize: 12 }}>{g.products} product{g.products === 1 ? '' : 's'} · best: {g.top}{showProfit ? ` · profit ${money(g.profit, false)}` : ''}</div>
                   <div className="tp-bar"><i style={{ width: `${(g.amount / maxAmt) * 100}%` }} /></div></td>
-                <td className="r num"><b>{money(g.amount, false)}</b><div className="muted" style={{ fontSize: 12 }}>{Math.round(g.qty * 100) / 100} units</div></td>
+                <td className="r num"><b>{money(g.amount, false)}</b><div className="muted" style={{ fontSize: 12 }}>{Object.keys(g.quantities).sort().map(u => `${fqty(g.quantities[u])} ${u}`).join(' · ')}</div></td>
               </tr>
             ))}</tbody>
           </table></div>

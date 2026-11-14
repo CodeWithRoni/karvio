@@ -2562,7 +2562,8 @@ function saleCreate_(p, user) {
 
   items.forEach(function (it) {
     var pr = pmap[it.product_id], qty = inventoryQuantity_(it.qty, pr.name), price = num_(it.price), sers = [], cost = 0;
-    if (price < 0) fail_('Invalid price for ' + pr.name);
+    if (!isFinite(Number(it.price)) || price < 0) fail_('Invalid price for ' + pr.name);
+    if (Math.abs(price-round_(price,4)) > Number.EPSILON*Math.max(1,Math.abs(price))*4) fail_('Selling price for ' + pr.name + ' supports at most 4 decimal places. Correct the price before saving');
     if (isSerialProduct_(pr)) {
       sers = splitSerials_(it.serials);
       if (sers.length !== qty) fail_('Select ' + qty + ' serial number(s) for ' + pr.name);
@@ -3307,6 +3308,13 @@ var CLAIM_STATUSES = ['Pending', 'Sent to Vendor', 'Repaired', 'Replaced', 'Deli
 function daysBetween_(a, b) { return Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000); }
 
 /** Find sold items (with warranty info) by serial / invoice / product barcode. */
+/** Claims without a historical line reference remain conservative. */
+function claimMatchesLine_(c, sale, si, serial) {
+  if (c.sale_id !== sale.id || c.product_id !== si.product_id || (serial && c.serial !== serial)) return false;
+  var log; try { log = JSON.parse(c.log || '[]'); } catch (e) { log = []; }
+  var ref = log.filter(function(x) { return x.sale_item_id; })[0];
+  return !ref || ref.sale_item_id === si.id;
+}
 function warrantyLookup_(p) {
   var q = String(p.q || '').trim(); if (!q) fail_('Enter a serial number or invoice number');
   var today = today_(), sales = indexBy_(all_('Sales')), out = [];
@@ -3317,7 +3325,7 @@ function warrantyLookup_(p) {
       sale_id: sale.id, sale_item_id: si.id, invoice_no: sale.invoice_no, sale_date: sale.date, customer_id: sale.customer_id, customer_name: sale.customer_name,
       product_id: si.product_id, product_name: si.name, serial: serial || '', warranty_type: si.warranty_type, warranty_days: si.warranty_days,
       expiry: exp, in_warranty: !!exp && left >= 0, days_left: left, sale_status: sale.status,
-      claims: claims.filter(function (c) { return c.sale_id === sale.id && c.product_id === si.product_id && (!serial || c.serial === serial); }).map(function (c) { return { id: c.id, claim_no: c.claim_no, status: c.status, date: c.date }; })
+      claims: claims.filter(function (c) { return claimMatchesLine_(c, sale, si, serial); }).map(function (c) { return { id: c.id, claim_no: c.claim_no, status: c.status, date: c.date }; })
     });
   }
   var sidx = all_('SerialItems').filter(function (s) { return s.serial.toLowerCase() === q.toLowerCase() && s.status === 'sold'; });
@@ -3352,7 +3360,7 @@ function claimCreate_(p, user) {
     var back = sum_(all_('SalesReturnItems').filter(function (x) { return actRet[x.return_id] && x.sale_item_id === si.id; }), function (x) { return x.qty; });
     if (back >= si.qty - 1e-9) fail_(si.name + ' on invoice ' + sale.invoice_no + ' was returned, so it has no warranty');
   }
-  if (all_('WarrantyClaims').some(function (c) { return c.sale_id === sale.id && c.product_id === si.product_id && c.serial === serial && c.status !== 'Delivered' && c.status !== 'Rejected'; }))
+  if (all_('WarrantyClaims').some(function (c) { return claimMatchesLine_(c, sale, si, serial) && c.serial === serial && c.status !== 'Delivered' && c.status !== 'Rejected'; }))
     fail_('An open claim already exists for this item');
   var cust = sale.customer_id ? all_('Customers').filter(function (c) { return c.id === sale.customer_id; })[0] : null;
   var inW = !!si.warranty_expiry && si.warranty_expiry >= today_();
@@ -4110,7 +4118,7 @@ function topProducts_(sales, today, showCost) {
   var out = {};
   Object.keys(per).forEach(function (k) {
     out[k] = Object.keys(per[k]).map(function (id) { var r = per[k][id]; return { product_id: r.product_id, name: r.name, unit: r.unit, group_id: r.group_id, group: r.group, category: r.category, qty: round_(r.qty, 4), amount: round_(r.amount), profit: round_(r.profit), invoices: Object.keys(r.inv).length }; })
-      .sort(function (a, b) { return b.amount - a.amount || b.qty - a.qty; }).slice(0, 300)
+      .sort(function (a, b) { return b.amount - a.amount || b.qty - a.qty; })
       .map(function (r) { if (!showCost) delete r.profit; return r; });
   });
   return out;
@@ -4510,7 +4518,11 @@ function reportsRaw_(p, user) {
     });
     var pcol = [col_('name', 'Product'), col_('unit', 'Unit'), col_('qty', 'Qty Sold', 'num', 1), col_('revenue', 'Revenue', 'money', 1)];
     if (cost) pcol.push(col_('profit', 'Profit', 'money', 1));
-    return finishReport_('Product-wise Sales' + period, pcol, Object.keys(pg2).map(function (k) { return pg2[k]; }).sort(function (a, b) { return b.revenue - a.revenue; }));
+    var productRows = Object.keys(pg2).map(function(k) { return pg2[k]; }).sort(function(a,b) { return b.revenue-a.revenue; });
+    var productReport = finishReport_('Product-wise Sales' + period, pcol, productRows), unitTotals = {};
+    productRows.forEach(function(r) { var u=r.unit || 'pcs'; unitTotals[u]=(unitTotals[u] || 0)+r.qty; });
+    productReport.totals.qty = Object.keys(unitTotals).sort().map(function(u) { return round_(unitTotals[u],4)+' '+u; }).join(' · ');
+    return productReport;
   }
   fail_('Unknown report type');
 }

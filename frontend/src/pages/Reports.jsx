@@ -75,7 +75,7 @@ export default function Reports() {
       {r && <h2 style={{ marginBottom: 10 }}>{r.title}</h2>}
       <div className={stock ? 'stock-summary-report' : ''}><DataTable title={r?.title || 'Report'} loading={rep.loading} rows={r?.rows || []} totals={stock ? undefined : r?.totals} sumFilter={(row) => row.status === undefined || row.status === 'active'}
         rowClass={(row) => (row.status === 'cancelled' ? 'dim' : '')}
-        columns={(r?.columns || []).map((c) => ({ ...c, ...(stock && c.type==='money' && c.sum ? {total:rows=>Math.round(rows.reduce((n,row)=>n+(Number(row[c.key]) || 0),0)*100)/100} : {}), className: c.key === 'items' || c.key === 'items_text' || c.key === 'issue' ? 'clip' : '' }))} /></div>
+        columns={(r?.columns || []).map((c) => ({ ...c, ...(type==='product_sales' && c.key==='qty' ? {total:rows=>{const units={}; rows.forEach(row=>{const u=row.unit || 'pcs'; units[u]=(units[u] || 0)+Number(row.qty || 0);}); return Object.keys(units).sort().map(u=>qty(units[u])+' '+u).join(' · ');}} : {}), ...(stock && c.type==='money' && c.sum ? {total:rows=>Math.round(rows.reduce((n,row)=>n+(Number(row[c.key]) || 0),0)*100)/100} : {}), className: c.key === 'items' || c.key === 'items_text' || c.key === 'issue' ? 'clip' : '' }))} /></div>
       {r?.totals && type === 'sales' && g === 'invoice' && status === 'all' && <p className="muted">Totals count active invoices only; cancelled ones are shown struck through.</p>}
     </>
   );

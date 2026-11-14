@@ -1,3 +1,26 @@
+Publication authorized by owner on 14 November 2026. These four fixes are being published from baseline 62925e3; deployment verification follows. No schema or business-data edits.
+
+# Four audit fixes — LOCAL ONLY, 14 November 2026
+
+Baseline main `62925e3b04ded236ed64730701e5987f32893970`, live API47. The following changes are not published. No database migration or historical transaction rewrite. Older notes below are historical.
+
+```json
+{
+  "baseCommit": "62925e3b04ded236ed64730701e5987f32893970",
+  "regularRegression": "passed",
+  "hostedRegression": "passed",
+  "nov14AuditRegression": "passed",
+  "targetedBrowserTests": 1,
+  "productionBuild": "passed",
+  "schemaMigration": false,
+  "productionReset": false,
+  "published": false,
+  "nativeInstallersRebuilt": false
+}
+```
+
+Sale rates above four decimals are rejected atomically; warranty claims match their invoice line (legacy unlinked claims remain conservative); Top selling group aggregates include all products; sales quantities remain separated by unit, including selected exports. Evidence: verification/audit-2026-11-14/fix-{regular,hosted,browser,build}.log and fixes.log.
+
 # Unreleased — five Stock Summary audit corrections (LOCAL ONLY)
 
 - Replay nonserial stock movements for receipt provenance. Positive stock adjustments, untracked legacy stock and vendor-recovered units remain unknown instead of reviving exhausted receipts. Sale/return cancellation and supplier returns restore/remove the appropriate estimated provenance. Serial linkage stays exact.
