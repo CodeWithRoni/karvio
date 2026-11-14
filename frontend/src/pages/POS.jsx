@@ -77,8 +77,6 @@ export default function POS() {
     const serials = serial ? [serial] : [];
     setCart([...cart, { product_id: p.id, qty: isSerial(p) ? serials.length : 1, price: priceFor(p), serials, warranty_days: p.has_warranty ? p.warranty_days : '' }]);
     loadHist(p.id);
-    const rate = Number(l.price);
-    if (!Number.isFinite(rate) || rate < 0 || Math.abs(rate-Math.round(rate*10000)/10000) > Number.EPSILON*Math.max(1,Math.abs(rate))*4) problems.push(`Selling price for ${p.name} supports at most 4 decimal places`);
     if (isSerial(p) && !serial) setSerialFor(cart.length);
   };
   // A saved draft (or a PC Builder quote) may hold a serial product without its serials: quantity follows the serials,
@@ -138,6 +136,8 @@ export default function POS() {
   cart.forEach((l) => {
     const p = pmap[l.product_id];
     if (!p) return problems.push('A cart item no longer exists');
+    const rate = Number(l.price);
+    if (!Number.isFinite(rate) || rate < 0 || Math.abs(rate-Math.round(rate*10000)/10000) > Number.EPSILON*Math.max(1,Math.abs(rate))*4) problems.push(`Selling price for ${p.name} supports at most 4 decimal places`);
     if (isSerial(p) && (!l.serials.length || l.serials.length !== Number(l.qty))) problems.push(`Pick the serial numbers for ${p.name}`);
     if (!p.service && Number(l.qty) > (p.available ?? p.stock)) problems.push(`Only ${fqty(p.available ?? p.stock, p.unit)} of ${p.name} in stock`);
   });
