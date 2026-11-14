@@ -12,7 +12,10 @@ const files = [...new Set(['test:supabase', 'test:performance'].flatMap(k => [..
 const out = path.join(root, '.trace-tables.jsonl');
 fs.rmSync(out, {force: true});
 const env = {...process.env, KARVIO_TRACE_OUT: out, NODE_OPTIONS: `--import ${path.join(root, 'scripts/trace-table-preload.mjs')}`};
-for (const f of files) execFileSync(process.execPath, [f], {cwd: path.join(root, 'frontend'), env, stdio: 'ignore'});
+for (const f of files) {
+  try { execFileSync(process.execPath, [f], {cwd: path.join(root, 'frontend'), env, stdio: 'pipe'}); }
+  catch (e) { throw new Error(`${f} failed while tracing:\n${String(e.stderr || e.stdout || e.message).slice(-2000)}`); }
+}
 execFileSync(process.execPath, ['../backend/test/load-test.mjs'], {cwd: path.join(root, 'frontend'), stdio: 'ignore',
   env: {...env, KARVIO_LOAD_SALES: '200', KARVIO_LOAD_CUSTOMERS: '40', KARVIO_LOAD_PRODUCTS: '40', KARVIO_LOAD_ROUNDS: '1', KARVIO_LOAD_REPEAT: '1'}});
 const merged = {};
@@ -20,12 +23,17 @@ for (const line of fs.readFileSync(out, 'utf8').split('\n').filter(Boolean))
   for (const [action, tables] of Object.entries(JSON.parse(line))) tables.forEach(t => (merged[action] ||= new Set()).add(t));
 fs.rmSync(out, {force: true});
 const scopePath = path.join(root, 'supabase/functions/karvio-api/scope.mjs');
-const {ROW_SCOPED_ACTIONS, ALWAYS_TABLES} = await import(scopePath);
-const hints = Object.fromEntries(Object.entries(merged)
-  .filter(([a]) => !ROW_SCOPED_ACTIONS.has(a) && a !== 'owner.initialize' && a !== 'ping' && a !== 'reports')
-  .sort(([a], [b]) => a.localeCompare(b))
-  .map(([a, s]) => [a, [...s].filter(t => !ALWAYS_TABLES.includes(t)).sort()]));
-const body = 'export const TABLE_HINTS = {\n' + Object.entries(hints).map(([a, t]) => `  '${a}': [${t.map(x => `'${x}'`).join(', ')}],`).join('\n') + '\n};\n';
-const src = fs.readFileSync(scopePath, 'utf8').replace(/export const TABLE_HINTS = \{[\s\S]*?\n\};\n|export const TABLE_HINTS = \{\};\n/, body);
+const {ROW_SCOPED_ACTIONS, ALWAYS_TABLES, DEFAULT_PRIVATE} = await import(scopePath);
+const sorted = Object.entries(merged).sort(([a], [b]) => a.localeCompare(b));
+const hints = Object.fromEntries(sorted
+  .filter(([a, s]) => !ROW_SCOPED_ACTIONS.has(a) && a !== 'owner.initialize' && a !== 'ping' && a !== 'reports' && [...s].some(t => !t.startsWith('#')))
+  .map(([a, s]) => [a, [...s].filter(t => !t.startsWith('#') && !ALWAYS_TABLES.includes(t)).sort()]));
+const privateHints = Object.fromEntries(sorted
+  .map(([a, s]) => [a, [...s].filter(t => t.startsWith('#')).map(t => t.slice(1)).filter(t => /^__Karvio[A-Za-z]+$/.test(t) && !DEFAULT_PRIVATE.includes(t)).sort()])
+  .filter(([, t]) => t.length));
+const render = (name, map) => `export const ${name} = {\n` + Object.entries(map).map(([a, t]) => `  '${a}': [${t.map(x => `'${x}'`).join(', ')}],`).join('\n') + '\n};\n';
+let src = fs.readFileSync(scopePath, 'utf8');
+for (const [name, map] of [['TABLE_HINTS', hints], ['PRIVATE_HINTS', privateHints]])
+  src = src.replace(new RegExp(`export const ${name} = \\{(?:\\};|\\n[\\s\\S]*?\\n\\};)\\n`), render(name, map));
 fs.writeFileSync(scopePath, src);
-console.log(`Traced ${files.length} test files: ${Object.keys(hints).length} actions now have table hints.`);
+console.log(`Traced ${files.length} test files: ${Object.keys(hints).length} actions have table hints, ${Object.keys(privateHints).length} read request receipts.`);

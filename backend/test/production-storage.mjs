@@ -6,7 +6,7 @@ import {hash,createRuntime} from '../../supabase/functions/karvio-api/runtime.mj
 import {tableDeltas} from '../../supabase/functions/karvio-api/delta.mjs';
 const db=new PGlite();
 await db.exec('create role anon; create role authenticated; create role service_role bypassrls;');
-for(const name of ['20261111071516_karvio_fresh_schema.sql','20261111072742_karvio_scoped_table_replacement.sql','20261114133852_karvio_row_deltas_and_status.sql','20261114134523_karvio_backup_retention_and_references.sql','20261114185716_karvio_request_scoped_snapshots.sql','20261114202706_karvio_table_scoped_reads.sql'])await db.exec(fs.readFileSync(new URL('../../supabase/migrations/'+name,import.meta.url),'utf8'));
+for(const name of ['20261111071516_karvio_fresh_schema.sql','20261111072742_karvio_scoped_table_replacement.sql','20261114133852_karvio_row_deltas_and_status.sql','20261114134523_karvio_backup_retention_and_references.sql','20261114185716_karvio_request_scoped_snapshots.sql','20261114202706_karvio_table_scoped_reads.sql','20261114204617_karvio_private_rows.sql'])await db.exec(fs.readFileSync(new URL('../../supabase/migrations/'+name,import.meta.url),'utf8'));
 const key='local-test-setup-key';await db.query('update karvio_private.runtime set setup_hash=$1',[hash(key)]);
 const metrics=[];
 async function rpc(name,p){metrics.push({name,p});const args=Object.keys(p),params=args.map((k,i)=>k+' => $'+(i+1)).join(',');return (await db.query('select public.'+name+'('+params+') as result',Object.values(p))).rows[0].result;}
@@ -22,7 +22,7 @@ const customer=await q('customer.save',{name:'Storage customer'});
 const product=await q('product.save',{name:'Storage service',service:true,sale_price:100});
 const sell=()=>q('sale.create',{customer_id:customer.id,items:[{product_id:product.id,qty:1,price:100}],payments:[{account_id:cash,amount:50}],send_sms:false});
 await sell();const initial=(await db.query('select xmin::text as xmin from public."Sales" order by _position')).rows[0].xmin;
-const second=await sell();const commit=metrics.filter(x=>x.name==='karvio_commit_delta').at(-1);
+const second=await sell();const commit=metrics.filter(x=>x.name==='karvio_commit_delta'||x.name==='karvio_commit_rows').at(-1);
 assert.equal(commit.p.changes.Sales.upsert.length,1);assert.equal(commit.p.changes.SaleItems.upsert.length,1);
 assert.equal((await db.query('select xmin::text as xmin from public."Sales" order by _position')).rows[0].xmin,initial,'unchanged historical invoice is not rewritten');
 assert.equal((await db.query('select count(*)::int as n from public."Sales"')).rows[0].n,2);

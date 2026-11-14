@@ -3,10 +3,14 @@
 import fs from 'node:fs';
 const out = process.env.KARVIO_TRACE_OUT;
 const seen = new Map();
-globalThis.__karvioTrace = (action, touched, loadedTables) => {
-  if (!out || loadedTables || !Array.isArray(touched)) return; // only complete (whole-shop) runs
+// Read the whole shop while tracing, so every table an action uses is seen (not just the hinted ones).
+globalThis.__karvioTraceWholeShop = true;
+globalThis.__karvioTrace = (action, touched, loadedTables, missing = []) => {
+  if (!out || !Array.isArray(touched) || missing.length) return; // only runs that completed
   const set = seen.get(action) || new Set();
-  touched.forEach(t => set.add(t));
+  // Business tables only from whole-shop runs (a narrow run cannot show what it did not load);
+  // private sheets ('#name') from any completed run.
+  touched.forEach(t => { if (t.startsWith('#') || !loadedTables) set.add(t); });
   seen.set(action, set);
 };
 process.on('exit', () => {

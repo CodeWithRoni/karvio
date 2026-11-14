@@ -1,7 +1,7 @@
 import {createRuntime,hash} from './runtime.mjs';
 import {APP_VERSION,BUILD_ID} from './release.mjs';
 import {boundedBackup,transferRequest} from './transfers.mjs';
-import {ROW_SCOPED_ACTIONS,NARROW_READ_ACTIONS,TABLE_HINTS,ALWAYS_TABLES} from './scope.mjs';
+import {ROW_SCOPED_ACTIONS,NARROW_READ_ACTIONS,TABLE_HINTS,ALWAYS_TABLES,DEFAULT_PRIVATE,PRIVATE_HINTS} from './scope.mjs';
 const headers={'Content-Type':'application/json','Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization, apikey, content-type, x-client-info','Access-Control-Allow-Methods':'POST, OPTIONS','Cache-Control':'no-store'};
 const reply=(data,status=200)=>new Response(JSON.stringify(data),{status,headers});
 const clock=()=>(globalThis.performance?.now?.()??Date.now());
@@ -19,10 +19,16 @@ export function logRequest(m){
 // Default for tests and embedders: only the requests worth investigating.
 const logNotable=m=>{if(notableRequest(m))console.warn(JSON.stringify({evt:'karvio_request',...m}));};
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+// Key order differs between Postgres jsonb and JavaScript objects, so compare values, not text.
+// (Comparing text made every read look like a change and save, taking the shop lock each time.)
+const canonical=v=>Array.isArray(v)?'['+v.map(canonical).join(',')+']':v&&typeof v==='object'?'{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canonical(v[k])).join(',')+'}':JSON.stringify(v);
+export const sameValue=(a,b)=>canonical(a)===canonical(b);
 // Per server instance: tables an action turned out to need beyond its hint, and whether the
 // narrow-read database functions exist (they arrive with a migration that may lag a deploy).
-const newScopeState=()=>({learned:new Map(),narrowUnavailable:false});
-function rememberTables(state,key,tables){const set=state.learned.get(key)||new Set();tables.forEach(t=>set.add(t));state.learned.set(key,set);}
+// PostgREST: PGRST202 "Could not find the function"; Postgres: 42883 undefined_function.
+const missingFunction=e=>e?.code==='PGRST202'||e?.code==='42883'||/Could not find the function|function .* does not exist/i.test(String(e?.message||''));
+const newScopeState=()=>({learned:new Map(),learnedPrivate:new Map(),narrowUnavailable:false,readUnavailable:false});
+function remember(map,key,names){const set=map.get(key)||new Set();names.forEach(t=>set.add(t));map.set(key,set);}
 /**
  * How much of the database a request reads:
  *  rows   – the hand-written row filters in karvio_snapshot_request (checkout, payments, details …)
@@ -32,7 +38,13 @@ function rememberTables(state,key,tables){const set=state.learned.get(key)||new 
  */
 // Reports differ a lot by type, so each report type keeps its own table list.
 export const hintKey=(action,payload)=>action==='reports'&&typeof payload?.type==='string'&&/^[a-z_]{1,40}$/.test(payload.type)?'reports:'+payload.type:action;
-export function planFor(action,{protocol=2,scopedReads=true,narrowReads=true,payload={}}={},state=newScopeState()){
+export function planFor(action,options={},state=newScopeState()){
+ const plan=basePlan(action,options,state);
+ // Private sheets to read with the business rows (the journal is needed by every locked request).
+ plan.private=new Set([...DEFAULT_PRIVATE,...(PRIVATE_HINTS[plan.key||action]||[]),...(state.learnedPrivate.get(plan.key||action)||[])]);
+ return plan;
+}
+function basePlan(action,{protocol=2,scopedReads=true,narrowReads=true,payload={}}={},state){
  if(protocol!==2)return {kind:'legacy'};
  if(!scopedReads)return {kind:'unscoped'};
  if(action==='owner.initialize')return {kind:'full'};
@@ -45,10 +57,13 @@ export function planFor(action,{protocol=2,scopedReads=true,narrowReads=true,pay
 }
 function tablesPlan(key,state){
  const hint=Object.hasOwn(TABLE_HINTS,key)?TABLE_HINTS[key]:null;
- if(!hint)return {kind:'full',key};
+ // No list yet, or regenerating the lists (scripts/trace-table-hints.mjs must see every table used).
+ if(!hint||globalThis.__karvioTraceWholeShop)return {kind:'full',key};
  return {kind:'tables',key,tables:new Set([...ALWAYS_TABLES,...hint,...(state.learned.get(key)||[])])};
 }
-function snapshotCall(plan,body,protocol){
+function snapshotCall(plan,body,protocol,state){
+ if(protocol===2&&plan.kind!=='legacy'&&!state.readUnavailable)
+  return ['karvio_read',{kind:plan.kind,action_name:body.action,payload:body.payload||{},table_names:plan.tables?[...plan.tables].sort():null,private_names:[...plan.private].sort()}];
  switch(plan.kind){
   case 'legacy':return ['karvio_snapshot',{}];
   case 'unscoped':return ['karvio_snapshot_for',{action_name:body.action}];
@@ -95,13 +110,19 @@ export function createHandler({rpc,dispatch=()=>{},protocol=2,scopedReads=true,n
     plan.widening=false;
     m.attempts++;m.scope=plan.kind;
     let snapshot;
-    try{snapshot=await call(...snapshotCall(plan,body,protocol));}
+    const [readName,readArgs]=snapshotCall(plan,body,protocol,scopeState);
+    try{snapshot=await call(readName,readArgs);}
     catch(error){
-     // Database functions for narrow reads not installed yet (Edge deployed before the migration):
-     // fall back to the v1.2.4 read path for this server instance instead of failing the request.
+     // Database functions from a newer migration not installed yet (the Edge function is deployed
+     // first): use the older read path for this server instance instead of failing the request.
+     if(!missingFunction(error))throw error;
+     if(readName==='karvio_read'){scopeState.readUnavailable=true;plan.widening=true;continue;}
      if(plan.kind!=='tables'&&plan.kind!=='scoped')throw error;
      scopeState.narrowUnavailable=true;Object.assign(plan,{kind:'rows',widening:true});continue;
     }
+    // Read through the older path but the database already keeps private sheets as rows
+    // (migrated while this instance was running): switch to karvio_read, never run without receipts.
+    if(protocol===2&&readName!=='karvio_read'&&snapshot&&snapshot.metadata&&!Object.hasOwn(snapshot.metadata,'privateSheets')){scopeState.readUnavailable=false;plan.widening=true;continue;}
     // The request is not narrow enough for a row-scoped read (e.g. no date range): read whole tables.
     if(snapshot===null&&plan.kind==='scoped'){Object.assign(plan,tablesPlan(plan.key,scopeState),{widening:true});continue;}
     if(body.action==='ping')return finish(reply({ok:true,data:{app:'Karvio',version:APP_VERSION,buildId:BUILD_ID,backend:'supabase',requiresSetup:snapshot.requiresSetup,apiCapabilities:{idempotency:true,durableRecovery:true,credentialSessions:true,purchaseDuePayment:true,saleDuePayment:true,chunkedRestore:{maxBytes:16*1024*1024,partChars:128*1024}}}}));
@@ -112,12 +133,16 @@ export function createHandler({rpc,dispatch=()=>{},protocol=2,scopedReads=true,n
     const runtime=createRuntime(snapshot,{deltaOnly:protocol===2});
     const result=initializing?runtime.initialize(body.payload||{}):runtime.execute(body);
     m.engineMs+=clock()-engineStarted;
-    globalThis.__karvioTrace?.(hintKey(body.action,body.payload),result.touched,snapshot.loadedTables);
+    globalThis.__karvioTrace?.(hintKey(body.action,body.payload),result.touched,snapshot.loadedTables,result.missing);
     // The engine opened a table this narrow read did not load: never use that result. Load it and run again.
     if(result.missing?.length){
      widened++;
-     if(plan.kind==='tables'&&widened<3){result.missing.forEach(t=>plan.tables.add(t));rememberTables(scopeState,plan.key,result.missing);}
-     else plan.kind='full';
+     const sheets=result.missing.filter(t=>t.startsWith('#')).map(t=>t.slice(1)),tables=result.missing.filter(t=>!t.startsWith('#'));
+     sheets.forEach(t=>plan.private.add(t));remember(scopeState.learnedPrivate,plan.key||body.action,sheets);
+     if(tables.length){
+      if(plan.kind==='tables'&&widened<3){tables.forEach(t=>plan.tables.add(t));remember(scopeState.learned,plan.key,tables);}
+      else plan.kind='full';
+     }
      plan.widening=true;m.widened=(m.widened||0)+1;
      continue;
     }
@@ -126,9 +151,11 @@ export function createHandler({rpc,dispatch=()=>{},protocol=2,scopedReads=true,n
     const changes=protocol===2?result.delta:result.changes;
     // A row-scoped read saw only part of some tables, so it may never save business rows.
     if(snapshot.readOnlyScope&&Object.keys(changes).length){plan.kind='full';plan.widening=true;m.widened=(m.widened||0)+1;continue;}
-    const changed=Object.keys(changes).length||JSON.stringify(result.metadata)!==JSON.stringify(snapshot.metadata);
+    const privateChanges=result.privateDelta||{};
+    const changed=Object.keys(changes).length||Object.keys(privateChanges).length||!sameValue(result.metadata,snapshot.metadata);
     if(!changed)return finish(reply(result.response),result.response.ok?'ok':'rejected');
-    const committed=await call(protocol===2?'karvio_commit_delta':'karvio_commit',{expected_revision:snapshot.revision,changes,next_metadata:result.metadata,initialize_owner:initializing,setup_token_hash:initializing?hash(String(body.payload?.setup_key||'')):null,backup_reason:result.backupReason,sms_jobs:result.outbox});
+    const commitArgs={expected_revision:snapshot.revision,changes,next_metadata:result.metadata,initialize_owner:initializing,setup_token_hash:initializing?hash(String(body.payload?.setup_key||'')):null,backup_reason:result.backupReason,sms_jobs:result.outbox};
+    const committed=await call(snapshot.privateRows?'karvio_commit_rows':protocol===2?'karvio_commit_delta':'karvio_commit',snapshot.privateRows?{...commitArgs,private_changes:privateChanges}:commitArgs);
     if(committed.committed){
      m.writes=Object.values(changes).reduce((n,t)=>n+(Array.isArray(t)?t.length:(t.upsert?.length||0)+(t.remove?.length||0)),0);
      dispatch();return finish(reply(result.response),result.response.ok?'ok':'rejected');

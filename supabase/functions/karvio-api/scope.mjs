@@ -14,6 +14,40 @@ export const ROW_SCOPED_ACTIONS = new Set([
 // Read-only screens narrowed by date range or party in karvio_snapshot_scoped (falls back to tables).
 export const NARROW_READ_ACTIONS = new Set(['customer.statement', 'supplier.statement', 'sales.list', 'sreturns.list']);
 
+// Private sheets read with every request (small). Request receipts are large and only needed by saves.
+export const DEFAULT_PRIVATE = ['__KarvioTxnJournal', '__KarvioQuoteLinks'];
+export const PRIVATE_HINTS = {
+  'account.entry': ['__KarvioRequestReceipts'],
+  'account.save': ['__KarvioRequestReceipts'],
+  'claim.create': ['__KarvioRequestReceipts'],
+  'claim.update': ['__KarvioRequestReceipts'],
+  'customer.payment': ['__KarvioRequestReceipts'],
+  'customer.save': ['__KarvioRequestReceipts'],
+  'database.restore': ['__KarvioRequestReceipts'],
+  'expense.categories': ['__KarvioRequestReceipts'],
+  'expense.create': ['__KarvioRequestReceipts'],
+  'expense.update': ['__KarvioRequestReceipts'],
+  'master.deleteMany': ['__KarvioRequestReceipts'],
+  'master.save': ['__KarvioRequestReceipts'],
+  'password.change': ['__KarvioRequestReceipts'],
+  'preturn.create': ['__KarvioRequestReceipts'],
+  'product.save': ['__KarvioRequestReceipts'],
+  'purchase.create': ['__KarvioRequestReceipts'],
+  'quote.send': ['__KarvioRequestReceipts'],
+  'repair.save': ['__KarvioRequestReceipts'],
+  'reverse': ['__KarvioRequestReceipts'],
+  'rolePerms.save': ['__KarvioRequestReceipts'],
+  'sale.create': ['__KarvioRequestReceipts'],
+  'sale.exchange': ['__KarvioRequestReceipts'],
+  'sale.link': ['__KarvioRequestReceipts'],
+  'sale.promise': ['__KarvioRequestReceipts'],
+  'settings.save': ['__KarvioRequestReceipts'],
+  'sreturn.create': ['__KarvioRequestReceipts'],
+  'supplier.payment': ['__KarvioRequestReceipts'],
+  'supplier.save': ['__KarvioRequestReceipts'],
+  'user.save': ['__KarvioRequestReceipts'],
+};
+
 // Every request signs in a user and reads shop settings.
 export const ALWAYS_TABLES = ['Users', 'Settings'];
 
@@ -23,7 +57,7 @@ export const TABLE_HINTS = {
   'claim.create': ['Customers', 'ItemEvents', 'SaleItems', 'Sales', 'SalesReturnItems', 'SalesReturns', 'WarrantyClaims'],
   'claim.update': ['ItemEvents', 'WarrantyClaims'],
   'claims.list': ['WarrantyClaims'],
-  'customer.save': ['Customers', 'InvoiceLinks'],
+  'customer.save': ['AuditLog', 'Customers', 'InvoiceLinks'],
   'customer.statement': ['CustomerLedger', 'Customers'],
   'customer.statements': ['CustomerLedger', 'Customers', 'PurchaseReturns', 'Purchases', 'Repairs', 'Sales', 'SalesReturns', 'SupplierLedger', 'Suppliers', 'WarrantyClaims'],
   'dashboard': ['AccountTxns', 'Accounts', 'Brands', 'Categories', 'CustomerLedger', 'Customers', 'Expenses', 'ItemEvents', 'Products', 'PurchaseItems', 'PurchaseReturnItems', 'PurchaseReturns', 'Purchases', 'Repairs', 'SaleItems', 'Sales', 'SalesReturnItems', 'SalesReturns', 'SerialItems', 'SupplierLedger', 'Suppliers', 'WarrantyClaims'],
@@ -39,7 +73,7 @@ export const TABLE_HINTS = {
   'preturn.create': ['AccountTxns', 'Accounts', 'AuditLog', 'ItemEvents', 'Products', 'PurchaseItems', 'PurchaseReturnItems', 'PurchaseReturns', 'Purchases', 'Repairs', 'SerialItems', 'Units'],
   'preturns.list': ['PurchaseReturnItems', 'PurchaseReturns'],
   'product.history': ['Products', 'PurchaseItems', 'Purchases', 'SaleItems', 'Sales'],
-  'product.save': ['Categories', 'ItemEvents', 'Products', 'PurchaseItems', 'PurchaseReturnItems', 'Repairs', 'SaleItems', 'SalesReturnItems', 'SerialItems', 'Units', 'WarrantyClaims'],
+  'product.save': ['Categories', 'InvoiceLinks', 'ItemEvents', 'Products', 'PurchaseItems', 'PurchaseReturnItems', 'Repairs', 'SaleItems', 'SalesReturnItems', 'SerialItems', 'Units', 'WarrantyClaims'],
   'profit.report': ['Expenses', 'ItemEvents', 'SaleItems', 'Sales', 'SalesReturnItems', 'SalesReturns', 'WarrantyClaims'],
   'purchases.list': ['PurchaseItems', 'PurchaseReturns', 'Purchases', 'SupplierLedger', 'Suppliers'],
   'quote.public': [],
@@ -67,7 +101,7 @@ export const TABLE_HINTS = {
   'settings.save': ['AuditLog', 'InvoiceLinks'],
   'sreturn.create': ['AccountTxns', 'Accounts', 'AuditLog', 'CustomerLedger', 'Customers', 'ItemEvents', 'Products', 'SaleItems', 'Sales', 'SalesReturnItems', 'SalesReturns', 'SerialItems', 'Units', 'WarrantyClaims'],
   'sreturns.list': ['Sales', 'SalesReturnItems', 'SalesReturns'],
-  'supplier.save': ['InvoiceLinks', 'Suppliers'],
+  'supplier.save': ['AuditLog', 'InvoiceLinks', 'Suppliers'],
   'supplier.statement': ['SupplierLedger', 'Suppliers'],
   'supplier.statements': ['CustomerLedger', 'Customers', 'PurchaseReturns', 'Purchases', 'Repairs', 'Sales', 'SalesReturns', 'SupplierLedger', 'Suppliers', 'WarrantyClaims'],
   'user.save': [],

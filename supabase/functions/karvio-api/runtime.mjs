@@ -28,7 +28,21 @@ export function createRuntime(snapshot, {deltaOnly=false}={}) {
     }
     state.sheets[name] = {rows,columns:cols.length};
   }
-  Object.assign(state.sheets, clone(snapshot.metadata.privateSheets || {}));
+  // Private sheets (journal, request receipts, quotation links): stored as rows when the database
+  // supports it (snapshot.privateRows), otherwise inside the runtime JSON as before.
+  const privateRows=snapshot.privateRows===true;
+  const privateNames=new Set(privateRows?snapshot.privateNames||[]:[]), privateLoaded=new Set(), privateCreated=new Set();
+  if(privateRows){
+    for(const [name,sheet] of Object.entries(snapshot.privateSheets||{})){
+      if(Object.hasOwn(schema,name)||!/^__Karvio[A-Za-z]{1,60}$/.test(name))throw new Error('Invalid private sheet');
+      const rows=[];
+      for(const [pos,cells] of sheet.rows||[]){
+        if(!Number.isSafeInteger(pos)||pos<1||pos>2000000||!Array.isArray(cells))throw new Error('Invalid private row');
+        while(rows.length<pos)rows.push([]);rows[pos-1]=cells;
+      }
+      state.sheets[name]={rows,columns:Number(sheet.columns)||1};privateLoaded.add(name);
+    }
+  } else Object.assign(state.sheets, clone(snapshot.metadata.privateSheets || {}));
   // Rows returned by getValues are copies. Keep an immutable baseline and copy
   // only the table's row array / individual rows when a write actually occurs.
   const before = {sheets:{...state.sheets},properties:clone(state.properties)};
@@ -79,10 +93,14 @@ export function createRuntime(snapshot, {deltaOnly=false}={}) {
     if(Object.hasOwn(schema,name)){
       touched.add(name);
       if(loaded && !loaded.has(name)){missing.add(name);throw new Error('Action requires an unloaded table: '+name);}
+    } else {
+      touched.add('#'+name);
+      // An existing private sheet that this read did not load ('#' marks private sheets).
+      if(privateRows && privateNames.has(name) && !privateLoaded.has(name) && !privateCreated.has(name)){missing.add('#'+name);throw new Error('Action requires an unloaded table: '+name);}
     }
     return Object.hasOwn(state.sheets,name)?new Sheet(name):null;
   },
-    insertSheet(name){if(Object.hasOwn(state.sheets,name)||['__proto__','constructor','prototype'].includes(name))throw new Error('Invalid table');state.sheets[name]={rows:[],columns:1};return new Sheet(name);},
+    insertSheet(name){if(Object.hasOwn(state.sheets,name)||['__proto__','constructor','prototype'].includes(name))throw new Error('Invalid table');if(privateRows&&!Object.hasOwn(schema,name)){if(privateNames.has(name))throw new Error('Invalid table');privateCreated.add(name);}state.sheets[name]={rows:[],columns:1};return new Sheet(name);},
     getSheets:()=>{if(loaded)for(const n of Object.keys(schema))if(!loaded.has(n))missing.add(n);for(const n of Object.keys(schema))touched.add(n);return Object.keys(state.sheets).map(n=>new Sheet(n));},deleteSheet:sheet=>{delete state.sheets[sheet.name];},setSpreadsheetTimeZone(){}};
   const security={
     backupCapabilities:boundedBackup,
@@ -130,8 +148,28 @@ export function createRuntime(snapshot, {deltaOnly=false}={}) {
       if(deltaOnly){if(records.length||removed.size)delta[name]={upsert:records,remove:[...removed]};}
       else changes[name]=records;
     }
+    const touchedList=[...touched].sort(), missingList=[...missing].sort();
+    if(privateRows){
+      // Only the private rows that changed: [position, cells] to write, positions to clear.
+      const blank=r=>!Array.isArray(r)||!r.some(v=>v!==''&&v!=null);
+      const privateDelta={};
+      for(const name of Object.keys(state.sheets)){
+        if(Object.hasOwn(schema,name))continue;
+        const created=!response.ok?false:privateCreated.has(name);
+        if(!dirty.has(name)&&!created)continue;
+        const rows=state.sheets[name].rows, old=before.sheets[name]?.rows||[], upsert=[], remove=[];
+        for(let i=0;i<Math.max(rows.length,old.length);i++){
+          const now=rows[i]||[], was=old[i]||[];
+          if(blank(now)){if(!blank(was))remove.push(i+1);}
+          else if(now!==was&&JSON.stringify(now)!==JSON.stringify(was))upsert.push([i+1,now]);
+        }
+        const columns=Math.max(1,Math.min(1000,Number(state.sheets[name].columns)||1));
+        if(upsert.length||remove.length||created||columns!==(Number(before.sheets[name]?.columns)||1))privateDelta[name]={columns,upsert,remove};
+      }
+      return {response,changes,delta,privateDelta,metadata:{properties:state.properties,cache},outbox,backupReason,touched:touchedList,missing:missingList};
+    }
     const privateSheets=Object.fromEntries(Object.entries(state.sheets).filter(([name])=>!Object.hasOwn(schema,name)));
-    return {response,changes,delta,metadata:{properties:state.properties,cache,privateSheets},outbox,backupReason,touched:[...touched].sort(),missing:[...missing].sort()};
+    return {response,changes,delta,metadata:{properties:state.properties,cache,privateSheets},outbox,backupReason,touched:touchedList,missing:missingList};
   }
   return {
     // Trusted offline administration helper. No HTTP route invokes this method;

@@ -37,7 +37,7 @@ export function rpcFor(db, {onCall} = {}) {
     const out = res.rows[0].r;
     const bytes = out === null || out === undefined ? 0 : JSON.stringify(out).length;
     if (out && typeof out === 'object') Object.defineProperty(out, '__bytes', {value: bytes});
-    onCall?.({name, ms: performance.now() - t, bytes, result: out});
+    onCall?.({name, args, ms: performance.now() - t, bytes, result: out});
     return out;
   };
 }

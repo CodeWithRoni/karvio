@@ -79,7 +79,7 @@ async function same(action, payload, wantScope) {
   assert.deepEqual(strip(narrow), strip(full), `${action} ${JSON.stringify(payload)} differs from the whole-shop answer`);
   const used = metrics.slice(before).map(m => m.scope).at(-1);
   (scopes[action] ||= new Set()).add(used);
-  if (wantScope) assert.equal(used, wantScope, `${action} ${JSON.stringify(payload)} used ${used}`);
+  if (wantScope && !globalThis.__karvioTraceWholeShop) assert.equal(used, wantScope, `${action} ${JSON.stringify(payload)} used ${used}`);
   checks++;
   return narrow;
 }
@@ -143,8 +143,7 @@ await same('sreturns.list', {from: day(700), to: day(0)});
 c.setToken(ownerToken);
 
 // Edge deployed before its migration: narrow reads fall back to the v1.2.4 path instead of failing.
-const older = await freshDatabase();
-await older.exec('drop function public.karvio_snapshot_tables(text[]); drop function public.karvio_snapshot_scoped(text,jsonb);');
+const older = await freshDatabase({skip: ['20261114202706_karvio_table_scoped_reads.sql', '20261114204617_karvio_private_rows.sql']});
 const o = await apiClient(older);
 const party = await o.q('customer.save', {name: 'Fallback customer'});
 assert.equal((await o.q('customer.statement', {customer_id: party.id})).party, 'Fallback customer');
