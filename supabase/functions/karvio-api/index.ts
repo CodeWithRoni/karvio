@@ -1,4 +1,4 @@
-import { createHandler } from './handler.mjs';
+import { createHandler, logRequest } from './handler.mjs';
 import { dispatchSms } from './sms.mjs';
 const url = Deno.env.get('SUPABASE_URL');
 const secret = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -12,9 +12,13 @@ const rpc = async (name: string, body: unknown) => {
   const error=new Error(detail?.code==='P0001'?detail.message:`Database RPC failed (${response.status})`);
   Object.assign(error,{code:detail?.code});throw error;
  }
- return await response.json();
+ const text = await response.text();
+ const data = JSON.parse(text);
+ // Response size for the request log; non-enumerable so it never reaches a client.
+ if (data && typeof data === 'object') Object.defineProperty(data, '__bytes', {value: text.length});
+ return data;
 };
-const gateway=createHandler({rpc,
+const gateway=createHandler({rpc,log:logRequest,
  // Database derives the bucket from a stored, unexpired session, never from
  // client-controlled forwarding headers or a claimed username/user ID.
  allowRequest:body=>rpc('karvio_request_limit',{session_key:'tok_'+String(body.token||'').slice(0,512)}),

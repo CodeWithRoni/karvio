@@ -71,12 +71,19 @@ export function createRuntime(snapshot, {deltaOnly=false}={}) {
     appendRow(cells){this.getRange(this.getLastRow()+1,1,1,cells.length).setValues([cells]);}
     deleteRow(row){editSheet(this.name).rows.splice(row-1,1);} deleteRows(row,count=1){editSheet(this.name).rows.splice(row-1,count);return this;}
   }
+  // Business tables the engine opened, and the ones it needed but this snapshot did not load.
+  // The gateway re-runs a request with a missing table loaded, so a narrow read can never change a result.
+  const touched=new Set(), missing=new Set();
+  const loaded=snapshot.loadedTables?new Set(snapshot.loadedTables):null;
   const book={getId:()=> 'KARVIO_POSTGRES',getSheetByName:name=>{
-    if(snapshot.loadedTables && Object.hasOwn(schema,name) && !snapshot.loadedTables.includes(name))throw new Error('Action requires an unloaded table: '+name);
+    if(Object.hasOwn(schema,name)){
+      touched.add(name);
+      if(loaded && !loaded.has(name)){missing.add(name);throw new Error('Action requires an unloaded table: '+name);}
+    }
     return Object.hasOwn(state.sheets,name)?new Sheet(name):null;
   },
     insertSheet(name){if(Object.hasOwn(state.sheets,name)||['__proto__','constructor','prototype'].includes(name))throw new Error('Invalid table');state.sheets[name]={rows:[],columns:1};return new Sheet(name);},
-    getSheets:()=>Object.keys(state.sheets).map(n=>new Sheet(n)),deleteSheet:sheet=>{delete state.sheets[sheet.name];},setSpreadsheetTimeZone(){}};
+    getSheets:()=>{if(loaded)for(const n of Object.keys(schema))if(!loaded.has(n))missing.add(n);for(const n of Object.keys(schema))touched.add(n);return Object.keys(state.sheets).map(n=>new Sheet(n));},deleteSheet:sheet=>{delete state.sheets[sheet.name];},setSpreadsheetTimeZone(){}};
   const security={
     backupCapabilities:boundedBackup,
     readMetrics:snapshot.readMetrics,
@@ -124,7 +131,7 @@ export function createRuntime(snapshot, {deltaOnly=false}={}) {
       else changes[name]=records;
     }
     const privateSheets=Object.fromEntries(Object.entries(state.sheets).filter(([name])=>!Object.hasOwn(schema,name)));
-    return {response,changes,delta,metadata:{properties:state.properties,cache,privateSheets},outbox,backupReason};
+    return {response,changes,delta,metadata:{properties:state.properties,cache,privateSheets},outbox,backupReason,touched:[...touched].sort(),missing:[...missing].sort()};
   }
   return {
     // Trusted offline administration helper. No HTTP route invokes this method;

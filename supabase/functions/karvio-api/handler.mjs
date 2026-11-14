@@ -1,12 +1,78 @@
 import {createRuntime,hash} from './runtime.mjs';
 import {APP_VERSION,BUILD_ID} from './release.mjs';
 import {boundedBackup,transferRequest} from './transfers.mjs';
+import {ROW_SCOPED_ACTIONS,NARROW_READ_ACTIONS,TABLE_HINTS,ALWAYS_TABLES} from './scope.mjs';
 const headers={'Content-Type':'application/json','Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization, apikey, content-type, x-client-info','Access-Control-Allow-Methods':'POST, OPTIONS','Cache-Control':'no-store'};
 const reply=(data,status=200)=>new Response(JSON.stringify(data),{status,headers});
-export function createHandler({rpc,dispatch=()=>{},protocol=2,scopedReads=true,allowRequest=async()=>true}) {
+const clock=()=>(globalThis.performance?.now?.()??Date.now());
+// A request slower than this, or one that had to retry, is logged as a warning.
+export const SLOW_REQUEST_MS=1500;
+/**
+ * One structured line per request (no payload, token or customer data): visible in
+ * Supabase → Edge Functions → karvio-api → Logs. Filter on "karvio_request".
+ */
+export const notableRequest=m=>m.outcome==='error'||m.outcome==='busy'||m.ms>=SLOW_REQUEST_MS||m.attempts>1;
+export function logRequest(m){
+ const line=JSON.stringify({evt:'karvio_request',...m});
+ if(notableRequest(m))console.warn(line);else console.log(line);
+}
+// Default for tests and embedders: only the requests worth investigating.
+const logNotable=m=>{if(notableRequest(m))console.warn(JSON.stringify({evt:'karvio_request',...m}));};
+const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+// Per server instance: tables an action turned out to need beyond its hint, and whether the
+// narrow-read database functions exist (they arrive with a migration that may lag a deploy).
+const newScopeState=()=>({learned:new Map(),narrowUnavailable:false});
+function rememberTables(state,key,tables){const set=state.learned.get(key)||new Set();tables.forEach(t=>set.add(t));state.learned.set(key,set);}
+/**
+ * How much of the database a request reads:
+ *  rows   – the hand-written row filters in karvio_snapshot_request (checkout, payments, details …)
+ *  scoped – row filters for read-only lists/statements in karvio_snapshot_scoped (date range / one party)
+ *  tables – every row of only the tables this action uses (hint list, widened automatically if needed)
+ *  full   – the whole shop (setup, or a narrow read that turned out too narrow)
+ */
+// Reports differ a lot by type, so each report type keeps its own table list.
+export const hintKey=(action,payload)=>action==='reports'&&typeof payload?.type==='string'&&/^[a-z_]{1,40}$/.test(payload.type)?'reports:'+payload.type:action;
+export function planFor(action,{protocol=2,scopedReads=true,narrowReads=true,payload={}}={},state=newScopeState()){
+ if(protocol!==2)return {kind:'legacy'};
+ if(!scopedReads)return {kind:'unscoped'};
+ if(action==='owner.initialize')return {kind:'full'};
+ if(!narrowReads||state.narrowUnavailable)return {kind:'rows',key:action}; // v1.2.4 behaviour
+ if(NARROW_READ_ACTIONS.has(action))return {kind:'scoped',key:hintKey(action,payload)};
+ const key=hintKey(action,payload);
+ // No table list yet: the database's own request scoping (it reads the whole shop for unknown actions).
+ if(ROW_SCOPED_ACTIONS.has(action)||!Object.hasOwn(TABLE_HINTS,key))return {kind:'rows',key};
+ return tablesPlan(key,state);
+}
+function tablesPlan(key,state){
+ const hint=Object.hasOwn(TABLE_HINTS,key)?TABLE_HINTS[key]:null;
+ if(!hint)return {kind:'full',key};
+ return {kind:'tables',key,tables:new Set([...ALWAYS_TABLES,...hint,...(state.learned.get(key)||[])])};
+}
+function snapshotCall(plan,body,protocol){
+ switch(plan.kind){
+  case 'legacy':return ['karvio_snapshot',{}];
+  case 'unscoped':return ['karvio_snapshot_for',{action_name:body.action}];
+  case 'rows':return ['karvio_snapshot_request',{action_name:body.action,payload:body.payload||{}}];
+  case 'scoped':return ['karvio_snapshot_scoped',{action_name:body.action,payload:body.payload||{}}];
+  case 'tables':return ['karvio_snapshot_tables',{table_names:[...plan.tables].sort()}];
+  default:return ['karvio_snapshot',{}];
+ }
+}
+export function createHandler({rpc,dispatch=()=>{},protocol=2,scopedReads=true,narrowReads=true,allowRequest=async()=>true,log=logNotable,retryDelay=attempt=>attempt*(25+Math.random()*50)}) {
+ const scopeState=newScopeState();
  return async request=>{
   if(request.method==='OPTIONS')return new Response(null,{status:204,headers});
   if(request.method!=='POST')return reply({ok:false,error:'Use POST'},405);
+  const started=clock();
+  const m={action:'',outcome:'ok',ms:0,attempts:0,dbMs:0,engineMs:0,readBytes:0,writes:0};
+  // Every database call is timed; the Edge rpc reports the response size as __bytes.
+  const call=async(name,args)=>{const t=clock();try{const out=await rpc(name,args);m.readBytes+=Number(out?.__bytes)||0;return out;}finally{m.dbMs+=clock()-t;}};
+  const finish=(response,outcome)=>{
+   if(outcome)m.outcome=outcome;
+   m.ms=Math.round(clock()-started);m.dbMs=Math.round(m.dbMs);m.engineMs=Math.round(m.engineMs);
+   if(m.action){try{log(m);}catch{}}
+   return response;
+  };
   try {
    // Streaming limit prevents an untrusted body from exhausting the isolate before validation.
    const reader=request.body?.getReader();let size=0,chunks=[];
@@ -14,32 +80,66 @@ export function createHandler({rpc,dispatch=()=>{},protocol=2,scopedReads=true,a
    const bytes=new Uint8Array(size);let off=0;for(const c of chunks){bytes.set(c,off);off+=c.length;}
    let body;try{body=JSON.parse(new TextDecoder().decode(bytes));}catch{return reply({ok:false,error:'Invalid JSON body'},400);}
    if(!body||typeof body.action!=='string'||body.action.length>100)return reply({ok:false,error:'Invalid action'},400);
-   if(!await allowRequest(body))return reply({ok:false,error:'Too many requests. Try again in a minute.'},429);
-   if(protocol===2&&body.action.startsWith('database.transfer.'))return reply(await transferRequest(body,rpc));
+   m.action=body.action;
+   if(!await allowRequest(body))return finish(reply({ok:false,error:'Too many requests. Try again in a minute.'},429),'limited');
+   if(protocol===2&&body.action.startsWith('database.transfer.')){const data=await transferRequest(body,call);return finish(reply(data),data.ok?'ok':'rejected');}
    if(body.action==='ping'&&protocol===2){
-    const status=await rpc('karvio_status',{});
-    return reply({ok:true,data:{app:'Karvio',version:APP_VERSION,buildId:BUILD_ID,backend:'supabase',requiresSetup:status.requiresSetup,apiCapabilities:{idempotency:true,durableRecovery:true,credentialSessions:true,purchaseDuePayment:true,saleDuePayment:true,rowDeltas:true,boundedBackup,chunkedRestore:{maxBytes:16*1024*1024,partChars:128*1024}}}});
+    const status=await call('karvio_status',{});
+    return finish(reply({ok:true,data:{app:'Karvio',version:APP_VERSION,buildId:BUILD_ID,backend:'supabase',requiresSetup:status.requiresSetup,apiCapabilities:{idempotency:true,durableRecovery:true,credentialSessions:true,purchaseDuePayment:true,saleDuePayment:true,rowDeltas:true,boundedBackup,chunkedRestore:{maxBytes:16*1024*1024,partChars:128*1024}}}}));
    }
-   for(let attempt=0;attempt<4;attempt++) {
-    const snapshot=await rpc(protocol===2?(scopedReads?'karvio_snapshot_request':'karvio_snapshot_for'):'karvio_snapshot',protocol===2?(scopedReads?{action_name:body.action,payload:body.payload||{}}:{action_name:body.action}):{});
-    if(body.action==='ping')return reply({ok:true,data:{app:'Karvio',version:APP_VERSION,buildId:BUILD_ID,backend:'supabase',requiresSetup:snapshot.requiresSetup,apiCapabilities:{idempotency:true,durableRecovery:true,credentialSessions:true,purchaseDuePayment:true,saleDuePayment:true,chunkedRestore:{maxBytes:16*1024*1024,partChars:128*1024}}}});
+   const plan=planFor(body.action,{protocol,scopedReads,narrowReads,payload:body.payload},scopeState);
+   // Up to 4 tries when another counter saves first; a narrow read may also widen a few times.
+   for(let attempt=0,widened=0;attempt<4&&m.attempts<12;) {
+    // Another counter saved first: wait a short, random moment so both do not collide again.
+    if(attempt&&!plan.widening)await pause(retryDelay(attempt));
+    plan.widening=false;
+    m.attempts++;m.scope=plan.kind;
+    let snapshot;
+    try{snapshot=await call(...snapshotCall(plan,body,protocol));}
+    catch(error){
+     // Database functions for narrow reads not installed yet (Edge deployed before the migration):
+     // fall back to the v1.2.4 read path for this server instance instead of failing the request.
+     if(plan.kind!=='tables'&&plan.kind!=='scoped')throw error;
+     scopeState.narrowUnavailable=true;Object.assign(plan,{kind:'rows',widening:true});continue;
+    }
+    // The request is not narrow enough for a row-scoped read (e.g. no date range): read whole tables.
+    if(snapshot===null&&plan.kind==='scoped'){Object.assign(plan,tablesPlan(plan.key,scopeState),{widening:true});continue;}
+    if(body.action==='ping')return finish(reply({ok:true,data:{app:'Karvio',version:APP_VERSION,buildId:BUILD_ID,backend:'supabase',requiresSetup:snapshot.requiresSetup,apiCapabilities:{idempotency:true,durableRecovery:true,credentialSessions:true,purchaseDuePayment:true,saleDuePayment:true,chunkedRestore:{maxBytes:16*1024*1024,partChars:128*1024}}}}));
     const initializing=body.action==='owner.initialize';
-    if(snapshot.requiresSetup&&!initializing)return reply({ok:false,error:'The owner must initialize this fresh database first.'});
-    if(initializing&&!snapshot.requiresSetup)return reply({ok:false,error:'The owner account is already initialized.'});
+    if(snapshot.requiresSetup&&!initializing)return finish(reply({ok:false,error:'The owner must initialize this fresh database first.'}),'rejected');
+    if(initializing&&!snapshot.requiresSetup)return finish(reply({ok:false,error:'The owner account is already initialized.'}),'rejected');
+    const engineStarted=clock();
     const runtime=createRuntime(snapshot,{deltaOnly:protocol===2});
     const result=initializing?runtime.initialize(body.payload||{}):runtime.execute(body);
+    m.engineMs+=clock()-engineStarted;
+    globalThis.__karvioTrace?.(hintKey(body.action,body.payload),result.touched,snapshot.loadedTables);
+    // The engine opened a table this narrow read did not load: never use that result. Load it and run again.
+    if(result.missing?.length){
+     widened++;
+     if(plan.kind==='tables'&&widened<3){result.missing.forEach(t=>plan.tables.add(t));rememberTables(scopeState,plan.key,result.missing);}
+     else plan.kind='full';
+     plan.widening=true;m.widened=(m.widened||0)+1;
+     continue;
+    }
     // An invalid first setup must not consume the one-time setup key.
-    if(initializing&&!result.response.ok)return reply(result.response);
-    const changed=Object.keys(protocol===2?result.delta:result.changes).length||JSON.stringify(result.metadata)!==JSON.stringify(snapshot.metadata);
-    if(!changed)return reply(result.response);
-    const committed=await rpc(protocol===2?'karvio_commit_delta':'karvio_commit',{expected_revision:snapshot.revision,changes:protocol===2?result.delta:result.changes,next_metadata:result.metadata,initialize_owner:initializing,setup_token_hash:initializing?hash(String(body.payload?.setup_key||'')):null,backup_reason:result.backupReason,sms_jobs:result.outbox});
-    if(committed.committed){dispatch();return reply(result.response);}
+    if(initializing&&!result.response.ok)return finish(reply(result.response),'rejected');
+    const changes=protocol===2?result.delta:result.changes;
+    // A row-scoped read saw only part of some tables, so it may never save business rows.
+    if(snapshot.readOnlyScope&&Object.keys(changes).length){plan.kind='full';plan.widening=true;m.widened=(m.widened||0)+1;continue;}
+    const changed=Object.keys(changes).length||JSON.stringify(result.metadata)!==JSON.stringify(snapshot.metadata);
+    if(!changed)return finish(reply(result.response),result.response.ok?'ok':'rejected');
+    const committed=await call(protocol===2?'karvio_commit_delta':'karvio_commit',{expected_revision:snapshot.revision,changes,next_metadata:result.metadata,initialize_owner:initializing,setup_token_hash:initializing?hash(String(body.payload?.setup_key||'')):null,backup_reason:result.backupReason,sms_jobs:result.outbox});
+    if(committed.committed){
+     m.writes=Object.values(changes).reduce((n,t)=>n+(Array.isArray(t)?t.length:(t.upsert?.length||0)+(t.remove?.length||0)),0);
+     dispatch();return finish(reply(result.response),result.response.ok?'ok':'rejected');
+    }
+    attempt++;
    }
-   return reply({ok:false,error:'The shop is busy. Retry this same request.',retryable:true},200);
+   return finish(reply({ok:false,error:'The shop is busy. Retry this same request.',retryable:true},200),'busy');
   }catch(error){
    console.error('Karvio gateway request failed',error?.name||'Error');
    // Commit acknowledgement may have been lost. Never tell a caller to make a new money request.
-   return reply({ok:false,error:'The database response could not be confirmed. Retry the same request ID.',retryable:true,uncertain:true},503);
+   return finish(reply({ok:false,error:'The database response could not be confirmed. Retry the same request ID.',retryable:true,uncertain:true},503),'error');
   }
  };
 }
