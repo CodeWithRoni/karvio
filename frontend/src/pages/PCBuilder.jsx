@@ -103,8 +103,11 @@ function Builder() {
     if (!pricing.valid) return useStore.getState().toast(pricing.error, 'err');
     const inStock = filled.filter((l) => l.product_id);
     if (!inStock.length) return useStore.getState().toast('Add a stock product before sending to POS', 'err');
-    if (loadPosDraft()?.cart?.length && !await ask({ title: 'Replace the POS cart?', message: 'Your current cart will be replaced by this quotation. Cancel to keep it.', confirmLabel: 'Replace cart' })) return;
+    const transferPricing = quotationTotals(inStock, meta.discount);
+    if (!transferPricing.valid) return useStore.getState().toast('The discount exceeds the subtotal of products sent to POS. Reduce the discount before continuing. Your current cart has not changed.', 'err');
     const typed = filled.length - inStock.length;
+    if (typed && Number(meta.discount) > 0 && !await ask({ title: 'Review the POS discount', message: <>The {typed} typed part{typed > 1 ? 's' : ''} will be left out. Keeping the full discount of <b>{money(meta.discount)}</b> on the remaining products changes the total from <b>{money(pricing.total)}</b> to <b>{money(transferPricing.total)}</b>. Review this amount before continuing.</>, confirmLabel: 'Keep discount and continue' })) return;
+    if (loadPosDraft()?.cart?.length && !await ask({ title: 'Replace the POS cart?', message: 'Your current cart will be replaced by this quotation. Cancel to keep it.', confirmLabel: 'Replace cart' })) return;
     if (typed) useStore.getState().toast(`${typed} typed part${typed > 1 ? 's were' : ' was'} not sent to the POS — only products in stock can be sold there`);
     try { savePosDraft({ cart: inStock.map((l) => ({ product_id: l.product_id, qty: Number(l.qty), price: Number(l.price), serials: [], warranty_days: warrantyDays(l) })), customerId: '', discount: meta.discount }); }
     catch { return useStore.getState().toast('Could not save the POS cart. Nothing was replaced.', 'err'); }

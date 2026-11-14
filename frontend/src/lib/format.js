@@ -7,6 +7,11 @@ export function money(n, withCur = true, precision = 2) {
   const s = v.toLocaleString('en-IN', { minimumFractionDigits: v % 1 ? 2 : 0, maximumFractionDigits: precision });
   return withCur ? `${cur()} ${s}` : s;
 }
+// Unit rates retain the four decimals supported by saved invoice lines.
+export function unitPrice(n, fixed = false) {
+  const v = Number(n) || 0;
+  return v.toLocaleString(fixed ? 'en-US' : 'en-IN', { minimumFractionDigits: fixed || v % 1 ? 2 : 0, maximumFractionDigits: 4 });
+}
 const SHORT = { meter: 'm', feet: 'ft' };
 /** Units such as meter / feet allow 1.5; pcs, box, set need whole numbers. */
 export function isDecimalUnit(code) {

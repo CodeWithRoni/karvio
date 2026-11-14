@@ -1,6 +1,6 @@
 // Sales invoices and warranty claims as full A4 documents: print, PDF (one per page) and Excel.
 import { useStore } from './store';
-import { money, qty, fdate, fdatetime, splitList, today } from './format';
+import { unitPrice, money, qty, fdate, fdatetime, splitList, today } from './format';
 import { printHtml, esc, shopContacts } from './export';
 import { pdfPages } from './purchaseDocs';
 
@@ -101,7 +101,7 @@ function businessInvoiceHtml(d) {
   const rows = d.items.map((i, n) => {
     const sn = sers(i.serials);
     return `<tr><td class="cn">${n + 1}</td><td>${esc(i.name)}${sn.length ? `<div class="sn">${esc(sn.join(', '))}</div>` : ''}${i.returned_qty ? `<div class="sn">Returned: ${esc(qty(i.returned_qty))}</div>` : ''}</td>
-      <td class="cn">${Number(i.warranty_days) > 0 ? esc(i.warranty_days) : '—'}</td><td class="r">${esc(m2(i.price, false))}</td><td class="cn">${esc(qty(i.qty))}${i.unit && i.unit !== 'pcs' ? ' ' + esc(i.unit) : ''}</td><td class="r">${esc(m2(i.total, false))}</td></tr>`;
+      <td class="cn">${Number(i.warranty_days) > 0 ? esc(i.warranty_days) : '—'}</td><td class="r">${esc(unitPrice(i.price, true))}</td><td class="cn">${esc(qty(i.qty))}${i.unit && i.unit !== 'pcs' ? ' ' + esc(i.unit) : ''}</td><td class="r">${esc(m2(i.total, false))}</td></tr>`;
   }).join('');
   const total = Number(s.total) || 0, paid = Number(s.live_invoice ? (s.paid_now ?? s.paid) : s.paid) || 0;
   let snapshot = null;
@@ -150,7 +150,7 @@ export function saleInvoiceHtml(d) {
   const rows = d.items.map((i, n) => {
     const sn = sers(i.serials);
     return `<tr><td>${n + 1}</td><td><b>${esc(i.name)}</b>${sn.length ? `<div class="sn">S/N: ${esc(sn.join(', '))}</div>` : ''}${i.warranty_expiry ? `<div class="sm">Warranty ${esc(i.warranty_days)} days — till ${esc(fdate(i.warranty_expiry))}${i.warranty_type === 'invoice' ? ' (keep this invoice)' : ''}</div>` : ''}${i.returned_qty ? `<div class="sm">Returned: ${esc(qty(i.returned_qty))}</div>` : ''}</td>
-      <td>${esc(i.unit || 'pcs')}</td><td class="r">${esc(qty(i.qty))}</td><td class="r">${esc(money(i.price, false))}</td><td class="r">${esc(money(i.total, false))}</td></tr>`;
+      <td>${esc(i.unit || 'pcs')}</td><td class="r">${esc(qty(i.qty))}</td><td class="r">${esc(unitPrice(i.price))}</td><td class="r">${esc(money(i.total, false))}</td></tr>`;
   }).join('');
   const pl = pays(s);
   const st = d.shop || useStore.getState().settings;
@@ -246,7 +246,7 @@ export function salesReturnHtml(d) {
   const rows = d.items.map((i, n) => {
     const sn = sers(i.serials);
     return `<tr><td>${n + 1}</td><td><b>${esc(i.name)}</b>${sn.length ? `<div class="sn">S/N: ${esc(sn.join(', '))}</div>` : ''}</td>
-      <td class="r">${esc(qty(i.qty))}</td><td class="r">${esc(money(i.price, false))}</td><td class="r">${esc(money(i.total, false))}</td></tr>`;
+      <td class="r">${esc(qty(i.qty))}</td><td class="r">${esc(unitPrice(i.price))}</td><td class="r">${esc(money(i.total, false))}</td></tr>`;
   }).join('');
   const title = r.type === 'exchange' ? 'EXCHANGE' : 'SALES RETURN';
   return `<div class="sdoc">${head(title, `<b>${esc(r.return_no)}</b><br>${esc(fdatetime(r.created_at || r.date))}<br><span class="sm">By ${esc(r.user || '')}</span>`)}

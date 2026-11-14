@@ -37,6 +37,11 @@ const linkToken = () => (/^#\/i\/([A-Za-z0-9]{1,64})\/?$/.exec(window.location.h
 /** #/q/<key>: a quotation link (from the PC builder SMS) — shown without signing in, valid 3 days. */
 const quoteToken = () => (/^#\/q\/([A-Za-z0-9]{1,64})\/?$/.exec(window.location.hash) || [])[1] || '';
 
+// The hash listener switches to public views after this render. Do not erase
+// a valid public URL through the private router's fallback in the meantime.
+function UnknownRoute() {
+  return linkToken() || quoteToken() ? null : <Navigate to="/" replace />;
+}
 function Guard({ perm, children }) {
   const can = useStore((s) => s.can);
   if (perm && !can(perm)) return <div className="empty"><b>You don't have access to this page</b><div>Ask an admin to grant the permission in Users & roles.</div></div>;
@@ -110,7 +115,7 @@ export default function App() {
               <Route path="reports" element={<Guard perm="reports"><Reports /></Guard>} />
               <Route path="users" element={<Guard perm="users"><Users /></Guard>} />
               <Route path="settings" element={<Settings />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
+              <Route path="*" element={<UnknownRoute />} />
             </Route>
           </Routes>
         </Suspense>

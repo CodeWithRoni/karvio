@@ -1,7 +1,7 @@
 import { quotationTotals, quotationPrice } from './quotationTotals';
 // Thermal receipts (58mm / 80mm), A4 quotation and ledger statements.
 import { useStore } from './store';
-import { money, qty, fdate, fdatetime, splitList, today } from './format';
+import { unitPrice, money, qty, fdate, fdatetime, splitList, today } from './format';
 import { printHtml, esc, shopContacts } from './export';
 
 function shopHead(s) {
@@ -50,7 +50,7 @@ export function receiptHtml(detail, widthOverride, height = 0) {
   const lines = items.map((i) => {
     const sers = splitList(i.serials);
     return `<tr><td colspan="3" class="nm">${esc(i.name)}</td></tr>
-      <tr><td>${esc(qty(i.qty, i.unit))} × ${esc(money(i.price, false))}</td><td></td><td class="r">${esc(money(i.total, false))}</td></tr>
+      <tr><td>${esc(qty(i.qty, i.unit))} × ${esc(unitPrice(i.price))}</td><td></td><td class="r">${esc(money(i.total, false))}</td></tr>
       ${sers.length ? `<tr><td colspan="3" class="sm">S/N: ${esc(sers.join(', '))}</td></tr>` : ''}
       ${i.warranty_expiry ? `<tr><td colspan="3" class="sm">Warranty: ${esc(i.warranty_days)} days (till ${esc(fdate(i.warranty_expiry))})${i.warranty_type === 'invoice' ? ' — keep this receipt' : ''}</td></tr>` : ''}`;
   }).join('');

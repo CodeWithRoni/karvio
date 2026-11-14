@@ -1,3 +1,31 @@
+Owner authorized publication of the three invoice/quotation audit fixes on 14 November 2026. Deployment verification follows. No database or backend rule changes.
+
+# Three invoice/quotation audit fixes — LOCAL ONLY, 14 November 2026
+
+Baseline main `511bfad48c3df0c5982003385ad019b21a41581f`, live API51. No push, deployment, backend/schema change, production reset or historical transaction rewrite. Older notes below are historical.
+
+```json
+{
+  "baseCommit": "511bfad48c3df0c5982003385ad019b21a41581f",
+  "regularRegression": "passed",
+  "hostedRegression": "passed",
+  "fullEdgeBrowserTests": 142,
+  "newInvoiceTransferBrowserTests": 3,
+  "productionBuild": "passed",
+  "backendAndSupabaseUnchanged": true,
+  "schemaMigration": false,
+  "productionReset": false,
+  "published": false,
+  "nativeInstallersRebuilt": false
+}
+```
+
+- Quotation transfer validates the discount against only the products sent to POS before replacing a draft. An excessive discount is rejected. When typed parts are omitted and a valid discount remains, the user reviews the changed total and explicitly confirms retaining that discount; cancellation preserves the existing cart.
+- Invoice line rates preserve the supported four decimals on thermal receipts, all A4 templates, customer invoice pages, invoice details and return documents. Currency totals retain their existing rounding; the Business template retains its two-decimal minimum for rates.
+- The private router fallback preserves valid public invoice/quotation hashes while the public-view listener switches screens. Same-tab links, Back/Forward, expired quotation handling and ordinary unknown-route fallback are tested.
+
+Evidence: verification/audit-nov14-third/{fix-browser.log,full-browser.log,fix-regular.log,fix-hosted.log,fix-build.log}. Maintained browser regressions: frontend/test/invoice-transfer-followup.spec.js. Backend and all Supabase source/schema files are unchanged from the published package.
+
 Owner authorized publication of the three report audit fixes on 14 November 2026. Deployment verification follows. No database schema/data edits.
 
 # Three report audit fixes — LOCAL ONLY, 14 November 2026

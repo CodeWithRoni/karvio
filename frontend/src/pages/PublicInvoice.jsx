@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useStore } from '../lib/store';
-import { money, qty as fqty, fdate, splitList } from '../lib/format';
+import { unitPrice, money, qty as fqty, fdate, splitList } from '../lib/format';
 
 const sers = (v) => splitList(String(v || '').replace(/\n/g, ','));
 
@@ -87,7 +87,7 @@ export default function PublicInvoice({ token }) {
                   {i.warranty_expiry && <div className="pi-war">Warranty till {fdate(i.warranty_expiry)}{i.warranty_type === 'invoice' ? ' · keep this invoice' : ''}</div>}
                   {Number(i.returned_qty) > 0 && <div className="pi-war">Returned: {fqty(i.returned_qty)}</div>}
                 </div>
-                <div className="pi-qty">{fqty(i.qty, i.unit)} × {money(i.price, false)}</div>
+                <div className="pi-qty">{fqty(i.qty, i.unit)} × {unitPrice(i.price)}</div>
                 <div className="pi-amt">{money(i.total, false)}</div>
               </div>
             );

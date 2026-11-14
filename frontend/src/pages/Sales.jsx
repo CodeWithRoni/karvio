@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { api } from '../lib/api';
-import { money, qty as fqty, fdate, fdatetime, monthStart, today, splitList, round2, isDecimalUnit } from '../lib/format';
+import { unitPrice, money, qty as fqty, fdate, fdatetime, monthStart, today, splitList, round2, isDecimalUnit } from '../lib/format';
 import { printReceipt, printInvoice } from '../lib/receipt';
 import DataTable from '../components/DataTable';
 import { excelSales, pdfSales, printSales } from '../lib/salesDocs';
@@ -138,7 +138,7 @@ function SaleDetail({ id, onClose, onChanged }) {
             <thead><tr><th>Item</th><th>Serials</th><th>Warranty</th><th className="r">Qty</th><th className="r">Price</th><th className="r">Amount</th><th className="r">Returned</th></tr></thead>
             <tbody>{data.items.map((i) => (
               <tr key={i.id}><td>{i.name}</td><td>{i.serials}</td><td>{i.warranty_expiry ? <Badge tone="violet">{i.warranty_days}d · till {fdate(i.warranty_expiry)}</Badge> : '—'}</td>
-                <td className="r num">{fqty(i.qty, i.unit)}</td><td className="r num">{money(i.price, false)}</td><td className="r num">{money(i.total, false)}</td><td className="r num">{i.returned_qty ? fqty(i.returned_qty, i.unit) : ''}</td></tr>
+                <td className="r num">{fqty(i.qty, i.unit)}</td><td className="r num">{unitPrice(i.price)}</td><td className="r num">{money(i.total, false)}</td><td className="r num">{i.returned_qty ? fqty(i.returned_qty, i.unit) : ''}</td></tr>
             ))}</tbody>
           </table></div></div>
           {data.returns.length > 0 && <p className="muted" style={{ marginTop: 10 }}>Returns: {data.returns.map((r) => `${r.return_no} (${money(r.total, false)}, ${r.status})`).join(', ')}</p>}
