@@ -16,6 +16,8 @@ export default function Expenses() {
   const [range, setRange] = useState({ from: monthStart(), to: today() });
   const [catFilter, setCatFilter] = useState('');
   const list = useApi('expenses.list', range);
+  const day = today();
+  const todayList = useApi('expenses.list', { from: day, to: day });
   const balances = useApi('accounts.list', {}, [], { skip: !can('accounts') });
   const [busy, run] = useAction();
   const [rev, setRev] = useState(null);
@@ -26,10 +28,10 @@ export default function Expenses() {
     e.preventDefault();
     await run(() => api('expense.create', { ...f, amount: Number(f.amount) }), 'Expense recorded');
     setF({ ...f, amount: '', note: '' });
-    list.reload(); balances.reload();
+    changed();
   };
   const all = list.data || [];
-  const todayTotal = all.filter((x) => x.date === today() && x.status === 'active').reduce((a, x) => a + x.amount, 0);
+  const todayTotal = round2((todayList.data || []).filter((x) => x.date === day && x.status === 'active').reduce((a, x) => a + x.amount, 0));
   const drawers = (balances.data || []).filter((a) => a.active && a.type === 'cash');
   // Category totals for the chosen dates (active expenses only); old categories stay listed with their history.
   const byCategory = useMemo(() => {
@@ -47,7 +49,7 @@ export default function Expenses() {
     if (r.status !== 'active') return useStore.getState().toast('A cancelled expense cannot be edited', 'err');
     setEdit(r);
   };
-  const changed = () => { list.reload(); balances.reload(); };
+  const changed = () => { list.reload(); todayList.reload(); balances.reload(); };
 
   return (
     <>
@@ -65,7 +67,7 @@ export default function Expenses() {
           <div className="wide row end"><Btn kind="primary" busy={busy} type="submit">Add expense</Btn></div>
         </form>
         <div className="stats" style={{ gridTemplateColumns: '1fr' }}>
-          <div className="stat"><span>Spent today</span><b>{money(todayTotal)}</b></div>
+          <div className="stat"><span>Spent today</span><b>{todayList.loading || todayList.error ? '—' : money(todayTotal)}</b><ErrorBox error={todayList.error} onRetry={todayList.reload} /></div>
           {drawers.map((d) => <div className="stat" key={d.id}><span>{d.name} — live balance</span><b>{money(d.balance)}</b></div>)}
         </div>
       </div>

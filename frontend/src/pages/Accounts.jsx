@@ -44,7 +44,7 @@ export default function Accounts() {
       </div>
       {edit && <AccountForm initial={edit} onClose={() => setEdit(null)} onDone={list.reload} />}
       {entry && <EntryForm initial={entry} accounts={active} onClose={() => setEntry(null)} onDone={list.reload} />}
-      {sel && <Ledger account={sel} onClose={() => setSel(null)} />}
+      {sel && <Ledger account={sel} onClose={() => setSel(null)} onChanged={list.reload} />}
     </>
   );
 }
@@ -88,7 +88,7 @@ function EntryForm({ initial, accounts, onClose, onDone }) {
   );
 }
 
-function Ledger({ account, onClose }) {
+function Ledger({ account, onClose, onChanged }) {
   const [range, setRange] = useState({ from: monthStart(), to: today() });
   const l = useApi('account.ledger', { account_id: account.id, ...range });
   const can = useStore((s) => s.can);
@@ -109,7 +109,7 @@ function Ledger({ account, onClose }) {
           // Deposits, withdrawals and transfers have no document of their own, so they are cancelled here.
           ...(can('cancel') ? [{ key: 'act', label: '', noSort: true, noExport: true, render: (r) => (r.ref_type === 'manual' || r.ref_type === 'transfer') && <Btn size="sm" kind="danger" onClick={(e) => { e.stopPropagation(); setRev({ type: 'account', id: r.id, label: r.ref_type === 'transfer' ? 'this transfer (both accounts)' : 'this entry' }); }}>Cancel</Btn> }] : [])
         ]} />
-      <ReverseDialog open={!!rev} {...(rev || {})} onClose={() => setRev(null)} onDone={() => { setRev(null); l.reload(); }} />
+      <ReverseDialog open={!!rev} {...(rev || {})} onClose={() => setRev(null)} onDone={() => { setRev(null); l.reload(); onChanged(); }} />
     </Modal>
   );
 }

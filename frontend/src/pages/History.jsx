@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import CameraScanButton from '../components/CameraScanButton';
 import { api } from '../lib/api';
 import { useStore } from '../lib/store';
@@ -33,10 +33,19 @@ export default function History() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
   const [doc, setDoc] = useState(null); // the document open in the viewer
+  const requestId = useRef(0);
+  useEffect(() => () => { requestId.current++; }, []);
   const find = async (payload) => {
+    const id = ++requestId.current;
     setLoading(true); setErr('');
-    try { setRes(await api('history', payload)); } catch (e2) { setErr(e2.message); }
-    setLoading(false);
+    try {
+      const result = await api('history', payload);
+      if (id === requestId.current) setRes(result);
+    } catch (e2) {
+      if (id === requestId.current) setErr(e2.message);
+    } finally {
+      if (id === requestId.current) setLoading(false);
+    }
   };
   const go = (e, val) => {
     e?.preventDefault();

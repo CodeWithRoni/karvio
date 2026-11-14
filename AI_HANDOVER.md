@@ -1,3 +1,7 @@
+## Three UI state fixes — owner-authorized publication, 14 November 2026
+
+Baseline main ea4fa0a85f6ccbc49369aac9454c358451d57e1f. Scope: account cards refresh after cancelling ledger entries; latest Advance Search response wins; Spent today stays independent of expense filters and refreshes after changes. No backend/schema changes, production reset, native release or architecture/security changes. Previous notes below are historical.
+
 ## Owner authorized publication — 14 November 2026
 
 Owner requested push of the five Stock Summary audit corrections. Main baseline044931d6fc391676e28319d0491861602363297c unchanged at preflight. Tested API version45 deployed first, with all six files matching local source. Publish main, then verify CI/Pages and live assets. No migration, reset, historical revaluation or native release. Older LOCAL ONLY notes below are historical.
