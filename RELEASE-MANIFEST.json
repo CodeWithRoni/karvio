@@ -1,9 +1,9 @@
 {
   "product": "Karvio",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "preparedDate": "2026-11-15",
   "state": "owner-authorized-bounded-backup-publication",
-  "baseCommit": "4d1bd6a264dc3f8ea4e7869c352285c3147bcac4",
+  "baseCommit": "d6bd873a049f4e2f90f5515d04e5053a03098f77",
   "validation": {
     "baseCommit": "4d1bd6a264dc3f8ea4e7869c352285c3147bcac4",
     "state": "owner-authorized-deployment",
@@ -29,7 +29,7 @@
     "user databases/backups",
     "credentials"
   ],
-  "fileCount": 357,
+  "fileCount": 358,
   "files": [
     ".github/workflows/deploy.yml",
     ".github/workflows/release.yml",
@@ -39,6 +39,7 @@
     "README.md",
     "RELEASE-1.2.2.md",
     "RELEASE-1.2.3.md",
+    "RELEASE-1.2.4.md",
     "RELEASE-MANIFEST.json",
     "SETUP.md",
     "SHA256SUMS.txt",

@@ -7,7 +7,7 @@ const manifestPath = path.join(root, 'RELEASE-MANIFEST.json');
 const sumsPath = path.join(root, 'SHA256SUMS.txt');
 const roots = ['docs', '.github', 'backend/test', 'frontend/src', 'frontend/src-tauri', 'frontend/desktop', 'frontend/public', 'frontend/branding', 'frontend/scripts', 'frontend/test', 'frontend/dist', 'scripts', 'supabase'];
 const fixed = ['.gitignore', 'README.md', 'AI_HANDOVER.md', 'CHANGES.md', 'SETUP.md', 'UPLOAD_GUIDE-বাংলা.md', 'VERIFICATION.md', 'backend/Code.gs', 'backend/appsscript.json', 'frontend/.gitignore', 'frontend/.env.example', 'frontend/package.json', 'frontend/package-lock.json', 'frontend/index.html', 'frontend/vite.config.js', 'frontend/playwright.config.js', 'frontend/capacitor.config.json'];
-fixed.push('SUPABASE-SETUP.md', 'RELEASE-1.2.2.md', 'RELEASE-1.2.3.md');
+fixed.push('SUPABASE-SETUP.md', 'RELEASE-1.2.2.md', 'RELEASE-1.2.3.md', 'RELEASE-1.2.4.md');
 const excluded = new Set(['node_modules', 'target', '.git', '.temp', 'test-results', 'playwright-report', 'release', 'android', 'ios']);
 function walk(relative) {
   return fs.readdirSync(path.join(root, relative), { withFileTypes: true }).flatMap(entry => {
@@ -38,7 +38,7 @@ if (process.argv.includes('--check')) {
   const manifest = {
     product: 'Karvio', version: JSON.parse(fs.readFileSync(path.join(root, 'frontend/package.json'))).version,
     preparedDate: '2026-11-15', state: 'owner-authorized-bounded-backup-publication',
-    baseCommit: '4d1bd6a264dc3f8ea4e7869c352285c3147bcac4',
+    baseCommit: 'd6bd873a049f4e2f90f5515d04e5053a03098f77',
     validation: JSON.parse(verification[1]),
     excluded: ['backend/parts (legacy duplicate backend)', 'node_modules', 'verification artifacts', 'test results', 'release installers', 'user databases/backups', 'credentials'],
     fileCount: files.length, files,
