@@ -1,8 +1,9 @@
 import {createRuntime,hash} from './runtime.mjs';
 import {APP_VERSION,BUILD_ID} from './release.mjs';
+import {boundedBackup,transferRequest} from './transfers.mjs';
 const headers={'Content-Type':'application/json','Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization, apikey, content-type, x-client-info','Access-Control-Allow-Methods':'POST, OPTIONS','Cache-Control':'no-store'};
 const reply=(data,status=200)=>new Response(JSON.stringify(data),{status,headers});
-export function createHandler({rpc,dispatch=()=>{},protocol=2,allowRequest=async()=>true}) {
+export function createHandler({rpc,dispatch=()=>{},protocol=2,scopedReads=true,allowRequest=async()=>true}) {
  return async request=>{
   if(request.method==='OPTIONS')return new Response(null,{status:204,headers});
   if(request.method!=='POST')return reply({ok:false,error:'Use POST'},405);
@@ -14,12 +15,13 @@ export function createHandler({rpc,dispatch=()=>{},protocol=2,allowRequest=async
    let body;try{body=JSON.parse(new TextDecoder().decode(bytes));}catch{return reply({ok:false,error:'Invalid JSON body'},400);}
    if(!body||typeof body.action!=='string'||body.action.length>100)return reply({ok:false,error:'Invalid action'},400);
    if(!await allowRequest(body))return reply({ok:false,error:'Too many requests. Try again in a minute.'},429);
+   if(protocol===2&&body.action.startsWith('database.transfer.'))return reply(await transferRequest(body,rpc));
    if(body.action==='ping'&&protocol===2){
     const status=await rpc('karvio_status',{});
-    return reply({ok:true,data:{app:'Karvio',version:APP_VERSION,buildId:BUILD_ID,backend:'supabase',requiresSetup:status.requiresSetup,apiCapabilities:{idempotency:true,durableRecovery:true,credentialSessions:true,purchaseDuePayment:true,saleDuePayment:true,rowDeltas:true,chunkedRestore:{maxBytes:16*1024*1024,partChars:128*1024}}}});
+    return reply({ok:true,data:{app:'Karvio',version:APP_VERSION,buildId:BUILD_ID,backend:'supabase',requiresSetup:status.requiresSetup,apiCapabilities:{idempotency:true,durableRecovery:true,credentialSessions:true,purchaseDuePayment:true,saleDuePayment:true,rowDeltas:true,boundedBackup,chunkedRestore:{maxBytes:16*1024*1024,partChars:128*1024}}}});
    }
    for(let attempt=0;attempt<4;attempt++) {
-    const snapshot=await rpc(protocol===2?'karvio_snapshot_for':'karvio_snapshot',protocol===2?{action_name:body.action}:{});
+    const snapshot=await rpc(protocol===2?(scopedReads?'karvio_snapshot_request':'karvio_snapshot_for'):'karvio_snapshot',protocol===2?(scopedReads?{action_name:body.action,payload:body.payload||{}}:{action_name:body.action}):{});
     if(body.action==='ping')return reply({ok:true,data:{app:'Karvio',version:APP_VERSION,buildId:BUILD_ID,backend:'supabase',requiresSetup:snapshot.requiresSetup,apiCapabilities:{idempotency:true,durableRecovery:true,credentialSessions:true,purchaseDuePayment:true,saleDuePayment:true,chunkedRestore:{maxBytes:16*1024*1024,partChars:128*1024}}}});
     const initializing=body.action==='owner.initialize';
     if(snapshot.requiresSetup&&!initializing)return reply({ok:false,error:'The owner must initialize this fresh database first.'});

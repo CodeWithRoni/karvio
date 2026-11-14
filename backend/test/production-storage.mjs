@@ -6,7 +6,7 @@ import {hash,createRuntime} from '../../supabase/functions/karvio-api/runtime.mj
 import {tableDeltas} from '../../supabase/functions/karvio-api/delta.mjs';
 const db=new PGlite();
 await db.exec('create role anon; create role authenticated; create role service_role bypassrls;');
-for(const name of ['20261111071516_karvio_fresh_schema.sql','20261111072742_karvio_scoped_table_replacement.sql','20261114133852_karvio_row_deltas_and_status.sql','20261114134523_karvio_backup_retention_and_references.sql'])await db.exec(fs.readFileSync(new URL('../../supabase/migrations/'+name,import.meta.url),'utf8'));
+for(const name of ['20261111071516_karvio_fresh_schema.sql','20261111072742_karvio_scoped_table_replacement.sql','20261114133852_karvio_row_deltas_and_status.sql','20261114134523_karvio_backup_retention_and_references.sql','20261114185716_karvio_request_scoped_snapshots.sql'])await db.exec(fs.readFileSync(new URL('../../supabase/migrations/'+name,import.meta.url),'utf8'));
 const key='local-test-setup-key';await db.query('update karvio_private.runtime set setup_hash=$1',[hash(key)]);
 const metrics=[];
 async function rpc(name,p){metrics.push({name,p});const args=Object.keys(p),params=args.map((k,i)=>k+' => $'+(i+1)).join(',');return (await db.query('select public.'+name+'('+params+') as result',Object.values(p))).rows[0].result;}

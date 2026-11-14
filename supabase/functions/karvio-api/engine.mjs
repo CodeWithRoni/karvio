@@ -4726,6 +4726,7 @@ function doPost(e) {
 
 
 // Hosted adaptations. All money, stock, permission and ledger rules remain above.
+API_CAPABILITIES.boundedBackup=security.backupCapabilities;
 pwHash_ = function(salt, pw) { return security.passwordHash(salt, String(pw || '')); };
 pwCheck_ = function(user, pw) { return security.passwordCheck(user, String(pw || '')); };
 uid_ = function() { return Utilities.getUuid().replace(/-/g, ''); };
@@ -4853,6 +4854,20 @@ ROUTES['database.restore.status'] = r_('settings', function(p,user) {
   if (done) return {done:JSON.parse(done)};
   var stage=restoreUpload_(p,user);return {received:stage.chunks.length};
 }, false);
+// Database-computed read-only summaries. Write actions never receive these
+// metrics: their balances continue to incorporate the staged ledger changes.
+if(security.readMetrics){
+ var readMetrics=security.readMetrics;
+ if(Object.prototype.hasOwnProperty.call(readMetrics,'accountBalances')){
+  accountBalances_=function(){return readMetrics.accountBalances;};
+  accountsList_=function(){return all_('Accounts').map(function(a){var o=Object.assign({},a);delete o._row;o.balance=readMetrics.accountBalances[a.id]||0;o.has_history=!!readMetrics.accountHistory[a.id];return o;});};
+ }
+ if(Object.prototype.hasOwnProperty.call(readMetrics,'customerBalances'))customerBalances_=function(){return readMetrics.customerBalances;};
+ if(Object.prototype.hasOwnProperty.call(readMetrics,'supplierBalances'))supplierBalances_=function(){return readMetrics.supplierBalances;};
+ if(readMetrics.partyHistory)partyHistory_=function(){return readMetrics.partyHistory;};
+ if(readMetrics.productUsage)productUsageIndex_=function(){return readMetrics.productUsage;};
+ if(readMetrics.reservations)repairReservations_=function(){return {qty:readMetrics.reservations,serial:{}};};
+}
 
 return {doPost,setupDatabase,SCHEMA, initialize, smsReplyFailed_, exportBackup:function(){var owner=all_('Users').filter(function(u){return isOwner_(u)&&u.active;})[0];if(!owner)fail_('Initialized active owner required');return databaseExport_({},owner);}};
 }

@@ -7,7 +7,11 @@ const rpc = async (name: string, body: unknown) => {
  const response = await fetch(`${url}/rest/v1/rpc/${name}`, {
   method: 'POST', headers: {apikey: secret,Authorization:`Bearer ${secret}`,'Content-Type':'application/json'},body:JSON.stringify(body)
  });
- if (!response.ok) throw new Error(`Database RPC failed (${response.status})`);
+ if (!response.ok) {
+  let detail;try{detail=await response.json();}catch{}
+  const error=new Error(detail?.code==='P0001'?detail.message:`Database RPC failed (${response.status})`);
+  Object.assign(error,{code:detail?.code});throw error;
+ }
  return await response.json();
 };
 const gateway=createHandler({rpc,

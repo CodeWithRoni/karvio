@@ -37,15 +37,15 @@ if (process.argv.includes('--check')) {
   if (!verification) throw new Error('Record the current checks in VERIFICATION.md before preparing the package.');
   const manifest = {
     product: 'Karvio', version: JSON.parse(fs.readFileSync(path.join(root, 'frontend/package.json'))).version,
-    preparedDate: '2026-11-14', state: 'owner-authorized-production-hardening-publication',
-    baseCommit: '944cf5589ad7d3a76d06536dad55214d955f8f83',
+    preparedDate: '2026-11-15', state: 'owner-authorized-bounded-backup-publication',
+    baseCommit: '4d1bd6a264dc3f8ea4e7869c352285c3147bcac4',
     validation: JSON.parse(verification[1]),
     excluded: ['backend/parts (legacy duplicate backend)', 'node_modules', 'verification artifacts', 'test results', 'release installers', 'user databases/backups', 'credentials'],
     fileCount: files.length, files,
     checksumPolicy: 'SHA256SUMS.txt covers every listed file except itself, including this manifest.',
     uploadOrder: ['Owner authorized publication of this prepared production-hardening patch', 'Apply tested migrations, deploy backend and verify exact build identity before publishing frontend', 'Unresolved scale/schema/off-site work is documented in docs/PRODUCTION-READINESS.md'],
     frontendPublication: 'Publish through main and verify GitHub Actions / Pages',
-    supabase: { project: 'svqhlotlzgmwjneuphpe', edgeFunction: 'karvio-api', deployedVersion: 57, businessTables: 29, ownerSetup: 'created by owner', liveFrontendCutover: true }
+    supabase: { project: 'svqhlotlzgmwjneuphpe', edgeFunction: 'karvio-api', deployedVersion: 59, businessTables: 29, ownerSetup: 'created by owner', liveFrontendCutover: true }
   };
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
   fs.writeFileSync(sumsPath, files.filter(name => name !== 'SHA256SUMS.txt').map(name => digest(name) + '  ' + name).join('\n') + '\n');

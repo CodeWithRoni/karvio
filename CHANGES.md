@@ -1,3 +1,7 @@
+# 15 November 2026 — bounded reads and backup transfers
+
+Common requests read relevant party/product history; read-only lists use SQL summaries. Private paged JSONL/gzip export and staged resumable restore add checksums, recovery copies and completion receipts. Supporting indexes and compact global row positions reduce memory use. See docs/BOUNDED-BACKUPS.md for tested limits and remaining work.
+
 # Pending production-hardening patch
 
 Owner authorized publication of this prepared patch; rollout completion is recorded by GitHub Actions. No native release. See [implemented changes and remaining work](docs/PRODUCTION-READINESS.md).

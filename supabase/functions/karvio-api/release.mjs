@@ -1,3 +1,3 @@
 // Generated release identity.
 export const APP_VERSION = "1.2.3";
-export const BUILD_ID = "7b29ea1dff76a4446449ff7300d41324a59b18fb51c32bd7df6aff5d5a305d2d";
+export const BUILD_ID = "6187fdd0d84947e83795158e0d94c6a6f312e2d89e3b9b36a1866fa0b8511938";

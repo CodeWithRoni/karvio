@@ -2,6 +2,7 @@ import { createHash, randomUUID, pbkdf2Sync, timingSafeEqual } from 'node:crypto
 import { Buffer } from 'node:buffer';
 import { createEngine } from './engine.mjs';
 import schema from './schema.json' with { type: 'json' };
+import {boundedBackup} from './transfers.mjs';
 const clone = x => JSON.parse(JSON.stringify(x));
 export const hash = text => createHash('sha256').update(String(text)).digest('hex');
 function formatDate(date, timezone = 'Asia/Dhaka', format = 'yyyy-MM-dd') {
@@ -13,13 +14,17 @@ export function createRuntime(snapshot, {deltaOnly=false}={}) {
   const state = {sheets:{},properties:clone(snapshot.metadata.properties || {})};
   const cache = clone(snapshot.metadata.cache || {});
   const now = Date.now(); for (const k of Object.keys(cache)) if (cache[k].until <= now) delete cache[k];
+  const originalPositions={},nextPositions={};
   for (const [name, cols] of Object.entries(schema)) {
     const rows = [cols.map(c=>c.key)];
+    originalPositions[name]=new Map();nextPositions[name]=Number(snapshot.tablePositions?.[name]||1);
     for (const record of snapshot.tables[name] || []) {
       const pos = Number(record._position);
       if (!Number.isSafeInteger(pos) || pos < 2 || pos > 2000000) throw new Error('Invalid stored row position');
-      while(rows.length < pos) rows.push([]);
-      rows[pos-1] = cols.map(c=>record[c.key] ?? '');
+      const cells=cols.map(c=>record[c.key] ?? '');
+      if(snapshot.compactRows){rows.push(cells);originalPositions[name].set(String(cells[0]),pos);}
+      else{while(rows.length < pos) rows.push([]);rows[pos-1]=cells;}
+      nextPositions[name]=Math.max(nextPositions[name],pos);
     }
     state.sheets[name] = {rows,columns:cols.length};
   }
@@ -28,6 +33,7 @@ export function createRuntime(snapshot, {deltaOnly=false}={}) {
   // only the table's row array / individual rows when a write actually occurs.
   const before = {sheets:{...state.sheets},properties:clone(state.properties)};
   const dirty = new Set();
+  const resetTables=new Set();
   function editSheet(name) {
     if(!dirty.has(name)) {
       state.sheets[name]={...state.sheets[name],rows:state.sheets[name].rows.slice()};
@@ -60,7 +66,7 @@ export function createRuntime(snapshot, {deltaOnly=false}={}) {
     getMaxRows(){return Math.max(1000,this.data.rows.length);}
     getMaxColumns(){return this.data.rows.reduce((m,r)=>Math.max(m,r.length),Math.max(this.data.columns||0,1));}
     insertColumnsAfter(after,count){const d=editSheet(this.name);d.rows=d.rows.map(row=>{const r=row.slice();while(r.length<after)r.push('');r.splice(after,0,...Array(count).fill(''));return r;});d.columns=after+count;return this;}
-    setFrozenRows(){} hideSheet(){return this;} clearContents(){editSheet(this.name).rows=[];return this;}
+    setFrozenRows(){} hideSheet(){return this;} clearContents(){editSheet(this.name).rows=[];resetTables.add(this.name);return this;}
     getDataRange(){return this.getRange(1,1,Math.max(1,this.getLastRow()),this.getMaxColumns());}
     appendRow(cells){this.getRange(this.getLastRow()+1,1,1,cells.length).setValues([cells]);}
     deleteRow(row){editSheet(this.name).rows.splice(row-1,1);} deleteRows(row,count=1){editSheet(this.name).rows.splice(row-1,count);return this;}
@@ -72,6 +78,8 @@ export function createRuntime(snapshot, {deltaOnly=false}={}) {
     insertSheet(name){if(Object.hasOwn(state.sheets,name)||['__proto__','constructor','prototype'].includes(name))throw new Error('Invalid table');state.sheets[name]={rows:[],columns:1};return new Sheet(name);},
     getSheets:()=>Object.keys(state.sheets).map(n=>new Sheet(n)),deleteSheet:sheet=>{delete state.sheets[sheet.name];},setSpreadsheetTimeZone(){}};
   const security={
+    backupCapabilities:boundedBackup,
+    readMetrics:snapshot.readMetrics,
     textBytes:text=>Buffer.byteLength(text,'utf8'),
     passwordHash:(salt,pw)=>'pbkdf2$600000$'+pbkdf2Sync(pw,salt,600000,32,'sha256').toString('hex'),
     passwordCheck(user,pw){
@@ -91,7 +99,7 @@ export function createRuntime(snapshot, {deltaOnly=false}={}) {
     Utilities:{getUuid:randomUUID,DigestAlgorithm:{SHA_256:'sha256'},Charset:{UTF_8:'utf8'},computeDigest:(_,text)=>Array.from(createHash('sha256').update(String(text)).digest()).map(b=>b>127?b-256:b),formatDate}
   },security);
   function finish(response) {
-    if(!response.ok){state.sheets=before.sheets;state.properties=before.properties;backupReason=null;outbox=[];}
+    if(!response.ok){state.sheets=before.sheets;state.properties=before.properties;backupReason=null;outbox=[];dirty.clear();resetTables.clear();}
     const changes={},delta={};
     for(const [name,cols] of Object.entries(schema)) {
       if(!dirty.has(name))continue;
@@ -99,12 +107,16 @@ export function createRuntime(snapshot, {deltaOnly=false}={}) {
       const oldRows=before.sheets[name].rows;
       if(!deltaOnly && JSON.stringify(rows)===JSON.stringify(oldRows))continue;
       const seen=new Set();
+      const oldById=snapshot.compactRows?new Map(oldRows.slice(1).map(r=>[String(r[0]),r])):null;
       const removed=new Set(oldRows.slice(1).filter(r=>r[0]!==''&&r[0]!=null).map(r=>String(r[0])));
       const records=rows.slice(1).flatMap((row,i)=>{
         if(!row.some(v=>v!==''&&v!=null))return [];
         const id=String(row[0]??'');if(!id||seen.has(id))throw new Error('Duplicate or missing record identifier');seen.add(id);removed.delete(id);
-        if(deltaOnly && (row===oldRows[i+1] || JSON.stringify(row)===JSON.stringify(oldRows[i+1])))return [];
-        const record={_position:i+2};
+        const previous=snapshot.compactRows?oldById.get(id):oldRows[i+1];
+        if(deltaOnly && !resetTables.has(name) && (row===previous || JSON.stringify(row)===JSON.stringify(previous)))return [];
+        const position=snapshot.compactRows&&!resetTables.has(name)?(originalPositions[name].get(id)||++nextPositions[name]):i+2;
+        if(position>2000000)throw new Error('Table row-position budget exceeded');
+        const record={_position:position};
         cols.forEach((c,j)=>{let v=row[j]??'';if(c.type==='n'){v=Number(v);if(!Number.isFinite(v))throw new Error('Invalid numeric value');}else if(c.type==='b')v=v===true||String(v).toLowerCase()==='true';else v=String(v);record[c.key]=v;});
         return [record];
       });

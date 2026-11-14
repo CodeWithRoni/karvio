@@ -1,10 +1,11 @@
-import { clearShopDrafts } from '../lib/shopStorage';
+import { clearShopDrafts, shopStorageKey } from '../lib/shopStorage';
+import {downloadStreamBackup,inspectStreamingBackup,isStreamingBackup,restoreStreamBackup} from '../lib/backupStream';
 import { restoreBackup } from '../lib/restoreBackup';
 // Settings → Database (Administrator account only): overview, full backup download, restore from a backup file.
 import { useRef, useState } from 'react';
 import { useStore } from '../lib/store';
 import { api, isOffline } from '../lib/api';
-import { fdatetime } from '../lib/format';
+import { fdatetime, today } from '../lib/format';
 import { Btn, Field, useAction, useApi, Loading, ErrorBox } from './ui';
 
 export const BACKUP_FORMAT = 'Karvio database backup';
@@ -49,6 +50,12 @@ export function DatabaseOverview({ info }) {
 export function DatabaseBackup({ onDone }) {
   const [busy, run] = useAction();
   const [saved, setSaved] = useState(null);
+  const [progress,setProgress]=useState('');
+  const bounded=useStore(s=>!!s.apiCapabilities?.boundedBackup);
+  const streamed=async(directToFile=false)=>{
+    let result;try{result=await run(()=>downloadStreamBackup({call:api,progress:setProgress,directToFile,date:today()}));}catch{return;}
+    setSaved({name:result.name,size:result.bytes||0,records:result.records});setProgress('Backup saved and verified');onDone?.();
+  };
   const download = async () => {
     let b; try { b = await run(() => api('database.export', {})); } catch { return; } // the error is already shown
     const text = JSON.stringify(b);
@@ -69,12 +76,19 @@ export function DatabaseBackup({ onDone }) {
       <p className="muted wide">Downloads one file with <b>all</b> data — products, stock and serials, sales, purchases, returns, customers, suppliers, dues, accounts, expenses, warranty, users and settings. Keep it on another drive or in Google Drive. The file is checked when it is restored, so a damaged or edited file is refused.</p>
       <p className="wide db-secret">The file also holds user password hashes and the SMS API key — share it with nobody.</p>
       {saved && <div className="wide note reset-done" role="status"><b>Saved:</b> {saved.name} · {size(saved.size)} · {saved.records.toLocaleString('en-IN')} records</div>}
-      <div className="wide row end"><Btn kind="primary" busy={busy} onClick={download}>Download backup</Btn></div>
+      {bounded&&<p className="wide muted">Compressed streamed backups transfer small verified pages. Old JSON files remain supported. For very large backups, save directly to a file when your browser supports it.</p>}
+      {progress&&<p className="wide muted" role="status">{progress}</p>}
+      <div className="wide row end">
+        {bounded&&<Btn busy={busy} onClick={download}>Legacy JSON</Btn>}
+        {bounded&&typeof window.showSaveFilePicker==='function'&&<Btn busy={busy} onClick={()=>streamed(true)}>Save directly to file</Btn>}
+        <Btn kind="primary" busy={busy} onClick={bounded?()=>streamed():download}>Download backup</Btn>
+      </div>
     </div>
   );
 }
 
 export function DatabaseRestore({ onDone }) {
+  const bounded=useStore(s=>!!s.apiCapabilities?.boundedBackup);
   const [file, setFile] = useState(null); // { name, size, text, meta, verified, error }
   const [f, setF] = useState({ password: '', confirm: '' });
   const [done, setDone] = useState(null);
@@ -87,6 +101,12 @@ export function DatabaseRestore({ onDone }) {
   const pick = async (picked) => {
     setDone(null);
     if (!picked) return;
+    if(isStreamingBackup(picked)){
+      if(!bounded){setFile({name:picked.name,size:picked.size,error:'Update the Karvio backend before restoring a streamed backup.'});return;}
+      try{const header=await inspectStreamingBackup(picked);setFile({name:picked.name,size:picked.size,source:picked,streamed:true,verified:null,meta:{shop:header.shop_name,created:header.created_at,version:header.app_version,counts:Object.fromEntries(header.tables.map(t=>[t.name,t.rows]))}});}
+      catch(error){setFile({name:picked.name,size:picked.size,error:error.message});}return;
+    }
+    if(picked.size>16*1048576){setFile({name:picked.name,size:picked.size,error:'Legacy JSON restore supports up to 16 MiB. For larger databases use a streamed backup or native PostgreSQL recovery.'});return;}
     const text = await picked.text();
     let meta = null, error = '', verified = null;
     try {
@@ -104,7 +124,7 @@ export function DatabaseRestore({ onDone }) {
   const ready = file && !file.error && f.password && f.confirm.trim() === RESTORE_WORD;
   const restore = async () => {
     if (!ready) return;
-    let r; try { r = await run(() => restoreBackup(file.text, f, setProgress)); } catch { return; } // shown as a message; nothing changed
+    let r; try { r = await run(() => file.streamed?restoreStreamBackup(file.source,{call:api,credentials:f,key:shopStorageKey('erp_stream_restore'),progress:setProgress}):restoreBackup(file.text, f, setProgress)); } catch { return; }
     if (!clearShopDrafts()) useStore.getState().toast('Database changed, but saved carts could not be cleared. Clear this site’s saved data before opening POS.', 'err');
     setF({ password: '', confirm: '' }); setFile(null); if (input.current) input.current.value = '';
     if (r.signed_out) {
@@ -121,7 +141,7 @@ export function DatabaseRestore({ onDone }) {
   return (
     <div className="card form db-card">
       <h2 className="wide">Restore (import)</h2>
-      <p className="muted wide">Backups up to 16 MiB are supported. Large files upload in small parts before the complete backup is checked and restored.</p>
+      <p className="muted wide">Legacy JSON: up to 16 MiB. Streamed backups: up to 256 MiB of data / 2 million records, uploaded in bounded pages. The complete staged backup is checked before an atomic background restore.</p>
       {busy && progress && <p className="wide muted" role="status">{progress}</p>}
       <p className="muted wide">Replaces <b>everything</b> in Karvio with the data in a backup file. {offline ? 'The current data file is kept on this computer first.' : 'A full safety backup is saved in your backend first — if it cannot be saved, nothing changes.'}</p>
       {done && <div className="wide note reset-done" role="status">
@@ -130,7 +150,7 @@ export function DatabaseRestore({ onDone }) {
       </div>}
       <label className={`wide db-drop ${drag ? 'on' : ''}`} onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)}
         onDrop={(e) => { e.preventDefault(); setDrag(false); pick(e.dataTransfer.files?.[0]); }}>
-        <input ref={input} type="file" accept=".json,application/json" onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ''; }} aria-label="Backup file" />
+        <input ref={input} type="file" accept=".json,.jsonl,.gz,application/json,application/gzip" onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ''; }} aria-label="Backup file" />
         <b>{file ? file.name : 'Choose a backup file'}</b>
         <small>{file ? size(file.size) : 'Click here, or drop the Karvio-backup-….json file'}</small>
       </label>
@@ -155,17 +175,32 @@ export function DatabaseRestore({ onDone }) {
 /** The whole Database tab. `Reset` is the existing reset card. */
 export function DatabaseTab({ Reset }) {
   const info = useApi('database.info', {});
+  const bounded=useStore(s=>!!s.apiCapabilities?.boundedBackup);
+  const safety=useApi('database.transfer.safety.list',{},[],{skip:!bounded});
+  const changed=()=>{info.reload();if(bounded)safety.reload();};
   return (
     <div className="db-tab">
       <DatabaseOverview info={info} />
       <div className="db-grid">
-        <DatabaseBackup onDone={info.reload} />
-        <DatabaseRestore onDone={info.reload} />
+        <DatabaseBackup onDone={changed} />
+        <DatabaseRestore onDone={changed} />
       </div>
+      {bounded&&<SafetyBackups list={safety}/>}
       {info.data && !info.data.offline && <DailyBackup info={info.data} onDone={info.reload} />}
       <Reset onDone={info.reload} />
     </div>
   );
+}
+
+function SafetyBackups({list}){
+ const [busy,run]=useAction();const [progress,setProgress]=useState('');
+ return <div className="card form db-card"><h2 className="wide">Recovery copies before restore</h2>
+  <p className="wide muted">These private recovery points contain the data from before a streamed restore. Download and keep an independent copy.</p>
+  <ErrorBox error={list.error} onRetry={list.reload}/>
+  {progress&&<p className="wide muted" role="status">{progress}</p>}
+  {(list.data||[]).map(r=><div className="wide row" key={r.id}><span>{fdatetime(r.created_at)} · {r.rows} records</span><span className="spacer"/><Btn busy={busy} onClick={()=>run(()=>downloadStreamBackup({call:api,sourceId:r.id,progress:setProgress,date:today()}))}>Download recovery copy</Btn></div>)}
+  {!list.loading&&!list.error&&!list.data?.length&&<p className="wide muted">No streamed restore recovery copies yet.</p>}
+ </div>;
 }
 
 /** Nightly backup: a private Supabase snapshot, or (Apps Script) a copy of the Google Sheet in the Drive folder "Karvio backups". */
