@@ -3,9 +3,12 @@
 -- (request receipts alone are ~135 KB on a live shop). After: a request reads only the sheets it uses
 -- and a save writes only the rows that changed.
 --
--- Rollout order: deploy the Edge function first (it understands both layouts), then apply this migration.
--- Older writers that still put "privateSheets" into runtime.metadata (an older Edge build, or the
--- restore worker resetting the shop) keep working: a trigger moves that content into the rows.
+-- Either rollout order is safe. The deploy workflow applies migrations first, so the previous Edge
+-- build keeps serving for about a minute against this layout: its reads (karvio_snapshot,
+-- karvio_snapshot_for, karvio_snapshot_request) still return the private sheets inside metadata,
+-- and anything that still writes "privateSheets" into runtime.metadata (that build, or the restore
+-- worker resetting the shop) is moved into the rows by a trigger. The new build reads through
+-- karvio_read, which skips that legacy copy.
 
 create table karvio_private.private_sheets (
  name text primary key check (name ~ '^__Karvio[A-Za-z]{1,60}$'),
@@ -67,6 +70,39 @@ create function karvio_private.private_payload(names text[]) returns jsonb langu
    from karvio_private.private_sheets s where s.name = any(coalesce(names, '{}'))), '{}'))
 $$;
 
+-- The legacy layout of every private sheet: {name:{columns, rows:[cells of row 1, row 2, ...]}}.
+create function karvio_private.legacy_private_sheets() returns jsonb language sql stable security invoker set search_path='' as $$
+ select coalesce(jsonb_object_agg(s.name, jsonb_build_object('columns', s.columns, 'rows', coalesce((
+   select jsonb_agg(coalesce(r.cells, (select jsonb_agg('""'::jsonb) from generate_series(1, s.columns))) order by g.p)
+   from generate_series(1, (select max(x.position) from karvio_private.private_rows x where x.sheet = s.name)) g(p)
+   left join karvio_private.private_rows r on r.sheet = s.name and r.position = g.p), '[]'))), '{}')
+ from karvio_private.private_sheets s
+$$;
+-- Reads made through karvio_read set karvio.private_rows for their transaction and get no legacy copy.
+create function karvio_private.legacy_snapshot(snap jsonb) returns jsonb language sql stable security invoker set search_path='' as $$
+ select case when snap is null or snap->'metadata' is null or coalesce(current_setting('karvio.private_rows', true), '') = 'on' then snap
+  else jsonb_set(snap, '{metadata,privateSheets}', karvio_private.legacy_private_sheets()) end
+$$;
+revoke all on function karvio_private.legacy_private_sheets(), karvio_private.legacy_snapshot(jsonb) from public, anon, authenticated;
+grant execute on function karvio_private.legacy_private_sheets(), karvio_private.legacy_snapshot(jsonb) to service_role;
+-- The three reads an older Edge build calls keep their names; their bodies move to karvio_private.
+alter function public.karvio_snapshot() set schema karvio_private;
+alter function karvio_private.karvio_snapshot() rename to snapshot_all;
+alter function public.karvio_snapshot_for(text) set schema karvio_private;
+alter function karvio_private.karvio_snapshot_for(text) rename to snapshot_for;
+alter function public.karvio_snapshot_request(text,jsonb) set schema karvio_private;
+alter function karvio_private.karvio_snapshot_request(text,jsonb) rename to snapshot_request;
+revoke all on function karvio_private.snapshot_all(), karvio_private.snapshot_for(text), karvio_private.snapshot_request(text,jsonb) from public, anon, authenticated;
+grant execute on function karvio_private.snapshot_all(), karvio_private.snapshot_for(text), karvio_private.snapshot_request(text,jsonb) to service_role;
+create function public.karvio_snapshot() returns jsonb language plpgsql security invoker set search_path='' as $$
+begin return karvio_private.legacy_snapshot(karvio_private.snapshot_all()); end $$;
+create function public.karvio_snapshot_for(action_name text) returns jsonb language plpgsql security invoker set search_path='' as $$
+begin return karvio_private.legacy_snapshot(karvio_private.snapshot_for(action_name)); end $$;
+create function public.karvio_snapshot_request(action_name text, payload jsonb default '{}') returns jsonb language plpgsql security invoker set search_path='' as $$
+begin return karvio_private.legacy_snapshot(karvio_private.snapshot_request(action_name, payload)); end $$;
+revoke all on function public.karvio_snapshot(), public.karvio_snapshot_for(text), public.karvio_snapshot_request(text,jsonb) from public, anon, authenticated;
+grant execute on function public.karvio_snapshot(), public.karvio_snapshot_for(text), public.karvio_snapshot_request(text,jsonb) to service_role;
+
 -- One read entry point: the existing scoped/table/whole-shop reads plus the private sheets asked for.
 -- Each underlying read holds the runtime row FOR SHARE until this call's transaction ends, so the
 -- private rows come from the same moment as the business rows.
@@ -74,6 +110,7 @@ create function public.karvio_read(kind text, action_name text default '', paylo
  table_names text[] default null, private_names text[] default '{}') returns jsonb language plpgsql security invoker set search_path='' as $$
 declare snap jsonb;
 begin
+ perform set_config('karvio.private_rows', 'on', true);
  snap := case kind
   when 'rows' then public.karvio_snapshot_request(action_name, coalesce(payload, '{}'))
   when 'scoped' then public.karvio_snapshot_scoped(action_name, coalesce(payload, '{}'))

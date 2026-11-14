@@ -9,7 +9,8 @@ const MIGRATION = '20261114204617_karvio_private_rows.sql';
 const later = migrationFiles().filter(f => f >= MIGRATION);
 const db = await freshDatabase({skip: later});           // an existing v1.2.4 shop
 const calls = [];
-const c = await apiClient(db, {onCall: x => calls.push(x)});
+// recheckMs 0: the handler tries karvio_read again on every request (production waits a minute).
+const c = await apiClient(db, {onCall: x => calls.push(x), handlerOptions: {recheckMs: 0}});
 const {q, raw} = c;
 let checks = 0;
 const ok = (v, msg) => { assert.ok(v, msg); checks++; };
@@ -42,6 +43,32 @@ const rowCounts = Object.fromEntries((await db.query(`select sheet, count(*)::in
 const nonBlank = rows => rows.filter(r => Array.isArray(r) && r.some(v => v !== '' && v != null)).length;
 for (const [name, sheet] of Object.entries(legacy.privateSheets))
   eq(rowCounts[name] || 0, nonBlank(sheet.rows), `${name}: every non-empty row moved`);
+
+// ---------- the previous Edge build keeps working while a release deploys (migrations run first) ----------
+// Its reads still carry the private sheets inside metadata, exactly as they were.
+const filled = rows => rows.map((r, i) => [i + 1, r]).filter(([, r]) => Array.isArray(r) && r.some(v => v !== '' && v != null));
+for (const fn of [`public.karvio_snapshot()`, `public.karvio_snapshot_for('customers.list')`, `public.karvio_snapshot_request('sale.create', '{}')`]) {
+  const old = (await db.query(`select ${fn} as r`)).rows[0].r.metadata.privateSheets;
+  for (const [name, sheet] of Object.entries(legacy.privateSheets))
+    eq(filled(old[name].rows), filled(sheet.rows), `${fn}: ${name} still visible to the previous build`);
+}
+// The new build's reads skip that copy.
+const viaRead = (await db.query(`select public.karvio_read('rows', 'sale.create', '{}') as r`)).rows[0].r;
+ok(!('privateSheets' in viaRead.metadata) && !viaRead.privateSheets.__KarvioRequestReceipts, 'karvio_read carries no legacy copy');
+// A save by the previous build writes back every private sheet it read plus its new rows: nothing is lost.
+{
+  const snap = (await db.query(`select public.karvio_snapshot_request('sale.create', '{}') as r`)).rows[0].r;
+  const sheets = structuredClone(snap.metadata.privateSheets);
+  const receipts = sheets.__KarvioRequestReceipts.rows;
+  receipts.push(receipts[1].map((v, i) => i === 0 ? 'legacy-writer-receipt' : v));
+  const res = (await db.query(`select public.karvio_commit_delta($1, '{}'::jsonb, $2::jsonb) as r`,
+    [snap.revision, JSON.stringify({...snap.metadata, privateSheets: sheets})])).rows[0].r;
+  ok(res.committed, 'previous build commits');
+  const after = (await db.query(`select public.karvio_snapshot() as r`)).rows[0].r;
+  ok(!('privateSheets' in (await db.query(`select metadata from karvio_private.runtime`)).rows[0].metadata), 'runtime JSON stays without private sheets');
+  for (const [name, sheet] of Object.entries(sheets))
+    eq(filled(after.metadata.privateSheets[name].rows), filled(sheet.rows), `${name}: previous build's save kept every row`);
+}
 
 // A retry of the request that committed before the migration returns the saved answer, no second sale.
 const salesBefore = (await db.query(`select count(*)::int n from public."Sales"`)).rows[0].n;

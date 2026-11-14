@@ -27,7 +27,9 @@ export const sameValue=(a,b)=>canonical(a)===canonical(b);
 // narrow-read database functions exist (they arrive with a migration that may lag a deploy).
 // PostgREST: PGRST202 "Could not find the function"; Postgres: 42883 undefined_function.
 const missingFunction=e=>e?.code==='PGRST202'||e?.code==='42883'||/Could not find the function|function .* does not exist/i.test(String(e?.message||''));
-const newScopeState=()=>({learned:new Map(),learnedPrivate:new Map(),narrowUnavailable:false,readUnavailable:false,cacheUnavailable:false});
+// A database function found missing (Edge deployed before its migration) is tried again after recheckMs.
+const newScopeState=(recheckMs=60000)=>({learned:new Map(),learnedPrivate:new Map(),narrowUnavailable:0,readUnavailable:0,cacheUnavailable:0,recheckMs});
+const unavailable=(state,flag)=>state[flag]>0&&Date.now()-state[flag]<state.recheckMs;
 function remember(map,key,names){const set=map.get(key)||new Set();names.forEach(t=>set.add(t));map.set(key,set);}
 /**
  * How much of the database a request reads:
@@ -48,7 +50,7 @@ function basePlan(action,{protocol=2,scopedReads=true,narrowReads=true,payload={
  if(protocol!==2)return {kind:'legacy'};
  if(!scopedReads)return {kind:'unscoped'};
  if(action==='owner.initialize')return {kind:'full'};
- if(!narrowReads||state.narrowUnavailable)return {kind:'rows',key:action}; // v1.2.4 behaviour
+ if(!narrowReads||unavailable(state,'narrowUnavailable'))return {kind:'rows',key:action}; // v1.2.4 behaviour
  if(NARROW_READ_ACTIONS.has(action))return {kind:'scoped',key:hintKey(action,payload)};
  const key=hintKey(action,payload);
  // No table list yet: the database's own request scoping (it reads the whole shop for unknown actions).
@@ -62,7 +64,7 @@ function tablesPlan(key,state){
  return {kind:'tables',key,tables:new Set([...ALWAYS_TABLES,...hint,...(state.learned.get(key)||[])])};
 }
 function snapshotCall(plan,body,protocol,state){
- if(protocol===2&&plan.kind!=='legacy'&&!state.readUnavailable)
+ if(protocol===2&&plan.kind!=='legacy'&&!plan.readMissing&&!unavailable(state,'readUnavailable'))
   return ['karvio_read',{kind:plan.kind,action_name:body.action,payload:body.payload||{},table_names:plan.tables?[...plan.tables].sort():null,private_names:[...plan.private].sort()}];
  switch(plan.kind){
   case 'legacy':return ['karvio_snapshot',{}];
@@ -75,8 +77,8 @@ function snapshotCall(plan,body,protocol,state){
 }
 // Heavy read-only screens whose answers are reused until the shop changes (karvio_cached_read).
 export const CACHED_READS=new Set(['dashboard','reports','profit.report']);
-export function createHandler({rpc,dispatch=()=>{},protocol=2,scopedReads=true,narrowReads=true,readCache=true,allowRequest=async()=>true,log=logNotable,retryDelay=attempt=>attempt*(25+Math.random()*50)}) {
- const scopeState=newScopeState();
+export function createHandler({rpc,dispatch=()=>{},protocol=2,scopedReads=true,narrowReads=true,readCache=true,allowRequest=async()=>true,log=logNotable,retryDelay=attempt=>attempt*(25+Math.random()*50),recheckMs=60000}) {
+ const scopeState=newScopeState(recheckMs);
  return async request=>{
   if(request.method==='OPTIONS')return new Response(null,{status:204,headers});
   if(request.method!=='POST')return reply({ok:false,error:'Use POST'},405);
@@ -105,11 +107,11 @@ export function createHandler({rpc,dispatch=()=>{},protocol=2,scopedReads=true,n
     return finish(reply({ok:true,data:{app:'Karvio',version:APP_VERSION,buildId:BUILD_ID,backend:'supabase',requiresSetup:status.requiresSetup,apiCapabilities:{idempotency:true,durableRecovery:true,credentialSessions:true,purchaseDuePayment:true,saleDuePayment:true,rowDeltas:true,boundedBackup,chunkedRestore:{maxBytes:16*1024*1024,partChars:128*1024}}}}));
    }
    // Same answer as last time if nothing was saved since (see the read-cache migration for the rules).
-   const cacheKey=readCache&&protocol===2&&scopedReads&&CACHED_READS.has(body.action)&&typeof body.token==='string'&&!scopeState.cacheUnavailable&&!globalThis.__karvioTraceWholeShop
+   const cacheKey=readCache&&protocol===2&&scopedReads&&CACHED_READS.has(body.action)&&typeof body.token==='string'&&!unavailable(scopeState,'cacheUnavailable')&&!globalThis.__karvioTraceWholeShop
     ?body.action+':'+hash(canonical(body.payload??{})):null;
    if(cacheKey){
     try{const hit=await call('karvio_cached_read',{token:body.token,cache_key:cacheKey});if(hit!==null&&hit!==undefined){m.scope='cache';return finish(reply({ok:true,data:hit}),'ok');}}
-    catch(error){if(missingFunction(error))scopeState.cacheUnavailable=true;else throw error;}
+    catch(error){if(missingFunction(error))scopeState.cacheUnavailable=Date.now();else throw error;}
    }
    const plan=planFor(body.action,{protocol,scopedReads,narrowReads,payload:body.payload},scopeState);
    // Up to 4 tries when another counter saves first; a narrow read may also widen a few times.
@@ -125,13 +127,13 @@ export function createHandler({rpc,dispatch=()=>{},protocol=2,scopedReads=true,n
      // Database functions from a newer migration not installed yet (the Edge function is deployed
      // first): use the older read path for this server instance instead of failing the request.
      if(!missingFunction(error))throw error;
-     if(readName==='karvio_read'){scopeState.readUnavailable=true;plan.widening=true;continue;}
+     if(readName==='karvio_read'){scopeState.readUnavailable=Date.now();plan.readMissing=true;plan.widening=true;continue;}
      if(plan.kind!=='tables'&&plan.kind!=='scoped')throw error;
-     scopeState.narrowUnavailable=true;Object.assign(plan,{kind:'rows',widening:true});continue;
+     scopeState.narrowUnavailable=Date.now();Object.assign(plan,{kind:'rows',widening:true});continue;
     }
     // Read through the older path but the database already keeps private sheets as rows
     // (migrated while this instance was running): switch to karvio_read, never run without receipts.
-    if(protocol===2&&readName!=='karvio_read'&&snapshot&&snapshot.metadata&&!Object.hasOwn(snapshot.metadata,'privateSheets')){scopeState.readUnavailable=false;plan.widening=true;continue;}
+    if(protocol===2&&readName!=='karvio_read'&&snapshot&&snapshot.metadata&&!Object.hasOwn(snapshot.metadata,'privateSheets')){scopeState.readUnavailable=0;plan.readMissing=false;plan.widening=true;continue;}
     // The request is not narrow enough for a row-scoped read (e.g. no date range): read whole tables.
     if(snapshot===null&&plan.kind==='scoped'){Object.assign(plan,tablesPlan(plan.key,scopeState),{widening:true});continue;}
     if(body.action==='ping')return finish(reply({ok:true,data:{app:'Karvio',version:APP_VERSION,buildId:BUILD_ID,backend:'supabase',requiresSetup:snapshot.requiresSetup,apiCapabilities:{idempotency:true,durableRecovery:true,credentialSessions:true,purchaseDuePayment:true,saleDuePayment:true,chunkedRestore:{maxBytes:16*1024*1024,partChars:128*1024}}}}));
