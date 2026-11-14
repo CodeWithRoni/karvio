@@ -1,3 +1,27 @@
+Owner authorized publication on 14 November 2026. Supabase API version45 is ACTIVE and all deployed files match tested source. Frontend CI/Pages verification follows. No schema or business-data edits.
+
+# Five Stock Summary audit corrections — LOCAL ONLY, 14 November 2026
+
+Owner requested fixes, not publication. Baseline main044931d6fc391676e28319d0491861602363297c / live API44. No push, deployment, schema migration/reset or live data edits. Earlier publication notes below are historical.
+
+```json
+{
+  "baseCommit": "044931d6fc391676e28319d0491861602363297c",
+  "regularRegression": "passed",
+  "hostedRegression": "passed",
+  "stockFollowupRegression": "passed",
+  "fullEdgeBrowserTests": 137,
+  "newFollowupBrowserTests": 5,
+  "productionBuild": "passed",
+  "schemaMigration": false,
+  "productionReset": false,
+  "published": false,
+  "nativeInstallersRebuilt": false
+}
+```
+
+Evidence: verification/audit-after-stock/{FIXES.md,fix-browser-final.log,fix-hosted.log,fix-regular.log,fix-build.log}. New tests verify nonserial provenance/unknown adjustments and reversals, discount-aware top sellers, unsupported cost precision rejection without writes, lot-summary scope, raw valuation totals and selected Excel exports. Full browser suite now also verifies Bengali backup round-trip with UTF-8-safe local HTTP decoding. Historical transactions are not rewritten. Source/backend engine regenerated locally; no SQL definitions/migrations changed.
+
 Supabase API version 42 is ACTIVE; all six deployed files match the tested local source byte-for-byte. No schema/data change. Frontend publication and CI verification follow.
 
 Owner authorized publication of all pending fixes and stock reports on 13 November 2026. Local validation below passed; live verification follows deployment. No schema migration or production reset.

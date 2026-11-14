@@ -208,7 +208,7 @@ function NewPurchase({ onDone }) {
   const after = round2(prev + total - paid - previousPaid);
 
   const bad = (l) => ({
-    cost: !(Number(l.cost) > 0),
+    cost: !Number.isFinite(Number(l.cost)) || !(Number(l.cost) > 0) || Math.abs(Number(l.cost)-Math.round(Number(l.cost)*10000)/10000)>Number.EPSILON*Math.max(1,Math.abs(Number(l.cost)))*4 || Math.round(Number(l.cost)*10000)<=0,
     sale: !(Number(l.sale) > 0) && !(Number(pmap[l.product_id]?.sale_price) > 0),
     qty: !(Number(l.qty) > 0)
   });
@@ -220,6 +220,7 @@ function NewPurchase({ onDone }) {
     if (!supplier) { setNeedSupplier(true); supplierRef.current?.focus(); return toast('Select a supplier first', 'err'); }
     if (firstBad) {
       const p = pmap[firstBad.product_id], b = bad(firstBad);
+      if (b.cost) return toast(`Enter a positive unit cost for ${p.name}, with at most 4 decimal places (minimum 0.0001).`, 'err');
       if (isSerial(p) && b.qty) setOpenId(p.id);
       return toast(b.qty ? (isSerial(p) ? `Scan the serial numbers for ${p.name}` : `Enter the quantity for ${p.name}`) : `Enter the unit cost and retail price for ${p.name}`, 'err');
     }

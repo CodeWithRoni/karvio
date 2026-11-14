@@ -1,3 +1,11 @@
+## Owner authorized publication — 14 November 2026
+
+Owner requested push of the five Stock Summary audit corrections. Main baseline044931d6fc391676e28319d0491861602363297c unchanged at preflight. Tested API version45 deployed first, with all six files matching local source. Publish main, then verify CI/Pages and live assets. No migration, reset, historical revaluation or native release. Older LOCAL ONLY notes below are historical.
+
+## Current task — five Stock Summary audit corrections, LOCAL ONLY
+
+Owner requested fixing the five confirmed follow-up findings, not publication. Latest published main: 044931d6fc391676e28319d0491861602363297c, API version44. Do not infer publication authorization from older notes below. Local source and generated API engine now contain the five corrections; source/schema migrations are unchanged. Wait for an explicit new push instruction. Details: verification/audit-after-stock/FIXES.md and latest VERIFICATION.md. Input costs support up to four decimal places, with explicit rejection instead of silent alteration. No historical revaluation/data rewrite has been performed.
+
 ## Owner authorized publication — 13 November 2026
 
 Owner now requested push of all pending seven audit fixes and Product Summary/Stock reports/supplier warranty/3–6-month top sellers. Publish main and deploy API before frontend; verify CI, Pages and live assets. No native release, migration, reset or business-data edit is requested. Earlier local-only notes below are historical.

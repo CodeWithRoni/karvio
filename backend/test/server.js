@@ -63,6 +63,8 @@ http.createServer((req, res) => {
   if (req.method === 'GET' && req.url === '/__fetchlog') { res.writeHead(200, cors); return res.end(JSON.stringify(fetchLog.slice(-20))); }
   if (req.method !== 'POST') { res.writeHead(200, cors); return res.end(sandbox.doGet().getContent()); }
   let body = '';
+  // Decode UTF-8 across packet boundaries (a Bengali character can span two chunks).
+  req.setEncoding('utf8');
   req.on('data', (c) => (body += c));
   req.on('end', () => {
     vm.runInContext('_mem = {}', sandbox);

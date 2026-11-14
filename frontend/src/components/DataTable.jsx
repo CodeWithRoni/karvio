@@ -78,7 +78,7 @@ export default function DataTable({ columns, rows, loading, title = 'Export', ex
     if (c.render) return c.render(row);
     const v = c.value ? c.value(row) : row[c.key];
     if (v === undefined || v === null || v === '') return '';
-    if (c.type === 'money') return money(v, false);
+    if (c.type === 'money') return money(v, false, c.precision);
     if (c.type === 'num') return fqty(v);
     if (c.type === 'date') return fdate(v);
     return String(v);

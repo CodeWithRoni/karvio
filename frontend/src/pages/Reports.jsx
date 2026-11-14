@@ -66,16 +66,16 @@ export default function Reports() {
         </select></Field>}
       </div>
       <ErrorBox error={rep.error} onRetry={rep.reload} />
-      {stock && r?.quantities && <div className="stock-report-summary">{r.quantities.map(x=><div className="card" key={x.unit}><b>{x.unit}</b><span>Stock {qty(x.stock)} · Available {qty(x.available)} · Reserved {qty(x.reserved)}</span><span>Over 3 / 6 / 12 months: {qty(x.age3)} / {qty(x.age6)} / {qty(x.age12)}</span><span>Warranty ending {qty(x.expiring)} · Expired {qty(x.expired)} · Not set {qty(x.warranty_unknown)}</span></div>)}</div>}
+      {stock && r?.quantities && <div className="stock-report-summary">{r.quantities.map(x=><div className="card" key={x.unit}><b>{x.unit}</b><span>{r.quantity_scope==='lots'?'Filtered lot quantity':'Stock'} {qty(x.stock)}{r.quantity_scope!=='lots' && <> · Available {qty(x.available)} · Reserved {qty(x.reserved)}</>}</span><span>Over 3 / 6 / 12 months: {qty(x.age3)} / {qty(x.age6)} / {qty(x.age12)}</span><span>Warranty ending {qty(x.expiring)} · Expired {qty(x.expired)} · Not set {qty(x.warranty_unknown)}</span></div>)}</div>}
       {stock && r?.note && <p className="muted summary-note">{r.note}</p>}
       {stock && <p className="muted summary-note">Scroll the table sideways for all age, warranty and value columns. Quantities are shown separately by unit; age groups overlap.</p>}
       {r?.summary && (
         <div className="row" style={{ marginBottom: 12 }}>{Object.entries(r.summary).map(([k, v]) => <Badge key={k} tone={k === 'Delivered' ? 'muted' : k === 'Pending' ? 'warn' : 'info'}>{k}: {v}</Badge>)}</div>
       )}
       {r && <h2 style={{ marginBottom: 10 }}>{r.title}</h2>}
-      <div className={stock ? 'stock-summary-report' : ''}><DataTable title={r?.title || 'Report'} loading={rep.loading} rows={r?.rows || []} totals={r?.totals} sumFilter={(row) => row.status === undefined || row.status === 'active'}
+      <div className={stock ? 'stock-summary-report' : ''}><DataTable title={r?.title || 'Report'} loading={rep.loading} rows={r?.rows || []} totals={stock ? undefined : r?.totals} sumFilter={(row) => row.status === undefined || row.status === 'active'}
         rowClass={(row) => (row.status === 'cancelled' ? 'dim' : '')}
-        columns={(r?.columns || []).map((c) => ({ ...c, className: c.key === 'items' || c.key === 'items_text' || c.key === 'issue' ? 'clip' : '' }))} /></div>
+        columns={(r?.columns || []).map((c) => ({ ...c, ...(stock && c.type==='money' && c.sum ? {total:rows=>Math.round(rows.reduce((n,row)=>n+(Number(row[c.key]) || 0),0)*100)/100} : {}), className: c.key === 'items' || c.key === 'items_text' || c.key === 'issue' ? 'clip' : '' }))} /></div>
       {r?.totals && type === 'sales' && g === 'invoice' && status === 'all' && <p className="muted">Totals count active invoices only; cancelled ones are shown struck through.</p>}
     </>
   );

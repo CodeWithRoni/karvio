@@ -11,7 +11,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 function cell(col, row) {
   const v = col.value ? col.value(row) : row[col.key];
   if (v === undefined || v === null) return '';
-  if (col.type === 'money') return money(v, false);
+  if (col.type === 'money') return money(v, false, col.precision);
   if (col.type === 'date') return fdate(v);
   return String(v);
 }

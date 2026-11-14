@@ -1,3 +1,13 @@
+# Unreleased — five Stock Summary audit corrections (LOCAL ONLY)
+
+- Replay nonserial stock movements for receipt provenance. Positive stock adjustments, untracked legacy stock and vendor-recovered units remain unknown instead of reviving exhausted receipts. Sale/return cancellation and supplier returns restore/remove the appropriate estimated provenance. Serial linkage stays exact.
+- Top selling product/group revenue and profit now use allocated invoice discounts, actual return values and reconciled currency COGS.
+- Reject purchase unit costs beyond four decimal places (or below 0.0001) before posting; the form preserves the input and explains how to correct it.
+- Purchase-lot summary quantities follow filtered lots and are labeled accordingly; unassignable lot-level reservations are not displayed as zero availability.
+- Stock valuation totals aggregate unrounded values, consistently across product/group views and selected exports. Fractional-paisa row values are displayed/exported with adequate precision; currency totals round once.
+
+No push/deployment, database migration/reset or rewrite of historical transactions. Previous source is published at 044931d6fc391676e28319d0491861602363297c.
+
 # Unreleased — Product Summary and stock reports (local only)
 
 - Dashboard Product Summary beneath Stock summary: current stock over 3/6/12 calendar months, supplier warranty ending within 30 days, expired and not set, with quantities kept separate by unit. Cards open the matching report filter.

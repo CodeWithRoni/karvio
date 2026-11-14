@@ -2,9 +2,9 @@ import { useStore, shopDay } from './store';
 
 export const cur = () => useStore.getState().settings.currency || 'Tk';
 
-export function money(n, withCur = true) {
+export function money(n, withCur = true, precision = 2) {
   const v = Number(n) || 0;
-  const s = v.toLocaleString('en-IN', { minimumFractionDigits: v % 1 ? 2 : 0, maximumFractionDigits: 2 });
+  const s = v.toLocaleString('en-IN', { minimumFractionDigits: v % 1 ? 2 : 0, maximumFractionDigits: precision });
   return withCur ? `${cur()} ${s}` : s;
 }
 const SHORT = { meter: 'm', feet: 'ft' };
