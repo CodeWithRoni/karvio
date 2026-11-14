@@ -43,22 +43,22 @@ same(Q('sreturn.create', { sale_id: w.sale.id, items: [{ sale_item_id: w.items[0
 
 /* ---------- 3. only admins make admins ---------- */
 Q('rolePerms.save', { manager: ['users', 'pos'], sales: ['pos'] });
-Q('user.save', { name: 'Mina', username: 'mina', password: 'mina123', role: 'manager' });
-const mina = login('mina', 'mina123');
+Q('user.save', { name: 'Mina', username: 'mina', password: 'mina123-test-2026', role: 'manager' });
+const mina = login('mina', 'mina123-test-2026');
 const mrow = () => Q('users.list', {}).find((u) => u.username === 'mina');
 truthy(/admin role/.test(QF('user.save', { ...mrow(), role: 'admin' }, mina.token)), 'a manager cannot promote herself');
-truthy(/admin role/.test(QF('user.save', { name: 'Evil', username: 'evil', password: 'evil123', role: 'admin' }, mina.token)), 'a manager cannot create an admin');
+truthy(/admin role/.test(QF('user.save', { name: 'Evil', username: 'evil', password: 'evil123-test-2026', role: 'admin' }, mina.token)), 'a manager cannot create an admin');
 same(Q('user.save', { ...mrow(), name: 'Mina B' }, mina.token).name, 'Mina B', 'a manager can edit her own name');
 truthy(/own role/.test(QF('user.save', { ...mrow(), role: 'sales' }, mina.token)), 'nor change her own role');
-same(Q('user.save', { name: 'Sel', username: 'sel', password: 'sel1234', role: 'sales' }, mina.token).role, 'sales', 'she can still add sales staff');
-Q('user.save', { name: 'Roni', username: 'roni', password: 'roni123', role: 'admin' });
-{ const e = QF('user.save', { ...Q('users.list', {}).find((u) => u.username === 'roni'), password: 'hacked1' }, mina.token); truthy(/admin/.test(e), 'nor change an admin password: ' + e); }
+same(Q('user.save', { name: 'Sel', username: 'sel', password: 'sel1234-test-2026', role: 'sales' }, mina.token).role, 'sales', 'she can still add sales staff');
+Q('user.save', { name: 'Roni', username: 'roni', password: 'roni123-test-2026', role: 'admin' });
+{ const e = QF('user.save', { ...Q('users.list', {}).find((u) => u.username === 'roni'), password: 'hacked1-test-2026' }, mina.token); truthy(/admin/.test(e), 'nor change an admin password: ' + e); }
 truthy(/Only an admin/.test(QF('rolePerms.save', { manager: ['users', 'cost', 'cancel'], sales: [] }, mina.token)), 'nor grant permissions');
 
 /* ---------- 4. no cost or profit for staff without the cost permission ---------- */
 Q('rolePerms.save', { manager: ['reports', 'pos', 'sales.all', 'sales.return'], sales: ['pos'] });
-Q('user.save', { name: 'Rep', username: 'rep', password: 'rep1234', role: 'manager' });
-const rep = login('rep', 'rep1234');
+Q('user.save', { name: 'Rep', username: 'rep', password: 'rep1234-test-2026', role: 'manager' });
+const rep = login('rep', 'rep1234-test-2026');
 const hasCost = (o) => o && ['cost', 'profit', 'stock_adjust'].some((k) => k in o);
 ['invoice', 'daily'].forEach((g) => { const r = Q('reports', { type: 'sales', group: g }, rep.token); truthy(!r.rows.some(hasCost) && !hasCost(r.totals), 'sales report (' + g + ') carries no cost'); });
 ['product_sales', 'daily_summary', 'sales_returns'].forEach((t) => { const r = Q('reports', { type: t }, rep.token); truthy(r.rows.length && !r.rows.some(hasCost) && !hasCost(r.totals), t + ' carries no cost'); });
@@ -69,16 +69,16 @@ truthy('profit' in Q('reports', { type: 'product_sales' }).rows[0], 'admins stil
 /* ---------- 5. stronger passwords and sign-in lockout ---------- */
 const hashOf = (u) => run("all_('Users').filter(function(x){return x.username==='" + u + "'})[0].password_hash");
 truthy(/^v2\\$2000\\$[0-9a-f]{64}$/.test(hashOf('sel')), 'new passwords use the repeated hash');
-run("_mem={}; (function(){ var u = all_('Users').filter(function(x){return x.username==='sel'})[0]; update_('Users', u.id, { password_hash: hash_(u.salt, 'sel1234') }); })(); _mem={};");
+run("_mem={}; (function(){ var u = all_('Users').filter(function(x){return x.username==='sel'})[0]; update_('Users', u.id, { password_hash: hash_(u.salt, 'sel1234-test-2026') }); })(); _mem={};");
 truthy(!/^v2/.test(hashOf('sel')), 'an old single-round hash');
-login('sel', 'sel1234'); checks++;
+login('sel', 'sel1234-test-2026'); checks++;
 truthy(/^v2\\$/.test(hashOf('sel')), 'upgraded on the first correct sign-in');
-login('sel', 'sel1234'); checks++;
+login('sel', 'sel1234-test-2026'); checks++;
 for (let i = 0; i < 5; i++) QF('login', { username: 'sel', password: 'wrong' });
-truthy(/Too many wrong passwords/.test(QF('login', { username: 'sel', password: 'sel1234' })), 'locked after 5 wrong passwords, even with the right one');
+truthy(/Too many wrong passwords/.test(QF('login', { username: 'sel', password: 'sel1234-test-2026' })), 'locked after 5 wrong passwords, even with the right one');
 login('admin', 'admin123'); checks++;
 run("clearLoginFails_('sel')");
-login('sel', 'sel1234'); checks++;
+login('sel', 'sel1234-test-2026'); checks++;
 same(call('ping', {}).ok, true, 'ping needs no lock');
 
 /* ---------- 8. business dates and closed books ---------- */

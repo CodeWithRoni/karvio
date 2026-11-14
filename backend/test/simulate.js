@@ -236,8 +236,8 @@ eq(ok(A('reports', { type: 'product_sales' }), 'product sales').rows.length > 0,
 eq(ok(A('reports', { type: 'expenses', group: 'category' }), 'expense report').totals.amount, 1500, 'expense totals');
 
 section('Role-based access');
-ok(A('user.save', { name: 'Karim', username: 'karim', password: 'secret1', role: 'sales' }), 'create sales user');
-const kt = ok(call('login', { username: 'karim', password: 'secret1' }), 'sales login').token;
+ok(A('user.save', { name: 'Karim', username: 'karim', password: 'secret1-test-2026', role: 'sales' }), 'create sales user');
+const kt = ok(call('login', { username: 'karim', password: 'secret1-test-2026' }), 'sales login').token;
 const K = (a, p) => call(a, p, kt);
 bad(K('purchase.create', {}), 'permission denied', 'sales staff cannot purchase');
 bad(K('users.list', {}), 'permission denied', 'sales staff cannot manage users');

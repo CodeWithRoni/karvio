@@ -1,21 +1,15 @@
-# Builds the React app on every push to main and publishes the build to the gh-pages branch.
-# GitHub Pages serves that branch (Settings → Pages → Source: Deploy from a branch → gh-pages / root).
 name: Deploy Karvio to GitHub Pages
-
 on:
   push:
     branches: [main]
   workflow_dispatch:
-
 permissions:
   contents: write
-
 concurrency:
   group: pages
-  cancel-in-progress: true
-
+  cancel-in-progress: false
 jobs:
-  build-and-publish:
+  build-and-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,7 +18,7 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - name: Build
+      - name: Build and check
         working-directory: frontend
         run: |
           npm ci
@@ -32,28 +26,21 @@ jobs:
           npm run test:supabase
           npm run build
           touch dist/.nojekyll
-      - name: Install browser for regression tests
+      - name: Install browser
         working-directory: frontend
         run: npx playwright install --with-deps chromium
-      - name: Check browser workflows before publishing
+      - name: Check browser workflows
         working-directory: frontend
         env:
           KARVIO_BROWSER_CHANNEL: chromium
         run: npm run test:e2e
-      - name: Publish dist to the gh-pages branch
-        working-directory: frontend/dist
-        run: |
-          git init -q -b gh-pages
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -q -m "Publish ${GITHUB_SHA::7}"
-          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
-
-  # The Supabase backend (Edge Function karvio-api) ships only after every test above has passed.
-  # Needs the repository secret SUPABASE_ACCESS_TOKEN (a Supabase personal access token); without it this job is skipped with a warning.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tested-web-build
+          path: frontend/dist
+          include-hidden-files: true
   deploy-backend:
-    needs: build-and-publish
+    needs: build-and-test
     runs-on: ubuntu-latest
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -62,30 +49,47 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Check deploy token
-        id: token
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Require deploy credentials
         run: |
           if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
-            echo "::warning::SUPABASE_ACCESS_TOKEN secret is not set, so the Supabase backend was not deployed."
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "::error::SUPABASE_ACCESS_TOKEN is required. Frontend publication is blocked."
+            exit 1
           fi
       - uses: supabase/setup-cli@v1
-        if: steps.token.outputs.ready == 'true'
         with:
           version: 3.1.0
+      - name: Apply tested migrations before Edge deployment
+        run: supabase migration up --remote="$SUPABASE_PROJECT_ID" --yes
+      - name: Stamp exact backend revision
+        run: node scripts/generate-release.cjs "$GITHUB_SHA"
       - name: Deploy karvio-api
-        if: steps.token.outputs.ready == 'true'
         run: supabase functions deploy karvio-api --remote="$SUPABASE_PROJECT_ID" --no-verify-jwt --use-api --yes
-      - name: Check the live backend answers
-        if: steps.token.outputs.ready == 'true'
+      - name: Verify exact backend revision
         run: |
-          expected=$(sed -n "s/^var APP_VERSION = '\(.*\)';.*/\1/p" backend/Code.gs | tr -d '\r')
           for i in 1 2 3 4 5 6; do
             body=$(curl -fsS -X POST "https://${SUPABASE_PROJECT_ID}.supabase.co/functions/v1/karvio-api" -H 'Content-Type: application/json' -d '{"action":"ping"}' || true)
-            echo "$body"
-            if echo "$body" | grep -q "\"version\":\"$expected\""; then exit 0; fi
+            if echo "$body" | grep -q "\"buildId\":\"$GITHUB_SHA\""; then exit 0; fi
             sleep 10
           done
-          echo "::error::The live backend did not report version $expected after deploy"; exit 1
+          echo "::error::Expected backend revision not confirmed. Frontend publication is blocked."
+          exit 1
+  publish-frontend:
+    needs: [build-and-test, deploy-backend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: tested-web-build
+          path: dist
+      - name: Publish tested frontend after backend verification
+        working-directory: dist
+        run: |
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Publish ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" gh-pages

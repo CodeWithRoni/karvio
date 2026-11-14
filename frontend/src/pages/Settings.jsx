@@ -323,7 +323,7 @@ function MyPassword() {
   return (
     <div className="card form" style={{ maxWidth: 480 }}>
       <Field label="Current password" wide><input type="password" value={f.old_password} onChange={(e) => setF({ ...f, old_password: e.target.value })} autoComplete="current-password" /></Field>
-      <Field label="New password" wide><input type="password" value={f.new_password} onChange={(e) => setF({ ...f, new_password: e.target.value })} autoComplete="new-password" /></Field>
+      <Field label="New password" wide hint="At least 12 characters."><input type="password" minLength={12} value={f.new_password} onChange={(e) => setF({ ...f, new_password: e.target.value })} autoComplete="new-password" /></Field>
       <Field label="Repeat new password" wide><input type="password" value={f.confirm} onChange={(e) => setF({ ...f, confirm: e.target.value })} autoComplete="new-password" /></Field>
       <div className="wide row end"><Btn kind="primary" busy={busy} onClick={save}>Change password</Btn></div>
     </div>

@@ -15,7 +15,7 @@ const rpc = async (name, args) => {
   Object.assign(snapshot.tables, structuredClone(args.changes)); snapshot.metadata = structuredClone(args.next_metadata); snapshot.revision++;
   return {committed:true};
 };
-const handler = createHandler({rpc});
+const handler = createHandler({rpc,protocol:1});
 const call = async (action, payload = {}, token = '') => (await handler(new Request('http://localhost', {method:'POST', body:JSON.stringify({action, payload, token, request_id:crypto.randomUUID()})}))).json();
 let checks = 0;
 const ok = (value, message) => { assert.ok(value, message); checks++; };

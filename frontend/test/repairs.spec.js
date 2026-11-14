@@ -14,7 +14,7 @@ test.beforeAll(async ({ request }) => {
   const boot = await call(request, 'bootstrap');
   cash = boot.accounts[0];
   tech = (await call(request, 'users.list')).find((u) => u.username === 'e2etech')
-    || await call(request, 'user.save', { name: 'E2E Tech', username: 'e2etech', password: 'e2etech1', role: 'technician', phone: '01700000555' });
+    || await call(request, 'user.save', { name: 'E2E Tech', username: 'e2etech', password: 'e2etech1-test-2026', role: 'technician', phone: '01700000555' });
   paste = boot.products.find((p) => p.barcode === 'RPR-PASTE-1');
   if (!paste) {
     paste = await call(request, 'product.save', { name: 'RPR Thermal paste', barcode: 'RPR-PASTE-1', sale_price: 150 });
@@ -133,6 +133,9 @@ test('technician role with a mobile number in Users & Roles', async ({ page, req
   await expect(page.locator('.toast').last()).toContainText('mobile number');
   await dlg.getByLabel('Mobile number').fill('01700000666');
   await dlg.getByRole('button', { name: 'Save user' }).click();
+  await expect(page.locator('.toast').last()).toContainText('12 characters');
+  await dlg.getByLabel('Password').fill('techui-password-2026');
+  await dlg.getByRole('button', { name: 'Save user' }).click();
   await expect(page.locator('table')).toContainText('01700000666');
   const u = (await call(request, 'users.list')).find((x) => x.username === 'techui');
   expect([u.role, u.phone]).toEqual(['technician', '01700000666']);
@@ -184,7 +187,7 @@ test('spent repair advance is refreshed before delivery and collected correctly'
 
 test('repairs-only technician cannot select cash refund', async ({page,request}) => {
   const job=await call(request,'repair.save',{customer_name:'Tech refund UI',phone:'01555000777',device:'Printer',problem:'Fault',advance:200,account_id:cash.id});
-  const response=await request.post(endpoint,{data:{action:'login',payload:{username:'e2etech',password:'e2etech1'}}});
+  const response=await request.post(endpoint,{data:{action:'login',payload:{username:'e2etech',password:'e2etech1-test-2026'}}});
   const login=await response.json();expect(login.ok).toBe(true);
   await page.addInitScript((t)=>localStorage.setItem('erp_token',t),login.data.token);
   await page.goto(`/#/repairs/${job.id}`);

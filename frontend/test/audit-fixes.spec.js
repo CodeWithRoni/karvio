@@ -86,9 +86,9 @@ test('the same customer link reflects a later collection', async ({ page, reques
 
 test('repairs-only staff can complete work but cannot deliver a sale', async ({ page, request }) => {
   const username = 'tech' + randomUUID().slice(0, 8);
-  await call(request, 'user.save', { name: 'Restricted technician', username, password: 'techpass12', role: 'technician', phone: '01722223333' });
+  await call(request, 'user.save', { name: 'Restricted technician', username, password: 'techpass12-test-2026', role: 'technician', phone: '01722223333' });
   const job = await call(request, 'repair.save', { customer_name: 'Restricted repair', phone: '01744445555', device: 'PC', problem: 'Test' });
-  const login = await call(request, 'login', { username, password: 'techpass12' });
+  const login = await call(request, 'login', { username, password: 'techpass12-test-2026' });
   await page.addInitScript(t => localStorage.setItem('erp_token', t), login.token);
   await page.goto('/#/repairs');
   await expect(page.locator('.who .muted')).toHaveText('Technician');

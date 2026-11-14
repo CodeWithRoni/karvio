@@ -104,8 +104,8 @@ truthy(Q('sale.link', { id: sale.sale.id }).url.indexOf('https://codewithroni.gi
 /* ---- staff link button ---- */
 const tok2 = /#\\/i\\/(\\w+)$/.exec(sl.url)[1];
 same(PUB(tok2).data.sale.invoice_no, sale.sale.invoice_no, 'staff link opens the invoice');
-Q('user.save', { name: 'Karim', username: 'karim', password: 'secret1', role: 'sales' });
-const kt = call('login', { username: 'karim', password: 'secret1' }).data.token;
+Q('user.save', { name: 'Karim', username: 'karim', password: 'secret1-test-2026', role: 'sales' });
+const kt = call('login', { username: 'karim', password: 'secret1-test-2026' }).data.token;
 truthy(/another user/.test(QF('sale.link', { id: sale.sale.id }, kt)), 'sales staff cannot link someone else\\'s invoice');
 same(call('sale.link', { id: sale.sale.id }).auth, true, 'needs sign-in');
 

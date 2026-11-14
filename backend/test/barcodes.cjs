@@ -56,8 +56,8 @@ same(Q('product.barcodes', {ids:[h.id]}).assigned[0].barcode, code(103), 'skips 
 // errors and permissions
 truthy(/Select at least one/.test(QF('product.barcodes', {ids:[]})));
 truthy(/not found/.test(QF('product.barcodes', {ids:['nope']})));
-Q('user.save', {name:'Karim', username:'karim', password:'secret1', role:'sales'});
-const kt = call('login', {username:'karim', password:'secret1'}).data.token;
+Q('user.save', {name:'Karim', username:'karim', password:'secret1-test-2026', role:'sales'});
+const kt = call('login', {username:'karim', password:'secret1-test-2026'}).data.token;
 truthy(/ermission/.test(QF('product.barcodes', {ids:[h.id]}, kt)), 'sales user cannot assign barcodes');
 console.log('Barcodes: ' + checks + ' checks passed');
 `;

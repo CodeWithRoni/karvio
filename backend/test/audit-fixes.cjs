@@ -69,8 +69,8 @@ same(book.getSheetByName(sandbox.JOURNAL_SHEET).getLastRow(),0,'finished mainten
 // Existing linked suppliers need both directory permissions BEFORE any row changes.
 const party=Q('customer.save',{name:'Original combined party',combined:true});
 Q('rolePerms.save',{sales:['suppliers']});
-Q('user.save',{name:'Restricted supplier clerk',username:'clerk',password:'secret123',role:'sales'});
-const clerk=Q('login',{username:'clerk',password:'secret123'}).token;
+Q('user.save',{name:'Restricted supplier clerk',username:'clerk',password:'secret123-test-2026',role:'sales'});
+const clerk=Q('login',{username:'clerk',password:'secret123-test-2026'}).token;
 same(call('supplier.save',{id:party.link_id,name:'Unauthorized edit'},clerk).ok,false,'linked edit denied');
 same(Q('customers.list').find(p=>p.id===party.id).name,'Original combined party','customer unchanged');
 same(Q('suppliers.list').find(p=>p.id===party.link_id).name,'Original combined party','supplier unchanged');

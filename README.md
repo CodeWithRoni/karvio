@@ -1,5 +1,7 @@
 # Karvio ERP
 
+[Documentation index](docs/README.md) · [Production readiness and pending work](docs/PRODUCTION-READINESS.md)
+
 Online shop management and point of sale for computer, IT, electronics and networking businesses.
 
 **Current release: [v1.2.3](https://github.com/CodeWithRoni/karvio/releases/tag/v1.2.3)** · [Open web app](https://codewithroni.github.io/karvio/) · [All downloads](https://github.com/CodeWithRoni/karvio/releases/latest)

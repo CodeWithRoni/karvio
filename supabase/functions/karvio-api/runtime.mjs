@@ -9,7 +9,7 @@ function formatDate(date, timezone = 'Asia/Dhaka', format = 'yyyy-MM-dd') {
   const day = `${p.year}-${p.month}-${p.day}`;
   return format === 'yyyy-MM-dd' ? day : `${day}T${p.hour}:${p.minute}:${p.second}`;
 }
-export function createRuntime(snapshot) {
+export function createRuntime(snapshot, {deltaOnly=false}={}) {
   const state = {sheets:{},properties:clone(snapshot.metadata.properties || {})};
   const cache = clone(snapshot.metadata.cache || {});
   const now = Date.now(); for (const k of Object.keys(cache)) if (cache[k].until <= now) delete cache[k];
@@ -24,7 +24,17 @@ export function createRuntime(snapshot) {
     state.sheets[name] = {rows,columns:cols.length};
   }
   Object.assign(state.sheets, clone(snapshot.metadata.privateSheets || {}));
-  const before = clone(state);
+  // Rows returned by getValues are copies. Keep an immutable baseline and copy
+  // only the table's row array / individual rows when a write actually occurs.
+  const before = {sheets:{...state.sheets},properties:clone(state.properties)};
+  const dirty = new Set();
+  function editSheet(name) {
+    if(!dirty.has(name)) {
+      state.sheets[name]={...state.sheets[name],rows:state.sheets[name].rows.slice()};
+      dirty.add(name);
+    }
+    return state.sheets[name];
+  }
   let backupReason = null; let outbox=[];
   class Range {
     constructor(sheet,row,column,height=1,width=1) {
@@ -34,8 +44,9 @@ export function createRuntime(snapshot) {
     getValues() { return Array.from({length:this.height},(_,r)=>Array.from({length:this.width},(_,c)=>this.sheet.data.rows[this.row-1+r]?.[this.column-1+c] ?? '')); }
     setValues(values) {
       if(values.length!==this.height||values.some(r=>r.length!==this.width)) throw new Error('Table size mismatch');
-      values.forEach((cells,r)=>{const i=this.row-1+r; while(this.sheet.data.rows.length<=i)this.sheet.data.rows.push([]);cells.forEach((v,c)=>{this.sheet.data.rows[i][this.column-1+c]=v;});});
-      this.sheet.data.columns=Math.max(this.sheet.data.columns||0,this.column-1+this.width);return this;
+      const data=editSheet(this.sheet.name);
+      values.forEach((cells,r)=>{const i=this.row-1+r; while(data.rows.length<=i)data.rows.push([]);data.rows[i]=data.rows[i].slice();cells.forEach((v,c)=>{data.rows[i][this.column-1+c]=v;});});
+      data.columns=Math.max(data.columns||0,this.column-1+this.width);return this;
     }
     setValue(v){return this.setValues([[v]]);}
     clearContent(){return this.setValues(Array.from({length:this.height},()=>Array(this.width).fill('')));}
@@ -48,13 +59,16 @@ export function createRuntime(snapshot) {
     getLastRow(){let n=this.data.rows.length;while(n&&!this.data.rows[n-1].some(v=>v!==''&&v!=null))n--;return n;}
     getMaxRows(){return Math.max(1000,this.data.rows.length);}
     getMaxColumns(){return this.data.rows.reduce((m,r)=>Math.max(m,r.length),Math.max(this.data.columns||0,1));}
-    insertColumnsAfter(after,count){this.data.rows.forEach(r=>{while(r.length<after)r.push('');r.splice(after,0,...Array(count).fill(''));});this.data.columns=after+count;return this;}
-    setFrozenRows(){} hideSheet(){return this;} clearContents(){this.data.rows=[];return this;}
+    insertColumnsAfter(after,count){const d=editSheet(this.name);d.rows=d.rows.map(row=>{const r=row.slice();while(r.length<after)r.push('');r.splice(after,0,...Array(count).fill(''));return r;});d.columns=after+count;return this;}
+    setFrozenRows(){} hideSheet(){return this;} clearContents(){editSheet(this.name).rows=[];return this;}
     getDataRange(){return this.getRange(1,1,Math.max(1,this.getLastRow()),this.getMaxColumns());}
     appendRow(cells){this.getRange(this.getLastRow()+1,1,1,cells.length).setValues([cells]);}
-    deleteRow(row){this.data.rows.splice(row-1,1);} deleteRows(row,count=1){this.data.rows.splice(row-1,count);return this;}
+    deleteRow(row){editSheet(this.name).rows.splice(row-1,1);} deleteRows(row,count=1){editSheet(this.name).rows.splice(row-1,count);return this;}
   }
-  const book={getId:()=> 'KARVIO_POSTGRES',getSheetByName:name=>Object.hasOwn(state.sheets,name)?new Sheet(name):null,
+  const book={getId:()=> 'KARVIO_POSTGRES',getSheetByName:name=>{
+    if(snapshot.loadedTables && Object.hasOwn(schema,name) && !snapshot.loadedTables.includes(name))throw new Error('Action requires an unloaded table: '+name);
+    return Object.hasOwn(state.sheets,name)?new Sheet(name):null;
+  },
     insertSheet(name){if(Object.hasOwn(state.sheets,name)||['__proto__','constructor','prototype'].includes(name))throw new Error('Invalid table');state.sheets[name]={rows:[],columns:1};return new Sheet(name);},
     getSheets:()=>Object.keys(state.sheets).map(n=>new Sheet(n)),deleteSheet:sheet=>{delete state.sheets[sheet.name];},setSpreadsheetTimeZone(){}};
   const security={
@@ -78,23 +92,33 @@ export function createRuntime(snapshot) {
   },security);
   function finish(response) {
     if(!response.ok){state.sheets=before.sheets;state.properties=before.properties;backupReason=null;outbox=[];}
-    const changes={};
+    const changes={},delta={};
     for(const [name,cols] of Object.entries(schema)) {
+      if(!dirty.has(name))continue;
       const rows=state.sheets[name].rows;
-      if(JSON.stringify(rows)===JSON.stringify(before.sheets[name].rows))continue;
+      const oldRows=before.sheets[name].rows;
+      if(!deltaOnly && JSON.stringify(rows)===JSON.stringify(oldRows))continue;
       const seen=new Set();
-      changes[name]=rows.slice(1).flatMap((row,i)=>{
+      const removed=new Set(oldRows.slice(1).filter(r=>r[0]!==''&&r[0]!=null).map(r=>String(r[0])));
+      const records=rows.slice(1).flatMap((row,i)=>{
         if(!row.some(v=>v!==''&&v!=null))return [];
+        const id=String(row[0]??'');if(!id||seen.has(id))throw new Error('Duplicate or missing record identifier');seen.add(id);removed.delete(id);
+        if(deltaOnly && (row===oldRows[i+1] || JSON.stringify(row)===JSON.stringify(oldRows[i+1])))return [];
         const record={_position:i+2};
         cols.forEach((c,j)=>{let v=row[j]??'';if(c.type==='n'){v=Number(v);if(!Number.isFinite(v))throw new Error('Invalid numeric value');}else if(c.type==='b')v=v===true||String(v).toLowerCase()==='true';else v=String(v);record[c.key]=v;});
-        const id=record[name==='Settings'?'key':'id'];if(!id||seen.has(id))throw new Error('Duplicate or missing record identifier');seen.add(id);
         return [record];
       });
+      if(deltaOnly){if(records.length||removed.size)delta[name]={upsert:records,remove:[...removed]};}
+      else changes[name]=records;
     }
     const privateSheets=Object.fromEntries(Object.entries(state.sheets).filter(([name])=>!Object.hasOwn(schema,name)));
-    return {response,changes,metadata:{properties:state.properties,cache,privateSheets},outbox,backupReason};
+    return {response,changes,delta,metadata:{properties:state.properties,cache,privateSheets},outbox,backupReason};
   }
   return {
+    // Trusted offline administration helper. No HTTP route invokes this method;
+    // callers must already possess a complete private database snapshot. Writes
+    // to this ephemeral runtime are discarded; live database is never mutated.
+    exportBackup(){return engine.exportBackup();},
     execute(request){return finish(JSON.parse(engine.doPost({postData:{contents:JSON.stringify(request)}}).getContent()));},
     initialize(payload){try{return finish({ok:true,data:engine.initialize(payload)});}catch(e){return finish({ok:false,error:e.message});}}
   };

@@ -5,8 +5,8 @@ const crypto = require('node:crypto');
 const root = path.resolve(__dirname, '..');
 const manifestPath = path.join(root, 'RELEASE-MANIFEST.json');
 const sumsPath = path.join(root, 'SHA256SUMS.txt');
-const roots = ['.github', 'backend/test', 'frontend/src', 'frontend/src-tauri', 'frontend/desktop', 'frontend/public', 'frontend/branding', 'frontend/scripts', 'frontend/test', 'frontend/dist', 'scripts', 'supabase'];
-const fixed = ['.gitignore', 'README.md', 'AI_HANDOVER.md', 'CHANGES.md', 'FIXES-1.0.6.md', 'FIXES-REVIEW.md', 'SETUP.md', 'UPLOAD_GUIDE-বাংলা.md', 'VERIFICATION.md', 'VERIFICATION-1.0.6.md', 'backend/Code.gs', 'backend/appsscript.json', 'frontend/.gitignore', 'frontend/.env.example', 'frontend/package.json', 'frontend/package-lock.json', 'frontend/index.html', 'frontend/vite.config.js', 'frontend/playwright.config.js', 'frontend/capacitor.config.json'];
+const roots = ['docs', '.github', 'backend/test', 'frontend/src', 'frontend/src-tauri', 'frontend/desktop', 'frontend/public', 'frontend/branding', 'frontend/scripts', 'frontend/test', 'frontend/dist', 'scripts', 'supabase'];
+const fixed = ['.gitignore', 'README.md', 'AI_HANDOVER.md', 'CHANGES.md', 'SETUP.md', 'UPLOAD_GUIDE-বাংলা.md', 'VERIFICATION.md', 'backend/Code.gs', 'backend/appsscript.json', 'frontend/.gitignore', 'frontend/.env.example', 'frontend/package.json', 'frontend/package-lock.json', 'frontend/index.html', 'frontend/vite.config.js', 'frontend/playwright.config.js', 'frontend/capacitor.config.json'];
 fixed.push('SUPABASE-SETUP.md', 'RELEASE-1.2.2.md', 'RELEASE-1.2.3.md');
 const excluded = new Set(['node_modules', 'target', '.git', '.temp', 'test-results', 'playwright-report', 'release', 'android', 'ios']);
 function walk(relative) {
@@ -37,15 +37,15 @@ if (process.argv.includes('--check')) {
   if (!verification) throw new Error('Record the current checks in VERIFICATION.md before preparing the package.');
   const manifest = {
     product: 'Karvio', version: JSON.parse(fs.readFileSync(path.join(root, 'frontend/package.json'))).version,
-    preparedDate: '2026-11-14', state: 'owner-authorized-three-ui-state-fixes',
-    baseCommit: 'ea4fa0a85f6ccbc49369aac9454c358451d57e1f',
+    preparedDate: '2026-11-14', state: 'owner-authorized-production-hardening-publication',
+    baseCommit: '944cf5589ad7d3a76d06536dad55214d955f8f83',
     validation: JSON.parse(verification[1]),
     excluded: ['backend/parts (legacy duplicate backend)', 'node_modules', 'verification artifacts', 'test results', 'release installers', 'user databases/backups', 'credentials'],
     fileCount: files.length, files,
     checksumPolicy: 'SHA256SUMS.txt covers every listed file except itself, including this manifest.',
-    uploadOrder: ['Owner authorized publication of three UI state fixes', 'Frontend-only changes; no API or schema changes required', 'Publish main and verify CI/Pages; native release only when requested'],
+    uploadOrder: ['Owner authorized publication of this prepared production-hardening patch', 'Apply tested migrations, deploy backend and verify exact build identity before publishing frontend', 'Unresolved scale/schema/off-site work is documented in docs/PRODUCTION-READINESS.md'],
     frontendPublication: 'Publish through main and verify GitHub Actions / Pages',
-    supabase: { project: 'svqhlotlzgmwjneuphpe', edgeFunction: 'karvio-api', deployedVersion: 55, businessTables: 29, ownerSetup: 'created by owner', liveFrontendCutover: true }
+    supabase: { project: 'svqhlotlzgmwjneuphpe', edgeFunction: 'karvio-api', deployedVersion: 57, businessTables: 29, ownerSetup: 'created by owner', liveFrontendCutover: true }
   };
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
   fs.writeFileSync(sumsPath, files.filter(name => name !== 'SHA256SUMS.txt').map(name => digest(name) + '  ' + name).join('\n') + '\n');

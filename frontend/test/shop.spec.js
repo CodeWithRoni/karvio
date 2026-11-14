@@ -607,7 +607,7 @@ test('working hours: set in Users, refused at sign-in outside them, and signed o
   const m = page.locator('.modal');
   await m.getByLabel('Full name').fill('Shift Staff');
   await m.getByLabel('Username').fill(uname);
-  await m.getByLabel('Password').fill('secret1');
+  await m.getByLabel('Password').fill('secret1-test-2026');
   await m.getByText('Limit working hours').click();
   await m.getByLabel('From').fill(pad(dhakaHour + 2));
   await m.getByLabel('To').fill(pad(dhakaHour + 3));
@@ -624,7 +624,7 @@ test('working hours: set in Users, refused at sign-in outside them, and signed o
   await p2.addInitScript((ep) => localStorage.setItem('erp_api_config', JSON.stringify({ scriptUrl: ep })), endpoint);
   await p2.goto('/');
   await p2.getByLabel('Username').fill(uname);
-  await p2.getByLabel('Password').fill('secret1');
+  await p2.getByLabel('Password').fill('secret1-test-2026');
   await p2.getByRole('button', { name: /sign in/i }).click();
   await expect(p2.locator('.errbox')).toContainText('Your working hours are');
 

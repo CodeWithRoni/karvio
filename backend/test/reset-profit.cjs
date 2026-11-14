@@ -18,14 +18,14 @@ const today = sandbox.today_();
 
 /* ---------- who is the Administrator ---------- */
 same(adm.user.owner, true, 'the setup account (username admin) is the Administrator');
-Q('user.save', { name: 'Roni', username: 'roni', password: 'roni123', role: 'admin' });
-Q('user.save', { name: 'Mina', username: 'mina', password: 'mina123', role: 'manager' });
-const roni = login('roni', 'roni123'), mina = login('mina', 'mina123');
+Q('user.save', { name: 'Roni', username: 'roni', password: 'roni123-test-2026', role: 'admin' });
+Q('user.save', { name: 'Mina', username: 'mina', password: 'mina123-test-2026', role: 'manager' });
+const roni = login('roni', 'roni123-test-2026'), mina = login('mina', 'mina123-test-2026');
 same([roni.user.owner, mina.user.owner], [false, false], 'other admins and staff are not the Administrator');
 same(Q('bootstrap', {}).user.owner, true, 'bootstrap tells the app too');
 same(Q('bootstrap', {}, roni.token).user.owner, false, 'bootstrap for another admin');
 const adminRow = Q('users.list', {}).find((u) => u.username === 'admin');
-truthy(/Only the Administrator can change/.test(QF('user.save', { ...adminRow, password: 'hacked1' }, roni.token)), 'another admin cannot set the Administrator password');
+truthy(/Only the Administrator can change/.test(QF('user.save', { ...adminRow, password: 'hacked1-test-2026' }, roni.token)), 'another admin cannot set the Administrator password');
 truthy(/Only the Administrator can change/.test(QF('user.save', { ...adminRow, username: 'boss' }, roni.token)), 'another admin cannot rename the Administrator');
 login('admin', 'admin123'); checks++;
 const roniRow = Q('users.list', {}).find((u) => u.username === 'roni');
@@ -83,11 +83,11 @@ close(Q('profit.report', { from: today, to: today }).summary.gross, gross, 'a ca
 // permissions: reports + cost
 same(Q('profit.report', { from: today, to: today }, mina.token).summary.invoices, 2, 'manager has reports and cost by default');
 Q('rolePerms.save', { manager: ['pos', 'reports'], sales: ['pos'] });
-const mina2 = login('mina', 'mina123');
+const mina2 = login('mina', 'mina123-test-2026');
 truthy(/Permission denied/.test(QF('profit.report', {}, mina2.token)), 'reports without cost: no profit report');
 truthy(Q('dashboard', {}, mina2.token).profit === undefined, 'and no dashboard profit card');
 Q('rolePerms.save', { manager: ['pos', 'reports', 'cost'], sales: ['pos'] });
-same(Q('profit.report', { from: today, to: today }, login('mina', 'mina123').token).summary.gross, s.gross, 'with reports + cost the manager sees it');
+same(Q('profit.report', { from: today, to: today }, login('mina', 'mina123-test-2026').token).summary.gross, s.gross, 'with reports + cost the manager sees it');
 
 /* ---------- dashboard profit card ---------- */
 const d = Q('dashboard', {});
@@ -98,8 +98,8 @@ close(d.today.gross_profit, d.profit[0].gross, 'matches the existing Today gross
 
 /* ---------- database reset ---------- */
 const copies = [];
-truthy(/Only the Administrator account/.test(QF('database.reset', { password: 'roni123', confirm: 'RESET' }, roni.token)), 'another admin cannot reset');
-truthy(/Permission denied/.test(QF('database.reset', { password: 'mina123', confirm: 'RESET' }, login('mina', 'mina123').token)), 'staff cannot reset');
+truthy(/Only the Administrator account/.test(QF('database.reset', { password: 'roni123-test-2026', confirm: 'RESET' }, roni.token)), 'another admin cannot reset');
+truthy(/Permission denied/.test(QF('database.reset', { password: 'mina123-test-2026', confirm: 'RESET' }, login('mina', 'mina123-test-2026').token)), 'staff cannot reset');
 truthy(/Incorrect password/.test(QF('database.reset', { password: 'wrong', confirm: 'RESET' })), 'wrong password stops it');
 truthy(/Type RESET/.test(QF('database.reset', { password: 'admin123', confirm: 'reset please' })), 'confirmation word needed');
 book.copy = () => { throw new Error('Drive is full'); };
@@ -123,7 +123,7 @@ truthy(boot.categories.length > 10, 'default product categories again');
 same(boot.warrantyPeriods.length, 7, 'default warranty periods');
 same(Q('users.list', {}).map((u) => [u.username, u.name, u.role, u.owner]), [['admin', 'Shop Owner', 'admin', true]], 'only the Administrator stays');
 login('admin', 'admin123'); checks++; // same password
-truthy(/Invalid username or password/.test(call('login', { username: 'roni', password: 'roni123' }).error), 'other users removed');
+truthy(/Invalid username or password/.test(call('login', { username: 'roni', password: 'roni123-test-2026' }).error), 'other users removed');
 truthy(call('bootstrap', {}, roni.token).auth, 'their open sessions end');
 for (const t of ['Sales', 'SaleItems', 'Purchases', 'PurchaseItems', 'SalesReturns', 'Expenses', 'AccountTxns', 'CustomerLedger', 'SupplierLedger', 'Suppliers', 'SerialItems', 'ItemEvents', 'InvoiceLinks', 'SmsLog']) {
   same(book.getSheetByName(t).getLastRow(), 1, t + ' has only its header row');
@@ -140,13 +140,13 @@ same(Q('sale.create', { items: [{ product_id: p2.id, qty: 1, price: 150 }], paym
 
 // keeping the other users and the shop settings when asked
 Q('settings.save', { values: { shop_name: 'COMPUTER PLUS' } });
-Q('user.save', { name: 'Roni', username: 'roni', password: 'roni123', role: 'admin' });
+Q('user.save', { name: 'Roni', username: 'roni', password: 'roni123-test-2026', role: 'admin' });
 const r2 = Q('database.reset', { password: 'admin123', confirm: 'RESET', keep_users: true, keep_settings: true });
 same([r2.users, r2.kept_settings], [2, true], 'kept users and settings');
 const boot2 = Q('bootstrap', {});
 same(boot2.settings.shop_name, 'COMPUTER PLUS', 'shop name kept');
 same(boot2.products.length, 0, 'business data still cleared');
-login('roni', 'roni123'); checks++;
+login('roni', 'roni123-test-2026'); checks++;
 const p3 = Q('product.save', { name: 'Cable' });
 Q('purchase.create', { supplier_id: Q('supplier.save', { name: 'S2' }).id, items: [{ product_id: p3.id, qty: 1, cost: 10, sale_price: 20 }], payments: [] });
 same(Q('sale.create', { items: [{ product_id: p3.id, qty: 1, price: 20 }], payments: [{ account_id: Q('bootstrap', {}).accounts[0].id, amount: 20 }] }).sale.invoice_no, 'INV-000001', 'numbering restarts even when settings are kept');

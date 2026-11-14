@@ -1,0 +1,13 @@
+const fs = require('node:fs');
+const crypto = require('node:crypto');
+const path = require('node:path');
+const root = path.resolve(__dirname, '..');
+const version = JSON.parse(fs.readFileSync(path.join(root, 'frontend/package.json'))).version;
+const core = fs.readFileSync(path.join(root, 'backend/Code.gs'), 'utf8');
+if (!core.includes("var APP_VERSION = '" + version + "';")) throw new Error('Backend/package version mismatch');
+const inputs = ['backend/Code.gs', 'supabase/engine-overrides.txt', 'supabase/functions/karvio-api/handler.mjs', 'supabase/functions/karvio-api/runtime.mjs', 'supabase/functions/karvio-api/delta.mjs', 'supabase/functions/karvio-api/index.ts', 'supabase/functions/karvio-api/sms.mjs', 'supabase/functions/karvio-api/schema.json'];
+const digest = crypto.createHash('sha256');
+for (const file of inputs) digest.update(file).update(fs.readFileSync(path.join(root, file)));
+const revision = process.argv[2] || digest.digest('hex');
+if (!/^[a-f0-9]{40,64}$/.test(revision)) throw new Error('Invalid release revision');
+fs.writeFileSync(path.join(root, 'supabase/functions/karvio-api/release.mjs'), `// Generated release identity.\nexport const APP_VERSION = ${JSON.stringify(version)};\nexport const BUILD_ID = ${JSON.stringify(revision)};\n`);

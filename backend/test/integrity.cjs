@@ -144,8 +144,8 @@ same(timeout.data.sms.status,'unknown','gateway timeout is treated as ambiguous 
 same(table('InvoiceLinks').length,linksBeforeTimeout+1,'unknown transport delivery retains its invoice link');
 
 // Secrets and every history branch respect the caller's permissions.
-const staff=Q('user.save',{name:'Isolated staff',username:'integrity-staff',password:'staff123',role:'sales'});
-let st=Q('login',{username:'integrity-staff',password:'staff123'}).token;
+const staff=Q('user.save',{name:'Isolated staff',username:'integrity-staff',password:'staff123-test-2026',role:'sales'});
+let st=Q('login',{username:'integrity-staff',password:'staff123-test-2026'}).token;
 const staffBoot=Q('bootstrap',{},st);
 same(staffBoot.settings.sms_headers,undefined,'literal header credentials omitted');
 same(staffBoot.settings.sms_api_key,undefined,'API secret omitted');
@@ -173,12 +173,12 @@ denied(raw('customer.save',{id:linked.id,name:'Must not edit linked',combined:fa
 same(Q('customers.list').find(x=>x.id===linked.id).name,'Protected linked','forbidden edit leaves customer unchanged');
 
 // Administrator resets and self-service changes revoke every old token immediately.
-Q('user.save',{...staff,password:'staff456'});
+Q('user.save',{...staff,password:'staff456-test-2026'});
 same(raw('bootstrap',{},undefined,st).auth,true,'reset invalidates existing staff token');
-st=Q('login',{username:'integrity-staff',password:'staff456'}).token;
-Q('password.change',{old_password:'staff456',new_password:'staff789'},st);
+st=Q('login',{username:'integrity-staff',password:'staff456-test-2026'}).token;
+Q('password.change',{old_password:'staff456-test-2026',new_password:'staff789-test-2026'},st);
 same(raw('bootstrap',{},undefined,st).auth,true,'self change invalidates prior session');
-yes(Q('login',{username:'integrity-staff',password:'staff789'}).token,'new password signs in');
+yes(Q('login',{username:'integrity-staff',password:'staff789-test-2026'}).token,'new password signs in');
 cacheStore.set('tok_legacy-session',JSON.stringify({id:staff.id}));
 same(raw('bootstrap',{},undefined,'legacy-session').auth,true,'legacy tokens force sign-in after upgrade');
 console.log('Integrity, recovery, idempotency and access: '+checks+' checks passed');

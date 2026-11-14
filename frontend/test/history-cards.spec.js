@@ -41,8 +41,8 @@ test.beforeAll(async ({ request }) => {
   const pr = await call(request, 'preturn.create', { purchase_id: p1.purchase.id, items: [{ purchase_item_id: p1.items[0].id, qty: 1, serials: [SN(3)] }], refund: { mode: 'adjust' } });
   const cl = await call(request, 'claim.create', { sale_id: s2.sale.id, sale_item_id: s2.items[0].id, serial: SN(2), issue: 'No power' });
   Object.assign(ids, { router, mouse, p1, s1, s2, sr, pr, cl });
-  await call(request, 'user.save', { name: 'HC Staff', username: `hcstaff${T.toLowerCase()}`, password: 'staff123', role: 'sales' });
-  staffToken = (await call(request, 'login', { username: `hcstaff${T.toLowerCase()}`, password: 'staff123' }, null)).token;
+  await call(request, 'user.save', { name: 'HC Staff', username: `hcstaff${T.toLowerCase()}`, password: 'staff123-test-2026', role: 'sales' });
+  staffToken = (await call(request, 'login', { username: `hcstaff${T.toLowerCase()}`, password: 'staff123-test-2026' }, null)).token;
 });
 
 const search = async (page, text) => {

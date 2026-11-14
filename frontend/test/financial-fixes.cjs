@@ -54,8 +54,8 @@ for (let i = 0; i < 3; i++) {
 }
 
 const customer = Q('customer.save', { name: 'Repair customer', phones: '01711112222' });
-Q('user.save', { name: 'Technician', username: 'techfix', password: 'abcdef12', role: 'technician', phone: '01733334444' });
-const tech = Q('login', { username: 'techfix', password: 'abcdef12' }).token;
+Q('user.save', { name: 'Technician', username: 'techfix', password: 'abcdef12-test-2026', role: 'technician', phone: '01733334444' });
+const tech = Q('login', { username: 'techfix', password: 'abcdef12-test-2026' }).token;
 const draft = { customer_id: customer.id, device: 'PC', problem: 'Test', parts: [{ product_id: part.id, qty: 3, price: 0 }] };
 reject('repair.save', draft, /POS permission/, tech);
 const job = Q('repair.save', { ...draft, parts: [{ product_id: part.id, qty: 3, price: 100 }] }, tech);

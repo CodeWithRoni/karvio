@@ -35,8 +35,8 @@ const p2 = Q('purchase.create', { supplier_id: supB.id, date: '2026-10-20', item
 
 const s1 = Q('sale.create', { customer_id: karim.id, items: [{ product_id: router.id, qty: 1, price: 2600, serials: ['RX-1'] }, { product_id: mouse.id, qty: 2, price: 450 }], payments: [{ account_id: cash.id, amount: 3500 }] });
 // a staff member's own sale (other staff must not see it)
-Q('user.save', { name: 'Shop Staff', username: 'staff1', password: 'staff123', role: 'sales' });
-const staff = login('staff1', 'staff123');
+Q('user.save', { name: 'Shop Staff', username: 'staff1', password: 'staff123-test-2026', role: 'sales' });
+const staff = login('staff1', 'staff123-test-2026');
 const s2 = Q('sale.create', { customer_id: rahim.id, items: [{ product_id: router.id, qty: 1, price: 2700, serials: ['RX-2'] }, { product_id: mouse.id, qty: 1, price: 450 }], payments: [{ account_id: cash.id, amount: 3150 }] }, staff);
 const sr = Q('sreturn.create', { sale_id: s1.sale.id, items: [{ sale_item_id: s1.items[0].id, qty: 1, serials: ['RX-1'] }, { sale_item_id: s1.items[1].id, qty: 1 }], refund: { mode: 'cash', account_id: cash.id, amount: 500 }, type: 'return' });
 const pr = Q('preturn.create', { purchase_id: p1.purchase.id, items: [{ purchase_item_id: p1.items[0].id, qty: 1, serials: ['RX-3'] }], refund: { mode: 'adjust' } });
@@ -145,9 +145,9 @@ same(Q('history.doc', { type: 'sale', id: s2.sale.id }, staff).detail.sale.invoi
 truthy(!('cost' in Q('history.doc', { type: 'sale', id: s2.sale.id }, staff).detail.sale), 'without cost');
 same(Q('history.doc', { type: 'claim', id: cl.id }, staff).detail.claim_no, cl.claim_no, 'claims open with the warranty permission');
 // a manager with sales returns but not cost: the return opens without its cost
-Q('user.save', { name: 'Floor Manager', username: 'mgr1', password: 'mgr12345', role: 'manager' });
+Q('user.save', { name: 'Floor Manager', username: 'mgr1', password: 'mgr12345-test-2026', role: 'manager' });
 Q('rolePerms.save', { manager: ['pos', 'sales.all', 'sales.return'], sales: ['pos', 'warranty'] });
-const mgr = login('mgr1', 'mgr12345');
+const mgr = login('mgr1', 'mgr12345-test-2026');
 d = Q('history.doc', { type: 'sreturn', id: sr.return.id }, mgr).detail;
 same(['cost' in d.ret, d.items.some((i) => 'cost' in i), d.ret.total], [false, false, sr.return.total], 'return without cost for a manager without cost permission');
 

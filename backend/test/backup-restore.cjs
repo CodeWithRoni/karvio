@@ -21,9 +21,9 @@ const strip = (b) => { const t = JSON.parse(JSON.stringify(b.tables)); delete t.
 
 /* ---------- some real shop data ---------- */
 Q('settings.save', { values: { shop_name: 'COMPUTER PLUS', invoice_prefix: 'CP-' } });
-Q('user.save', { name: 'Roni', username: 'roni', password: 'roni123', role: 'admin' });
-Q('user.save', { name: 'Mina', username: 'mina', password: 'mina123', role: 'manager' });
-const roni = login('roni', 'roni123'), mina = login('mina', 'mina123');
+Q('user.save', { name: 'Roni', username: 'roni', password: 'roni123-test-2026', role: 'admin' });
+Q('user.save', { name: 'Mina', username: 'mina', password: 'mina123-test-2026', role: 'manager' });
+const roni = login('roni', 'roni123-test-2026'), mina = login('mina', 'mina123-test-2026');
 const cash = Q('bootstrap', {}).accounts[0];
 const sup = Q('supplier.save', { name: 'Smart Tech', phones: '01711000000' });
 const cust = Q('customer.save', { name: 'রহিম উদ্দিন', phones: '01811000000', addresses: 'বেড়া, পাবনা' });
@@ -39,7 +39,7 @@ Q('master.delete', { kind: 'brand', id: tmp.id }); // leaves an empty (tombstone
 truthy(/Only the Administrator account/.test(QF('database.export', {}, roni)), 'another admin cannot export');
 truthy(/Permission denied/.test(QF('database.export', {}, mina)), 'staff cannot export');
 truthy(/Only the Administrator account/.test(QF('database.info', {}, roni)), 'another admin cannot see the overview');
-truthy(/Only the Administrator account/.test(QF('database.restore', { password: 'roni123', confirm: 'RESTORE', backup_text: '{}' }, roni)), 'another admin cannot restore');
+truthy(/Only the Administrator account/.test(QF('database.restore', { password: 'roni123-test-2026', confirm: 'RESTORE', backup_text: '{}' }, roni)), 'another admin cannot restore');
 
 /* ---------- overview ---------- */
 const info = Q('database.info', {});
@@ -65,7 +65,7 @@ const file = JSON.stringify(b1); // what the browser saves
 /* ---------- change everything, then restore ---------- */
 Q('sale.create', { items: [{ product_id: cable.id, qty: 5, price: 40 }], payments: [{ account_id: cash.id, amount: 200 }] });
 Q('product.save', { name: 'NEW SWITCH' });
-Q('user.save', { name: 'Late User', username: 'late', password: 'late123', role: 'sales' });
+Q('user.save', { name: 'Late User', username: 'late', password: 'late123-test-2026', role: 'sales' });
 Q('database.reset', { password: 'admin123', confirm: 'RESET' }); // even a full reset
 same(Q('bootstrap', {}).products.length, 0, 'database empty before the restore');
 copies.length = 0;
@@ -106,8 +106,8 @@ same(copies.length, 1, 'safety copy made first'); truthy(/^Karvio backup before 
 same([r.signed_out, r.shop_name, r.backup_created_at, r.counts.Sales, r.safety.name], [false, 'COMPUTER PLUS', b1.created_at, 1, copies[0]], 'restore result');
 const b2 = Q('database.export', {}); // the same session still works
 same(strip(b2), strip(b1), 'every table is exactly as in the backup');
-truthy(call('login', { username: 'late', password: 'late123' }).ok === false, 'user made after the backup is gone');
-login('roni', 'roni123'); login('mina', 'mina123'); checks++;
+truthy(call('login', { username: 'late', password: 'late123-test-2026' }).ok === false, 'user made after the backup is gone');
+login('roni', 'roni123-test-2026'); login('mina', 'mina123-test-2026'); checks++;
 same(Q('database.info', {}).last_restore, r.restored_at, 'last restore time recorded');
 truthy(Q('history', { q: 'R1' }).summary !== undefined, 'serial history works after restore');
 same(Q('customers.list', {}).find((c) => c.id === cust.id).balance, sale.sale.due, 'customer due restored');
@@ -117,9 +117,9 @@ same(['R1', 'R2', 'R3'].map((x) => Q('serials.find', { serial: x }).status), ['s
 truthy(book.getSheetByName('AuditLog').rows.some((row) => row[3] === 'database_restore'), 'restore written to the audit log');
 
 // a backup whose Administrator password differs signs this session out
-Q('user.save', { ...Q('users.list', {}).find((u) => u.username === 'admin'), password: 'newpass1' });
-token = login('admin', 'newpass1');
-const r2 = Q('database.restore', { password: 'newpass1', confirm: 'RESTORE', backup_text: file });
+Q('user.save', { ...Q('users.list', {}).find((u) => u.username === 'admin'), password: 'newpass1-test-2026' });
+token = login('admin', 'newpass1-test-2026');
+const r2 = Q('database.restore', { password: 'newpass1-test-2026', confirm: 'RESTORE', backup_text: file });
 same(r2.signed_out, true, 'tells the app to sign in again');
 truthy(call('bootstrap', {}, token).auth, 'old session ended');
 token = login('admin', 'admin123'); checks++; // the backup's password works

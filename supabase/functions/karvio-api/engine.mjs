@@ -18,9 +18,9 @@ const {SpreadsheetApp,PropertiesService,CacheService,LockService,Session,Content
  * ============================================================================
  */
 
-var APP_VERSION = '1.2.2';
+var APP_VERSION = '1.2.3';
 // Your Karvio database spreadsheet. Lets this script also run as a standalone project.
-var DEFAULT_SHEET_ID = '1r7WI5GNHtppUCtCu_rZUmvfum92i0HZdK298Z4uZH7w';
+var DEFAULT_SHEET_ID = ''; // Standalone Apps Script users must explicitly configure SHEET_ID.
 var SESSION_TTL = 21600; // 6 hours (CacheService maximum)
 var CASH_SALE_NAME = 'Cash'; // sales without a customer profile (older data says "Walk-in")
 var SESSION_REFRESH_MS = 15 * 60 * 1000; // extend an active session at most once per 15 minutes
@@ -701,9 +701,13 @@ function login_(p) {
 }
 function logout_(p, user, token) { try { CacheService.getScriptCache().remove('tok_' + token); } catch (e) {} return true; }
 
+var PASSWORD_MIN_LENGTH = 12;
+function requirePassword_(password) {
+  if (String(password || '').length < PASSWORD_MIN_LENGTH) fail_('Password must be at least ' + PASSWORD_MIN_LENGTH + ' characters');
+}
 function changePassword_(p, user) {
   if (!pwCheck_(user, p.old_password)) fail_('Current password is incorrect');
-  if (String(p.new_password || '').length < 6) fail_('New password must be at least 6 characters');
+  requirePassword_(p.new_password);
   var salt = uid_();
   update_('Users', user.id, { salt: salt, password_hash: pwHash_(salt, p.new_password) });
   return true;
@@ -711,13 +715,21 @@ function changePassword_(p, user) {
 
 /** Re-confirm an admin password for sensitive actions (cancel / reverse). */
 function confirmAdmin_(user, password) {
+  var key = 'admin_confirm_' + hash_('karvio-admin-confirm', user.id).slice(0, 32);
+  var cache = CacheService.getScriptCache();
+  var attempt = JSON.parse(cache.get(key) || 'null') || { n: 0 };
+  if (attempt.n >= LOGIN_MAX_FAILS) fail_('Too many wrong admin passwords. Try again in 15 minutes');
+  var ok;
   if (user.role !== 'admin') {
     var admins = all_('Users').filter(function (u) { return u.role === 'admin' && u.active; });
-    var ok = admins.some(function (a) { return pwCheck_(a, password); });
-    if (!ok) fail_('Admin authorization failed — enter a valid admin password');
-  } else if (!pwCheck_(user, password)) {
-    fail_('Admin authorization failed — incorrect password');
+    ok = admins.some(function (a) { return pwCheck_(a, password); });
+  } else { ok = pwCheck_(user, password); }
+  if (!ok) {
+    attempt.n++;
+    cache.put(key, JSON.stringify(attempt), LOGIN_LOCK_SECONDS);
+    fail_(user.role === 'admin' ? 'Admin authorization failed — incorrect password' : 'Admin authorization failed — enter a valid admin password');
   }
+  cache.remove(key);
 }
 
 function audit_(user, action, detail) {
@@ -1331,10 +1343,10 @@ function userSave_(p, user) {
   if (p.id) {
     if (p.id === user.id && !row.active) fail_('You cannot disable your own account');
     if (p.id === user.id && user.role === 'admin' && row.role !== 'admin') fail_('You cannot demote your own account');
-    if (p.password) { if (String(p.password).length < 6) fail_('Password must be at least 6 characters'); row.salt = uid_(); row.password_hash = pwHash_(row.salt, p.password); }
+    if (p.password) { requirePassword_(p.password); row.salt = uid_(); row.password_hash = pwHash_(row.salt, p.password); }
     return pubUser_(update_('Users', p.id, row));
   }
-  if (String(p.password || '').length < 6) fail_('Password must be at least 6 characters');
+  requirePassword_(p.password);
   row.salt = uid_(); row.password_hash = pwHash_(row.salt, p.password); row.created_at = now_();
   return pubUser_(insert_('Users', row));
 }
@@ -4842,5 +4854,5 @@ ROUTES['database.restore.status'] = r_('settings', function(p,user) {
   var stage=restoreUpload_(p,user);return {received:stage.chunks.length};
 }, false);
 
-return {doPost,setupDatabase,SCHEMA, initialize, smsReplyFailed_};
+return {doPost,setupDatabase,SCHEMA, initialize, smsReplyFailed_, exportBackup:function(){var owner=all_('Users').filter(function(u){return isOwner_(u)&&u.active;})[0];if(!owner)fail_('Initialized active owner required');return databaseExport_({},owner);}};
 }

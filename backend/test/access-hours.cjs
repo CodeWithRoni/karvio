@@ -40,24 +40,24 @@ same(sandbox.hm12_('00:05'), '12:05 AM'); same(sandbox.hm12_('12:00'), '12:00 PM
 
 /* ---- saving ---- */
 at('12:00', SAT);
-const k = Q('user.save', { name: 'Karim', username: 'karim', password: 'secret1', role: 'sales', access_limit: true, access_from: '9:30', access_to: '18:00', access_days: ['fri', 'sat', 'xx', 'sun'] });
+const k = Q('user.save', { name: 'Karim', username: 'karim', password: 'secret1-test-2026', role: 'sales', access_limit: true, access_from: '9:30', access_to: '18:00', access_days: ['fri', 'sat', 'xx', 'sun'] });
 same([k.access_limit, k.access_from, k.access_to, k.access_days], [true, '09:30', '18:00', 'sat,sun,fri'], 'saved, cleaned and padded');
-truthy(/working hours/.test(QF('user.save', { name: 'B', username: 'b1', password: 'secret1', role: 'sales', access_limit: true, access_from: '', access_to: '18:00', access_days: 'sat' }).error), 'times required');
-truthy(/same/.test(QF('user.save', { name: 'B', username: 'b1', password: 'secret1', role: 'sales', access_limit: true, access_from: '10:00', access_to: '10:00', access_days: 'sat' }).error), 'same times refused');
-truthy(/working day/.test(QF('user.save', { name: 'B', username: 'b1', password: 'secret1', role: 'sales', access_limit: true, access_from: '10:00', access_to: '18:00', access_days: [] }).error), 'a day required');
-truthy(/working hours/.test(QF('user.save', { name: 'B', username: 'b1', password: 'secret1', role: 'sales', access_limit: true, access_from: '25:00', access_to: '18:00', access_days: 'sat' }).error), 'invalid time refused');
-const ad = Q('user.save', { name: 'Boss2', username: 'boss2', password: 'secret1', role: 'admin', access_limit: true, access_from: '10:00', access_to: '11:00', access_days: 'sat' });
+truthy(/working hours/.test(QF('user.save', { name: 'B', username: 'b1', password: 'secret1-test-2026', role: 'sales', access_limit: true, access_from: '', access_to: '18:00', access_days: 'sat' }).error), 'times required');
+truthy(/same/.test(QF('user.save', { name: 'B', username: 'b1', password: 'secret1-test-2026', role: 'sales', access_limit: true, access_from: '10:00', access_to: '10:00', access_days: 'sat' }).error), 'same times refused');
+truthy(/working day/.test(QF('user.save', { name: 'B', username: 'b1', password: 'secret1-test-2026', role: 'sales', access_limit: true, access_from: '10:00', access_to: '18:00', access_days: [] }).error), 'a day required');
+truthy(/working hours/.test(QF('user.save', { name: 'B', username: 'b1', password: 'secret1-test-2026', role: 'sales', access_limit: true, access_from: '25:00', access_to: '18:00', access_days: 'sat' }).error), 'invalid time refused');
+const ad = Q('user.save', { name: 'Boss2', username: 'boss2', password: 'secret1-test-2026', role: 'admin', access_limit: true, access_from: '10:00', access_to: '11:00', access_days: 'sat' });
 same(ad.access_limit, false, 'admins never get a limit');
 same(Q('users.list').find((x) => x.id === k.id).access_days, 'sat,sun,fri', 'listed with hours');
 
 /* ---- sign in ---- */
 at('09:00', SAT);
-let r = QF('login', { username: 'karim', password: 'secret1' });
+let r = QF('login', { username: 'karim', password: 'secret1-test-2026' });
 truthy(/working hours are 9:30 AM – 6:00 PM, Sat, Sun, Fri/.test(r.error), 'login refused before hours with the hours in the message: ' + r.error);
 same(r.auth, false, 'login error is not a session error');
 truthy(/Invalid username or password/.test(QF('login', { username: 'karim', password: 'wrong!' }).error), 'wrong password does not reveal the hours');
 at('09:30', SAT);
-const kt = Q('login', { username: 'karim', password: 'secret1' }).token;
+const kt = Q('login', { username: 'karim', password: 'secret1-test-2026' }).token;
 truthy(kt, 'can sign in at start time');
 truthy(Q('bootstrap', {}, kt), 'works during hours');
 at('12:00', 2); // Tuesday: not a working day
@@ -66,7 +66,7 @@ same(r.auth, true, 'request outside hours ends the session');
 truthy(/^AUTH: Your working hours are/.test(r.error), 'session error carries the hours (the app strips AUTH:): ' + r.error);
 at('10:00', SAT);
 truthy(/expired|sign in/i.test(QF('bootstrap', {}, kt).error), 'session was removed — must sign in again');
-const kt2 = Q('login', { username: 'karim', password: 'secret1' }).token;
+const kt2 = Q('login', { username: 'karim', password: 'secret1-test-2026' }).token;
 at('18:00', SAT);
 same(QF('products.list', {}, kt2).auth, true, 'signed out at the end time');
 at('03:00', FRI);
@@ -76,7 +76,7 @@ truthy(Q('login', { username: 'admin', password: 'admin123' }).token, 'admin can
 at('12:00', SAT);
 Q('user.save', { id: k.id, name: 'Karim', username: 'karim', role: 'sales', active: true, access_limit: false });
 at('03:00', 2);
-truthy(Q('login', { username: 'karim', password: 'secret1' }).token, 'no limit: any time');
+truthy(Q('login', { username: 'karim', password: 'secret1-test-2026' }).token, 'no limit: any time');
 same(Q('users.list').find((x) => x.id === k.id).access_from, '', 'hours cleared');
 console.log('Working hours: ' + checks + ' checks passed');
 `;

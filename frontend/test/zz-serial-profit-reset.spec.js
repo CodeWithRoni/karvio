@@ -236,8 +236,8 @@ test('database backup downloads every table and restore brings it back exactly',
 test('database reset: only the Administrator sees it, and it leaves a fresh shop', async ({ page, request, browser }) => {
   const errors = []; page.on('pageerror', (e) => errors.push(e.message));
   // another admin does not see the tab
-  await call(request, 'user.save', { name: 'Second Admin', username: 'second', password: 'second1', role: 'admin' });
-  const second = (await call(request, 'login', { username: 'second', password: 'second1' }, null)).token;
+  await call(request, 'user.save', { name: 'Second Admin', username: 'second', password: 'second1-test-2026', role: 'admin' });
+  const second = (await call(request, 'login', { username: 'second', password: 'second1-test-2026' }, null)).token;
   const other = await browser.newPage();
   await signIn(other, second);
   await other.goto('/#/settings');

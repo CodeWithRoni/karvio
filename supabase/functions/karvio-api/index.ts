@@ -10,14 +10,9 @@ const rpc = async (name: string, body: unknown) => {
  if (!response.ok) throw new Error(`Database RPC failed (${response.status})`);
  return await response.json();
 };
-const gateway=createHandler({rpc,dispatch:()=>EdgeRuntime.waitUntil(dispatchSms(rpc).catch(()=>console.error('SMS worker unavailable')))});
-Deno.serve(async request=>{
- if(request.method==='POST') {
-  // Keep raw IP addresses out of the database. Supabase supplies the forwarding header.
-  const {hash}=await import('./runtime.mjs');
-  const ip=(request.headers.get('x-forwarded-for')||'unknown').split(',')[0].trim();
-  const allowed=await rpc('karvio_rate_limit',{bucket:hash(ip),max_requests:180,seconds:60});
-  if(!allowed)return new Response(JSON.stringify({ok:false,error:'Too many requests. Try again in a minute.'}),{status:429,headers:{'Content-Type':'application/json','Access-Control-Allow-Origin':'*'}});
- }
- return gateway(request);
-});
+const gateway=createHandler({rpc,
+ // Database derives the bucket from a stored, unexpired session, never from
+ // client-controlled forwarding headers or a claimed username/user ID.
+ allowRequest:body=>rpc('karvio_request_limit',{session_key:'tok_'+String(body.token||'').slice(0,512)}),
+ dispatch:()=>EdgeRuntime.waitUntil(dispatchSms(rpc).catch(()=>console.error('SMS worker unavailable')))});
+Deno.serve(gateway);
