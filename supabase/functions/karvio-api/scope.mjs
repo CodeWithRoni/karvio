@@ -14,6 +14,28 @@ export const ROW_SCOPED_ACTIONS = new Set([
 // Read-only screens narrowed by date range or party in karvio_snapshot_scoped (falls back to tables).
 export const NARROW_READ_ACTIONS = new Set(['customer.statement', 'supplier.statement', 'sales.list', 'sreturns.list']);
 
+// Log tables an action may only append to (see APPEND_HINTS). Must match karvio_read's allowed list.
+export const APPEND_TABLES = ['AuditLog', 'ItemEvents', 'SmsLog'];
+// Generated with TABLE_HINTS: per action, the log tables it appended to but never read in any trace.
+// Too wide is safe as well: reading a log row not loaded re-runs the request with the rows.
+export const APPEND_HINTS = {
+  'account.save': ['AuditLog'],
+  'backup.schedule': ['AuditLog'],
+  'claim.create': ['ItemEvents'],
+  'claim.update': ['ItemEvents'],
+  'customer.save': ['AuditLog'],
+  'database.restore': ['AuditLog', 'ItemEvents'],
+  'preturn.create': ['AuditLog', 'ItemEvents'],
+  'quote.send': ['AuditLog', 'SmsLog'],
+  'repair.save': ['AuditLog'],
+  'reverse': ['AuditLog', 'ItemEvents'],
+  'sale.exchange': ['AuditLog', 'ItemEvents'],
+  'sale.link': ['AuditLog'],
+  'settings.save': ['AuditLog'],
+  'sreturn.create': ['AuditLog', 'ItemEvents'],
+  'supplier.save': ['AuditLog'],
+};
+
 // Private sheets read with every request (small). Request receipts are large and only needed by saves.
 export const DEFAULT_PRIVATE = ['__KarvioTxnJournal', '__KarvioQuoteLinks'];
 export const PRIVATE_HINTS = {

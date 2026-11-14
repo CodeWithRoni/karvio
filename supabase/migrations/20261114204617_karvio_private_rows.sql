@@ -106,24 +106,34 @@ grant execute on function public.karvio_snapshot(), public.karvio_snapshot_for(t
 -- One read entry point: the existing scoped/table/whole-shop reads plus the private sheets asked for.
 -- Each underlying read holds the runtime row FOR SHARE until this call's transaction ends, so the
 -- private rows come from the same moment as the business rows.
+-- append_names: log tables the action only appends to; only their last row position is returned
+-- (the gateway re-runs with the rows if the engine reads one).
 create function public.karvio_read(kind text, action_name text default '', payload jsonb default '{}',
- table_names text[] default null, private_names text[] default '{}') returns jsonb language plpgsql security invoker set search_path='' as $$
-declare snap jsonb;
+ table_names text[] default null, private_names text[] default '{}', append_names text[] default '{}') returns jsonb language plpgsql security invoker set search_path='' as $$
+declare snap jsonb; t text; last_pos bigint; positions jsonb := '{}';
 begin
  perform set_config('karvio.private_rows', 'on', true);
+ if kind not in ('rows','scoped','tables','unscoped','full') then raise exception 'Invalid read kind'; end if;
+ if exists(select 1 from unnest(coalesce(append_names, '{}')) n where not n = any(array['AuditLog','ItemEvents','SmsLog'])) then raise exception 'Invalid append table'; end if;
  snap := case kind
   when 'rows' then public.karvio_snapshot_request(action_name, coalesce(payload, '{}'))
   when 'scoped' then public.karvio_snapshot_scoped(action_name, coalesce(payload, '{}'))
   when 'tables' then public.karvio_snapshot_tables(table_names)
   when 'unscoped' then public.karvio_snapshot_for(action_name)
   when 'full' then public.karvio_snapshot()
-  else null end;
- if kind not in ('rows','scoped','tables','unscoped','full') then raise exception 'Invalid read kind'; end if;
+  end;
  if snap is null then return null; end if;
+ if kind = 'tables' then
+  foreach t in array coalesce(append_names, '{}') loop
+   execute format('select coalesce(max(_position), 1) from public.%I', t) into last_pos;
+   positions := positions || jsonb_build_object(t, last_pos);
+  end loop;
+  snap := snap || jsonb_build_object('appendPositions', positions);
+ end if;
  return snap || karvio_private.private_payload(private_names);
 end $$;
-revoke all on function public.karvio_read(text,text,jsonb,text[],text[]) from public, anon, authenticated;
-grant execute on function public.karvio_read(text,text,jsonb,text[],text[]) to service_role;
+revoke all on function public.karvio_read(text,text,jsonb,text[],text[],text[]) from public, anon, authenticated;
+grant execute on function public.karvio_read(text,text,jsonb,text[],text[],text[]) to service_role;
 
 -- Commit = the existing business-row commit, then only the private rows that changed, in one transaction.
 -- private_changes: {name: {"columns":n, "upsert":[[position,cells],...], "remove":[position,...]}}

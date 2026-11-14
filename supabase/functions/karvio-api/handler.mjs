@@ -1,7 +1,7 @@
 import {createRuntime,hash} from './runtime.mjs';
 import {APP_VERSION,BUILD_ID} from './release.mjs';
 import {boundedBackup,transferRequest} from './transfers.mjs';
-import {ROW_SCOPED_ACTIONS,NARROW_READ_ACTIONS,TABLE_HINTS,ALWAYS_TABLES,DEFAULT_PRIVATE,PRIVATE_HINTS} from './scope.mjs';
+import {ROW_SCOPED_ACTIONS,NARROW_READ_ACTIONS,TABLE_HINTS,APPEND_HINTS,ALWAYS_TABLES,DEFAULT_PRIVATE,PRIVATE_HINTS} from './scope.mjs';
 const headers={'Content-Type':'application/json','Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization, apikey, content-type, x-client-info','Access-Control-Allow-Methods':'POST, OPTIONS','Cache-Control':'no-store'};
 const reply=(data,status=200)=>new Response(JSON.stringify(data),{status,headers});
 const clock=()=>(globalThis.performance?.now?.()??Date.now());
@@ -61,11 +61,14 @@ function tablesPlan(key,state){
  const hint=Object.hasOwn(TABLE_HINTS,key)?TABLE_HINTS[key]:null;
  // No list yet, or regenerating the lists (scripts/trace-table-hints.mjs must see every table used).
  if(!hint||globalThis.__karvioTraceWholeShop)return {kind:'full',key};
- return {kind:'tables',key,tables:new Set([...ALWAYS_TABLES,...hint,...(state.learned.get(key)||[])])};
+ const learned=state.learned.get(key)||new Set();
+ // Logs the action only appends to: read their last row position instead of every row.
+ const append=new Set((Object.hasOwn(APPEND_HINTS,key)?APPEND_HINTS[key]:[]).filter(t=>hint.includes(t)&&!learned.has(t)));
+ return {kind:'tables',key,append,tables:new Set([...ALWAYS_TABLES,...hint,...learned].filter(t=>!append.has(t)))};
 }
 function snapshotCall(plan,body,protocol,state){
  if(protocol===2&&plan.kind!=='legacy'&&!plan.readMissing&&!unavailable(state,'readUnavailable'))
-  return ['karvio_read',{kind:plan.kind,action_name:body.action,payload:body.payload||{},table_names:plan.tables?[...plan.tables].sort():null,private_names:[...plan.private].sort()}];
+  return ['karvio_read',{kind:plan.kind,action_name:body.action,payload:body.payload||{},table_names:plan.tables?[...plan.tables].sort():null,private_names:[...plan.private].sort(),...(plan.kind==='tables'&&plan.append?.size?{append_names:[...plan.append].sort()}:{})}];
  switch(plan.kind){
   case 'legacy':return ['karvio_snapshot',{}];
   case 'unscoped':return ['karvio_snapshot_for',{action_name:body.action}];
@@ -144,14 +147,14 @@ export function createHandler({rpc,dispatch=()=>{},protocol=2,scopedReads=true,n
     const runtime=createRuntime(snapshot,{deltaOnly:protocol===2});
     const result=initializing?runtime.initialize(body.payload||{}):runtime.execute(body);
     m.engineMs+=clock()-engineStarted;
-    globalThis.__karvioTrace?.(hintKey(body.action,body.payload),result.touched,snapshot.loadedTables,result.missing);
+    globalThis.__karvioTrace?.(hintKey(body.action,body.payload),result.touched,snapshot.loadedTables,result.missing,result.read,result.unread);
     // The engine opened a table this narrow read did not load: never use that result. Load it and run again.
     if(result.missing?.length){
      widened++;
      const sheets=result.missing.filter(t=>t.startsWith('#')).map(t=>t.slice(1)),tables=result.missing.filter(t=>!t.startsWith('#'));
      sheets.forEach(t=>plan.private.add(t));remember(scopeState.learnedPrivate,plan.key||body.action,sheets);
      if(tables.length){
-      if(plan.kind==='tables'&&widened<3){tables.forEach(t=>plan.tables.add(t));remember(scopeState.learned,plan.key,tables);}
+      if(plan.kind==='tables'&&widened<3){tables.forEach(t=>{plan.tables.add(t);plan.append?.delete(t);});remember(scopeState.learned,plan.key,tables);}
       else plan.kind='full';
      }
      plan.widening=true;m.widened=(m.widened||0)+1;
