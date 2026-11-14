@@ -1,3 +1,33 @@
+Owner authorized publication of the four permission/purchase/barcode fixes on 14 November 2026. Deployment verification follows. No database migration or historical data rewrite.
+
+# Four permission/purchase/barcode fixes — LOCAL ONLY, 14 November 2026
+
+Baseline main `d12b874f23db4834bd0a326d00e8bfa90188ba69`, live API53. No push, deployment, database migration/reset or historical transaction rewrite. Older publication notes below are historical.
+
+```json
+{
+  "baseCommit": "d12b874f23db4834bd0a326d00e8bfa90188ba69",
+  "regularRegression": "passed",
+  "hostedRegression": "passed",
+  "accessPurchaseBarcodeRegression": "passed",
+  "targetedBrowserTests": 5,
+  "fullEdgeBrowserTests": 147,
+  "productionBuild": "passed",
+  "schemaMigration": false,
+  "productionReset": false,
+  "historicalRevaluation": false,
+  "published": false,
+  "nativeInstallersRebuilt": false
+}
+```
+
+- Customer picker/list responses expose contact identity to Repairs-only staff, without balance/opening/linked balances. POS retains required customer due/advance; linked-party financial fields in lists and statement exports require the other party permission. Hidden linked balances are omitted from the UI rather than shown as zero. Admin access is retained.
+- Purchase discount must be finite and within zero through the subtotal, in both form and backend. Invalid input is not silently clamped or posted; an explicit valid 100% discount is retained.
+- New average preview uses the server’s cumulative, currency-rounded discount allocation. Serial preview uses exact held serial cost, exposed only with cost permission, instead of reconstructing value from a rounded average.
+- Barcode selection above 500 is explicitly rejected per API request. The frontend batches the complete selection, verifies final product barcodes, reports actual completion, and refreshes partial progress after failure so only remaining products need retrying.
+
+Evidence: verification/audit-nov14-fourth/{fix-runtime.log,fix-regular.log,fix-hosted.log,fix-browser.log,full-fix-browser.log,fix-build.log}. Maintained regressions: backend/test/access-purchase-barcode.mjs and frontend/test/access-purchase-barcode.spec.js. The earlier purchase-due report test now searches its own fixture invoice instead of relying on first-page placement, and verifies historical due 100 versus current due 0. Generated API engine updated; applied SQL migrations and business schema are unchanged.
+
 Owner authorized publication of the three invoice/quotation audit fixes on 14 November 2026. Deployment verification follows. No database or backend rule changes.
 
 # Three invoice/quotation audit fixes — LOCAL ONLY, 14 November 2026

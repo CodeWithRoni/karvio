@@ -1,3 +1,4 @@
+import { assignBarcodes } from '../lib/barcodeAssignment';
 // Barcode labels: pick products (or a whole purchase), choose a label size and what to show, preview and print.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -143,10 +144,16 @@ export default function Barcodes() {
 
   const assign = async () => {
     await run(async () => {
-      const r = await api('product.barcodes', { ids: [...new Set(noBarcode.map((x) => x.product_id))] });
+      const ids = [...new Set(noBarcode.map(x => x.product_id))];
+      let assigned;
+      try { assigned = await assignBarcodes(ids); }
+      catch (e) { await refresh('products').catch(() => {}); throw e; }
       await refresh('products');
-      return r;
-    }, `Barcodes created for ${noBarcode.length} product${noBarcode.length === 1 ? '' : 's'}`).catch(() => {});
+      const current = new Map(useStore.getState().products.map(p=>[p.id,p]));
+      if (ids.some(id=>!current.get(id)?.barcode)) throw new Error('Some products still have no barcode. Refresh and retry the remaining products.');
+      toast(`Barcodes ready for ${ids.length} product${ids.length===1?'':'s'} (${assigned.length} newly created)`);
+      return assigned;
+    }).catch(() => {});
   };
   const print = async () => {
     if (!total) return toast('Add products first', 'err');

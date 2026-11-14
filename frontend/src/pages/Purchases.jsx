@@ -1,3 +1,4 @@
+import { purchasePricing } from '../lib/purchasePricing';
 import CameraScanButton from '../components/CameraScanButton';
 import { purchaseDetails } from '../lib/purchaseDetails';
 import { Pager, DEFAULT_PAGE_SIZE } from '../components/Pager';
@@ -195,8 +196,8 @@ function NewPurchase({ onDone }) {
   };
   const dropSerial = (id, sn) => setLines((ls) => ls.map((l) => (l.product_id === id ? { ...l, serials: l.serials.filter((x) => x !== sn), qty: l.serials.length - 1 } : l)));
 
-  const sub = round2(lines.reduce((a, l) => a + round2((Number(l.qty) || 0) * (Number(l.cost) || 0)), 0));
-  const total = round2(Math.max(sub - (Number(discount) || 0), 0));
+  const pricing = purchasePricing(lines, discount);
+  const sub = pricing.subtotal, total = pricing.total;
   const paid = round2(cleanPays(pays).reduce((a, p) => a + p.amount, 0));
   const due = round2(Math.max(total - paid, 0));
   const prev = Number(sup?.balance) || 0; // > 0: you owe the supplier, < 0: supplier owes you (advance)
@@ -224,6 +225,7 @@ function NewPurchase({ onDone }) {
       if (isSerial(p) && b.qty) setOpenId(p.id);
       return toast(b.qty ? (isSerial(p) ? `Scan the serial numbers for ${p.name}` : `Enter the quantity for ${p.name}`) : `Enter the unit cost and retail price for ${p.name}`, 'err');
     }
+    if (!pricing.valid) return toast(pricing.error, 'err');
     if (paid > total + 0.004) return toast(`Paid (${money(paid, false)}) is more than the purchase total (${money(total, false)})`, 'err');
     if (payPrevious && canPayPrevious && prev > 0.004) {
       if (previousPays.some((p) => !Number.isFinite(Number(p.amount)) || Number(p.amount) < 0)) return toast('Enter a valid previous due payment amount', 'err');
@@ -266,7 +268,7 @@ function NewPurchase({ onDone }) {
             </div>}
         <div className="dt"><div className="dt-scroll"><table className="pur-table" ref={tableRef}>
           <thead><tr><th>Product</th><th style={{ width: 90 }} className="r">Qty</th><th style={{ width: 110 }} className="r">Unit cost <span className="req">*</span></th><th style={{ width: 110 }} className="r">Retail price <span className="req">*</span></th><th style={{ width: 110 }} className="r">Wholesale</th><th className="r" style={{ width: 100 }}>Amount</th><th style={{ width: 34 }} /></tr></thead>
-          {lines.map((l) => {
+          {lines.map((l, lineIndex) => {
             const p = pmap[l.product_id], b = bad(l), serial = isSerial(p), open = serial && openId === l.product_id;
             return (
               <tbody key={l.product_id} data-line={l.product_id} className={`pur-line ${open ? 'open' : ''}`}>
@@ -294,9 +296,11 @@ function NewPurchase({ onDone }) {
                     {(() => {
                       // The product cost after this purchase: weighted average of the stock on hand and this purchase.
                       const st = Number(p?.stock) || 0, avg = Number(p?.cost_price) || 0, q = Number(l.qty) || 0, c = Number(l.cost) || 0;
-                      if (!canCost || !(c > 0) || !(q > 0) || st <= 0 || Math.abs(c - avg) < 0.005) return null;
-                      const next = (st * avg + q * c) / (st + q);
-                      return <small className="avg-next" title={`Average cost after this purchase: (${fqty(st)} × ${money(avg, false)} + ${fqty(q)} × ${money(c, false)}) ÷ ${fqty(st + q)}`}>New avg <b>{money(Math.round(next * 100) / 100, false)}</b><span className="muted">now {money(avg, false)}</span></small>;
+                      if (!canCost || !pricing.valid || !(c > 0) || !(q > 0) || st <= 0) return null;
+                      const incoming = pricing.lineCosts[lineIndex];
+                      const held = serial && Number.isFinite(p.inventory_cost) ? p.inventory_cost : st * avg;
+                      const next = Math.round((held + incoming) / (st + q) * 10000) / 10000;
+                      return <small className="avg-next" title={`Average cost after this purchase: (${money(held, false, 4)} held cost + ${money(incoming, false)} net received cost) ÷ ${fqty(st + q)}`}>New avg <b>{money(Math.round(next * 100) / 100, false)}</b><span className="muted">now {money(avg, false)}</span></small>;
                     })()}
                   </td>
                   <td data-label="Retail price"><input type="number" min="0" step="any" value={l.sale} onChange={(e) => upd(l.product_id, { sale: e.target.value })} aria-label={`Retail price for ${p?.name}`} className={tried && b.sale ? 'invalid' : ''} placeholder="Retail" />
@@ -362,8 +366,9 @@ function NewPurchase({ onDone }) {
         </div>
         <div className="totals" style={{ margin: '14px 0' }}>
           <span>Subtotal</span><b className="num">{money(sub, false)}</b>
-          <span>Total</span><span className="grand">{money(total)}</span>
+          <span>Total</span><span className="grand">{pricing.valid ? money(total) : '—'}</span>
         </div>
+        {!pricing.valid && <p className="errbox" role="alert">{pricing.error}</p>}
         <PaymentSplit value={pays} onChange={setPays} total={total} label="Pay supplier now (leave the amount empty to buy on credit)" />
         <div className="totals" style={{ marginTop: 10 }}>
           <span>Paid now</span><b className="num">{money(paid, false)}</b>

@@ -939,8 +939,9 @@ function productUsageIndex_() {
   return used;
 }
 function productsList_(user) {
-  var reservations = repairReservations_().qty, history = productUsageIndex_();
-  var list = all_('Products').map(function (p) { var c = Object.assign({}, p); delete c._row; c.has_history = !!history[p.id]; c.reserved = reservations[p.id] || 0; c.available = Math.max(0, round_(p.stock - c.reserved, 4)); return c; });
+  var reservations = repairReservations_().qty, history = productUsageIndex_(), serialValues = {}, showCost = can_(user,'cost');
+  if (showCost) all_('SerialItems').forEach(function(s) { if (s.status === 'in_stock') serialValues[s.product_id]=(serialValues[s.product_id] || 0)+num_(s.cost); });
+  var list = all_('Products').map(function (p) { var c = Object.assign({}, p); delete c._row; c.has_history = !!history[p.id]; c.reserved = reservations[p.id] || 0; c.available = Math.max(0, round_(p.stock - c.reserved, 4)); if (showCost && isSerialProduct_(p)) c.inventory_cost=round_(serialValues[p.id] || 0,4); return c; });
   return stripCost_(list, user);
 }
 function productSave_(p, user) {
@@ -1017,7 +1018,9 @@ function ean13Check_(d12) {
  *  manufacturer barcodes — numbered on from the highest one already issued. Products that already have a
  *  barcode are left untouched. */
 function productBarcodes_(p, user) {
-  var ids = Array.isArray(p.ids) ? p.ids.slice(0, 500) : [];
+  var ids = Array.isArray(p.ids) ? p.ids : [];
+  if (ids.length > 500) fail_('Assign barcodes to at most 500 products per request; use batched assignment');
+  if (ids.some(function(id,i) { return typeof id !== 'string' || !id || ids.indexOf(id) !== i; })) fail_('Invalid or duplicate product selection');
   if (!ids.length) fail_('Select at least one product');
   var prods = all_('Products'), pm = indexBy_(prods), used = {}, next = 0, out = [];
   prods.forEach(function (x) {
@@ -1124,6 +1127,16 @@ function customersList_() {
     if (c.link_id) { sb = sb || supplierBalances_(); o.link_balance = sb[c.link_id] || 0; }
     return o;
   });
+}
+/** Lists used by pickers must not expose unrelated financial accounts. */
+function visibleCustomers_(user) {
+  return customersList_().map(function(c) {
+    if (!can_(user,'customers') && !can_(user,'pos')) return {id:c.id,name:c.name,phones:c.phones,addresses:c.addresses,active:c.active};
+    var o=Object.assign({},c); if (!can_(user,'customers')) delete o.opening_balance; if (!can_(user,'suppliers')) delete o.link_balance; return o;
+  });
+}
+function visibleSuppliers_(user) {
+  return suppliersList_().map(function(c) { var o=Object.assign({},c); if (!can_(user,'suppliers')) delete o.opening_balance; if (!can_(user,'customers')) delete o.link_balance; return o; });
 }
 function customerSave_(p, user) {
   var name = String(p.name || '').trim(); if (!name) fail_('Customer name is required');
@@ -2244,8 +2257,8 @@ function bootstrap_(p, user) {
     warrantyPeriods: all_('WarrantyPeriods').map(function (w) { return { id: w.id, label: w.label, days: w.days }; }),
     units: units_().map(function (u) { return { id: u.id, name: u.name, label: u.label, decimal: u.decimal }; }),
     products: productsList_(user),
-    customers: customersList_().filter(function (c) { return c.active; }),
-    suppliers: can_(user, 'purchase') || can_(user, 'suppliers') ? suppliersList_().filter(function (s) { return s.active; }) : [],
+    customers: visibleCustomers_(user).filter(function (c) { return c.active; }),
+    suppliers: can_(user, 'purchase') || can_(user, 'suppliers') ? visibleSuppliers_(user).filter(function (s) { return s.active; }) : [],
     serverTime: now_(), serverToday: today_()
   };
 }
@@ -2387,7 +2400,9 @@ function purchaseCreate_(p, user) {
   });
 
   subtotal = round_(subtotal);
-  var discount = Math.min(Math.max(num_(p.discount), 0), subtotal), total = round_(subtotal - discount);
+  var discount = Number(p.discount == null || p.discount === '' ? 0 : p.discount);
+  if (!isFinite(discount) || discount < 0 || discount > subtotal) fail_('Purchase discount must be between 0 and the subtotal');
+  var total = round_(subtotal - discount);
   // Allocate the invoice discount cumulatively, so line values add to the exact payable.
   var grossAllocated = 0, netAllocated = 0;
   lines.forEach(function (l) {
@@ -3021,12 +3036,12 @@ function statement_(table, key, parties, sign, p) {
 function customerStatement_(p) { return statement_('CustomerLedger', 'customer_id', all_('Customers'), 1, p); }
 function supplierStatement_(p) { return statement_('SupplierLedger', 'supplier_id', all_('Suppliers'), -1, p); }
 /** Statements of several customers / suppliers at once, for exporting the selected parties. */
-function partyStatements_(kind, p) {
+function partyStatements_(kind, p, user) {
   var ids = Array.isArray(p.ids) ? p.ids : [];
   if (ids.length > 300) fail_('Export at most 300 statements per request; use batched export');
   if (ids.some(function(id, i) { return typeof id !== 'string' || !id || ids.indexOf(id) !== i; })) fail_('Invalid or duplicate statement selection');
   if (!ids.length) fail_('Select at least one ' + kind);
-  var parties = kind === 'customer' ? customersList_() : suppliersList_(), map = indexBy_(parties);
+  var parties = kind === 'customer' ? visibleCustomers_(user) : visibleSuppliers_(user), map = indexBy_(parties);
   if (ids.some(function(id) { return !map[id]; })) fail_('A selected party no longer exists. Refresh the list before exporting');
   return ids.map(function (id) {
     var st = kind === 'customer' ? customerStatement_({ customer_id: id }) : supplierStatement_({ supplier_id: id });
@@ -4581,16 +4596,16 @@ var ROUTES = {
   'master.import':    r_('products', masterImport_, true),
   'price.update':     r_('products', priceUpdate_, true),
 
-  'customers.list':   r_(null, function () { return customersList_(); }),
+  'customers.list':   r_(null, function (p, user) { return visibleCustomers_(user); }),
   'customer.save':    r_(null, function (p, u) { if (!p.id && !can_(u, 'customers') && !can_(u, 'pos')) fail_('Permission denied'); return customerSave_(p, u); }, true),
   'customer.quickAdd':r_('pos', customerQuickAdd_, true),
   'customer.statement': r_('customers', customerStatement_),
-  'customer.statements': r_('customers', function (p) { return partyStatements_('customer', p); }),
+  'customer.statements': r_('customers', function (p, user) { return partyStatements_('customer', p, user); }),
   'customer.delete':  r_('customers', function (p, u) { return partyDelete_('customer', p, u); }, true),
-  'supplier.statements': r_('suppliers', function (p) { return partyStatements_('supplier', p); }),
+  'supplier.statements': r_('suppliers', function (p, user) { return partyStatements_('supplier', p, user); }),
   'supplier.delete':  r_('suppliers', function (p, u) { return partyDelete_('supplier', p, u); }, true),
   'customer.payment': r_('customers', customerPayment_, true),
-  'suppliers.list':   r_('suppliers', function () { return suppliersList_(); }),
+  'suppliers.list':   r_('suppliers', function (p, user) { return visibleSuppliers_(user); }),
   'supplier.save':    r_('suppliers', supplierSave_, true),
   'supplier.statement': r_('suppliers', supplierStatement_),
   'supplier.payment': r_('suppliers', supplierPayment_, true),

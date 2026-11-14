@@ -208,7 +208,7 @@ function PartyDetail({ kind, id, onClose, onEdit, onChanged, onDeleted }) {
             <div className="kv" style={{ flex: 1 }}>
               <div><span>Phones</span><b>{st.data.phones || '—'}</b></div>
               <div><span>Opening</span><b>{money(st.data.opening)}</b></div>
-              {party?.combined && <div><span>As {kind === 'customer' ? 'supplier (you owe)' : 'customer (owes you)'}</span><b>{money(party.link_balance)}</b></div>}
+              {party?.combined && party.link_balance !== undefined && <div><span>As {kind === 'customer' ? 'supplier (you owe)' : 'customer (owes you)'}</span><b>{money(party.link_balance)}</b></div>}
               <div><span>Closing balance</span><b style={{ color: st.data.closing > 0 ? 'var(--warn)' : 'var(--ok)' }}>{money(st.data.closing)} {st.data.closing > 0 ? `(${c.pos.toLowerCase()})` : st.data.closing < 0 ? `(${c.neg.toLowerCase()})` : ''}</b></div>
             </div>
             <DateRange {...range} onChange={setRange} />
