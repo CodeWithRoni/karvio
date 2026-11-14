@@ -10,7 +10,7 @@ const db = await freshDatabase();
 const c = await apiClient(db);
 const {q} = c;
 const metrics = c.metrics;
-const whole = createHandler({rpc: rpcFor(db), scopedReads: false, log: () => {}});
+const whole = createHandler({rpc: rpcFor(db), scopedReads: false, readCache: false, log: () => {}});
 const wholeAsk = async (action, payload) => (await whole(new Request('http://karvio.test', {method: 'POST',
   body: JSON.stringify({action, payload, token: c.token, request_id: crypto.randomUUID()})}))).json();
 

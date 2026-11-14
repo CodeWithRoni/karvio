@@ -27,7 +27,7 @@ export const sameValue=(a,b)=>canonical(a)===canonical(b);
 // narrow-read database functions exist (they arrive with a migration that may lag a deploy).
 // PostgREST: PGRST202 "Could not find the function"; Postgres: 42883 undefined_function.
 const missingFunction=e=>e?.code==='PGRST202'||e?.code==='42883'||/Could not find the function|function .* does not exist/i.test(String(e?.message||''));
-const newScopeState=()=>({learned:new Map(),learnedPrivate:new Map(),narrowUnavailable:false,readUnavailable:false});
+const newScopeState=()=>({learned:new Map(),learnedPrivate:new Map(),narrowUnavailable:false,readUnavailable:false,cacheUnavailable:false});
 function remember(map,key,names){const set=map.get(key)||new Set();names.forEach(t=>set.add(t));map.set(key,set);}
 /**
  * How much of the database a request reads:
@@ -73,7 +73,9 @@ function snapshotCall(plan,body,protocol,state){
   default:return ['karvio_snapshot',{}];
  }
 }
-export function createHandler({rpc,dispatch=()=>{},protocol=2,scopedReads=true,narrowReads=true,allowRequest=async()=>true,log=logNotable,retryDelay=attempt=>attempt*(25+Math.random()*50)}) {
+// Heavy read-only screens whose answers are reused until the shop changes (karvio_cached_read).
+export const CACHED_READS=new Set(['dashboard','reports','profit.report']);
+export function createHandler({rpc,dispatch=()=>{},protocol=2,scopedReads=true,narrowReads=true,readCache=true,allowRequest=async()=>true,log=logNotable,retryDelay=attempt=>attempt*(25+Math.random()*50)}) {
  const scopeState=newScopeState();
  return async request=>{
   if(request.method==='OPTIONS')return new Response(null,{status:204,headers});
@@ -101,6 +103,13 @@ export function createHandler({rpc,dispatch=()=>{},protocol=2,scopedReads=true,n
    if(body.action==='ping'&&protocol===2){
     const status=await call('karvio_status',{});
     return finish(reply({ok:true,data:{app:'Karvio',version:APP_VERSION,buildId:BUILD_ID,backend:'supabase',requiresSetup:status.requiresSetup,apiCapabilities:{idempotency:true,durableRecovery:true,credentialSessions:true,purchaseDuePayment:true,saleDuePayment:true,rowDeltas:true,boundedBackup,chunkedRestore:{maxBytes:16*1024*1024,partChars:128*1024}}}}));
+   }
+   // Same answer as last time if nothing was saved since (see the read-cache migration for the rules).
+   const cacheKey=readCache&&protocol===2&&scopedReads&&CACHED_READS.has(body.action)&&typeof body.token==='string'&&!scopeState.cacheUnavailable&&!globalThis.__karvioTraceWholeShop
+    ?body.action+':'+hash(canonical(body.payload??{})):null;
+   if(cacheKey){
+    try{const hit=await call('karvio_cached_read',{token:body.token,cache_key:cacheKey});if(hit!==null&&hit!==undefined){m.scope='cache';return finish(reply({ok:true,data:hit}),'ok');}}
+    catch(error){if(missingFunction(error))scopeState.cacheUnavailable=true;else throw error;}
    }
    const plan=planFor(body.action,{protocol,scopedReads,narrowReads,payload:body.payload},scopeState);
    // Up to 4 tries when another counter saves first; a narrow read may also widen a few times.
@@ -153,7 +162,10 @@ export function createHandler({rpc,dispatch=()=>{},protocol=2,scopedReads=true,n
     if(snapshot.readOnlyScope&&Object.keys(changes).length){plan.kind='full';plan.widening=true;m.widened=(m.widened||0)+1;continue;}
     const privateChanges=result.privateDelta||{};
     const changed=Object.keys(changes).length||Object.keys(privateChanges).length||!sameValue(result.metadata,snapshot.metadata);
-    if(!changed)return finish(reply(result.response),result.response.ok?'ok':'rejected');
+    if(!changed){
+     if(cacheKey&&result.response.ok){try{await call('karvio_cache_store',{token:body.token,cache_key:cacheKey,revision:snapshot.revision,response:result.response.data});}catch{}}
+     return finish(reply(result.response),result.response.ok?'ok':'rejected');
+    }
     const commitArgs={expected_revision:snapshot.revision,changes,next_metadata:result.metadata,initialize_owner:initializing,setup_token_hash:initializing?hash(String(body.payload?.setup_key||'')):null,backup_reason:result.backupReason,sms_jobs:result.outbox};
     const committed=await call(snapshot.privateRows?'karvio_commit_rows':protocol===2?'karvio_commit_delta':'karvio_commit',snapshot.privateRows?{...commitArgs,private_changes:privateChanges}:commitArgs);
     if(committed.committed){

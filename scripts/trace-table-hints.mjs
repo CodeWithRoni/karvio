@@ -8,7 +8,9 @@ import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'frontend/package.json'), 'utf8'));
-const files = [...new Set(['test:supabase', 'test:performance'].flatMap(k => [...pkg.scripts[k].matchAll(/node (\.\.\/backend\/test\/[\w.-]+\.m?js)/g)].map(m => m[1])))];
+// read-cache.mjs checks reused answers, which tracing turns off (every request must run the engine).
+const files = [...new Set(['test:supabase', 'test:performance'].flatMap(k => [...pkg.scripts[k].matchAll(/node (\.\.\/backend\/test\/[\w.-]+\.m?js)/g)].map(m => m[1])))]
+  .filter(f => !f.endsWith('/read-cache.mjs'));
 const out = path.join(root, '.trace-tables.jsonl');
 fs.rmSync(out, {force: true});
 const env = {...process.env, KARVIO_TRACE_OUT: out, NODE_OPTIONS: `--import ${path.join(root, 'scripts/trace-table-preload.mjs')}`};

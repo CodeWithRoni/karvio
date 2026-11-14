@@ -84,7 +84,7 @@ const actions = [
 ];
 // The same requests through the v1.2.4 read path (for comparison), then through the current one.
 const oldMetrics = [];
-const oldHandler = createHandler({rpc: rpcFor(db), narrowReads: false, log: m => oldMetrics.push(m)});
+const oldHandler = createHandler({rpc: rpcFor(db), narrowReads: false, readCache: false, log: m => oldMetrics.push(m)});
 const askOld = async (action, payload) => (await oldHandler(new Request('http://karvio.test', {method: 'POST',
   body: JSON.stringify({action, payload, token: c.token, request_id: crypto.randomUUID()})}))).json();
 const single = [];
@@ -99,9 +99,12 @@ for (const [action, payload] of actions) {
     runs.push(c.metrics[before]);
   }
   const med = list => { const ms = list.map(m => m.ms).sort((a, b) => a - b); return ms[Math.floor(ms.length / 2)]; };
+  // Reused answers (read cache) are shown separately from computing ones.
+  const computed = runs.filter(m => m.scope !== 'cache'), cached = runs.filter(m => m.scope === 'cache');
   single.push({action: action + (payload?.type ? ':' + payload.type : ''),
     beforeMs: oldRuns.length ? med(oldRuns) : '', beforeKB: oldRuns.length ? Math.round(oldRuns.at(-1).readBytes / 1024) : '',
-    nowMs: med(runs), nowKB: Math.round(runs.at(-1).readBytes / 1024), engineMs: runs.at(-1).engineMs, read: runs.at(-1).scope || ''});
+    nowMs: med(computed), nowKB: Math.round(computed.at(-1).readBytes / 1024), engineMs: computed.at(-1).engineMs, read: computed.at(-1).scope || '',
+    reusedMs: cached.length ? med(cached) : ''});
 }
 
 // ---------- 4. Several counters saving at the same moment ----------
