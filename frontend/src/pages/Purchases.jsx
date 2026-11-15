@@ -458,7 +458,9 @@ function PReturnForm({ detail, onClose, onDone }) {
       items: lines.map((l) => ({ purchase_item_id: l.id, qty: Number(l.qty) || 0, serials: l.serials })).filter((l) => l.qty > 0),
       refund: mode === 'adjust' ? { mode: 'adjust' } : { mode: 'cash', account_id: acc, amount: Number(amount) }
     }), 'Purchase return saved — stock reduced');
-    await refresh('products', 'suppliers'); onDone();
+    // The return is saved: close first, so a failed list refresh can never invite a second return.
+    onDone();
+    await refresh('products', 'suppliers').catch(() => useStore.getState().toast('Return saved. Reload the page to refresh stock and supplier balances.', 'err'));
   };
   return (
     <Modal open onClose={onClose} size="lg" title={`Return to supplier — ${purchase.invoice_no}`} footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} disabled={!lines.some(l => Number(l.qty) > 0)} onClick={save}>Record return</Btn></>}>

@@ -1,5 +1,7 @@
 # Review fixes — verification (15 November 2026, not yet pushed)
 
+- 15 November 2026, second review fixes: npm test, test:supabase, test:performance (adds review-fixes-2.mjs: 15 checks), build and 151/151 Playwright tests passed locally.
+
 - npm test, test:supabase (now starts with write-actions.mjs) and test:performance (adds request-limits.mjs, payment-amounts.mjs) passed; tests call the database as service_role.
 - Browser suite: 151 cases; stream-backup.spec.js failed once with Playwright "Response has been disposed" in its route mock and passed on rerun (test flakiness, not app behaviour).
 - scripts/trace-table-hints.mjs: hints unchanged (53 actions, 15 append-only, 29 with receipts).

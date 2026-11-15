@@ -970,11 +970,16 @@ function productSave_(p, user) {
   var wType = hasW ? (service || p.warranty_type === 'invoice' ? 'invoice' : 'serial') : '';
   if (hasW && wType === 'serial' && isDecimalUnit_(unit)) fail_('Serial-based warranty needs a unit sold in whole numbers (like pcs)');
   var barcode = String(p.barcode || '').trim(), sku = String(p.sku || '').trim();
+  var self = p.id ? all_('Products').filter(function (x) { return x.id === p.id; })[0] : null, low = function (v) { return String(v || '').trim().toLowerCase(); };
+  // A scan must find one product: barcodes and SKUs are unique together, ignoring capital letters.
+  // Only a new or changed code is checked, so an older duplicate never blocks editing other fields.
+  var checkBarcode = barcode && (!self || low(self.barcode) !== low(barcode)), checkSku = sku && (!self || low(self.sku) !== low(sku));
+  if (barcode && sku && low(barcode) === low(sku) && (checkBarcode || checkSku) && barcode !== sku) fail_('Barcode and SKU differ only in capital letters; use the same code or two different codes');
   all_('Products').forEach(function (x) {
     if (x.id === p.id) return;
     if (nameKey_(x.name) === nameKey_(name)) fail_('A product named "' + x.name + '" already exists');
-    if (barcode && x.barcode === barcode) fail_('Barcode already used by: ' + x.name);
-    if (sku && x.sku === sku) fail_('SKU already used by: ' + x.name);
+    if (checkBarcode && (low(x.barcode) === low(barcode) || low(x.sku) === low(barcode))) fail_('Barcode already used by: ' + x.name);
+    if (checkSku && (low(x.sku) === low(sku) || low(x.barcode) === low(sku))) fail_('SKU already used by: ' + x.name);
   });
   var classifications = indexBy_(all_('Categories'));
   if (p.category_id && (!classifications[p.category_id] || classifications[p.category_id].parent_id)) fail_('Select a valid product group');
@@ -1928,7 +1933,8 @@ function quoteSend_(p, user) {
   if (live.length >= QUOTE_LINK_MAX) fail_('Too many quotation links are open right now. Try again after some expire');
   var token = newLinkToken_(), created = Date.now(), expires = created + QUOTE_LINK_DAYS * 864e5;
   var quote = {
-    no: 'Q-' + String(created).slice(-7), date: today_(), customer: quoteText_(p.customer, 100), phone: digits.length === 13 ? '0' + digits.slice(3) : digits,
+    // Date, time and two random digits: does not repeat (the old 7-digit clock suffix repeated every ~2.8 hours).
+    no: 'Q-' + Utilities.formatDate(new Date(created), TZ_(), "yyyy-MM-dd'T'HH:mm:ss").replace(/\D/g, '').slice(2) + ('0' + Math.floor(Math.random() * 100)).slice(-2), date: today_(), customer: quoteText_(p.customer, 100), phone: digits.length === 13 ? '0' + digits.slice(3) : digits,
     title: quoteText_(p.title, 120) || 'Custom PC build', valid_days: validDays, lines: clean, subtotal: subtotal, discount: discount,
     total: round_(subtotal - discount), note: String(p.note || '').trim().slice(0, 1000), sent_by: user.name,
     expires_at: Utilities.formatDate(new Date(expires), TZ_(), "yyyy-MM-dd'T'HH:mm:ss")
@@ -2971,6 +2977,8 @@ function preturnCreate_(p, user) {
     accId = rf.account_id; received = round_(rf.amount === undefined ? total : rf.amount);
     if (!all_('Accounts').some(function (a) { return a.id === accId && a.active; })) fail_('Select the account that received the refund');
     if (received < 0 || received > total + 0.005) fail_('Refund must be between 0 and ' + total);
+    // Without a supplier ledger, an unrefunded part would be recorded nowhere.
+    if (!pur.supplier_id && Math.abs(received - total) > 0.005) fail_('This purchase has no supplier, so the full return value (' + total + ') must be refunded to an account');
   } else if (!pur.supplier_id) fail_('This purchase has no supplier — record the refund against an account');
 
   var no = nextNo_('seq_preturn', 'PR-'), date = today_();
@@ -3082,7 +3090,12 @@ function partyDelete_(kind, p, user) {
 
 function expenseCreate_(p, user) {
   var amt = round_(p.amount); if (amt <= 0) fail_('Amount must be greater than 0');
-  var cat = String(p.category || '').trim(); if (!cat) fail_('Select an expense category');
+  var cat = String(p.category || '').trim().replace(/\s+/g, ' '); if (!cat) fail_('Select an expense category');
+  // Same rule as editing: only categories from the list (Expenses → Categories), saved with the list's spelling.
+  var cats = []; try { cats = JSON.parse(getSetting_('expense_categories', '[]')); } catch (err) {}
+  var listed = (Array.isArray(cats) ? cats : []).filter(function (c) { return nameKey_(c) === nameKey_(cat); })[0];
+  if (!listed) fail_('Select a category from the expense category list');
+  cat = String(listed).trim();
   var acc = all_('Accounts').filter(function (a) { return a.id === p.account_id && a.active; })[0]; if (!acc) fail_('Select the account used for payment');
   var date = bookDate_(p.date, 'expense');
   var e = insert_('Expenses', { date: date, category: cat, amount: amt, account_id: acc.id, note: p.note || '', user: user.name, status: 'active', created_at: now_() });
@@ -4450,6 +4463,9 @@ function activeReportTotals_(report) {
 }
 function reportsRaw_(p, user) {
   var from = p.from || '', to = p.to || '', group = p.group || 'invoice', cost = can_(user, 'cost');
+  // Without "View sales made by other staff", every report shows only the user's own sales (and their returns).
+  var salesById = null, saleOf = function (id) { salesById = salesById || indexBy_(all_('Sales')); return salesById[id]; };
+  var ownSale = function (s) { return !!s && (can_(user, 'sales.all') || s.user_id === user.id); };
   var status = p.status || 'active', okStatus = function (s) { return status === 'all' || s === status; };
   var period = (from || to) ? ' (' + (from || '…') + ' → ' + (to || '…') + ')' : '';
   var T = p.type;
@@ -4510,8 +4526,8 @@ function reportsRaw_(p, user) {
     var days = {};
     function d_(k) { return days[k] = days[k] || { date: k, invoices: 0, items: 0, item_quantities: {}, sales: 0, returns: 0, purchases: 0, purchase_returns: 0, expenses: 0, profit: 0 }; }
     var sIt = {}; all_('SaleItems').forEach(function (i) { var u=i.unit || 'pcs', units=sIt[i.sale_id]=sIt[i.sale_id] || {}; units[u]=(units[u] || 0)+i.qty; });
-    all_('Sales').forEach(function (s) { if (s.status === 'active' && inRange_(s.date, from, to)) { var r = d_(s.date); r.invoices++; Object.keys(sIt[s.id] || {}).forEach(function(u) { r.item_quantities[u]=(r.item_quantities[u] || 0)+sIt[s.id][u]; }); r.sales += s.total; r.profit += s.profit; } });
-    all_('SalesReturns').forEach(function (s) { if (s.status === 'active' && inRange_(s.date, from, to)) { var r = d_(s.date); r.returns += s.total; r.profit -= returnProfit_(s); } });
+    all_('Sales').forEach(function (s) { if (s.status === 'active' && ownSale(s) && inRange_(s.date, from, to)) { var r = d_(s.date); r.invoices++; Object.keys(sIt[s.id] || {}).forEach(function(u) { r.item_quantities[u]=(r.item_quantities[u] || 0)+sIt[s.id][u]; }); r.sales += s.total; r.profit += s.profit; } });
+    all_('SalesReturns').forEach(function (s) { if (s.status === 'active' && ownSale(saleOf(s.sale_id)) && inRange_(s.date, from, to)) { var r = d_(s.date); r.returns += s.total; r.profit -= returnProfit_(s); } });
     all_('Purchases').forEach(function (s) { if (s.status === 'active' && inRange_(s.date, from, to)) d_(s.date).purchases += s.total; });
     all_('PurchaseReturns').forEach(function (s) { if (s.status === 'active' && inRange_(s.date, from, to)) d_(s.date).purchase_returns += s.total; });
     all_('Expenses').forEach(function (s) { if (s.status === 'active' && inRange_(s.date, from, to)) { var r = d_(s.date); r.expenses += s.amount; r.profit -= s.amount; } });
@@ -4553,7 +4569,7 @@ function reportsRaw_(p, user) {
   }
 
   if (T === 'product_sales') {
-    var sm = indexBy_(all_('Sales').filter(function (s) { return s.status === 'active' && inRange_(s.date, from, to); })), pg2 = {};
+    var sm = indexBy_(all_('Sales').filter(function (s) { return s.status === 'active' && ownSale(s) && inRange_(s.date, from, to); })), pg2 = {};
     var reportItems = all_('SaleItems'), invoiceItems = {};
     var itemCosts = reportItemCosts_(reportItems,sm,'sale_id',function(s) { return s.cost; });
     reportItems.forEach(function(i) { (invoiceItems[i.sale_id] = invoiceItems[i.sale_id] || []).push(i); });
@@ -4621,7 +4637,8 @@ var ROUTES = {
   'supplier.statements': r_('suppliers', function (p, user) { return partyStatements_('supplier', p, user); }),
   'supplier.delete':  r_('suppliers', function (p, u) { return partyDelete_('supplier', p, u); }, true),
   'customer.payment': r_('customers', customerPayment_, true),
-  'suppliers.list':   r_('suppliers', function (p, user) { return visibleSuppliers_(user); }),
+  // Purchase staff pick suppliers too (bootstrap already gives them this list without opening balances).
+  'suppliers.list':   r_(null, function (p, user) { if (!can_(user, 'suppliers') && !can_(user, 'purchase')) fail_('Permission denied: ' + PERMS.suppliers); return visibleSuppliers_(user); }),
   'supplier.save':    r_('suppliers', supplierSave_, true),
   'supplier.statement': r_('suppliers', supplierStatement_),
   'supplier.payment': r_('suppliers', supplierPayment_, true),

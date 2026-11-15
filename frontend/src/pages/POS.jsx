@@ -193,7 +193,7 @@ export default function POS() {
     F8: () => discRef.current?.focus(),
     F9: () => checkout(false),
     F10: () => checkout(true),
-    'mod+delete': () => cart.length && confirm('Clear the cart?') && reset()
+    'mod+delete': async () => { if (cart.length && await ask({ title: 'Clear the cart?', message: 'All items, the customer and payments on this screen will be removed.' })) reset(); }
   }, [cart, pays, customerId, discount, useCredit, note, sendSms, busy, tier, nextPay]);
 
   return (

@@ -80,7 +80,7 @@ const actions = [
   ['sale.detail', {id: sale1}], ['customer.statement', {customer_id: cust1}], ['account.ledger', {account_id: cash}],
   ['sale.create', () => ({customer_id: cust1, items: [{product_id: products[3].id, qty: 1, price: 150}], payments: [{account_id: cash, amount: 150}], send_sms: false})],
   ['customer.payment', () => ({customer_id: customers[2].id, account_id: cash, amount: 10})],
-  ['expense.create', () => ({date: today, category: 'Load', amount: 5, account_id: cash})],
+  ['expense.create', () => ({date: today, category: 'Other', amount: 5, account_id: cash})],
 ];
 // The same requests through the v1.2.4 read path (for comparison), then through the current one.
 const oldMetrics = [];

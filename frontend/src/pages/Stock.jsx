@@ -6,7 +6,7 @@ import { money, qty as fqty, isDecimalUnit } from '../lib/format';
 import DataTable from '../components/DataTable';
 import { stockQuantityTotal, stockMoneyTotal } from '../lib/stockTotals';
 import MasterData from '../components/MasterData';
-import { PageHead, Tabs, Modal, Btn, Field, Badge, Select, useAction, noWheel } from '../components/ui';
+import { PageHead, Tabs, Modal, Btn, Field, Badge, Select, useAction, useConfirm, noWheel } from '../components/ui';
 
 const blank = { name: '', sku: '', barcode: '', category_id: '', subcategory_id: '', brand_id: '', unit: 'pcs', roll_length: '', cost_price: '', sale_price: '', wholesale_price: '', low_stock: '', has_warranty: false, warranty_type: 'serial', warranty_days: 0, active: true, service: false, description: '' };
 // Auto name = Brand + Product group + Category + Model + optional # description.
@@ -103,6 +103,7 @@ function ProductForm({ initial, onClose }) {
   const setPart = (patch) => setF((cur) => { const next = { ...cur, ...patch }; return auto ? { ...next, name: autoName(next) } : next; });
   const dup = nameKey(f.name) && products.find((p) => p.id !== f.id && nameKey(p.name) === nameKey(f.name));
   const [busy, run] = useAction();
+  const [confirmUI, ask] = useConfirm();
   const s = (k) => (e) => setF({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value });
   const tops = categories.filter((c) => !c.parent_id);
   const subs = categories.filter((c) => c.parent_id && c.parent_id === f.category_id);
@@ -115,7 +116,7 @@ function ProductForm({ initial, onClose }) {
     await refresh('products'); onClose();
   };
   const remove = async () => {
-    if (!confirm('Delete this unused product? Products with history cannot be deleted.')) return;
+    if (!(await ask({ title: 'Delete product?', message: 'Delete this unused product? Products with history cannot be deleted.' }))) return;
     const r = await run(() => api('product.delete', { id: f.id }));
     useStore.getState().toast(r.deleted ? 'Product deleted' : 'Product has history — it was deactivated');
     await refresh('products'); onClose();
@@ -175,6 +176,7 @@ function ProductForm({ initial, onClose }) {
         </div>
         {!isNew && <label className="check"><input type="checkbox" checked={f.active} onChange={s('active')} /> Active (available for sale)</label>}
       </div>
+      {confirmUI}
     </Modal>
   );
 }

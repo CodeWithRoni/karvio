@@ -1,3 +1,16 @@
+# 15 November 2026 — second full review fixes (pending push)
+
+- Purchase staff (Purchase permission without Suppliers) can refresh the supplier list again; they already got it at sign-in. Opening balances stay hidden.
+- Supplier return: the dialog closes as soon as the return is saved, even if the list refresh after it fails, so it cannot be saved twice. Customer/supplier form refresh errors no longer surface as unhandled errors.
+- A purchase without a supplier must be refunded in full when returned (an unrefunded part had no ledger to go to), same as a cash sales return.
+- Quotation numbers use the date, time and two random digits (`Q-` + 14 digits); the old 7-digit clock suffix repeated every few hours.
+- Barcodes and SKUs are unique together and ignore capital letters (a barcode can no longer equal another product's SKU). Only new or changed codes are checked, so older duplicates never block editing.
+- New expenses need a category from the expense category list (as editing already did) and are saved with the list's spelling.
+- Product-wise sales and Daily summary reports respect "View sales made by other staff", like the Sales report.
+- Native browser confirm boxes (clear cart shortcut, delete product) replaced with the app's confirm dialog.
+- Release workflow: business-rule, database and performance tests run once before any installer is built.
+- Test: backend/test/review-fixes-2.mjs.
+
 # 15 November 2026 — repository cleanup (pending push)
 
 Removed files no build, deploy or test uses: the committed `frontend/dist` build (workflows build it), the Tauri wrapper (`frontend/src-tauri`, its scripts and `@tauri-apps/cli`), the retired offline desktop pieces and their tests (`data-folder.cjs`, `preload.cjs`, `offline*.cjs`, two unused UI checks, `supabase-sql.mjs`), Apps Script `appsscript.json`, old Google Sheets setup guides (`SETUP.md`, `UPLOAD_GUIDE-বাংলা.md`), old release notes 1.2.2/1.2.3, `docs/archive`, `docs/PRODUCTION-READINESS.md` and the hand-off checksum files (`SHA256SUMS.txt`, `RELEASE-MANIFEST.json`, `scripts/prepare-review.cjs`). The Code.gs test runner moved from `frontend/desktop/offline-runtime.cjs` to `backend/test/gs-runtime.cjs`. Everything remains in the git history.

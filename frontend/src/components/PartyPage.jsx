@@ -132,7 +132,7 @@ function PartyForm({ kind, initial, onClose, onSaved }) {
   const save = async () => {
     const payload = { ...f, phones: f.phones.filter(Boolean), addresses: kind === 'customer' ? f.addresses.filter(Boolean) : undefined };
     await run(() => api(c.save, payload), f.id ? 'Saved' : `${kind === 'customer' ? 'Customer' : 'Supplier'} added`);
-    useStore.getState().refresh('customers', 'suppliers');
+    useStore.getState().refresh('customers', 'suppliers').catch(() => {});
     onSaved(); onClose();
   };
   const listEdit = (key, label, ph) => (
