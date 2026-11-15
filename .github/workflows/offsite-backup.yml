@@ -1,14 +1,14 @@
 name: Off-site backup
 # Every night: download the shop as a .karvio.gz backup (the same file the app's "Download backup"
-# makes), lock it in a password-protected 7z archive, prove the archive restores into an empty
-# database, then keep it here for 90 days under Actions → this workflow → the run → Artifacts.
+# makes), prove it restores into an empty database, then keep it here for 90 days under
+# Actions → this workflow → the run → Artifacts.
 #
-# Needs two repository secrets (Settings → Secrets and variables → Actions):
-#   SUPABASE_ACCESS_TOKEN  already used by the deploy workflow
-#   BACKUP_PASSWORD        any long password (16+ characters); keep a copy somewhere safe.
-#                          Without it the backups cannot be opened.
-# To restore: download the artifact, open the .7z with 7-Zip using BACKUP_PASSWORD, then in Karvio
-# choose Restore backup and pick the .karvio.gz file inside.
+# Needs the repository secret SUPABASE_ACCESS_TOKEN (already used by the deploy workflow).
+# The file is NOT password-protected (owner's choice). While this repository is public, anyone
+# signed in to GitHub can download these backups: all shop records, customer phone numbers and
+# user password hashes. Making the repository private limits them to its owner and collaborators.
+# To restore: download the artifact, unzip it, then in Karvio choose Restore backup and pick the
+# .karvio.gz file inside.
 on:
   schedule:
     - cron: '17 21 * * *' # 03:17 Asia/Dhaka, after the in-database daily backup at 02:00
@@ -26,12 +26,10 @@ jobs:
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_PROJECT_ID: svqhlotlzgmwjneuphpe
-      BACKUP_PASSWORD: ${{ secrets.BACKUP_PASSWORD }}
     steps:
-      - name: Require secrets
+      - name: Require secret
         run: |
           if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then echo "::error::SUPABASE_ACCESS_TOKEN secret is missing."; exit 1; fi
-          if [ "${#BACKUP_PASSWORD}" -lt 16 ]; then echo "::error::BACKUP_PASSWORD secret is missing or shorter than 16 characters."; exit 1; fi
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -54,37 +52,21 @@ jobs:
           test -s "$file"
           echo "name=$(basename "$file")" >> "$GITHUB_OUTPUT"
           echo "file=$file" >> "$GITHUB_OUTPUT"
-      - name: Encrypt (7z, AES-256, file names hidden)
-        id: encrypt
-        run: |
-          set -euo pipefail
-          umask 077
-          command -v 7z >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq p7zip-full; }
-          stamp=$(TZ=Asia/Dhaka date +%Y-%m-%d-%H%M)
-          out="$RUNNER_TEMP/out"; mkdir -p "$out"
-          archive="$out/Karvio-offsite-backup-$stamp.7z"
-          7z a -y -t7z -mx=0 -mhe=on -p"$BACKUP_PASSWORD" "$archive" "${{ steps.download.outputs.file }}" < /dev/null > /dev/null
-          rm -f "${{ steps.download.outputs.file }}"
-          echo "archive=$archive" >> "$GITHUB_OUTPUT"
-          echo "stamp=$stamp" >> "$GITHUB_OUTPUT"
-      - name: Restore test from the encrypted archive
-        run: |
-          set -euo pipefail
-          umask 077
-          check="$RUNNER_TEMP/check"; mkdir -p "$check"
-          7z x -y -p"$BACKUP_PASSWORD" -o"$check" "${{ steps.encrypt.outputs.archive }}" < /dev/null > /dev/null
-          node scripts/offsite-restore-check.mjs "$check/${{ steps.download.outputs.name }}"
-          rm -rf "$check"
+      - name: Restore test
+        run: node scripts/offsite-restore-check.mjs "${{ steps.download.outputs.file }}"
+      - name: Name the artifact
+        id: stamp
+        run: echo "stamp=$(TZ=Asia/Dhaka date +%Y-%m-%d-%H%M)" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
-          name: karvio-offsite-backup-${{ steps.encrypt.outputs.stamp }}
-          path: ${{ steps.encrypt.outputs.archive }}
+          name: karvio-offsite-backup-${{ steps.stamp.outputs.stamp }}
+          path: ${{ steps.download.outputs.file }}
           retention-days: 90
           compression-level: 0
           if-no-files-found: error
       - name: Clean up
         if: always()
-        run: rm -rf "$RUNNER_TEMP/plain" "$RUNNER_TEMP/check" "$RUNNER_TEMP/out"
+        run: rm -rf "$RUNNER_TEMP/plain"
       - name: Keep the nightly schedule switched on
         if: success() && github.event_name == 'schedule'
         env:

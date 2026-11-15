@@ -1,6 +1,6 @@
 // Off-site backup: writes the same .karvio.gz file the app's "Download backup" makes, by reading the
 // shop through the Supabase Management API (no Karvio sign-in needed). Used by
-// .github/workflows/offsite-backup.yml; the workflow encrypts the file before storing it.
+// .github/workflows/offsite-backup.yml.
 //
 //   SUPABASE_ACCESS_TOKEN=... SUPABASE_PROJECT_ID=... node scripts/offsite-backup.mjs <output-folder>
 //

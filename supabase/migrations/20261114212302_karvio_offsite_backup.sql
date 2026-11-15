@@ -1,5 +1,5 @@
 -- Off-site backups: a GitHub Actions job reads the shop through the Supabase Management API (as the
--- database owner) and stores the same .karvio.gz file the app downloads, encrypted, outside Supabase.
+-- database owner) and stores the same .karvio.gz file the app downloads outside Supabase.
 -- No Karvio sign-in is involved, so these functions are not callable by any API role.
 create function karvio_private.offsite_export_begin() returns jsonb language plpgsql security invoker set search_path='' as $$
 declare job karvio_private.transfer_jobs; new_id text := 'offsite-' || gen_random_uuid()::text;
