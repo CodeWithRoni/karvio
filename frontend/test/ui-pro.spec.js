@@ -141,3 +141,12 @@ test('empty and loading states are shaped, not blank', async ({ page }) => {
   await expect(page.locator('.empty .empty-ic')).toBeVisible();
   await expect(page.getByText('No products match these filters')).toBeVisible();
 });
+
+test('browser tab title is the open page name in capitals', async ({ page }) => {
+  await page.goto('/#/barcodes');
+  await expect(page).toHaveTitle('BARCODE LABELS');
+  await page.goto('/#/accounts?tab=dayclose');
+  await expect(page).toHaveTitle('CASH, BANK & MFS');
+  await page.goto('/#/');
+  await expect(page).toHaveTitle('DASHBOARD');
+});

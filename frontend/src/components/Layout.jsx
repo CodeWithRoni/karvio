@@ -70,6 +70,13 @@ export default function Layout() {
   const loc = useLocation();
   const nav = useNavigate();
   useEffect(() => setOpen(false), [loc.pathname]);
+  // Browser tab title: the open page's menu name, in capitals (e.g. "BARCODE LABELS").
+  useEffect(() => {
+    const p = loc.pathname;
+    const page = NAV.find((n) => n.to && (n.end ? p === n.to : p === n.to || p.startsWith(n.to + '/')));
+    document.title = (page ? page.label : 'Karvio').toUpperCase();
+  }, [loc.pathname]);
+  useEffect(() => () => { document.title = 'Karvio'; }, []);
   useEffect(() => { if (!isOffline()) saveBrand(endpoint(), settings); }, [settings]);
   // Phone menu: Esc closes it, and the page behind does not scroll while it is open.
   useEffect(() => {
