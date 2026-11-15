@@ -33,7 +33,12 @@ export function rpcFor(db, {onCall} = {}) {
   return async (name, args) => {
     const keys = Object.keys(args || {});
     const t = performance.now();
-    const res = await db.query(`select public.${name}(${keys.map((k, i) => `${k} => $${i + 1}`).join(',')}) as r`, Object.values(args || {}));
+    // As on Supabase: the Edge function calls the database as service_role, not as the owner,
+    // so a missing grant fails here as it would in production.
+    const res = await db.transaction(async tx => {
+      await tx.exec('set local role service_role');
+      return tx.query(`select public.${name}(${keys.map((k, i) => `${k} => $${i + 1}`).join(',')}) as r`, Object.values(args || {}));
+    });
     const out = res.rows[0].r;
     const bytes = out === null || out === undefined ? 0 : JSON.stringify(out).length;
     if (out && typeof out === 'object') Object.defineProperty(out, '__bytes', {value: bytes});

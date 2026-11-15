@@ -143,7 +143,7 @@ await same('sreturns.list', {from: day(700), to: day(0)});
 c.setToken(ownerToken);
 
 // Edge deployed before its migration: narrow reads fall back to the v1.2.4 path instead of failing.
-const older = await freshDatabase({skip: ['20261114202706_karvio_table_scoped_reads.sql', '20261114204617_karvio_private_rows.sql']});
+const older = await freshDatabase({skip: ['20261114202706_karvio_table_scoped_reads.sql', '20261114204617_karvio_private_rows.sql', '20261115034825_karvio_private_table_grants.sql']});
 const o = await apiClient(older);
 const party = await o.q('customer.save', {name: 'Fallback customer'});
 assert.equal((await o.q('customer.statement', {customer_id: party.id})).party, 'Fallback customer');
