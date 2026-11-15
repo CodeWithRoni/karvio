@@ -93,7 +93,7 @@ function ShopSettings() {
   );
 }
 
-/** Shop logo: shrunk in the browser (max 320 × 160) so it stays small on every invoice and on the sign-in screen. */
+/** Shop logo: shrunk in the browser (max 480 × 160) so it stays small on every invoice and on the sign-in screen. */
 function LogoPicker({ value, onChange }) {
   const toast = useStore((s) => s.toast);
   const pick = (file) => {
@@ -101,7 +101,7 @@ function LogoPicker({ value, onChange }) {
     if (!/^image\/(png|jpeg|webp|gif|svg\+xml)$/.test(file.type)) return toast('Choose a PNG, JPEG, WebP, GIF or SVG picture', 'err');
     const url = URL.createObjectURL(file), img = new Image();
     img.onload = () => {
-      const k = Math.min(1, 320 / img.naturalWidth, 160 / img.naturalHeight);
+      const k = Math.min(1, 480 / img.naturalWidth, 160 / img.naturalHeight);
       const c = document.createElement('canvas');
       c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
       c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
@@ -118,11 +118,18 @@ function LogoPicker({ value, onChange }) {
     <div className="wide logo-pick">
       <span className="field-label">Shop logo</span>
       <div className="logo-row">
-        <div className="logo-box">{value ? <img src={value} alt="Shop logo" /> : <span className="muted">No logo</span>}</div>
+        <div className="logo-previews">
+          {/* The logo always sits on white (menu chip, sign-in screen and paper), so the preview does too. */}
+          <div className={`logo-box ${value ? 'paper' : ''}`} title="As it appears on invoices, the menu and the sign-in screen">{value ? <img src={value} alt="Shop logo" /> : <span className="muted">No logo<br /><small>600 × 200 px</small></span>}</div>
+        </div>
         <div className="logo-actions">
           <label className="btn">Choose picture<input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" hidden onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ''; }} /></label>
           {value && <Btn onClick={() => onChange('')}>Remove</Btn>}
-          <small className="muted">Printed on invoices and receipts, and shown on the sign-in screen and menu. Save settings to keep it.</small>
+          <small className="muted logo-help">
+            <b>Best size:</b> a wide logo about <b>600 × 200 px</b> (3 : 1), or a square one at least <b>300 × 300 px</b>. PNG with a transparent background looks best;
+            JPEG, WebP, GIF and SVG also work. Keep the edges tight (no extra empty space). Larger pictures are shrunk automatically to fit within 480 × 160 px.
+            It prints on invoices and receipts and shows on the sign-in screen and menu. Save settings to keep it.
+          </small>
         </div>
       </div>
     </div>

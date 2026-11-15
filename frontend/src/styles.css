@@ -1271,7 +1271,7 @@ b.up, .kpi > b.up { color: var(--ok); } b.down, .kpi > b.down { color: var(--bad
 .st-table td.down { color: var(--bad); }
 .st-note { font-size: 12.5px; margin: 12px 0 0; }
 .logo-pick .logo-row { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
-.logo-box { width: 180px; height: 90px; border: 1px dashed var(--line); border-radius: 10px; display: grid; place-items: center; background: repeating-conic-gradient(var(--panel-2) 0% 25%, var(--panel) 0% 50%) 50% / 16px 16px; overflow: hidden; }
+.logo-box { width: 210px; height: 72px; text-align: center; line-height: 1.3; border: 1px dashed var(--line); border-radius: 10px; display: grid; place-items: center; background: repeating-conic-gradient(var(--panel-2) 0% 25%, var(--panel) 0% 50%) 50% / 16px 16px; overflow: hidden; }
 .logo-box img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .logo-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; flex: 1; min-width: 240px; }
 .logo-actions small { flex-basis: 100%; }
@@ -1361,3 +1361,29 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
 .db-ic.bad { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
 .db-card-foot { margin-top: auto; }
 @media (max-width: 1100px) { .db-grid.three { grid-template-columns: minmax(0, 1fr); } }
+.sales-chart .axis.month { fill: var(--text); font-weight: 700; }
+/* Profit card: this month at a glance; Live balances fold empty accounts */
+.pf-break { margin-top: 14px; padding: 14px; border-radius: 12px; border: 1px solid var(--line); background: color-mix(in srgb, var(--panel-2) 60%, transparent); }
+.pf-break-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 10px; font-size: 13.5px; }
+.pf-bar { display: flex; height: 14px; border-radius: 999px; overflow: hidden; background: var(--panel-2); }
+.pf-bar .seg { display: block; height: 100%; }
+.pf-bar .seg.cost, .pf-legend i.cost { background: color-mix(in srgb, var(--muted) 55%, var(--panel-2)); }
+.pf-bar .seg.exp, .pf-legend i.exp { background: var(--warn); }
+.pf-bar .seg.net, .pf-legend i.net { background: var(--ok); }
+.pf-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 12.5px; color: var(--muted); }
+.pf-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.pf-legend b { color: var(--text); margin-left: 4px; font-variant-numeric: tabular-nums; }
+.pf-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.pf-kpis > div { padding: 10px 12px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); min-width: 0; }
+.pf-kpis span { display: block; font-size: 12px; color: var(--muted); font-weight: 600; }
+.pf-kpis b { display: block; font-size: 17px; margin-top: 2px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.pf-warn { margin: 10px 0 0; font-size: 12.5px; color: var(--bad); }
+.bal-empty { border: 1px dashed var(--line); background: none; color: var(--muted); border-radius: 10px; padding: 8px 12px; font: inherit; font-size: 12.5px; cursor: pointer; text-align: left; }
+.bal-empty:hover { color: var(--text); border-color: var(--aqua); }
+@media (max-width: 860px) { .pf-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.logo-previews { display: flex; gap: 10px; flex-wrap: wrap; }
+.logo-box.paper { background: #fff; border-style: solid; border-color: #d7dde4; }
+.logo-box img { padding: 6px; }
+.logo-help { line-height: 1.55; max-width: 640px; }
+.logo-help b { color: var(--text); }

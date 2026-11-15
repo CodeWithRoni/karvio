@@ -1,3 +1,10 @@
+# 15 November 2026 — evening fixes (pending push)
+
+- Invoice: the note now sits right under the QR code (business and other A4 templates) instead of a narrow column.
+- Dashboard: the sales chart covers the last 30 days (every other day labelled, months named on the 1st). The Profit card adds "This month at a glance" (where sales went: cost of goods, expenses, net profit; gross and net margin, invoices, average invoice). Live balances lists accounts with money first and folds accounts holding Tk 0 into one line.
+- Cash, bank & MFS: unused accounts (no transactions, no opening balance, not on any expense, return or monthly expense) can be deleted — tick rows and "Delete selected", or "Delete account" in the account's window. Accounts with history still can only be made inactive. New action account.delete (all or nothing).
+- Shop logo: recommended size shown (wide about 600 × 200 px, or square at least 300 × 300 px; PNG with transparent background), shrunk to fit 480 × 160 px, previewed on white as it prints.
+
 # 15 November 2026 — features 2 (pending push)
 
 - Products from Excel (Products & stock → Import / Export): download a template, check the file first (new / update / problems per row; nothing saved), then import every row in one save. Rows match existing products by barcode, SKU or name; empty cells keep current values; missing product groups, categories and brands are created; stock is never imported. Export writes all products in the same layout.

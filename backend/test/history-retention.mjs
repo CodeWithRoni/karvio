@@ -20,10 +20,10 @@ let p=product('Retained purchased product');let purchase=buy(p),sale=sell(p);ass
 q('reverse',{type:'sale',id:sale.sale.id,password:'regression-owner-password',reason:'Cancel sale'});q('reverse',{type:'purchase',id:purchase.purchase.id,password:'regression-owner-password',reason:'Cancel purchase'});assert.equal(stock(p),0);denied('product.delete',{id:p.id},token,/history/i);
 let service=product('Retained sold service',{service:true});sell(service);denied('product.delete',{id:service.id},token,/history/i);
 let unused=product('Never used');assert.equal(q('products.list').find(r=>r.id===unused.id).has_history,false);assert.equal(q('product.delete',{id:unused.id}).deleted,true);
-// Cash, bank and MFS accounts retain their rows and cancelled transaction history.
+// Cash, bank and MFS accounts with history keep their rows and cancelled transaction history (only unused accounts can be deleted).
 for(const type of ['cash','bank','mfs']){
  const account=q('account.save',{name:'Retained '+type,type,opening_balance:0});q('account.entry',{account_id:account.id,kind:'deposit',amount:100});const entry=q('account.ledger',{account_id:account.id}).rows[0];q('reverse',{type:'account',id:entry.id,password:'regression-owner-password',reason:'Cancel deposit'});
- const row=q('accounts.list').find(r=>r.id===account.id);assert.equal(row.balance,0);assert.equal(row.has_history,true);denied('account.delete',{id:account.id},token,/Unknown action/);
+ const row=q('accounts.list').find(r=>r.id===account.id);assert.equal(row.balance,0);assert.equal(row.has_history,true);denied('account.delete',{id:account.id},token,/cannot be deleted/); // accounts with history stay
  q('account.save',{...row,active:false});assert.equal(q('accounts.list').find(r=>r.id===account.id).active,false);assert(state.tables.AccountTxns.some(r=>r.account_id===account.id&&r.voided));
 }
 // Used expense names cannot be removed or renamed through either settings route.

@@ -23,7 +23,7 @@ export class ApiError extends Error {
   constructor(msg, auth, uncertain = false) { super(msg); this.auth = auth; this.uncertain = uncertain; }
 }
 
-const WRITES = new Set(['dayclose.save', 'summary.send', 'products.import', 'expense.recurring.save', 'expense.recurring.record', 
+const WRITES = new Set(['dayclose.save', 'account.delete', 'summary.send', 'products.import', 'expense.recurring.save', 'expense.recurring.record', 
   'password.change', 'product.save', 'product.delete', 'product.barcodes', 'sale.promise',
   'stock.adjust', 'master.save', 'master.delete', 'master.deleteMany', 'master.import', 'price.update',
   'customer.save', 'customer.quickAdd', 'customer.delete', 'customer.payment',

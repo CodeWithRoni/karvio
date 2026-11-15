@@ -4,7 +4,7 @@ import { api } from '../lib/api';
 import { money, monthStart, today } from '../lib/format';
 import DataTable from '../components/DataTable';
 import { useSearchParams } from 'react-router-dom';
-import { useApi, PageHead, Modal, Btn, Field, useAction, Select, DateRange, ErrorBox, Badge, Tabs } from '../components/ui';
+import { useApi, PageHead, Modal, Btn, Field, useAction, Select, DateRange, ErrorBox, Badge, Tabs, useConfirm } from '../components/ui';
 import DayClose from './DayClose';
 import { ReverseDialog } from '../components/widgets';
 
@@ -19,6 +19,16 @@ export default function Accounts() {
   const active = accs.filter((a) => a.active);
   const [params, setParams] = useSearchParams();
   const tab = params.get('tab') === 'dayclose' ? 'dayclose' : 'accounts';
+  const [confirmUI, ask] = useConfirm();
+  const [, runDelete] = useAction();
+  // Delete unused accounts (no transactions, no opening balance). The server refuses any with history.
+  const removeAccounts = async (picked, clear) => {
+    const used = picked.filter((a) => a.has_history || Number(a.opening_balance));
+    if (used.length) return useStore.getState().toast(`${used.map((a) => a.name).join(', ')} ${used.length === 1 ? 'has' : 'have'} history or an opening balance and cannot be deleted. Make ${used.length === 1 ? 'it' : 'them'} inactive instead.`, 'err');
+    if (!(await ask({ title: picked.length === 1 ? `Delete ${picked[0].name}?` : `Delete ${picked.length} accounts?`, message: `${picked.map((a) => a.name).join(', ')} will be removed. They have never been used, so no history is lost.`, confirmLabel: 'Delete' }))) return;
+    await runDelete(() => api('account.delete', { ids: picked.map((a) => a.id) }), picked.length === 1 ? 'Account deleted' : `${picked.length} accounts deleted`);
+    clear?.(); setEdit(null); list.reload(); useStore.getState().boot();
+  };
   const tabs = <Tabs tabs={[['accounts', 'Accounts'], ['dayclose', 'Day close']]} value={tab} onChange={(v) => setParams(v === 'dayclose' ? { tab: v } : {}, { replace: true })} />;
 
   if (tab === 'dayclose') return (
@@ -48,29 +58,32 @@ export default function Accounts() {
       </div>
       <div style={{ marginTop: 18 }}>
         <DataTable title="Accounts" rows={accs} loading={list.loading} onRowClick={(a) => setEdit(a)}
+          selectionActions={(picked, clear) => <Btn size="sm" kind="danger" onClick={() => removeAccounts(picked, clear)}>Delete selected ({picked.length})</Btn>}
           columns={[
             { key: 'name', label: 'Account' }, { key: 'type', label: 'Type' }, { key: 'number', label: 'Number' },
             { key: 'opening_balance', label: 'Opening', type: 'money' }, { key: 'balance', label: 'Current balance', type: 'money', sum: true },
             { key: 'active', label: 'Status', value: (r) => (r.active ? 'Active' : 'Inactive'), render: (r) => <Badge tone={r.active ? 'ok' : 'muted'}>{r.active ? 'Active' : 'Inactive'}</Badge> }
           ]} />
       </div>
-      {edit && <AccountForm initial={edit} onClose={() => setEdit(null)} onDone={list.reload} />}
+      {edit && <AccountForm initial={edit} onClose={() => setEdit(null)} onDone={list.reload} onDelete={(a) => removeAccounts([a])} />}
+      {confirmUI}
       {entry && <EntryForm initial={entry} accounts={active} onClose={() => setEntry(null)} onDone={list.reload} />}
       {sel && <Ledger account={sel} onClose={() => setSel(null)} onChanged={list.reload} />}
     </>
   );
 }
 
-function AccountForm({ initial, onClose, onDone }) {
+function AccountForm({ initial, onClose, onDone, onDelete }) {
   const [f, setF] = useState(initial);
   const [busy, run] = useAction();
   const boot = useStore((s) => s.boot);
   const booksClosed = useStore((s) => !!s.settings.books_locked_until);
   const save = async () => { await run(() => api('account.save', f), 'Account saved'); onDone(); boot(); onClose(); };
   return (
-    <Modal open onClose={onClose} size="sm" title={f.id ? `Edit ${f.name}` : 'Add account'} footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={save}>Save account</Btn></>}>
+    <Modal open onClose={onClose} size="sm" title={f.id ? `Edit ${f.name}` : 'Add account'} footer={<>{f.id && !initial.has_history && !Number(initial.opening_balance) && <Btn kind="danger" onClick={() => onDelete(initial)}>Delete account</Btn>}<span className="spacer" /><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={save}>Save account</Btn></>}>
       <div className="form">
-        {f.has_history && <p className="muted wide">This account has transaction history and is retained for accounting. Turn Active off to stop using it; previous entries remain.</p>}
+        {f.has_history ? <p className="muted wide">This account has transaction history and is retained for accounting. Turn Active off to stop using it; previous entries remain.</p>
+          : f.id && Number(initial.opening_balance) ? <p className="muted wide">To delete this unused account, set its opening balance to 0 and save first.</p> : null}
         <Field label="Account name" wide><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="e.g. bKash Merchant, Islami Bank" autoFocus /></Field>
         <Field label="Type" wide><select value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>{TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
         <Field label="Account / wallet number" wide><input value={f.number} onChange={(e) => setF({ ...f, number: e.target.value })} /></Field>

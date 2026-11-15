@@ -11,7 +11,7 @@ import { Pager, DEFAULT_PAGE_SIZE } from './Pager';
  * selectable: tick rows; Excel / PDF / Print then export only the ticked rows.
  * docExport: { excel(rows), pdf(rows), print(rows) } — full documents (e.g. invoices) for the ticked rows.
  */
-export default function DataTable({ columns, rows, loading, title = 'Export', exportable = true, searchable = true, onRowClick, empty, totals: totalsProp, toolbar, rowClass, selectable = exportable, docExport, sumFilter }) {
+export default function DataTable({ columns, rows, loading, title = 'Export', exportable = true, searchable = true, onRowClick, empty, totals: totalsProp, toolbar, rowClass, selectable = exportable, docExport, sumFilter, selectionActions }) {
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(() => new Set());
   useEffect(() => { setSel(new Set()); }, [rows]);
@@ -92,6 +92,8 @@ export default function DataTable({ columns, rows, loading, title = 'Export', ex
           {searchable && <input className="dt-search" type="search" placeholder="Search this table" value={q} onChange={(e) => { setQ(e.target.value); setPage(0); }} aria-label="Search table" />}
           <div className="dt-tools">
             {toolbar}
+            {/* Extra buttons for the ticked rows, e.g. "Delete selected" (the page decides what they do). */}
+            {selectionActions && picked.length > 0 && selectionActions(picked, () => setSel(new Set()))}
             {exportable && selectable && <span className="muted dt-selinfo">{picked.length ? <>{picked.length} selected <button className="link" onClick={() => setSel(new Set())}>Clear</button></> : 'Tick rows to export only those'}</span>}
             {exportable && (
               <div className="seg" role="group" aria-label="Export">

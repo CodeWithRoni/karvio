@@ -19,6 +19,7 @@ export const APPEND_TABLES = ['AuditLog', 'ItemEvents', 'SmsLog'];
 // Generated with TABLE_HINTS: per action, the log tables it appended to but never read in any trace.
 // Too wide is safe as well: reading a log row not loaded re-runs the request with the rows.
 export const APPEND_HINTS = {
+  'account.delete': ['AuditLog'],
   'account.save': ['AuditLog'],
   'backup.schedule': ['AuditLog'],
   'claim.create': ['ItemEvents'],
@@ -42,6 +43,7 @@ export const APPEND_HINTS = {
 // Private sheets read with every request (small). Request receipts are large and only needed by saves.
 export const DEFAULT_PRIVATE = ['__KarvioTxnJournal', '__KarvioQuoteLinks'];
 export const PRIVATE_HINTS = {
+  'account.delete': ['__KarvioRequestReceipts'],
   'account.entry': ['__KarvioRequestReceipts'],
   'account.save': ['__KarvioRequestReceipts'],
   'claim.create': ['__KarvioRequestReceipts'],
@@ -82,6 +84,7 @@ export const PRIVATE_HINTS = {
 export const ALWAYS_TABLES = ['Users', 'Settings'];
 
 export const TABLE_HINTS = {
+  'account.delete': ['AccountTxns', 'Accounts', 'AuditLog', 'Expenses', 'PurchaseReturns', 'SalesReturns'],
   'account.save': ['Accounts', 'AuditLog', 'InvoiceLinks'],
   'audit.list': ['AuditLog'],
   'backup.schedule': ['AuditLog'],

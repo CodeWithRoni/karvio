@@ -79,7 +79,9 @@ const bizCss = `
   .bdoc .btot td{padding:2px 0 2px 12px;border:0}.bdoc .btot td.k{font-weight:700;padding-left:0}.bdoc .btot td.r{text-align:right;min-width:110px}
   .bdoc .bdue{border:1.5px solid #000;padding:8px 10px;margin-top:10px;width:300px}.bdoc .bdue td{padding:2px 0;border:0}.bdoc .bdue td.k{font-weight:700}.bdoc .bdue td.r{text-align:right}
   .bdoc .bend{display:flex;justify-content:space-between;align-items:flex-end;gap:28px;padding-top:56px}
-  .bdoc .bend .note-line{flex:1;margin:0;text-align:left;white-space:pre-wrap;font-size:11.5px}
+  .bdoc .bend .bleft{flex:1;min-width:0;max-width:62%;display:flex;flex-direction:column;gap:8px}
+  .bdoc .bend .bleft .inv-qr{margin:0}
+  .bdoc .bend .note-line{margin:0;text-align:left;white-space:pre-wrap;font-size:11.5px;line-height:1.45}
   .bdoc .bsign{flex:none;width:230px;margin-left:auto;border-top:1px solid #000;text-align:center;padding-top:5px}
   .bdoc .cx{margin:8px 0;padding:6px 10px;border:2px solid #c0392b;color:#c0392b;font-weight:800;text-align:center}
   .bdoc .bfoot{display:flex;justify-content:space-between;border-top:1px solid #777;margin-top:22px;padding-top:5px;font-size:11px}
@@ -144,7 +146,7 @@ function businessInvoiceHtml(d) {
       </table>
     </div>
     <div class="bspace"></div>
-    <div class="bend">${invoiceQr(s.invoice_no, st)}${noteHtml(st)}<div class="bsign">Authorised Signature And Company Stamp</div></div></div>
+    <div class="bend"><div class="bleft">${invoiceQr(s.invoice_no, st)}${noteHtml(st)}</div><div class="bsign">Authorised Signature And Company Stamp</div></div></div>
     <div class="bfoot"><span>Print Date: ${esc(fdate(today()))}</span><span>Print Time: ${esc(now.toLocaleTimeString('en-US'))}</span><span>${SOFTWARE_LINE}</span><span>Page 1 of 1</span></div>
   </div>`;
 }
@@ -179,8 +181,8 @@ export function saleInvoiceHtml(d) {
       ${s.next_payment_date && s.due > 0 ? `<tr><td>Next payment date</td><td class="r">${esc(fdate(s.next_payment_date))}</td></tr>` : ''}
     </table>
     ${d.returns && d.returns.length ? `<p class="sm">Returns: ${esc(d.returns.map((r) => `${r.return_no} (${money(r.total, false)}, ${r.status})`).join(', '))}</p>` : ''}
-    ${invoiceQr(s.invoice_no, st)}
-    <div class="foot"><span>Printed ${esc(new Date().toLocaleString())}</span><span>Customer signature: ____________________</span></div>${noteHtml(st)}</div>`;
+    ${invoiceQr(s.invoice_no, st)}${noteHtml(st)}
+    <div class="foot"><span>Printed ${esc(new Date().toLocaleString())}</span><span>Customer signature: ____________________</span></div></div>`;
 }
 export const printSales = (list, paper) => printHtml(wrap(list.map(saleInvoiceHtml), paper, isBiz(list)), fitBizEnd);
 /**

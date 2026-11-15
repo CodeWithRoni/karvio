@@ -98,4 +98,18 @@ await q('settings.save', {values: {daily_summary_enabled: 'false'}});
 const before = (await db.query('select count(*)::int n from net.calls')).rows[0].n;
 await db.query('select karvio_private.summary_tick()');
 eq((await db.query('select count(*)::int n from net.calls')).rows[0].n, before, 'switched off: no call');
+// 6) Unused accounts can be deleted (one or many); used ones and opening balances are refused.
+const spare1 = await q('account.save', {name: 'City Bank PLC', type: 'bank', opening_balance: 0});
+const spare2 = await q('account.save', {name: 'Upay Personal', type: 'mfs', opening_balance: 0});
+const opened = await q('account.save', {name: 'Opened bank', type: 'bank', opening_balance: 500});
+ok(/history|cannot be deleted/.test((await raw('account.delete', {ids: [spare1.id, cash]})).error), 'an account with transactions is refused (nothing deleted)');
+ok((await q('accounts.list')).some((a) => a.id === spare1.id), 'all or nothing');
+ok(/opening balance/.test((await raw('account.delete', {ids: [opened.id]})).error), 'opening balance must be 0');
+ok(/Permission denied/.test((await mgr.raw('account.delete', {ids: [spare2.id]})).error), 'needs the accounts permission');
+eq(await q('account.delete', {ids: [spare1.id, spare2.id]}), {deleted: 2}, 'two unused accounts deleted');
+ok(!(await q('accounts.list')).some((a) => a.id === spare1.id || a.id === spare2.id), 'gone from the list');
+// Dashboard chart covers 30 days; the profit card carries cost and margins.
+const dash = await q('dashboard');
+eq(dash.series.length, 30, '30 days in the chart');
+ok(dash.profit.every((x) => x.cost !== undefined && x.margin !== undefined), 'cost and margins for the breakdown');
 console.log(`Features 2: ${checks} checks passed (product import, activity log, monthly expenses, supplier prices, daily summary).`);

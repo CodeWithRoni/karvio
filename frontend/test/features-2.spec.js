@@ -107,3 +107,22 @@ test('supplier prices report marks the cheapest supplier; settings preview the d
   await expect(card.getByRole('heading', { name: 'Daily summary to the owner' })).toBeVisible();
   await expect(card.locator('.ds-preview')).toContainText('Sales');
 });
+
+test('unused accounts can be deleted from the list or the edit window', async ({ page, request }) => {
+  const stamp = Date.now();
+  const a1 = await call(request, 'account.save', { name: `Spare bank ${stamp}`, type: 'bank', opening_balance: 0 });
+  const a2 = await call(request, 'account.save', { name: `Spare wallet ${stamp}`, type: 'mfs', opening_balance: 0 });
+  await page.goto('/#/accounts');
+  const row = (name) => page.locator('tr', { hasText: name });
+  await row(a1.name).locator('.dt-check').check();
+  await page.getByRole('button', { name: 'Delete selected (1)' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(row(a1.name)).toHaveCount(0);
+  await row(a2.name).getByText(a2.name).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete account' }).click();
+  await page.getByRole('dialog', { name: /Delete/ }).getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(row(a2.name)).toHaveCount(0);
+  // Cash has history: no delete button in its window.
+  await row('Cash').first().getByText('Cash', { exact: true }).first().click();
+  await expect(page.getByRole('dialog').getByRole('button', { name: 'Delete account' })).toHaveCount(0);
+});

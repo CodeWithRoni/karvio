@@ -41,6 +41,39 @@ function Kpi({ label, value, sub, tone, to, title, children }) {
 
 const plTone = (v) => (v > 0 ? 'up' : v < 0 ? 'down' : '');
 
+/** This month at a glance: where each taka of sales went (cost of goods, expenses, profit) and the margins. */
+function ProfitBreakdown({ p }) {
+  if (!p) return null;
+  const sales = Math.max(0, p.sales || 0), cost = Math.max(0, p.cost ?? (p.sales - p.gross)), exp = Math.max(0, p.expenses || 0), net = p.net || 0;
+  const base = Math.max(sales, cost + exp + Math.max(0, net), 1);
+  const pct = (v) => `${Math.max(0, Math.min(100, (v / base) * 100))}%`;
+  const avg = p.invoices ? sales / p.invoices : 0;
+  return (
+    <div className="pf-break">
+      <div className="pf-break-head"><b>This month at a glance</b><span className="muted">Sales {money(sales)}</span></div>
+      {sales > 0 ? (
+        <div className="pf-bar" role="img" aria-label={`Of sales ${money(sales)}: cost ${money(cost)}, expenses ${money(exp)}, net profit ${money(net)}`}>
+          <i className="seg cost" style={{ width: pct(cost) }} />
+          <i className="seg exp" style={{ width: pct(exp) }} />
+          {net > 0 && <i className="seg net" style={{ width: pct(net) }} />}
+        </div>
+      ) : <div className="pf-bar empty" />}
+      <div className="pf-legend">
+        <span><i className="cost" />Cost of goods <b>{money(cost, false)}</b></span>
+        <span><i className="exp" />Expenses <b>{money(exp, false)}</b></span>
+        <span><i className="net" />Net profit <b className={plTone(net)}>{money(net, false)}</b></span>
+      </div>
+      <div className="pf-kpis">
+        <div><span>Gross margin</span><b className={plTone(p.gross)}>{p.margin ?? 0}%</b></div>
+        <div><span>Net margin</span><b className={plTone(net)}>{p.net_margin ?? 0}%</b></div>
+        <div><span>Invoices</span><b>{p.invoices || 0}</b></div>
+        <div><span>Average invoice</span><b>{money(avg)}</b></div>
+      </div>
+      {net < 0 && <p className="pf-warn">Expenses are higher than the gross profit this month.</p>}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const { data: d, loading, error, reload } = useApi('dashboard', {}, [], { refreshMs: 30000 });
   const can = useStore((s) => s.can);
@@ -48,6 +81,7 @@ export default function Dashboard() {
   const [lb, setLb] = useState('month');
   const [scope, setScopeState] = useState(readScope);
   const [hist, setHist] = useState('sales');
+  const [showEmpty, setShowEmpty] = useState(false);
   const setScope = (v) => { setScopeState(v); try { localStorage.setItem(SCOPE_KEY, v); } catch { /* private mode */ } };
 
   if (loading && !d) return <DashboardSkeleton />;
@@ -120,7 +154,7 @@ export default function Dashboard() {
         <div className={`dash-duo ${showChart && attention.length ? '' : 'one'}`}>
           {showChart && (
             <section className="card">
-              <div className="card-head"><h2>Sales — last 14 days</h2>
+              <div className="card-head"><h2>Sales — last 30 days</h2>
                 <div className="chart-legend"><span><i className="sw-sales" />Sales</span>{d.series.some((x) => x.profit !== undefined) && <span><i className="sw-profit" />Profit</span>}</div>
               </div>
               <SalesChart series={d.series} />
@@ -200,18 +234,25 @@ export default function Dashboard() {
                   </div>
                 ))}
               </div>
+              <ProfitBreakdown p={d.profit.find((x) => x.key === 'month')} />
             </section>
           )}
           {on('balances') && d.accounts && (
             <section className="card">
               <div className="card-head"><h2>Live balances</h2>{can('accounts') && <Link to="/accounts" className="link">Manage accounts</Link>}</div>
               <div className="bal-list">
-                {d.accounts.map((a) => (
+                {/* Accounts holding money first; empty ones fold into one line that opens on click. */}
+                {[...d.accounts].sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance)).filter((a) => showEmpty || Math.abs(a.balance) > 0.005).map((a) => (
                   <div className="bal-row" data-type={a.type} key={a.id}>
                     <span><b>{a.name}</b><small>{a.type === 'mfs' ? 'Mobile banking' : a.type === 'cash' ? 'Cash' : 'Bank'}{a.number ? ` · ${a.number}` : ''}</small></span>
                     <b className={`num ${a.balance < 0 ? 'down' : ''}`}>{money(a.balance)}</b>
                   </div>
                 ))}
+                {d.accounts.some((a) => Math.abs(a.balance) <= 0.005) && (
+                  <button type="button" className="bal-empty" onClick={() => setShowEmpty(!showEmpty)} aria-expanded={showEmpty}>
+                    {showEmpty ? 'Hide accounts with Tk 0' : `${d.accounts.filter((a) => Math.abs(a.balance) <= 0.005).length} more account${d.accounts.filter((a) => Math.abs(a.balance) <= 0.005).length === 1 ? '' : 's'} with Tk 0`}
+                  </button>
+                )}
                 <div className="bal-row total"><span><b>All accounts</b><small>Total money in hand</small></span><b className="num">{money(d.accounts.reduce((a, x) => a + x.balance, 0))}</b></div>
               </div>
             </section>

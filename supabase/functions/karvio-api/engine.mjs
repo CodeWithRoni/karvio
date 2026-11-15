@@ -1384,6 +1384,28 @@ function accountSave_(p, user) {
   auditOpening_(user, 'account', insA, 0, row.opening_balance);
   return insA;
 }
+/** Delete accounts that were never used: no money moved in or out (even cancelled entries), no opening balance,
+ *  not named on an expense, return or monthly expense. One active account must remain. All or nothing. */
+function accountDelete_(p, user) {
+  var ids = (Array.isArray(p.ids) ? p.ids : [p.id]).filter(Boolean).map(String);
+  if (!ids.length) fail_('Choose the accounts to delete');
+  var accs = all_('Accounts'), byId = indexBy_(accs), want = {};
+  ids.forEach(function (id) { if (!byId[id]) fail_('Account not found'); want[id] = 1; });
+  var used = {}, mark = function (id, why) { if (want[id]) (used[id] = used[id] || {})[why] = 1; };
+  all_('AccountTxns').forEach(function (t) { mark(t.account_id, 'transactions'); });
+  all_('Expenses').forEach(function (e) { mark(e.account_id, 'expenses'); });
+  all_('SalesReturns').forEach(function (r) { mark(r.refund_account_id, 'sales returns'); });
+  all_('PurchaseReturns').forEach(function (r) { mark(r.account_id, 'purchase returns'); });
+  recurringTemplates_().forEach(function (t) { mark(t.account_id, 'monthly expenses'); });
+  ids.forEach(function (id) { if (Math.abs(num_(byId[id].opening_balance)) > 0.005) mark(id, 'an opening balance'); });
+  var blocked = ids.filter(function (id) { return used[id]; });
+  if (blocked.length) fail_(blocked.map(function (id) { return byId[id].name + ' (' + Object.keys(used[id]).join(', ') + ')'; }).join('; ') +
+    (blocked.length === 1 ? ' has' : ' have') + ' history, so ' + (blocked.length === 1 ? 'it' : 'they') + ' cannot be deleted. Make ' + (blocked.length === 1 ? 'it' : 'them') + ' inactive instead.');
+  if (!accs.some(function (a) { return a.active && !want[a.id]; })) fail_('Keep at least one active account');
+  ids.forEach(function (id) { remove_('Accounts', id); });
+  audit_(user, 'account_delete', { names: ids.map(function (id) { return byId[id].name; }) });
+  return { deleted: ids.length };
+}
 function accountEntry_(p, user) { // owner deposit / withdrawal / transfer
   var amt = round_(p.amount); if (amt <= 0) fail_('Amount must be greater than 0');
   var accs = indexBy_(all_('Accounts'));
@@ -4685,12 +4707,13 @@ function dashboard_(p, user) {
     out.profit = [['today', 'Today', today, today]].concat(ranges.filter(function (r) { return ['week', 'month', 'six_months'].indexOf(r[0]) >= 0; }))
       .map(function (r) {
         var x = profitSummary_(r[2], r[3]);
-        return { key: r[0], label: r[1], from: r[2], to: r[3], gross: x.gross, net: x.net, sales: x.net_sales, expenses: x.expenses, invoices: x.invoices };
+        return { key: r[0], label: r[1], from: r[2], to: r[3], gross: x.gross, net: x.net, sales: x.net_sales, expenses: x.expenses, invoices: x.invoices, cost: round_(x.cost - x.returns_cost), margin: x.margin, net_margin: x.net_margin };
       });
   }
 
   var series = [];
-  for (var i = 13; i >= 0; i--) {
+  // Last 30 days (today included) for the dashboard chart.
+  for (var i = 29; i >= 0; i--) {
     var d = addDays_(today, -i), ds = sales.filter(function (x) { return x.date === d; });
     var row = { date: d, sales: round_(sum_(ds, function (x) { return x.total; })), invoices: ds.length };
     if (showCost) row.profit = round_(sum_(ds, function (x) { return x.profit; }));
@@ -5090,6 +5113,7 @@ var ROUTES = {
 
   'accounts.list':    r_('accounts', function () { return accountsList_(); }),
   'account.save':     r_('accounts', accountSave_, true),
+  'account.delete':   r_('accounts', accountDelete_, true),
   'account.entry':    r_('accounts', accountEntry_, true),
   'account.ledger':   r_('accounts', accountLedger_),
 
