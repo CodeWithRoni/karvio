@@ -43,7 +43,8 @@ export const hintKey=(action,payload)=>action==='reports'&&typeof payload?.type=
 export function planFor(action,options={},state=newScopeState()){
  const plan=basePlan(action,options,state);
  // Private sheets to read with the business rows (the journal is needed by every locked request).
- plan.private=new Set([...DEFAULT_PRIVATE,...(PRIVATE_HINTS[plan.key||action]||[]),...(state.learnedPrivate.get(plan.key||action)||[])]);
+ const key=plan.key||action;
+ plan.private=new Set([...DEFAULT_PRIVATE,...(Object.hasOwn(PRIVATE_HINTS,key)?PRIVATE_HINTS[key]:[]),...(state.learnedPrivate.get(key)||[])]);
  return plan;
 }
 function basePlan(action,{protocol=2,scopedReads=true,narrowReads=true,payload={}}={},state){
@@ -181,7 +182,9 @@ export function createHandler({rpc,dispatch=()=>{},protocol=2,scopedReads=true,n
    }
    return finish(reply({ok:false,error:'The shop is busy. Retry this same request.',retryable:true},200),'busy');
   }catch(error){
-   console.error('Karvio gateway request failed',error?.name||'Error');
+   // Why it failed (no payload, token or customer data): error type, database code and message.
+   m.error=[error?.name||'Error',error?.code,String(error?.dbMessage||error?.message||'').slice(0,200)].filter(Boolean).join(': ');
+   console.error('Karvio gateway request failed',m.error);
    // Commit acknowledgement may have been lost. Never tell a caller to make a new money request.
    return finish(reply({ok:false,error:'The database response could not be confirmed. Retry the same request ID.',retryable:true,uncertain:true},503),'error');
   }

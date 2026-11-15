@@ -4,7 +4,7 @@
 
 The owner approved main publication and live deployment of all collected changes. Edge `karvio-api` version 5 is deployed, including the shop date required by the repair dashboard. The first owner account was created by the user; its credentials and all business data are preserved. The frontend's built-in endpoint is Supabase. Historical setup/pending notes below describe earlier stages.
 
-All four local migration versions now match the hosted migration history, avoiding replay of already-created tables when the GitHub integration deploys main. PostgreSQL pg_cron runs a private safety snapshot daily at 02:00 Dhaka with 30-day default retention. The first snapshot was created and verified; Settings → Database can disable it or change retention. Private in-project snapshots also exist before restore/reset. These snapshots live in the same project; keep downloaded exports outside the project as well. No legacy Google Sheet data was imported or reset.
+All four local migration versions now match the hosted migration history, avoiding replay of already-created tables when the GitHub integration deploys main. The nightly 02:00 in-database snapshot was turned off on 15 November 2026 at the owner's request (migration karvio_stop_daily_backup; snapshots already saved were kept). Private in-project snapshots are still saved before restore/reset. These snapshots live in the same project; keep downloaded exports outside the project as well. No legacy Google Sheet data was imported or reset.
 
 Publication validation: 1,343 regular assertions and 63 Supabase adapter checks passed; all 54 browser cases passed together. Production build/assets passed. Security advisor has no WARN/ERROR findings, only intentional deny-all RLS INFO findings. No real SMS or test sale was sent to the shop.
 
@@ -34,7 +34,7 @@ For compatibility, requests currently load all business tables; changed tables a
 
 ## Backups and SMS
 
-Database export/restore/reset use the existing ERP format. Before reset/restore, an additional private SQL safety snapshot is saved atomically. Daily backups now use private Supabase snapshots rather than Google Drive. A fixed pg_cron job runs at 02:00 Dhaka and reads the owner-configured enabled/retention settings. Download regular exports outside the project too. No migration of old accounts/password formats is promised: this project deliberately starts fresh.
+Database export/restore/reset use the existing ERP format. Before reset/restore, an additional private SQL safety snapshot is saved atomically. There is no automatic daily backup: download exports from Settings → Database regularly and keep them outside the project. No migration of old accounts/password formats is promised: this project deliberately starts fresh.
 
 SMS jobs are committed with the business transaction, then claimed once by the Edge background worker. Logs distinguish queued/sent/failed/unknown. A claimed message with a lost reply is never automatically resent. A crash before claiming leaves it queued until another successful request dispatches the worker. The SMS gateway must use public HTTPS without redirects. Real provider delivery has not been tested or enabled; no real SMS was sent during verification.
 

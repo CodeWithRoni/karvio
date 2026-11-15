@@ -10,7 +10,8 @@ const rpc = async (name: string, body: unknown) => {
  if (!response.ok) {
   let detail;try{detail=await response.json();}catch{}
   const error=new Error(detail?.code==='P0001'?detail.message:`Database RPC failed (${response.status})`);
-  Object.assign(error,{code:detail?.code});throw error;
+  // The database's own message is only logged (never sent to a client): it names the failing object.
+  Object.assign(error,{code:detail?.code,dbMessage:typeof detail?.message==='string'?detail.message.slice(0,200):undefined});throw error;
  }
  const text = await response.text();
  const data = JSON.parse(text);
@@ -21,6 +22,6 @@ const rpc = async (name: string, body: unknown) => {
 const gateway=createHandler({rpc,log:logRequest,
  // Database derives the bucket from a stored, unexpired session, never from
  // client-controlled forwarding headers or a claimed username/user ID.
- allowRequest:body=>rpc('karvio_request_limit',{session_key:'tok_'+String(body.token||'').slice(0,512)}),
+ allowRequest:body=>rpc('karvio_request_limit',{session_key:'tok_'+String(body.token||'').slice(0,512),action_name:body.action}),
  dispatch:()=>EdgeRuntime.waitUntil(dispatchSms(rpc).catch(()=>console.error('SMS worker unavailable')))});
 Deno.serve(gateway);

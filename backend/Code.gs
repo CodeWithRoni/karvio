@@ -817,7 +817,10 @@ function serialIndex_() {
 function payList_(arr) {
   var accs = indexBy_(all_('Accounts')), out = [];
   (arr || []).forEach(function (p) {
-    var amt = round_(p.amount);
+    var raw = p ? p.amount : '', given = raw === undefined || raw === null || String(raw).trim() === '' ? 0 : Number(raw);
+    // A blank line is skipped; a negative or non-numeric amount is refused instead of being dropped silently.
+    if (!isFinite(given) || given < 0) fail_('Payment amount must be a number of 0 or more');
+    var amt = round_(given);
     if (amt <= 0) return;
     var a = accs[p.account_id];
     if (!a || !a.active) fail_('Payment account not found or inactive');
@@ -4695,7 +4698,8 @@ function doPost(e) {
   var req;
   try { req = JSON.parse(e.postData.contents); } catch (err) { return json_({ ok: false, error: 'Invalid JSON body' }); }
   try {
-    var route = ROUTES[req.action];
+    // Own routes only: 'constructor', 'toString' … are unknown actions, not inherited functions.
+    var route = typeof req.action === 'string' && Object.prototype.hasOwnProperty.call(ROUTES, req.action) ? ROUTES[req.action] : null;
     if (!route) fail_('Unknown action: ' + req.action);
     var user = null, info = null;
     var run = function () {

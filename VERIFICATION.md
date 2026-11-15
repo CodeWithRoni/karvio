@@ -1,3 +1,9 @@
+# Review fixes — verification (15 November 2026, not yet pushed)
+
+- npm test, test:supabase (now starts with write-actions.mjs) and test:performance (adds request-limits.mjs, payment-amounts.mjs) passed; tests call the database as service_role.
+- Browser suite: 151 cases; stream-backup.spec.js failed once with Playwright "Response has been disposed" in its route mock and passed on rerun (test flakiness, not app behaviour).
+- scripts/trace-table-hints.mjs: hints unchanged (53 actions, 15 append-only, 29 with receipts).
+
 # Bounded reads and backups — publication verification
 
 Owner authorized push/deployment on 15 November 2026. No business-row reset or restore is performed by this rollout.
