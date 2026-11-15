@@ -1,6 +1,6 @@
-// Off-site backup: writes the same .karvio.gz file the app's "Download backup" makes, by reading the
+// Off-site backup (Node version of tools/google-drive-backup/Code.gs): writes the same .karvio.gz file the app's "Download backup" makes, by reading the
 // shop through the Supabase Management API (no Karvio sign-in needed). Used by
-// .github/workflows/offsite-backup.yml.
+// tests and manual use.
 //
 //   SUPABASE_ACCESS_TOKEN=... SUPABASE_PROJECT_ID=... node scripts/offsite-backup.mjs <output-folder>
 //
