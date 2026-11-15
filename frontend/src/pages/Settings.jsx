@@ -12,6 +12,7 @@ import { PRESETS, matchPreset } from '../lib/smsPresets';
 import SmsFieldBuilder from '../components/SmsFieldBuilder';
 import { gatewayError } from '../lib/smsGateway';
 import { DatabaseTab } from '../components/DatabaseTools';
+import DateInput from '../components/DateInput';
 
 export default function Settings() {
   const can = useStore((s) => s.can);
@@ -144,7 +145,7 @@ function BooksSettings() {
   return (
     <div className="card form">
       <Field label="Books closed up to" wide hint="After you have checked a month, close it: purchases, payments, expenses and account entries dated on or before this day can no longer be added, and nothing from then can be cancelled. Leave empty to keep every day open.">
-        <input type="date" max={yesterday} value={f.books_locked_until || ''} onChange={(e) => setF({ ...f, books_locked_until: e.target.value })} />
+        <DateInput max={yesterday} value={f.books_locked_until || ''} onChange={(e) => setF({ ...f, books_locked_until: e.target.value })} />
       </Field>
       <div className="wide row end">
         {f.books_locked_until && <Btn onClick={() => setF({ ...f, books_locked_until: '' })}>Reopen all days</Btn>}

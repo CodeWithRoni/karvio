@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { Bone } from './Skeleton';
 import { useStore } from '../lib/store';
 import { api } from '../lib/api';
+import DateInput from './DateInput';
 
 /* ---------- hooks ---------- */
 
@@ -213,9 +214,9 @@ export function Toasts() {
 export function DateRange({ from, to, onChange }) {
   return (
     <div className="daterange">
-      <input type="date" value={from} onChange={(e) => onChange({ from: e.target.value, to })} aria-label="From date" />
+      <DateInput value={from} onChange={(e) => onChange({ from: e.target.value, to })} aria-label="From date" />
       <span>to</span>
-      <input type="date" value={to} onChange={(e) => onChange({ from, to: e.target.value })} aria-label="To date" />
+      <DateInput value={to} onChange={(e) => onChange({ from, to: e.target.value })} aria-label="To date" />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { money, fdate, today } from '../lib/format';
 import { useApi, Btn, Field, Badge, Modal, Select, Empty, ErrorBox, useAction } from './ui';
 import { TableSkeleton } from './Skeleton';
+import DateInput from './DateInput';
 
 const blank = (cats, accounts) => ({ name: '', category: cats[0] || '', amount: '', account_id: (accounts.find((a) => a.type === 'cash') || accounts[0])?.id || '', day: 1, active: true });
 
@@ -74,7 +75,7 @@ function RecordOne({ t, accounts, onClose, onSaved }) {
     <Modal open size="sm" title={`Record ${t.name}`} onClose={onClose} footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={save}>Record expense</Btn></>}>
       <div className="form">
         <Field label="Amount" wide hint="Change it if this month's bill is different."><input type="number" min="0" step="any" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></Field>
-        <Field label="Date"><input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
+        <Field label="Date"><DateInput value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
         <Field label="Paid from"><Select value={f.account_id} onChange={(v) => setF({ ...f, account_id: v })} options={accounts} allowEmpty={false} /></Field>
         <Field label="Note" wide><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} placeholder="Optional" /></Field>
       </div>

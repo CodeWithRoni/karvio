@@ -12,6 +12,7 @@ import { useApi, PageHead, Tabs, DateRange, Badge, statusTone, Modal, Btn, Field
 import { ReverseDialog, ProductSearch, SerialChooser, PaymentSplit, defaultPay, cleanPays } from '../components/widgets';
 import { salesDetails } from '../lib/salesDetails';
 import { returnValue } from '../lib/returnValue';
+import DateInput from '../components/DateInput';
 
 export default function Sales() {
   const { id } = useParams();
@@ -304,7 +305,7 @@ function ReturnForm({ detail, onClose, onDone }) {
         <div className="form" style={{ marginTop: 12 }}>
           {walkIn && <Field label="Counter account" hint="The returned value and the replacement pass through this account, so only the difference actually changes hands."><Select value={settleAcc} onChange={setSettleAcc} options={accounts} allowEmpty={false} /></Field>}
           {paymentNeeded > 0 && <div className="wide"><PaymentSplit value={pays} onChange={(v) => { setPayTouched(true); setPays(v); }} total={paymentNeeded} label="Customer payment for replacement" /></div>}
-          {paymentNeeded > 0 && !walkIn && unpaid > 0.004 && <Field label="Next payment date" hint={`${money(unpaid)} stays due on the new invoice.`}><input type="date" min={today()} value={nextPay} onChange={(e) => setNextPay(e.target.value)} /></Field>}
+          {paymentNeeded > 0 && !walkIn && unpaid > 0.004 && <Field label="Next payment date" hint={`${money(unpaid)} stays due on the new invoice.`}><DateInput min={today()} value={nextPay} onChange={(e) => setNextPay(e.target.value)} /></Field>}
           {diff < 0 && walkIn && <p className="wide muted">Give {money(-diff)} back to the customer from the counter account.</p>}
           {diff < 0 && !walkIn && <>
             <Field label="The extra value">

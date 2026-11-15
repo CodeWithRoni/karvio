@@ -7,6 +7,7 @@ import { printReceipt, printInvoice, printPreviousDueReceipt } from '../lib/rece
 import { Btn, Modal, Field, Tabs, useAction, useHotkeys, useConfirm, noWheel } from '../components/ui';
 import { ProductSearch, PaymentSplit, defaultPay, cleanPays, QuickCustomer, CustomerPicker, SerialChooser } from '../components/widgets';
 import { loadPosDraft, savePosDraft, loadHolds, saveHolds } from '../lib/posDraft';
+import DateInput from '../components/DateInput';
 
 // Next payment date picker works in the shop's date (server time zone), not this computer's clock.
 const inDays = (n) => shopDay(n);
@@ -345,7 +346,7 @@ export default function POS() {
                 <div className="next-pay">
                   <label htmlFor="pos-next-pay">Next payment date</label>
                   <div className="row">
-                    <input id="pos-next-pay" type="date" min={inDays(0)} value={nextPay} onChange={(e) => setNextPay(e.target.value)} />
+                    <DateInput id="pos-next-pay" min={inDays(0)} value={nextPay} onChange={(e) => setNextPay(e.target.value)} />
                     {[[3, '3 days'], [7, '1 week'], [15, '15 days'], [30, '1 month']].map(([n, t]) => (
                       <button type="button" key={n} className={`chip ${nextPay === inDays(n) ? 'on' : ''}`} onClick={() => setNextPay(inDays(n))}>{t}</button>
                     ))}

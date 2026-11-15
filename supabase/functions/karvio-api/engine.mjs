@@ -505,7 +505,8 @@ function setupDatabase() {
     sms_invoice_link: 'true', invoice_link_base: DEFAULT_LINK_BASE,
     sms_repair_template: 'Dear {name}, your {device} (Job {job}) is ready at {shop}. Charge {total}, Advance {advance}, Due {due}.',
     sms_technician_template: '{technician}, new repair job {job} for you: {device} - {problem}. Customer {name} {phone}. {shop}',
-    sms_quote_template: DEFAULT_QUOTE_SMS
+    sms_quote_template: DEFAULT_QUOTE_SMS,
+    sms_due_template: DEFAULT_DUE_SMS
   };
   Object.keys(defaults).forEach(function (k) { if (getSetting_(k, null) === null) setSetting_(k, defaults[k]); });
   // getSetting_ returns '' for blanks; make sure all keys exist
@@ -1846,7 +1847,7 @@ function expenseCategoriesSave_(p, user) {
 }
 function settingsSave_(p, user) {
   var allowed = ['shop_name', 'shop_phone', 'shop_tel', 'shop_email', 'shop_web', 'shop_social', 'shop_address', 'shop_footer', 'currency', 'invoice_prefix', 'receipt_width', 'low_stock_default', 'expense_categories',
-    'sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_repair_template', 'sms_technician_template', 'sms_quote_template', 'sms_headers',
+    'sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_repair_template', 'sms_technician_template', 'sms_quote_template', 'sms_due_template', 'sms_headers',
     'dashboard_hidden', 'invoice_template', 'invoice_paper', 'invoice_custom_width', 'invoice_custom_height', 'invoice_note',
     'sms_invoice_link', 'invoice_link_base', 'books_locked_until', 'shop_logo', 'invoice_qr', 'daily_summary_enabled', 'daily_summary_phones', 'daily_summary_hour'];
   var vals = Object.assign({}, p.values || {});
@@ -1974,6 +1975,8 @@ function itemsSummary_(lines) {
   var s = lines.map(function (l) { return l.name + ' x' + l.qty; }).join(', ');
   return s.length > 110 ? s.slice(0, 107) + '...' : s;
 }
+/** Taka amounts in SMS use Bangladeshi grouping: 125000 -> 1,25,000 (paisa kept when present). */
+function smsAmt_(v) { return (Math.round(num_(v) * 100) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 }); }
 function smsMessage_(tplKey, vars) { return fillTpl_(getSetting_(tplKey), vars, 'raw'); }
 function sendSaleSms_(sale, lines, customer) {
   if (getSetting_('sms_enabled', 'false') !== 'true' || !customer) return null;
@@ -1983,7 +1986,7 @@ function sendSaleSms_(sale, lines, customer) {
   var tpl = getSetting_('sms_template');
   var msg = fillTpl_(tpl, {
     name: customer.name, shop: getSetting_('shop_name'), items: itemsSummary_(lines), invoice: sale.invoice_no,
-    total: sale.total, paid: sale.paid, due: sale.due, date: sale.date, link: link ? link.url : ''
+    total: smsAmt_(sale.total), paid: smsAmt_(sale.paid), due: smsAmt_(sale.due), date: sale.date, link: link ? link.url : ''
   }, 'raw');
   if (link && String(tpl).indexOf('{link}') < 0) msg += ' Invoice: ' + link.url; // older templates without {link}
   if (!link) msg = msg.replace(/\s*(View|Invoice|Link):?\s*$/i, ''); // template ends with "View: {link}" but links are off
@@ -2102,6 +2105,7 @@ function invoicePublic_(p) {
  *  once a day on any save.
  * ========================================================================== */
 var QUOTE_LINK_DAYS = 3, QUOTE_SHEET = '__KarvioQuoteLinks', QUOTE_LINK_MAX = 300;
+var DEFAULT_DUE_SMS = 'Dear {name}, your due at {shop} is Tk {due}. Please pay at your earliest convenience. Thank you. {shop_phone}';
 var DEFAULT_QUOTE_SMS = 'Dear {name}, your quotation from {shop}: {title}, total {total}. View it here (valid {days} days): {link}';
 function quoteLinkHash_(token) { return hash_('karvio-quote-link', token); }
 function quoteLinkRows_() {
@@ -2155,7 +2159,7 @@ function quoteSend_(p, user) {
   flush_();
   var url = linkBase_() + '#/q/' + token;
   var tpl = getSetting_('sms_quote_template', DEFAULT_QUOTE_SMS);
-  var msg = fillTpl_(tpl, { name: quote.customer || 'customer', shop: getSetting_('shop_name'), title: quote.title, total: quote.total, days: QUOTE_LINK_DAYS, link: url }, 'raw');
+  var msg = fillTpl_(tpl, { name: quote.customer || 'customer', shop: getSetting_('shop_name'), title: quote.title, total: smsAmt_(quote.total), days: QUOTE_LINK_DAYS, link: url }, 'raw');
   if (String(tpl).indexOf('{link}') < 0) msg += ' View: ' + url;
   var masked = msg.split(url).join(url.replace(/(#\/q\/[A-Za-z0-9]{4})[A-Za-z0-9]+/, '$1…'));
   var sms = sendSms_(quote.phone, msg, masked);
@@ -2223,6 +2227,34 @@ function dailySummaryTick_() {
   setSetting_('daily_summary_last', today);
   audit_({ name: 'Daily summary' }, 'daily_summary', { phones: phones.length, manual: false });
   return { sent: phones.length };
+}
+/**
+ * Due reminder SMS to the ticked customers: {name}, {due}, {shop}, {shop_phone} fill in for each.
+ * Customers with nothing due or without a phone number are skipped. The wording used is kept for next time.
+ */
+function dueReminder_(p, user) {
+  if (getSetting_('sms_enabled') !== 'true') fail_('Turn on the SMS gateway first (Settings → SMS)');
+  var ids = (Array.isArray(p.ids) ? p.ids : []).map(String).filter(Boolean);
+  if (!ids.length) fail_('Tick the customers to remind');
+  if (ids.length > 200) fail_('Send to at most 200 customers at a time');
+  var tpl = String(p.template == null ? getSetting_('sms_due_template', DEFAULT_DUE_SMS) : p.template).trim();
+  if (!tpl) fail_('Write the message first');
+  if (tpl.length > 480) fail_('The message is too long (keep it under 480 letters)');
+  if (tpl !== getSetting_('sms_due_template', DEFAULT_DUE_SMS)) setSetting_('sms_due_template', tpl);
+  var byId = {}; customersList_().forEach(function (c) { byId[c.id] = c; });
+  var shop = getSetting_('shop_name'), shopPhone = parseList_(getSetting_('shop_phone') || getSetting_('shop_tel') || '')[0] || '';
+  var results = ids.map(function (id) {
+    var c = byId[id]; if (!c) return { id: id, status: 'skipped', reason: 'not found' };
+    var due = Math.round(num_(c.balance) * 100) / 100, phone = parseList_(c.phones)[0];
+    if (due <= 0.004) return { id: id, name: c.name, status: 'skipped', reason: 'nothing due' };
+    if (!phone) return { id: id, name: c.name, status: 'skipped', reason: 'no phone number' };
+    var r = sendSms_(phone, fillTpl_(tpl, { name: c.name, due: smsAmt_(due), shop: shop, shop_phone: shopPhone }, 'raw'));
+    return { id: id, name: c.name, phone: phone, due: due, status: r.status, ok: r.ok };
+  });
+  var count = function (f) { return results.filter(f).length; };
+  var out = { sent: count(function (r) { return r.status !== 'skipped' && r.status !== 'failed'; }), failed: count(function (r) { return r.status === 'failed'; }), skipped: count(function (r) { return r.status === 'skipped'; }), results: results };
+  audit_(user, 'due_reminder', { customers: ids.length, sent: out.sent, failed: out.failed, skipped: out.skipped });
+  return out;
 }
 function smsTest_(p, user) {
   var r = sendSms_(p.phone, 'Test SMS from ' + getSetting_('shop_name') + ' - Karvio');
@@ -2436,7 +2468,7 @@ function repairStatus_(p, user) {
   audit_(user, 'repair_' + to.toLowerCase(), r.job_no);
   var out = repairOut_(upd), sms = null;
   if (to === 'Completed' && p.send_sms !== false && getSetting_('sms_enabled', 'false') === 'true' && r.phone) {
-    var msg = smsMessage_('sms_repair_template', { name: r.customer_name, device: r.device, job: r.job_no, shop: getSetting_('shop_name'), total: out.total, advance: num_(r.advance), due: out.due });
+    var msg = smsMessage_('sms_repair_template', { name: r.customer_name, device: r.device, job: r.job_no, shop: getSetting_('shop_name'), total: smsAmt_(out.total), advance: smsAmt_(r.advance), due: smsAmt_(out.due) });
     if (String(msg).trim()) { try { sms = sendSms_(r.phone, msg); } catch (e) { sms = { ok: false, status: 'failed', response: String(e.message || e) }; } }
   }
   out.sms = sms;
@@ -5179,6 +5211,7 @@ var ROUTES = {
   'sms.test':         r_('settings', smsTest_),
   'summary.preview':  r_('settings', summaryPreview_),
   'summary.send':     r_('settings', summarySend_, true),
+  'customer.remind':  r_('customers', dueReminder_, true),
   'sms.log':          r_('settings', smsLog_)
 };
 

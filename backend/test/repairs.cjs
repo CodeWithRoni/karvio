@@ -84,7 +84,7 @@ const sent = []; const realFetch = sandbox.UrlFetchApp.fetch;
 sandbox.UrlFetchApp.fetch = (url) => { sent.push(decodeURIComponent(url)); return { getResponseCode: () => 200, getContentText: () => 'SMS SUBMITTED: ID - 1' }; };
 const ready = Q('repair.status', { id: j1.id, status: 'Completed' }, tanvir.token);
 same([ready.status, ready.ready_date === sandbox.today_(), ready.sms && ready.sms.ok, ready.result_by], ['Completed', true, true, 'Tanvir'], 'Completed with SMS');
-truthy(sent.length === 1 && sent[0].includes('8801811000001') && sent[0].includes('HP laptop (Job JOB-000001) is ready at Computer Plus. Charge 3750, Advance 700, Due 3050'), 'the SMS text');
+truthy(sent.length === 1 && sent[0].includes('8801811000001') && sent[0].includes('HP laptop (Job JOB-000001) is ready at Computer Plus. Charge 3,750, Advance 700, Due 3,050'), 'the SMS text');
 same(Q('repair.status', { id: j1.id, status: 'Received', note: 'Fan noise' }).status, 'Received', 'back to work');
 Q('repair.status', { id: j1.id, status: 'Completed', send_sms: false });
 same(sent.length, 1, 'no SMS when switched off for this job');

@@ -255,7 +255,7 @@ test('due sale with a next payment date shows a dashboard reminder that switches
   // nothing collected: the whole bill is due, so the date picker appears
   await expect(page.getByLabel('Next payment date', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '1 week' }).click();
-  await expect(page.getByLabel('Next payment date', { exact: true })).toHaveValue(localYmd(7));
+  await expect(page.getByLabel('Next payment date', { exact: true })).toHaveValue((([y, m, d]) => `${Number(d)} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m - 1]} ${y}`)(localYmd(7).split('-').map(Number)));
   await page.getByLabel('Next payment date', { exact: true }).fill(localYmd(0));
   await page.getByRole('button', { name: 'Complete', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText('Sale completed');

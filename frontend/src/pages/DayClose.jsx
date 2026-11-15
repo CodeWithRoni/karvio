@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { money, fdate, fdatetime } from '../lib/format';
 import { printHtml, esc } from '../lib/export';
 import { useApi, Btn, Field, ErrorBox, Badge, Empty, Loading, useAction } from '../components/ui';
+import DateInput from '../components/DateInput';
 
 // Bangladeshi notes and coins, largest first.
 const FACES = [1000, 500, 200, 100, 50, 20, 10, 5, 2, 1];
@@ -21,7 +22,7 @@ export default function DayClose() {
     <>
       <div className="filters">
         <Field label="Account"><select value={d.account.id} onChange={(e) => setAccountId(e.target.value)} aria-label="Account to close">{d.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></Field>
-        <Field label="Day"><input type="date" value={d.date} max={d.today} onChange={(e) => e.target.value && setDate(e.target.value)} aria-label="Day to close" /></Field>
+        <Field label="Day"><DateInput value={d.date} max={d.today} onChange={(e) => e.target.value && setDate(e.target.value)} aria-label="Day to close" /></Field>
       </div>
       <ErrorBox error={q.error} onRetry={q.reload} />
       {d.closed ? <ClosedView d={d} c={d.closed} /> : <CountForm key={`${d.account.id}:${d.date}`} d={d} onSaved={q.reload} />}

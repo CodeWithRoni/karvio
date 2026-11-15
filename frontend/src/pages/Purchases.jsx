@@ -12,6 +12,7 @@ import DataTable from '../components/DataTable';
 import { useApi, PageHead, Tabs, DateRange, Badge, statusTone, Modal, Btn, Field, Loading, ErrorBox, useAction, useConfirm, Select, noWheel } from '../components/ui';
 import { ProductSearch, PaymentSplit, cleanPays, defaultPay, ReverseDialog } from '../components/widgets';
 import { excelPurchases, pdfPurchases, printPurchases } from '../lib/purchaseDocs';
+import DateInput from '../components/DateInput';
 
 export default function Purchases() {
   const can = useStore((s) => s.can);
@@ -81,8 +82,8 @@ function PurchaseList({ list, f, setF, onOpen }) {
         <Field label="Supplier"><select value={f.supplier_id} onChange={(e) => set({ supplier_id: e.target.value })} aria-label="Filter by supplier" style={{ minWidth: 220 }}>
           <option value="">All suppliers</option>{suppliers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
         </select></Field>
-        <Field label="From"><input type="date" value={f.from} onChange={(e) => set({ from: e.target.value })} aria-label="From date" /></Field>
-        <Field label="To"><input type="date" value={f.to} onChange={(e) => set({ to: e.target.value })} aria-label="To date" /></Field>
+        <Field label="From"><DateInput value={f.from} onChange={(e) => set({ from: e.target.value })} aria-label="From date" /></Field>
+        <Field label="To"><DateInput value={f.to} onChange={(e) => set({ to: e.target.value })} aria-label="To date" /></Field>
         {(f.supplier_id || f.from || f.to || f.q) && <button className="link" style={{ paddingBottom: 10 }} onClick={() => { setQ(''); setF({ supplier_id: '', from: '', to: '', q: '', page: 1, per: f.per }); }}>Clear filters</button>}
         <span className="spacer" />
         <div className="pl-export">
@@ -300,7 +301,7 @@ function NewPurchase({ onDone }) {
                     <div className="muted" style={{ fontSize: 12 }}>in stock {fqty(p?.stock, p?.unit)} · per {p?.unit}
                       {serial && !open && <> · <span className={l.serials.length ? 'sn-count' : 'sn-count bad'}>{l.serials.length ? `${l.serials.length} serial${l.serials.length === 1 ? '' : 's'} — click to edit` : 'serials missing'}</span></>}
                     </div>
-                    <details className="supplier-warranty-input" onClick={e=>e.stopPropagation()}><summary>Supplier warranty {l.supplier_warranty_expiry ? `· ${fdate(l.supplier_warranty_expiry)}` : '(optional)'}</summary><label>Expiry date<input type="date" aria-label={`Supplier warranty expiry for ${p?.name}`} value={l.supplier_warranty_expiry || ''} onChange={e=>upd(l.product_id,{supplier_warranty_expiry:e.target.value})}/></label><small className="muted">Use the supplier's actual expiry. Leave blank if not known.</small></details>
+                    <details className="supplier-warranty-input" onClick={e=>e.stopPropagation()}><summary>Supplier warranty {l.supplier_warranty_expiry ? `· ${fdate(l.supplier_warranty_expiry)}` : '(optional)'}</summary><label>Expiry date<DateInput aria-label={`Supplier warranty expiry for ${p?.name}`} value={l.supplier_warranty_expiry || ''} onChange={e=>upd(l.product_id,{supplier_warranty_expiry:e.target.value})}/></label><small className="muted">Use the supplier's actual expiry. Leave blank if not known.</small></details>
                   </td>
                   <td data-label="Qty"><input type="number" min="0" step={isDecimalUnit(p?.unit) ? 'any' : 1} value={l.qty} readOnly={serial} title={serial ? 'Counted from the serial numbers' : undefined}
                     className={`${serial ? 'readonly-qty' : ''} ${tried && b.qty ? 'invalid' : ''}`} onChange={(e) => upd(l.product_id, { qty: e.target.value })} onWheel={noWheel} aria-label={`Quantity of ${p?.name}`} /></td>
@@ -373,7 +374,7 @@ function NewPurchase({ onDone }) {
             </div>}
           </div>}
           {sup && <div className="wide"><button type="button" className="link" onClick={() => refresh('suppliers').catch(() => toast('Could not refresh supplier balance', 'err'))}>Refresh supplier balance</button></div>}
-          <Field label="Purchase date"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+          <Field label="Purchase date"><DateInput value={date} onChange={(e) => setDate(e.target.value)} /></Field>
           <Field label="Discount"><input type="number" min="0" step="any" value={discount} onChange={(e) => setDiscount(e.target.value)} /></Field>
         </div>
         <div className="totals" style={{ margin: '14px 0' }}>
@@ -450,7 +451,7 @@ function SupplierWarrantyForm({item,onClose,onDone}) {
   const [expiry,setExpiry]=useState(item.supplier_warranty_expiry || '');
   const [busy,run]=useAction();
   const save=async()=>{await run(()=>api('purchase.warranty',{item_id:item.id,expiry}),'Supplier warranty updated');onDone();};
-  return <Modal open title="Supplier warranty expiry" size="sm" onClose={onClose} footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={save}>Save warranty date</Btn></>}><p>{item.name}</p><Field label="Supplier warranty expiry" hint="Leave empty if unknown. This changes the warranty date only; purchase quantity, cost and payments stay unchanged."><input type="date" value={expiry} onChange={e=>setExpiry(e.target.value)}/></Field></Modal>;
+  return <Modal open title="Supplier warranty expiry" size="sm" onClose={onClose} footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={save}>Save warranty date</Btn></>}><p>{item.name}</p><Field label="Supplier warranty expiry" hint="Leave empty if unknown. This changes the warranty date only; purchase quantity, cost and payments stay unchanged."><DateInput value={expiry} onChange={e=>setExpiry(e.target.value)}/></Field></Modal>;
 }
 
 function PReturnForm({ detail, onClose, onDone }) {

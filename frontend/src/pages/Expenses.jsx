@@ -7,6 +7,7 @@ import { useApi, PageHead, Btn, Field, useAction, Select, DateRange, ErrorBox, B
 import { ReverseDialog } from '../components/widgets';
 import { useSearchParams } from 'react-router-dom';
 import MonthlyExpenses from '../components/MonthlyExpenses';
+import DateInput from '../components/DateInput';
 
 const catKey = (c) => String(c || '').trim().replace(/\s+/g, ' ').toLowerCase();
 
@@ -62,7 +63,7 @@ export default function Expenses() {
       {tab === 'cats' ? <ExpenseCategories cats={cats} /> : tab === 'monthly' ? <MonthlyExpenses cats={cats} onRecorded={changed} /> : <>
       <div className="split" style={{ marginBottom: 16 }}>
         <form className="card form" onSubmit={save}>
-          <Field label="Date"><input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
+          <Field label="Date"><DateInput value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
           <Field label="Category"><select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}>{cats.map((c) => <option key={c}>{c}</option>)}</select></Field>
           <Field label="Amount"><input type="number" step="any" min="0" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} required /></Field>
           <Field label="Paid from"><Select value={f.account_id} onChange={(v) => setF({ ...f, account_id: v })} options={accounts} allowEmpty={false} /></Field>
@@ -143,7 +144,7 @@ function ExpenseEdit({ expense: e, cats, onClose, onSaved }) {
     <Modal open onClose={onClose} title={`Edit expense — ${e.category}`}
       footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} disabled={!anyChange} onClick={save}>Save changes</Btn></>}>
       <div className="form">
-        <Field label="Date"><input type="date" value={f.date} max={today()} onChange={(ev) => setF({ ...f, date: ev.target.value })} /></Field>
+        <Field label="Date"><DateInput value={f.date} max={today()} onChange={(ev) => setF({ ...f, date: ev.target.value })} /></Field>
         <Field label="Category"><select value={f.category} onChange={(ev) => setF({ ...f, category: ev.target.value })}>{catOptions.map((c) => <option key={c}>{c}</option>)}</select></Field>
         <Field label="Amount"><input type="number" step="any" min="0" value={f.amount} onChange={(ev) => setF({ ...f, amount: ev.target.value })} /></Field>
         <Field label="Paid from"><Select value={f.account_id} onChange={(v) => setF({ ...f, account_id: v })} options={accOptions} allowEmpty={false} /></Field>

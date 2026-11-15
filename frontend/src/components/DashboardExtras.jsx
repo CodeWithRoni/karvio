@@ -5,6 +5,7 @@ import { useStore, shopDay } from '../lib/store';
 import { api } from '../lib/api';
 import { money, qty as fqty, fdate } from '../lib/format';
 import { Tabs, Btn, Empty } from './ui';
+import DateInput from './DateInput';
 
 // Dates in the shop's time zone (from the server), as yyyy-mm-dd.
 const addDays = (n) => shopDay(n);
@@ -47,7 +48,7 @@ export function CollectionReminders({ list, onChanged }) {
             <div className="rem-act">
               {edit === r.sale_id ? (
                 <>
-                  <input type="date" min={localToday()} value={date} onChange={(e) => setDate(e.target.value)} aria-label={`New payment date for ${r.invoice_no}`} />
+                  <DateInput min={localToday()} value={date} onChange={(e) => setDate(e.target.value)} aria-label={`New payment date for ${r.invoice_no}`} />
                   <Btn size="sm" kind="primary" busy={busy === r.sale_id} disabled={!date} onClick={() => save(r, date)}>Save</Btn>
                   <Btn size="sm" onClick={() => setEdit(null)}>Cancel</Btn>
                 </>

@@ -9,6 +9,7 @@ import DataTable from '../components/DataTable';
 import { useApi, PageHead, Tabs, Modal, Btn, Field, Badge, useAction, ErrorBox, Select } from '../components/ui';
 import { CustomerPicker, ProductSearch, SerialChooser } from '../components/widgets';
 import {repairPeriods,jobsInPeriod,repairCounts} from '../lib/repairDashboard';
+import DateInput from '../components/DateInput';
 
 // Repair jobs: Received → Completed or Failed → Delivered (or Cancelled).
 // The advance is a customer payment; delivery makes a normal invoice (parts + "Repair service" charge).
@@ -319,7 +320,7 @@ function DeliveryForm({ job, meta, onClose, onDone }) {
         {job.total > 0 && <Field label="Discount"><input type="number" min="0" step="any" value={discount} onChange={(e) => { setDiscount(e.target.value); setPay({ ...pay, amount: String(round2(Math.max(job.total - (Number(e.target.value) || 0) - advance, 0)) || '') }); }} /></Field>}
         <Field label="Received now into"><Select value={pay.account_id} onChange={(v) => setPay({ ...pay, account_id: v })} options={meta.accounts} allowEmpty={false} /></Field>
         <Field label={`Amount received (to pay ${money(toPay, false)})`}><input type="number" min="0" step="any" value={pay.amount} onChange={(e) => setPay({ ...pay, amount: e.target.value })} /></Field>
-        {left > 0.004 && <Field label={`Next payment date (${money(left, false)} stays as the customer's due)`}><input type="date" value={nextDate} onChange={(e) => setNextDate(e.target.value)} /></Field>}
+        {left > 0.004 && <Field label={`Next payment date (${money(left, false)} stays as the customer's due)`}><DateInput value={nextDate} onChange={(e) => setNextDate(e.target.value)} /></Field>}
         <p className="muted wide" style={{ margin: 0 }}>{job.total > 0 ? 'An invoice is made for the parts and the repair charge; the advance is used on it. Parts leave stock now.' : 'Nothing to charge: the job is closed without an invoice.'}</p>
       </div>
     </Modal>

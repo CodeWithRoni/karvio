@@ -1,3 +1,10 @@
+# 15 November 2026 — Bangladeshi number and date format, due reminder SMS (pending push)
+
+- Lakh commas everywhere: the A4 business invoice (unit prices and line totals) now prints 1,25,000.00 instead of 125,000.00, like the rest of the app. Taka amounts in sale, repair and quotation SMS read 1,25,000 instead of 125000.
+- Date fields: every date box (filters, expenses, purchases, day close, next payment date, books lock, supplier warranty…) shows "15 Nov 2026" whatever the computer's language, with the shop's own calendar (month arrows, Today, Yesterday, Clear; days outside the allowed range disabled). Typing works: 15/11/2026, 15-11-26, 15 Nov 2026, 2026-11-15; ↑ / ↓ move one day. New component DateInput (value stays yyyy-mm-dd).
+- Customers & dues: tick customers and "Send due reminder" — one SMS each with {name}, {due}, {shop}, {shop_phone}; every customer's own message is previewed first; customers with nothing due or no phone are skipped; the wording used is kept for next time (setting sms_due_template). Needs the customers permission and the SMS gateway. New action customer.remind (at most 200 at a time; activity log "due_reminder").
+- Tests: backend/test/features-3.mjs (11 checks), frontend/test/features-3.spec.js (3 browser tests); repairs.cjs, shop.spec.js and stock-summary.spec.js follow the new formats.
+
 # 15 November 2026 — evening fixes (pending push)
 
 - Invoice: the note now sits right under the QR code (business and other A4 templates) instead of a narrow column.

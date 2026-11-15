@@ -87,7 +87,7 @@ const bizCss = `
   .bdoc .bfoot{display:flex;justify-content:space-between;border-top:1px solid #777;margin-top:22px;padding-top:5px;font-size:11px}
   @media print{.bdoc .bfoot{display:none}}
 `;
-const m2 = (v, _x) => (Number(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const m2 = (v, _x) => (Number(v) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const SOFTWARE_LINE = 'For Software: 01913354321';
 /** Footer printed in the bottom margin of every A4 page, with "Page X of Y". */
 const bizPageCss = () => {

@@ -7,6 +7,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useApi, PageHead, Modal, Btn, Field, useAction, Select, DateRange, ErrorBox, Badge, Tabs, useConfirm } from '../components/ui';
 import DayClose from './DayClose';
 import { ReverseDialog } from '../components/widgets';
+import DateInput from '../components/DateInput';
 
 const TYPES = [['cash', 'Cash'], ['mfs', 'Mobile banking (bKash, Nagad, Rocket…)'], ['bank', 'Bank account']];
 
@@ -106,7 +107,7 @@ function EntryForm({ initial, accounts, onClose, onDone }) {
         <Field label={transfer ? 'From' : 'Account'} wide><Select value={f.account_id} onChange={(v) => setF({ ...f, account_id: v })} options={accounts} allowEmpty={false} /></Field>
         {transfer && <Field label="To" wide><Select value={f.to_account_id} onChange={(v) => setF({ ...f, to_account_id: v })} options={accounts} allowEmpty={false} /></Field>}
         <Field label="Amount"><input type="number" step="any" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} autoFocus /></Field>
-        <Field label="Date"><input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
+        <Field label="Date"><DateInput value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
         <Field label="Note" wide><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} placeholder={transfer ? 'e.g. bKash cash out to drawer' : ''} /></Field>
       </div>
     </Modal>
