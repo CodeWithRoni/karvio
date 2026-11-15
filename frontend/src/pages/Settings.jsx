@@ -73,9 +73,10 @@ function useSettingsForm(keys) {
 }
 
 function ShopSettings() {
-  const { f, setF, bind, save, busy } = useSettingsForm(['shop_name', 'shop_phone', 'shop_tel', 'shop_email', 'shop_web', 'shop_social', 'shop_address', 'currency', 'invoice_prefix', 'low_stock_default']);
+  const { f, setF, bind, save, busy } = useSettingsForm(['shop_name', 'shop_phone', 'shop_tel', 'shop_email', 'shop_web', 'shop_social', 'shop_address', 'currency', 'invoice_prefix', 'low_stock_default', 'shop_logo']);
   return (
     <div className="card form">
+      <LogoPicker value={f.shop_logo} onChange={(v) => setF({ ...f, shop_logo: v })} />
       <Field label="Shop name" wide><input {...bind('shop_name')} /></Field>
       <Field label="Phone"><input {...bind('shop_phone')} /></Field>
       <Field label="Tel"><input {...bind('shop_tel')} placeholder="Landline / hotline" /></Field>
@@ -88,6 +89,42 @@ function ShopSettings() {
       <Field label="Default low-stock alert"><input type="number" {...bind('low_stock_default')} /></Field>
 
       <div className="wide row end"><Btn kind="primary" busy={busy} onClick={save}>Save settings</Btn></div>
+    </div>
+  );
+}
+
+/** Shop logo: shrunk in the browser (max 320 × 160) so it stays small on every invoice and on the sign-in screen. */
+function LogoPicker({ value, onChange }) {
+  const toast = useStore((s) => s.toast);
+  const pick = (file) => {
+    if (!file) return;
+    if (!/^image\/(png|jpeg|webp|gif|svg\+xml)$/.test(file.type)) return toast('Choose a PNG, JPEG, WebP, GIF or SVG picture', 'err');
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, 320 / img.naturalWidth, 160 / img.naturalHeight);
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      let data = c.toDataURL('image/png');
+      if (data.length > 150000) data = c.toDataURL('image/webp', 0.9);
+      if (data.length > 190000) return toast('That picture is too detailed; try a simpler logo', 'err');
+      onChange(data);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); toast('Could not read that picture', 'err'); };
+    img.src = url;
+  };
+  return (
+    <div className="wide logo-pick">
+      <span className="field-label">Shop logo</span>
+      <div className="logo-row">
+        <div className="logo-box">{value ? <img src={value} alt="Shop logo" /> : <span className="muted">No logo</span>}</div>
+        <div className="logo-actions">
+          <label className="btn">Choose picture<input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" hidden onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ''; }} /></label>
+          {value && <Btn onClick={() => onChange('')}>Remove</Btn>}
+          <small className="muted">Printed on invoices and receipts, and shown on the sign-in screen and menu. Save settings to keep it.</small>
+        </div>
+      </div>
     </div>
   );
 }
@@ -122,7 +159,7 @@ const SAMPLE = {
 };
 
 function InvoiceSettings() {
-  const { f, setF, bind, save, busy } = useSettingsForm(['invoice_template', 'invoice_paper', 'invoice_custom_width', 'invoice_custom_height', 'invoice_note', 'shop_footer', 'receipt_width']);
+  const { f, setF, bind, save, busy } = useSettingsForm(['invoice_template', 'invoice_paper', 'invoice_custom_width', 'invoice_custom_height', 'invoice_note', 'shop_footer', 'receipt_width', 'invoice_qr']);
   const settings = useStore((s) => s.settings);
   const paper = f.invoice_paper || String(f.receipt_width || 80);
   const tpl = f.invoice_template || 'classic';
@@ -159,6 +196,7 @@ function InvoiceSettings() {
         <textarea {...bind('invoice_note')} rows={3} placeholder="e.g. Goods once sold are not refundable. Warranty does not cover burn or physical damage." />
       </Field>
       {f.invoice_note && <p className="wide muted" style={{ margin: 0 }}>Preview: <b>Note:</b> {f.invoice_note}</p>}
+      <label className="check wide"><input type="checkbox" checked={f.invoice_qr !== 'false'} onChange={(e) => setF({ ...f, invoice_qr: String(e.target.checked) })} /> Print a QR code with the invoice number (scan it in Advanced search to find the invoice for warranty, service or returns)</label>
       <div className="wide row end">
         <Btn onClick={sample}>Print a sample</Btn>
         <Btn kind="primary" busy={busy} onClick={saveAll}>Save invoice settings</Btn>

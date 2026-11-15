@@ -9,11 +9,12 @@ for(const discount of [150,-1,Infinity,'not money']){eq(pricing.quotationTotals(
 eq(pricing.quotationTotals([{qty:1,price:100}],25).total,75);eq(pricing.quotationTotals([{qty:1,price:100}],100).total,0);
 eq(pricing.quotationTotals([{qty:1,price:-100}],0).valid,false);
 const printed=[];const exportMocks={esc:x=>String(x??''),shopContacts:()=>'',printHtml:html=>printed.push(html)};
-const receipt=load('lib/receipt.js',{'./quotationTotals':pricing,'./store':{useStore:store},'./format':format,'./export':exportMocks});
+const qrMock={qrSvg:()=>'<svg></svg>',invoiceQr:()=>'',logoImg:()=>''};
+const receipt=load('lib/receipt.js',{'./qr':qrMock,'./quotationTotals':pricing,'./store':{useStore:store},'./format':format,'./export':exportMocks});
 assert.throws(()=>receipt.printQuotation({lines:[{name:'Part',qty:1,price:100}],discount:150}),/Discount/);checks++;eq(printed.length,0);
 receipt.printQuotation({lines:[{name:'Part',qty:1,price:100}],discount:25});assert(printed[0].includes('Tk 75'));checks++;
 // A public document uses its own shop/template and live amounts, without replacing frozen staff fields.
-const docs=load('lib/salesDocs.js',{'./store':{useStore:store},'./format':format,'./export':exportMocks,'./purchaseDocs':{pdfPages:()=>{}}});
+const docs=load('lib/salesDocs.js',{'./qr':qrMock,'./store':{useStore:store},'./format':format,'./export':exportMocks,'./purchaseDocs':{pdfPages:()=>{}}});
 const sale={invoice_no:'FOLLOWUP',customer_id:'C',customer_name:'Customer',total:500,subtotal:500,paid:100,paid_at_sale:100,paid_now:500,due:0,due_now:0,net_total:500,returned_total:0,live_invoice:true,status:'active',balance_snapshot:JSON.stringify({previous:0,outstanding:400}),payments:[{account_name:'Cash',amount:100}]};
 const detail={sale,shop:{shop_name:'Public shop',invoice_template:'business',invoice_note:'Public note'},customer:{balance:0},items:[],returns:[]};
 let html=docs.saleDocHtml(detail);assert(html.includes('Public shop'));assert(!html.includes('Unrelated staff shop'));assert(html.includes('.bdoc'));checks+=3;

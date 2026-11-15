@@ -379,7 +379,7 @@ function NewPurchase({ onDone }) {
             <span><b>{after >= 0 ? 'Total payable to supplier' : 'Advance left with supplier'}</b></span><b className="num" style={{ color: after > 0 ? 'var(--bad)' : 'var(--ok)' }}>{money(Math.abs(after))}</b>
           </>}
         </div>
-        <Field label="Supplier invoice no." wide hint="The number printed on the supplier's bill — search for it later in Purchases or Advance Search."><input value={supInv} maxLength={60} onChange={(e) => setSupInv(e.target.value)} placeholder="e.g. INV-2026-0457" /></Field>
+        <Field label="Supplier invoice no." wide hint="The number printed on the supplier's bill — search for it later in Purchases or Advanced search."><input value={supInv} maxLength={60} onChange={(e) => setSupInv(e.target.value)} placeholder="e.g. INV-2026-0457" /></Field>
         <Field label="Note" wide><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Anything to remember about this purchase" /></Field>
         {confirmDlg}
         <Btn kind="primary" size="lg" style={{ width: '100%', marginTop: 14 }} busy={busy} disabled={!lines.length} onClick={save}>Save purchase</Btn>

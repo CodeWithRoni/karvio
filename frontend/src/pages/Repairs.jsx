@@ -121,7 +121,7 @@ function JobForm({ job, meta, onClose, onDone }) {
     set({ parts: [...f.parts, { product_id: p.id, name: p.name, unit: p.unit, qty: isSerial(p) ? 0 : 1, price: p.sale_price, serials: [] }] });
   };
   const total = round2(partsTotal(f.parts) + (Number(f.charge) || 0));
-  // Technicians come from Users & Roles (role Technician); a person already on the job stays in the list.
+  // Technicians come from Users & roles (role Technician); a person already on the job stays in the list.
   const techs = job && job.technician_id && !meta.technicians.some((u) => u.id === job.technician_id)
     ? [...meta.technicians, { id: job.technician_id, name: job.technician_name, phone: '' }] : meta.technicians;
   const techPhone = (techs.find((u) => u.id === f.technician_id) || {}).phone;
@@ -169,7 +169,7 @@ function JobForm({ job, meta, onClose, onDone }) {
         <Field label="Serial / model (optional)"><input value={f.serial} onChange={(e) => set({ serial: e.target.value })} /></Field>
         <Field label="Problem" wide><textarea value={f.problem} onChange={(e) => set({ problem: e.target.value })} placeholder="What the customer says is wrong" /></Field>
         <Field label="Received with (accessories)" wide><input value={f.accessories} onChange={(e) => set({ accessories: e.target.value })} placeholder="e.g. Charger, bag, no battery" /></Field>
-        <Field label="Technician" hint={!techs.length ? 'Add technicians in Users & Roles (role: Technician).' : f.technician_id ? (techPhone ? `Mobile: ${techPhone} — gets this job by SMS` : 'No mobile number saved for this person') : undefined}>
+        <Field label="Technician" hint={!techs.length ? 'Add technicians in Users & roles (role: Technician).' : f.technician_id ? (techPhone ? `Mobile: ${techPhone} — gets this job by SMS` : 'No mobile number saved for this person') : undefined}>
           <Select value={f.technician_id} onChange={(v) => set({ technician_id: v })} options={techs} placeholder="Not assigned" />
         </Field>
         <Field label="Estimate (told to the customer)"><input type="number" min="0" step="any" value={f.estimate} onChange={(e) => set({ estimate: e.target.value })} /></Field>

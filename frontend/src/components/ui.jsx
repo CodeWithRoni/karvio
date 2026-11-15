@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { Bone } from './Skeleton';
 import { useStore } from '../lib/store';
 import { api } from '../lib/api';
 
@@ -97,7 +98,7 @@ export function useHotkeys(map, deps = []) {
 
 export function Btn({ kind = 'ghost', size, busy, children, className = '', ...p }) {
   return (
-    <button {...p} className={`btn btn-${kind} ${size ? 'btn-' + size : ''} ${className}`} disabled={!!(busy || p.disabled)}>
+    <button {...p} className={`btn btn-${kind} ${size ? 'btn-' + size : ''} ${busy ? 'is-busy' : ''} ${className}`} disabled={!!(busy || p.disabled)} aria-busy={busy ? 'true' : undefined}>
       {busy && <span className="spin" aria-hidden />}
       {children}
     </button>
@@ -122,11 +123,31 @@ export const statusTone = (s) => ({
   in_stock: 'ok', sold: 'info', returned_supplier: 'warn'
 }[s] || 'muted');
 
-export function Empty({ title = 'Nothing here yet', children }) {
-  return <div className="empty"><b>{title}</b>{children && <div>{children}</div>}</div>;
+const EMPTY_ICONS = {
+  inbox: <><path d="M3 13l3-8h12l3 8" /><path d="M3 13v6h18v-6h-5l-1.5 2.5h-5L8 13z" /></>,
+  box: <><path d="M21 8l-9-5-9 5 9 5 9-5z" /><path d="M3 8v8l9 5 9-5V8" /><path d="M12 13v8" /></>,
+  search: <><circle cx="11" cy="11" r="6.5" /><path d="M20 20l-4.2-4.2" /></>,
+  receipt: <><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" /><path d="M9 8h6M9 12h6" /></>,
+  ok: <><circle cx="12" cy="12" r="9" /><path d="M8 12.5l2.6 2.5L16 9.5" /></>
+};
+/** Empty state: icon, title, a line of help and optional buttons (`action`). `compact` keeps it small inside cards. */
+export function Empty({ title = 'Nothing here yet', children, icon = 'inbox', action, compact = false }) {
+  return (
+    <div className={`empty ${compact ? 'compact' : ''}`}>
+      {icon && <span className="empty-ic" aria-hidden="true"><svg width={compact ? 22 : 34} height={compact ? 22 : 34} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">{EMPTY_ICONS[icon] || EMPTY_ICONS.inbox}</svg></span>}
+      <b>{title}</b>{children && <div className="empty-help">{children}</div>}
+      {action && <div className="empty-actions">{action}</div>}
+    </div>
+  );
 }
+/** Loading placeholder: grey lines in the shape of content, with the label for screen readers and a quiet caption. */
 export function Loading({ label = 'Loading' }) {
-  return <div className="loading"><span className="spin" /> {label}…</div>;
+  return (
+    <div className="loading" role="status" aria-live="polite">
+      <div className="loading-lines" aria-hidden="true"><Bone w="62%" h={14} /><Bone w="88%" /><Bone w="74%" /><Bone w="40%" /></div>
+      <small>{label}…</small>
+    </div>
+  );
 }
 export function ErrorBox({ error, onRetry }) {
   if (!error) return null;

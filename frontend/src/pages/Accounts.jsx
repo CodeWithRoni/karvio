@@ -3,7 +3,9 @@ import { useStore } from '../lib/store';
 import { api } from '../lib/api';
 import { money, monthStart, today } from '../lib/format';
 import DataTable from '../components/DataTable';
-import { useApi, PageHead, Modal, Btn, Field, useAction, Select, DateRange, ErrorBox, Badge } from '../components/ui';
+import { useSearchParams } from 'react-router-dom';
+import { useApi, PageHead, Modal, Btn, Field, useAction, Select, DateRange, ErrorBox, Badge, Tabs } from '../components/ui';
+import DayClose from './DayClose';
 import { ReverseDialog } from '../components/widgets';
 
 const TYPES = [['cash', 'Cash'], ['mfs', 'Mobile banking (bKash, Nagad, Rocket…)'], ['bank', 'Bank account']];
@@ -15,10 +17,20 @@ export default function Accounts() {
   const [sel, setSel] = useState(null);
   const accs = list.data || [];
   const active = accs.filter((a) => a.active);
+  const [params, setParams] = useSearchParams();
+  const tab = params.get('tab') === 'dayclose' ? 'dayclose' : 'accounts';
+  const tabs = <Tabs tabs={[['accounts', 'Accounts'], ['dayclose', 'Day close']]} value={tab} onChange={(v) => setParams(v === 'dayclose' ? { tab: v } : {}, { replace: true })} />;
 
+  if (tab === 'dayclose') return (
+    <>
+      <PageHead title="Cash, bank & MFS" sub="Count the cash at the end of the day and compare it with the books.">{tabs}</PageHead>
+      <DayClose />
+    </>
+  );
   return (
     <>
       <PageHead title="Cash, bank & MFS" sub="Every sale, purchase, expense and refund moves money in or out of one of these accounts automatically.">
+        {tabs}
         <Btn onClick={() => setEntry({ kind: 'transfer' })}>Transfer</Btn>
         <Btn onClick={() => setEntry({ kind: 'deposit' })}>Deposit / withdraw</Btn>
         <Btn kind="primary" onClick={() => setEdit({ name: '', type: 'mfs', number: '', opening_balance: 0 })}>Add account</Btn>

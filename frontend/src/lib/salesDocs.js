@@ -3,6 +3,7 @@ import { useStore } from './store';
 import { unitPrice, money, qty, fdate, fdatetime, splitList, today } from './format';
 import { printHtml, esc, shopContacts } from './export';
 import { pdfPages } from './purchaseDocs';
+import { invoiceQr, logoImg } from './qr';
 
 const css = `
   .sdoc{font:12px/1.45 'Manrope','Hind Siliguri',system-ui,sans-serif;color:#111;background:#fff;padding:0 2px}
@@ -18,8 +19,11 @@ const css = `
   .sdoc .tot{margin-left:auto;width:290px;margin-top:10px}.sdoc .tot td{border:0;padding:3px 0}.sdoc .tot .g td{font-weight:800;font-size:14px;border-top:2px solid #0d1b2a;padding-top:6px}
   .sdoc .cx{margin:8px 0;padding:6px 10px;border:2px solid #c0392b;color:#c0392b;font-weight:800;text-align:center}
   .sdoc .log li{margin:3px 0}.sdoc .foot{margin-top:18px;display:flex;justify-content:space-between;font-size:11px;color:#444}
+  .sdoc .brandbox{display:flex;gap:12px;align-items:center}.doc-logo{max-height:60px;max-width:150px;object-fit:contain;flex:none}
+  .inv-qr{display:flex;gap:12px;align-items:center;margin-top:14px;padding:8px 10px;border:1px solid #ccd3dc;border-radius:6px;font-size:11px;line-height:1.5;break-inside:avoid}
+  .inv-qr-code{width:78px;height:78px;flex:none}.inv-qr-code svg{width:100%;height:100%;display:block}
 `;
-const head = (title, right, settings = useStore.getState().settings) => { const s = settings; return `<div class="top"><div><h1>${esc(s.shop_name || 'Karvio')}</h1><div>${esc(s.shop_address || '')}</div><div>${shopContacts(s)}</div></div><div><h2>${title}</h2><div style="text-align:right">${right}</div></div></div>`; };
+const head = (title, right, settings = useStore.getState().settings) => { const s = settings; return `<div class="top"><div class="brandbox">${logoImg(s)}<div><h1>${esc(s.shop_name || 'Karvio')}</h1><div>${esc(s.shop_address || '')}</div><div>${shopContacts(s)}</div></div></div><div><h2>${title}</h2><div style="text-align:right">${right}</div></div></div>`; };
 const pays = (x) => { try { return Array.isArray(x.payments) ? x.payments : JSON.parse(x.payments || '[]'); } catch { return []; } };
 const sers = (v) => splitList(String(v || '').replace(/\n/g, ','));
 // Invoice templates (Settings → Invoice). They restyle the same content.
@@ -60,6 +64,7 @@ const bizCss = `
   .bdoc{font:12.5px/1.4 'Times New Roman',Times,'Hind Siliguri',serif;color:#000;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact;padding:0 2px}
   .bdoc *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .bdoc *{box-sizing:border-box}
+  .bdoc .blogo{display:block;margin:0 auto 6px;max-height:56px;max-width:180px}.bdoc .inv-qr{margin:0 0 10px;border-color:#000}
   .bdoc .bh{text-align:center;margin-bottom:8px}.bdoc .bh h1{margin:0 0 4px;font-size:30px;font-weight:700}.bdoc .bh div{font-size:11.5px}
   .bdoc .bbar{background:#b5b5b5;border:1px solid #8f8f8f;text-align:center;font-weight:700;font-size:14px;padding:5px}
   .bdoc .binfo{display:grid;grid-template-columns:1.15fr 1fr;gap:20px;background:#ececec;border:1px solid #b5b5b5;border-top:0;padding:10px 12px;margin-bottom:12px}
@@ -114,7 +119,7 @@ function businessInvoiceHtml(d) {
   const walkIn = !s.customer_id || !s.customer_name || /^walk-?in/i.test(String(s.customer_name).trim());
   const now = new Date();
   return `<div class="bdoc">
-    <div class="bh"><h1>${esc(st.shop_name || 'Karvio')}</h1>${st.shop_address ? `<div>${esc(st.shop_address)}</div>` : ''}${shopContacts(st) ? `<div>${shopContacts(st)}</div>` : ''}</div>
+    <div class="bh">${logoImg(st, 'doc-logo blogo')}<h1>${esc(st.shop_name || 'Karvio')}</h1>${st.shop_address ? `<div>${esc(st.shop_address)}</div>` : ''}${shopContacts(st) ? `<div>${shopContacts(st)}</div>` : ''}</div>
     <div class="bbar">Invoice/ Bill</div>
     <div class="binfo">
       <table>${row('Sold To', `<b>${walkIn ? 'CASH' : esc(s.customer_name)}</b>`)}${row('Address', !walkIn && c.addresses ? esc(String(c.addresses).split('|').map((x) => x.trim()).filter(Boolean).join('; ')) : '—')}${row('Contact No', walkIn ? esc(st.shop_tel || st.shop_phone || '—') : phone || '—')}${row('Invoice No', esc(s.invoice_no))}</table>
@@ -139,7 +144,7 @@ function businessInvoiceHtml(d) {
       </table>
     </div>
     <div class="bspace"></div>
-    <div class="bend">${noteHtml(st)}<div class="bsign">Authorised Signature And Company Stamp</div></div></div>
+    <div class="bend">${invoiceQr(s.invoice_no, st)}${noteHtml(st)}<div class="bsign">Authorised Signature And Company Stamp</div></div></div>
     <div class="bfoot"><span>Print Date: ${esc(fdate(today()))}</span><span>Print Time: ${esc(now.toLocaleTimeString('en-US'))}</span><span>${SOFTWARE_LINE}</span><span>Page 1 of 1</span></div>
   </div>`;
 }
@@ -174,6 +179,7 @@ export function saleInvoiceHtml(d) {
       ${s.next_payment_date && s.due > 0 ? `<tr><td>Next payment date</td><td class="r">${esc(fdate(s.next_payment_date))}</td></tr>` : ''}
     </table>
     ${d.returns && d.returns.length ? `<p class="sm">Returns: ${esc(d.returns.map((r) => `${r.return_no} (${money(r.total, false)}, ${r.status})`).join(', '))}</p>` : ''}
+    ${invoiceQr(s.invoice_no, st)}
     <div class="foot"><span>Printed ${esc(new Date().toLocaleString())}</span><span>Customer signature: ____________________</span></div>${noteHtml(st)}</div>`;
 }
 export const printSales = (list, paper) => printHtml(wrap(list.map(saleInvoiceHtml), paper, isBiz(list)), fitBizEnd);

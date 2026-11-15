@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { Btn } from './ui';
-import { isOffline } from '../lib/api';
+import { isOffline, endpoint } from '../lib/api';
+import { saveBrand } from '../lib/brand';
 import NavIcon from './NavIcon';
 
 // Karvio app mark (files in public/, so they work on GitHub Pages, desktop and mobile builds).
@@ -24,33 +25,36 @@ export const DoorIcon = ({ open = true, size = 20 }) => (
 const nameSize = (n) => (n.length > 22 ? 12 : n.length > 17 ? 13 : 15);
 const NAV_KEY = 'karvio_nav_hidden';
 const readHidden = () => { try { return localStorage.getItem(NAV_KEY) === '1'; } catch { return false; } };
+const CLOSED_KEY = 'karvio_nav_closed';
+const readClosed = () => { try { const v = JSON.parse(localStorage.getItem(CLOSED_KEY) || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };
+const Chevron = () => <svg className="nav-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>;
 
 /** Navigation. `key` = Alt+key shortcut. */
 export const NAV = [
   { group: 'Search' },
-  { to: '/history', label: 'Advance Search', key: '8' },
+  { to: '/history', label: 'Advanced search', key: '8' },
   { group: 'Daily Work' },
   { to: '/', label: 'Dashboard', key: '1', end: true },
-  { to: '/pos', label: 'Point Of Sale', perm: 'pos', key: '2' },
-  { to: '/sales', label: 'Sales & Returns', perm: 'pos', key: '3' },
-  { to: '/pc-builder', label: 'PC Builder & Quotes', perm: 'pos' },
-  { to: '/customers', label: 'Customers & Dues', key: '4' },
+  { to: '/pos', label: 'Point of sale', perm: 'pos', key: '2' },
+  { to: '/sales', label: 'Sales & returns', perm: 'pos', key: '3' },
+  { to: '/pc-builder', label: 'PC builder & quotes', perm: 'pos' },
+  { to: '/customers', label: 'Customers & dues', key: '4' },
   { to: '/repairs', label: 'Repairs', perm: 'repairs' },
   { to: '/service', label: 'Service', perm: 'repairs' },
   { group: 'Stock' },
-  { to: '/stock', label: 'Products & Stock', key: '5' },
-  { to: '/barcodes', label: 'Barcode Labels' },
-  { to: '/prices', label: 'Price Manager', perm: 'products' },
-  { to: '/purchases', label: 'Purchases & Returns', perm: 'purchase', key: '6' },
-  { to: '/suppliers', label: 'Suppliers & Dues', perm: 'suppliers' },
-  { to: '/warranty', label: 'Warranty Claims', perm: 'warranty', key: '7' },
+  { to: '/stock', label: 'Products & stock', key: '5' },
+  { to: '/barcodes', label: 'Barcode labels' },
+  { to: '/prices', label: 'Price manager', perm: 'products' },
+  { to: '/purchases', label: 'Purchases & returns', perm: 'purchase', key: '6' },
+  { to: '/suppliers', label: 'Suppliers & dues', perm: 'suppliers' },
+  { to: '/warranty', label: 'Warranty claims', perm: 'warranty', key: '7' },
   { group: 'Money & Reports' },
-  { to: '/accounts', label: 'Cash, Bank & MFS', perm: 'accounts' },
+  { to: '/accounts', label: 'Cash, bank & MFS', perm: 'accounts' },
   { to: '/profit', label: 'Profit', perm: ['reports', 'cost'] },
   { to: '/expenses', label: 'Expenses', perm: 'expenses' },
-  { to: '/reports', label: 'Reports Hub', perm: 'reports', key: '9' },
+  { to: '/reports', label: 'Reports hub', perm: 'reports', key: '9' },
   { group: 'Admin' },
-  { to: '/users', label: 'Users & Roles', perm: 'users' },
+  { to: '/users', label: 'Users & roles', perm: 'users' },
   { to: '/settings', label: 'Settings' }
 ];
 
@@ -58,10 +62,14 @@ export default function Layout() {
   const { user, settings, theme, toggleTheme, logout, can } = useStore();
   const [open, setOpen] = useState(false);
   const [hidden, setHidden] = useState(readHidden); // desktop: menu tucked away
+  const [closed, setClosed] = useState(readClosed); // menu groups folded away by this user on this browser
+  const [showKeys, setShowKeys] = useState(false); // Alt held: every shortcut shows
+  const toggleGroup = (title) => setClosed((c) => { const next = c.includes(title) ? c.filter((x) => x !== title) : [...c, title]; try { localStorage.setItem(CLOSED_KEY, JSON.stringify(next)); } catch { /* private mode */ } return next; });
   const toggleHidden = () => setHidden((h) => { try { localStorage.setItem(NAV_KEY, h ? '0' : '1'); } catch { /* private mode */ } return !h; });
   const loc = useLocation();
   const nav = useNavigate();
   useEffect(() => setOpen(false), [loc.pathname]);
+  useEffect(() => { if (!isOffline()) saveBrand(endpoint(), settings); }, [settings]);
   // Phone menu: Esc closes it, and the page behind does not scroll while it is open.
   useEffect(() => {
     if (!open) return undefined;
@@ -80,6 +88,13 @@ export default function Layout() {
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, [nav, can]);
+  useEffect(() => {
+    const down = (e) => { if (e.key === 'Alt') setShowKeys(true); };
+    const up = (e) => { if (e.key === 'Alt') setShowKeys(false); };
+    const off = () => setShowKeys(false);
+    window.addEventListener('keydown', down); window.addEventListener('keyup', up); window.addEventListener('blur', off);
+    return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); window.removeEventListener('blur', off); };
+  }, []);
 
   const items = NAV.filter((n) => n.group || !n.perm || can(n.perm));
   // drop empty groups, then bundle each group with its links so every group is its own card
@@ -89,23 +104,30 @@ export default function Layout() {
   const tone = { Search: 'g-search', 'Daily Work': 'g-daily', Stock: 'g-stock', 'Money & Reports': 'g-money', Admin: 'g-admin' };
 
   return (
-    <div className={`shell ${open ? 'nav-open' : ''} ${hidden ? 'nav-hidden' : ''}`} onClick={(e) => open && e.target === e.currentTarget && setOpen(false)}>
+    <div className={`shell ${open ? 'nav-open' : ''} ${hidden ? 'nav-hidden' : ''} ${showKeys ? 'show-keys' : ''}`} onClick={(e) => open && e.target === e.currentTarget && setOpen(false)}>
       <aside className="rail" aria-hidden={hidden ? 'true' : undefined}>
         <div className="brand">
           <div className="brand-top">
-            <Logo size={24} />
+            {/^data:image\//.test(settings.shop_logo || '') ? <img className="brand-logo" src={settings.shop_logo} alt="" /> : <Logo size={24} />}
             <b className="brand-name" title={settings.shop_name || 'Karvio'} style={{ fontSize: nameSize(settings.shop_name || 'Karvio') }}>{settings.shop_name || 'Karvio'}</b>
             <button type="button" className="door-btn" onClick={() => (open ? setOpen(false) : toggleHidden())} title="Hide the menu" aria-label="Hide the menu"><DoorIcon open size={16} /></button>
           </div>
           <small className="brand-sub">{isOffline() ? 'Offline · saved on this PC' : 'Karvio · Shop management & POS'}</small>
         </div>
         <nav className="nav">
-          {groups.map((g) => (
-            <section className={`nav-card ${tone[g.title] || ''}`} key={g.title}>
-              <div className="nav-group"><NavIcon name={g.title} group />{g.title}</div>
-              {g.links.map((n) => <NavLink key={n.to} to={n.to} end={n.end} title={n.label}><NavIcon name={n.to} /><span className="nav-item-label">{n.label}</span>{n.key && <kbd>Alt {n.key}</kbd>}</NavLink>)}
-            </section>
-          ))}
+          {groups.map((g) => {
+            // The group holding the open page never folds away.
+            const here = g.links.some((n) => (n.end ? loc.pathname === n.to : loc.pathname === n.to || loc.pathname.startsWith(n.to + '/')));
+            const shut = closed.includes(g.title) && !here;
+            return (
+              <section className={`nav-card ${tone[g.title] || ''} ${shut ? 'closed' : ''}`} key={g.title}>
+                <button type="button" className="nav-group" aria-expanded={!shut} aria-label={`${g.title} menu group`} onClick={() => toggleGroup(g.title)} title={shut ? `Show ${g.title}` : `Fold ${g.title}`}>
+                  <NavIcon name={g.title} group />{g.title}{shut && <span className="nav-count">{g.links.length}</span>}<Chevron />
+                </button>
+                {!shut && g.links.map((n) => <NavLink key={n.to} to={n.to} end={n.end} title={n.key ? `${n.label} (Alt+${n.key})` : n.label}><NavIcon name={n.to} /><span className="nav-item-label">{n.label}</span>{n.key && <kbd>Alt {n.key}</kbd>}</NavLink>)}
+              </section>
+            );
+          })}
         </nav>
         <div className="rail-foot">
           <div className="who"><b>{user?.name}</b><span className="muted">{{ sales: 'Sales staff', manager: 'Manager', technician: 'Technician', admin: 'Admin' }[user?.role] || user?.role || 'Staff'}</span></div>

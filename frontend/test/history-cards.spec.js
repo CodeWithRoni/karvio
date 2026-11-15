@@ -1,4 +1,4 @@
-// Advance Search: product / purchase / sale / sales return / purchase return / warranty cards for a serial, a product
+// Advanced search: product / purchase / sale / sales return / purchase return / warranty cards for a serial, a product
 // and an invoice; every number opens the full document (the sale invoice exactly as the POS prints it) and prints it.
 import { test, expect } from '@playwright/test';
 

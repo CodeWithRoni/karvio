@@ -1,4 +1,5 @@
 import { quotationTotals, quotationPrice } from './quotationTotals';
+import { qrSvg, logoImg } from './qr';
 // Thermal receipts (58mm / 80mm), A4 quotation and ledger statements.
 import { useStore } from './store';
 import { unitPrice, money, qty, fdate, fdatetime, splitList, today } from './format';
@@ -65,9 +66,11 @@ export function receiptHtml(detail, widthOverride, height = 0) {
     .t-modern .head{background:#000;color:#fff;padding:5px 4px;border-radius:4px}.t-modern .tot td{border-top:1.5px solid #000;padding-top:2px}
     .t-modern .ttl{display:block;margin:4px 0;text-align:center;font-weight:800;letter-spacing:.2em}
     .note{margin-top:6px;text-align:left;white-space:pre-wrap;font-size:${fs - 1}px}
+    .rlogo{display:block;margin:0 auto 4px;max-width:60%;max-height:22mm;object-fit:contain;filter:grayscale(1)}
+    .rqr{display:block;margin:6px auto 2px;width:24mm;height:24mm}.rqr svg{width:100%;height:100%;display:block}
   </style>
   <div class="t-${esc(tpl)}">
-  <div class="head">${shopHead(s)}</div>
+  <div class="head">${logoImg(s, 'rlogo')}${shopHead(s)}</div>
   ${tpl === 'modern' ? '<span class="ttl">INVOICE</span>' : '<hr>'}
   <div>Invoice: <b>${esc(sale.invoice_no)}</b></div>
   <div>Date: ${esc(fdatetime(sale.created_at || sale.date))}</div>
@@ -90,6 +93,7 @@ export function receiptHtml(detail, widthOverride, height = 0) {
   <hr>
   <div class="c">${esc(s.shop_footer || 'Thank you!')}</div>
   <div class="c sm">Goods sold are subject to warranty terms.</div>
+  ${String(s.invoice_qr ?? 'true') !== 'false' && sale.invoice_no ? `<div class="rqr">${qrSvg(sale.invoice_no, 2)}</div><div class="c sm">Scan at the shop to find this invoice</div>` : ''}
   ${note ? `<div class="note"><b>Note:</b> ${esc(note)}</div>` : ''}
   </div>`;
 }

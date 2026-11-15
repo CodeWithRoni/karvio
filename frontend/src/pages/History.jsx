@@ -63,14 +63,14 @@ export default function History() {
 
   return (
     <>
-      <PageHead title="Advance Search" sub="Search a serial number, product (name, model or barcode), invoice or purchase number to see its complete life cycle." />
+      <PageHead title="Advanced search" sub="Search a serial number, product (name, model or barcode), invoice or purchase number to see its complete life cycle." />
       <form className="row" onSubmit={go} style={{ marginBottom: 16 }}>
         <div className="psearch camera-field" style={{ flex: 1 }}><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Serial / IMEI, product name, model, barcode, INV-000123, PUR-000045 or supplier invoice" aria-label="Search" autoFocus /><CameraScanButton label="Scan barcode or serial to search" title="Scan to search history" onScan={code=>go(null,code)} disabled={loading}/></div>
         <Btn kind="primary" size="lg" busy={loading} type="submit">Search</Btn>
       </form>
       <ErrorBox error={err} />
       {loading && <Loading label="Tracing history" />}
-      {res && res.kind === 'none' && <Empty title={`Nothing found for “${res.query}”`}>Serials must match exactly. Try part of the product name, the model, or the invoice number printed on the receipt.</Empty>}
+      {res && res.kind === 'none' && <Empty icon="search" title={`Nothing found for “${res.query}”`}>Serials must match exactly. Try part of the product name, the model, or the invoice number printed on the receipt.</Empty>}
 
       {res && res.kind === 'choose' && (
         <div className="card hc-choose">

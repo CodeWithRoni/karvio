@@ -45,7 +45,7 @@ test('cancelled return remains visible while table and selected Excel totals exc
  await page.getByLabel('Select row',{exact:true}).first().check();const dl=page.waitForEvent('download');await page.getByRole('button',{name:'Excel',exact:true}).click();const wb=XLSX.read(await fs.readFile(await (await dl).path()));const rows=XLSX.utils.sheet_to_json(wb.Sheets.Report,{header:1});const totalIndex=rows[0].indexOf('Value');expect(rows.at(-1)[totalIndex]).toBe(0);
 });
 
-test('Reports Hub shows historical and current purchase due separately',async({page,request})=>{
+test('Reports hub shows historical and current purchase due separately',async({page,request})=>{
  const supplier=await call(request,'supplier.save',{name:'Followup report supplier'}),p=await call(request,'product.save',{name:'Followup report item',sale_price:200});const purchase=await call(request,'purchase.create',{supplier_id:supplier.id,items:[{product_id:p.id,qty:1,cost:100}],payments:[]});await call(request,'supplier.payment',{supplier_id:supplier.id,account_id:cash,amount:100});
  await page.goto('/#/reports');await page.locator('.field').filter({has:page.locator('.field-label').filter({hasText:/^Report$/})}).locator('select').selectOption('purchases');await expect(page.getByRole('columnheader',{name:'Due at purchase',exact:true})).toBeVisible();await expect(page.getByRole('columnheader',{name:'Due now',exact:true})).toBeVisible();
  await page.getByPlaceholder('Search this table').fill(purchase.purchase.invoice_no);

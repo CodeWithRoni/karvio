@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import QuickPicks, { rememberRecent } from '../components/QuickPicks';
 import { useStore, shopDay } from '../lib/store';
 import { api } from '../lib/api';
 import { money, qty as fqty, round2, isDecimalUnit, fdate } from '../lib/format';
@@ -75,6 +76,7 @@ export default function POS() {
       return;
     }
     const serials = serial ? [serial] : [];
+    rememberRecent(p.id);
     setCart([...cart, { product_id: p.id, qty: isSerial(p) ? serials.length : 1, price: priceFor(p), serials, warranty_days: p.has_warranty ? p.warranty_days : '' }]);
     loadHist(p.id);
     if (isSerial(p) && !serial) setSerialFor(cart.length);
@@ -200,7 +202,7 @@ export default function POS() {
     <div className="pos">
       <div className="pos-left">
         <div className="row">
-          <div style={{ flex: 1 }}><ProductSearch camera onPick={(p) => add(p)} onCode={addBySerial} placeholder="Search Product With Serial / Name / Model / Brand (F2)" inputRef={searchRef} autoFocus /></div>
+          <div style={{ flex: 1 }}><ProductSearch camera onPick={(p) => add(p)} onCode={addBySerial} placeholder="Search product by serial, name, model or brand (F2)" inputRef={searchRef} autoFocus /></div>
           <Tabs tabs={[['retail', 'Retail'], ['wholesale', 'Wholesale']]} value={tier} onChange={setTier} />
         </div>
         <div className="cart">
@@ -264,7 +266,7 @@ export default function POS() {
               })}
             </tbody>
           </table>
-          {!cart.length && <div className="empty"><b>Cart is empty</b><div>Scan a barcode or type a product name above. Cables sold by the meter accept decimal quantities.</div></div>}
+          {!cart.length && <QuickPicks products={products} priceFor={priceFor} onPick={(p) => add(p)} />}
         </div>
         <div className="keys">
           <span><kbd>F2</kbd> search</span><span><kbd>F4</kbd> customer</span><span><kbd>F8</kbd> discount</span>

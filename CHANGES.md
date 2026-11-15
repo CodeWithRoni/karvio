@@ -1,3 +1,15 @@
+# 15 November 2026 — professional look, day close and financial statements (pending push)
+
+- Dashboard redesigned: Today / This month / All time overview (remembered per browser) with "vs yesterday" changes, a secondary figures row, a 14-day sales and profit chart, a "Needs attention" list, one History card with tabs (sales, returns, purchases, expenses, profits, receivable, payable), Profit beside Live balances, ranked leaderboard / best sellers / low stock with bars, and an "Inventory health" card. Every card can still be hidden in Settings → Dashboard. The big clock is now a small time next to the date. Collection reminders and repair results sit side by side.
+- Menu: sentence-case labels ("Point of sale", "Advanced search"…), groups fold away (remembered per browser; the group of the open page always stays open), Alt shortcuts show on hover, focus or while Alt is held.
+- Empty states with an icon, a line of help and buttons; tables show grey placeholder rows while loading; disabled buttons look plainly unavailable while saving buttons keep their colour.
+- POS "Quick add" on an empty cart: best sellers of the last 60 days (own sales for staff without "View sales made by other staff"), recent products and favourites on this computer.
+- New: Cash, bank & MFS → Day close: count notes and coins, compare with opening + the day's money in and out, a note is required for any difference, optional balance correction, Z-report printing and a list of previous closings (needs "Bank / MFS / cash accounts").
+- New reports (need "See cost price & profit margins"): Profit & loss with the previous period for comparison, and Balance sheet (assets = liabilities + equity), with Excel / PDF / Print.
+- Shop logo (Settings → Shop) on invoices, receipts, the menu and the sign-in screen; the sign-in screen shows the shop's name and logo after the first sign-in on that device. Invoices and receipts can print a QR code with the invoice number (Settings → Invoice), which the shop's scanner finds in Advanced search.
+- Server actions: dayclose.get, dayclose.save, report.pnl, report.balance, pos.picks; dashboard adds yesterday's figures and repairs waiting for pickup. No database migration.
+- Tests: backend/test/day-close-statements.mjs (31 checks), frontend/test/ui-pro.spec.js (7 browser tests); older tests updated for the new labels and layout.
+
 # 15 November 2026 — second full review fixes (pending push)
 
 - Purchase staff (Purchase permission without Suppliers) can refresh the supplier list again; they already got it at sign-in. Opening balances stay hidden.

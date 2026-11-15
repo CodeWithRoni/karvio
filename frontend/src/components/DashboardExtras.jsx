@@ -27,7 +27,7 @@ export function CollectionReminders({ list, onChanged }) {
     } catch (e) { toast(e.message, 'err'); } finally { setBusy(''); }
   };
   return (
-    <section className="card reminders" aria-label="Collection reminders">
+    <section className="card reminders" id="reminders" aria-label="Collection reminders">
       <div className="card-head">
         <h2><span className="rem-bell" aria-hidden="true">🔔</span> Collection reminders <span className="rem-count">{list.length}</span></h2>
         <span className="muted">To collect: <b className="num" style={{ color: 'var(--warn)' }}>{money(total)}</b></span>
@@ -106,31 +106,42 @@ export function RepairAlerts({ list, onChanged }) {
   );
 }
 
-/** Stock row: products, stock value at cost and at selling price. */
-export function StockSummary({ s }) {
-  if (!s) return null;
+/** Inventory health: stock summary (counts and values) and stock age / supplier warranty, in one card. */
+export function InventoryHealth({ stock, product }) {
+  if (!stock && !product) return null;
   return (
-    <section style={{ marginTop: 18 }}>
-      <div className="card-head"><h2>Stock summary</h2><Link to="/stock" className="link">Open products & stock</Link></div>
-      <div className="stats period-stats">
+    <section className="card inv-health" aria-label="Inventory health">
+      <div className="card-head"><h2>Inventory health</h2><div className="row" style={{ gap: 16 }}><Link to="/stock" className="link">Open products & stock</Link><Link className="link" to="/reports?type=stock_summary">Open stock report</Link></div></div>
+      {stock && <StockSummary s={stock} />}
+      {product && <ProductSummary data={product} />}
+    </section>
+  );
+}
+
+/** Stock row: products, stock value at cost and at selling price. */
+function StockSummary({ s }) {
+  return (
+    <div className="inv-part" aria-label="Stock summary" role="region">
+      <h3>Stock summary</h3>
+      <div className="inv-tiles">
         <div className="stat"><span>Total products</span><b>{s.products}</b><small>{s.in_stock} in stock · {s.out_of_stock} out of stock</small></div>
         {s.cost_value !== undefined && <div className="stat"><span>Total products cost</span><b>{money(s.cost_value)}</b><small>Stock × purchase cost</small></div>}
         <div className="stat"><span>Total products sales price</span><b>{money(s.sale_value)}</b><small>Stock × retail price{s.unpriced ? ` · ${s.unpriced} without a price` : ''}</small></div>
         {s.expected_profit !== undefined && <div className={`stat ${s.expected_profit >= 0 ? 'up' : 'down'}`}><span>Expected profit</span><b>{money(s.expected_profit)}</b><small>If all stock sells at retail</small></div>}
       </div>
-    </section>
+    </div>
   );
 }
 
-/** Best sellers, leaderboard style: Today / Month / All, by product or by product group. */
-export function ProductSummary({ data = [] }) {
+/** Stock age and supplier warranty, each tile opening the matching stock report. */
+function ProductSummary({ data = [] }) {
   const cards = [['age3','In stock over 3 months','Includes over 6 months / 1 year'],['age6','In stock over 6 months','Includes over 1 year'],['age12','In stock over 1 year','Current unsold quantity'],['expiring','Supplier warranty ending','Today through the next 30 days'],['expired','Supplier warranty expired','Stock still held in the shop'],['warranty_unknown','Supplier warranty not set','Add the expiry on the purchase']];
   const quantity = key => data.filter(x => x[key] > 0).map(x => `${fqty(x[key])} ${x.unit}`).join(' · ') || '0';
-  return <section className="product-summary" aria-label="Product Summary" style={{ marginTop:18 }}>
-    <div className="card-head"><h2>Product Summary</h2><Link className="link" to="/reports?type=stock_summary">Open stock report</Link></div>
-    <div className="stats period-stats">{cards.map(([key,label,note]) => <Link className={`stat stat-link ${key==='expired'?'down':key==='expiring'?'warn':''}`} key={key} to={`/reports?type=stock_summary&filter=${key}`}><span>{label}</span><b>{quantity(key)}</b><small>{note}</small></Link>)}</div>
+  return <div className="inv-part product-summary" role="region" aria-label="Product Summary">
+    <h3>Stock age & supplier warranty</h3>
+    <div className="inv-tiles six">{cards.map(([key,label,note]) => <Link className={`stat stat-link ${key==='expired'?'down':key==='expiring'?'warn':''}`} key={key} to={`/reports?type=stock_summary&filter=${key}`}><span>{label}</span><b>{quantity(key)}</b><small>{note}</small></Link>)}</div>
     <p className="muted summary-note">Current stock quantities, kept separate by unit. Nonserial stock age and supplier warranty use a FIFO estimate; serial lots use their purchase records. Missing history stays unknown.</p>
-  </section>;
+  </div>;
 }
 
 export function TopProducts({ data, showProfit }) {
@@ -183,7 +194,7 @@ export function TopProducts({ data, showProfit }) {
             </tr>
           ))}</tbody>
         </table></div>
-      ) : <Empty title={per === 'today' ? 'No sales yet today' : 'No sales in this period'} />)
+      ) : <Empty compact icon="receipt" title={per === 'today' ? 'No sales yet today' : 'No sales in this period'} />)
         : (groups.length ? (
           <div className="trio-body"><table className="lb tp">
             <tbody>{groups.map((g, i) => (
@@ -195,7 +206,7 @@ export function TopProducts({ data, showProfit }) {
               </tr>
             ))}</tbody>
           </table></div>
-        ) : <Empty title={per === 'today' ? 'No sales yet today' : 'No sales in this period'} />)}
+        ) : <Empty compact icon="receipt" title={per === 'today' ? 'No sales yet today' : 'No sales in this period'} />)}
     </div>
   );
 }

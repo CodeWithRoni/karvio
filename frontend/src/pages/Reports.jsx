@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { monthStart, today, addDays, money, qty } from '../lib/format';
 import DataTable from '../components/DataTable';
+import Statement from '../components/Statement';
 import { useApi, PageHead, Field, Select, DateRange, ErrorBox, Tabs, Badge } from '../components/ui';
 
 const REPORTS = [
@@ -11,6 +12,8 @@ const REPORTS = [
   ['daily_summary', 'Daily counts'], ['payment_methods', 'Payment methods'], ['product_sales', 'Product-wise sales'],
   ['expenses', 'Expenses'], ['warranty', 'Warranty status'], ['stock_summary', 'Stock summary']
 ];
+// Financial statements (need "See cost price & profit margins"): their own server actions and layout.
+const STATEMENTS = { profit_loss: ['report.pnl', 'Profit & loss'], balance_sheet: ['report.balance', 'Balance sheet'] };
 const GROUPS = { sales: ['invoice', 'daily', 'monthly', 'yearly'], purchases: ['invoice', 'daily', 'monthly', 'yearly'], payment_methods: ['daily', 'monthly', 'yearly'], expenses: ['list', 'category'] };
 const GLABEL = { invoice: 'Invoice-wise', daily: 'Daily', monthly: 'Monthly', yearly: 'Yearly', list: 'Every entry', category: 'By category' };
 
@@ -23,9 +26,12 @@ const PRESETS = [
 ];
 
 export default function Reports() {
-  const { customers, suppliers, accounts, categories, brands, products } = useStore();
+  const { customers, suppliers, accounts, categories, brands, products, can, settings } = useStore();
   const [params] = useSearchParams();
-  const [type, setType] = useState(params.get('type') === 'stock_summary' ? 'stock_summary' : 'sales');
+  const canStatements = can('cost');
+  const list = canStatements ? [...REPORTS, ...Object.entries(STATEMENTS).map(([k, v]) => [k, v[1]])] : REPORTS;
+  const start = params.get('type');
+  const [type, setType] = useState(start === 'stock_summary' || (canStatements && STATEMENTS[start]) ? start : 'sales');
   const [sf, setSf] = useState({ stock_filter:params.get('filter') || 'all', group_id:'', category_id:'', brand_id:'', product_id:'', include_inactive:false });
   const [group, setGroup] = useState('invoice');
   const [range, setRange] = useState(PRESETS[2][2]());
@@ -34,20 +40,22 @@ export default function Reports() {
   const [party, setParty] = useState('');
   const [wst, setWst] = useState('all');
   const stock = type === 'stock_summary';
+  const statement = STATEMENTS[type];
+  const sheet = type === 'balance_sheet';
   const groups = stock ? ['product','group','category','lots'] : GROUPS[type];
   const g = groups ? (groups.includes(group) ? group : groups[0]) : '';
   const payload = stock ? { type, group:g, ...sf } : { type, ...range, group: g, status: type === 'warranty' ? wst : status, customer_id: type === 'sales' ? party : '', supplier_id: type === 'purchases' ? party : '', account_id: type === 'payment_methods' ? party : '' };
-  const rep = useApi('reports', payload);
+  const rep = useApi(statement ? statement[0] : 'reports', statement ? (sheet ? {} : { from: range.from, to: range.to }) : payload);
   const r = rep.data;
 
   return (
     <>
       <PageHead title="Reports hub" sub="Pick a report and a period. Every report exports to Excel, PDF or the printer." />
       <div className="filters">
-        <Field label="Report"><select value={type} onChange={(e) => { setType(e.target.value); setParty(''); }}>{REPORTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
-        {groups && <Field label="View"><select value={g} onChange={(e) => setGroup(e.target.value)}>{groups.map((x) => <option key={x} value={x}>{GLABEL[x] || ({product:'By product',group:'By product group',category:'By category',lots:'Purchase lots & warranty'})[x]}</option>)}</select></Field>}
-        {!stock && <Field label="Period"><Tabs tabs={PRESETS.map(([v, l]) => [v, l])} value={preset} onChange={(v) => { setPreset(v); setRange(PRESETS.find((p) => p[0] === v)[2]()); }} /></Field>}
-        {!stock && <Field label="Custom range"><DateRange {...range} onChange={(x) => { setPreset(''); setRange(x); }} /></Field>}
+        <Field label="Report"><select value={type} onChange={(e) => { setType(e.target.value); setParty(''); }}>{list.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
+        {groups && !statement && <Field label="View"><select value={g} onChange={(e) => setGroup(e.target.value)}>{groups.map((x) => <option key={x} value={x}>{GLABEL[x] || ({product:'By product',group:'By product group',category:'By category',lots:'Purchase lots & warranty'})[x]}</option>)}</select></Field>}
+        {!stock && !sheet && <Field label="Period"><Tabs tabs={PRESETS.map(([v, l]) => [v, l])} value={preset} onChange={(v) => { setPreset(v); setRange(PRESETS.find((p) => p[0] === v)[2]()); }} /></Field>}
+        {!stock && !sheet && <Field label="Custom range"><DateRange {...range} onChange={(x) => { setPreset(''); setRange(x); }} /></Field>}
         {stock && <>
           <Field label="Stock filter"><select value={sf.stock_filter} onChange={e=>setSf({...sf,stock_filter:e.target.value})}>{[['all','All stock products'],['in','In stock'],['out','Out of stock'],['age3','Stock over 3 months'],['age6','Stock over 6 months'],['age12','Stock over 1 year'],['idle3','No net sales for 3 months'],['idle6','No net sales for 6 months'],['idle12','No net sales for 1 year'],['expiring','Supplier warranty: next 30 days'],['expired','Supplier warranty expired'],['warranty_unknown','Supplier warranty not set'],['age_unknown','Stock age unknown'],['reserved','Reserved for repair']].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></Field>
           <Field label="Product group"><Select value={sf.group_id} options={categories.filter(x=>!x.parent_id)} placeholder="All product groups" onChange={v=>setSf({...sf,group_id:v,category_id:'',product_id:''})}/></Field>
@@ -73,11 +81,13 @@ export default function Reports() {
       {r?.summary && (
         <div className="row" style={{ marginBottom: 12 }}>{Object.entries(r.summary).map(([k, v]) => <Badge key={k} tone={k === 'Delivered' ? 'muted' : k === 'Pending' ? 'warn' : 'info'}>{k}: {v}</Badge>)}</div>
       )}
+      {statement ? (r?.lines ? <Statement s={r} shopName={settings.shop_name || 'Karvio'} /> : rep.loading ? <div className="card"><span className="sr-only">Loading…</span><div className="loading-lines"><span className="bone" style={{ height: 14, width: '40%' }} /><span className="bone" style={{ height: 12 }} /><span className="bone" style={{ height: 12, width: '80%' }} /></div></div> : null) : <>
       {r && <h2 style={{ marginBottom: 10 }}>{r.title}</h2>}
       <div className={stock ? 'stock-summary-report' : ''}><DataTable title={r?.title || 'Report'} loading={rep.loading} rows={r?.rows || []} totals={stock ? undefined : r?.totals} sumFilter={(row) => row.status === undefined || row.status === 'active'}
         rowClass={(row) => (row.status === 'cancelled' ? 'dim' : '')}
         columns={(r?.columns || []).map((c) => ({ ...c, ...(type==='product_sales' && c.key==='qty' ? {total:rows=>quantityTotal(rows)} : type==='daily_summary' && c.key==='items' ? {total:rows=>quantityTotal(rows,'item_quantities')} : {}), ...(stock && c.type==='money' && c.sum ? {total:rows=>Math.round(rows.reduce((n,row)=>n+(Number(row[c.key]) || 0),0)*100)/100} : {}), className: c.key === 'items' || c.key === 'items_text' || c.key === 'issue' ? 'clip' : '' }))} /></div>
       {r?.totals && type === 'sales' && g === 'invoice' && status === 'all' && <p className="muted">Totals count active invoices only; cancelled ones are shown struck through.</p>}
+      </>}
     </>
   );
 }

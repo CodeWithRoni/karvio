@@ -45,19 +45,19 @@ test('all main screens load without browser errors', async ({ page }) => {
 
 test('dashboard refreshes another counter sale automatically and retains data on failure', async ({ page, request }) => {
   await page.clock.install();
-  const baseline = (await call(request, 'dashboard')).total.sales;
+  const baseline = (await call(request, 'dashboard')).today.sales;
   await page.goto('/');
-  await expect(page.locator('.stats .stat').first()).toContainText('Tk ' + baseline.toLocaleString('en-IN'));
+  await expect(page.locator('.kpi').first()).toContainText('Tk ' + baseline.toLocaleString('en-IN'));
   await call(request, 'sale.create', { items: [{ product_id: product.id, qty: 1, price: 300 }], payments: [{ account_id: cash.id, amount: 300 }] });
   await page.clock.fastForward(31000);
-  await expect(page.locator('.stats .stat').first()).toContainText('Tk ' + (baseline + 300).toLocaleString('en-IN'));
+  await expect(page.locator('.kpi').first()).toContainText('Tk ' + (baseline + 300).toLocaleString('en-IN'));
   await page.route(endpoint, async (route) => {
     if (route.request().postDataJSON().action === 'dashboard') return route.fulfill({ json: { ok: false, error: 'Temporary outage' } });
     return route.continue();
   });
   await page.clock.fastForward(31000);
   await expect(page.locator('.errbox')).toContainText('Showing the last loaded balances');
-  await expect(page.locator('.stats .stat').first()).toContainText('Tk ' + (baseline + 300).toLocaleString('en-IN'));
+  await expect(page.locator('.kpi').first()).toContainText('Tk ' + (baseline + 300).toLocaleString('en-IN'));
 });
 
 test('master data confirmation can cancel and then delete a brand', async ({ page, request }) => {
@@ -224,7 +224,7 @@ test('door button hides and shows the side menu without losing the page', async 
   const box = await page.locator('.main').boundingBox();
   expect(box.width).toBeGreaterThan(1300);
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
-  await expect(page.getByText('Sales history')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'History', exact: true })).toBeVisible();
   // remembered after a reload
   await page.reload();
   await expect(page.getByLabel('Show the menu')).toBeVisible();
@@ -232,11 +232,11 @@ test('door button hides and shows the side menu without losing the page', async 
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
   // other pages work while hidden
   await page.goto('/#/pos');
-  await expect(page.getByPlaceholder(/Search Product With Serial/)).toBeVisible();
+  await expect(page.getByPlaceholder(/Search product by serial/)).toBeVisible();
   await page.getByLabel('Show the menu').click();
   await expect(page.locator('.rail')).toBeVisible();
   expect((await page.locator('.rail').boundingBox()).width).toBeGreaterThan(200);
-  await expect(page.getByRole('link', { name: /Point Of Sale/ })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Point of sale/ })).toBeVisible();
 });
 
 // Dates are the shop's (server) dates, which may differ from this machine's clock.
@@ -317,7 +317,7 @@ test('POS shows last 3 selling prices, last purchase cost, and prices of an out-
 
 test('dashboard shows the stock summary and best sellers by product and group', async ({ page }) => {
   await page.goto('/#/');
-  await expect(page.getByRole('heading', { name: 'Stock summary' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Stock summary' })).toBeVisible(); // inside "Inventory health"
   await expect(page.locator('.stat', { hasText: 'Total products cost' })).toBeVisible();
   await expect(page.locator('.stat', { hasText: 'Total products sales price' })).toBeVisible();
   const tp = page.locator('.top-products');
@@ -347,14 +347,14 @@ test('purchase shows the last purchase price and the new average cost', async ({
   await expect(row.locator('.avg-next')).toContainText('11,000');
 });
 
-test('Advance Search has its own menu card above Daily Work', async ({ page }) => {
+test('Advanced search has its own menu card above Daily Work', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.goto('/#/');
   const cards = page.locator('.nav-card');
-  await expect(cards.first()).toContainText('Advance Search');
+  await expect(cards.first()).toContainText('Advanced search');
   await expect(cards.first().locator('a')).toHaveCount(1);
   await expect(cards.nth(1)).toContainText('Daily Work');
-  await expect(page.locator('.nav-card', { hasText: 'Stock' }).getByText('Advance Search')).toHaveCount(0);
+  await expect(page.locator('.nav-card', { hasText: 'Stock' }).getByText('Advanced search')).toHaveCount(0);
   await page.keyboard.press('Alt+8');
   await expect(page).toHaveURL(/#\/history/);
 });
@@ -423,13 +423,13 @@ test('barcode labels: create a shop barcode, custom size, A4 start position, pur
   });
   await page.addInitScript(() => { try { if (!sessionStorage.getItem('lbl_reset')) { localStorage.removeItem('karvio_label_opts'); sessionStorage.setItem('lbl_reset', '1'); } } catch {} });
 
-  // menu: right under Products & Stock
+  // menu: right under Products & stock
   await page.goto('/#/stock');
-  await expect(page.locator('.rail a', { hasText: 'Barcode Labels' })).toBeVisible();
+  await expect(page.locator('.rail a', { hasText: 'Barcode labels' })).toBeVisible();
   const links = await page.locator('.rail a').allTextContents();
-  const i = links.findIndex((t) => t.includes('Products & Stock'));
-  expect(links[i + 1]).toContain('Barcode Labels');
-  await page.locator('.rail a', { hasText: 'Barcode Labels' }).click();
+  const i = links.findIndex((t) => t.includes('Products & stock'));
+  expect(links[i + 1]).toContain('Barcode labels');
+  await page.locator('.rail a', { hasText: 'Barcode labels' }).click();
   await expect(page.locator('.page-head h1')).toHaveText('Barcode labels');
 
   // add the product: it has no barcode yet → create one
@@ -582,7 +582,7 @@ test('purchase: supplier invoice no. is its own field, warns on a repeat, and is
   await expect.poll(async () => (await call(request, 'purchases.list', { q: supInv, page: 1, per: 10 })).total).toBe(2);
   expect((await call(request, 'purchases.list', { q: supInv, page: 1, per: 10 })).total).toBe(2);
 
-  // list column + search box, detail, Advance Search
+  // list column + search box, detail, Advanced search
   await page.getByRole('tab', { name: 'Purchase invoices' }).click();
   await page.getByLabel('Search purchases').fill(supInv);
   await expect(page.locator('.pl-table tbody tr')).toHaveCount(2);

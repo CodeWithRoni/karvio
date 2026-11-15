@@ -1298,6 +1298,72 @@ function accountEntry_(p, user) { // owner deposit / withdrawal / transfer
   }
   return true;
 }
+/* ---- Day close: count the cash in an account (usually the drawer) and compare it with the books ----
+ * The count is kept as a 'day_close' record in the audit log. A difference can be booked as a normal
+ * deposit / withdrawal (ref_type 'manual'), so balances, ledgers and reversal work as for any other entry. */
+var DAY_CLOSE_GROUPS = { sale: 'Sales received', cpay: 'Customer due payments', sreturn: 'Sales refunds', exchange: 'Exchanges', claim: 'Warranty claims',
+  expense: 'Expenses paid', purchase: 'Purchase payments', spay: 'Supplier payments', preturn: 'Purchase return refunds', transfer: 'Transfers', manual: 'Deposits & withdrawals' };
+function dayCloses_() {
+  return all_('AuditLog').filter(function (r) { return r.action === 'day_close'; }).map(function (r) {
+    var d = {}; try { d = JSON.parse(r.detail || '{}'); } catch (e) {}
+    d.id = r.id; d.closed_at = r.ts; d.closed_by = r.user; return d;
+  }).filter(function (d) { return d.date && d.account_id; });
+}
+function dayCloseFigures_(acc, date) {
+  var opening = num_(acc.opening_balance), lines = {}, totIn = 0, totOut = 0;
+  all_('AccountTxns').forEach(function (t) {
+    if (t.account_id !== acc.id || t.voided) return;
+    var a = num_(t.amount), sign = t.direction === 'in' ? 1 : -1, d = String(t.date).slice(0, 10);
+    if (d < date) { opening += sign * a; return; }
+    if (d > date) return;
+    var key = (DAY_CLOSE_GROUPS[t.ref_type] ? t.ref_type : 'other') + ':' + t.direction;
+    var l = lines[key] = lines[key] || { type: t.ref_type || 'other', label: DAY_CLOSE_GROUPS[t.ref_type] || 'Other', direction: t.direction, amount: 0, count: 0 };
+    l.amount = round_(l.amount + a); l.count++;
+    if (sign > 0) totIn += a; else totOut += a;
+  });
+  var list = Object.keys(lines).map(function (k) { return lines[k]; }).sort(function (a, b) { return (a.direction === b.direction ? 0 : a.direction === 'in' ? -1 : 1) || b.amount - a.amount; });
+  return { opening: round_(opening), in: round_(totIn), out: round_(totOut), expected: round_(opening + totIn - totOut), lines: list };
+}
+function dayCloseGet_(p) {
+  var accs = all_('Accounts').filter(function (a) { return a.active; });
+  if (!accs.length) fail_('Add an account first (Cash, bank & MFS)');
+  var acc = accs.filter(function (a) { return a.id === p.account_id; })[0] || accs.filter(function (a) { return a.type === 'cash'; })[0] || accs[0];
+  var today = today_(), date = p.date ? String(p.date).slice(0, 10) : today;
+  if (!isDate_(date)) fail_('Choose a valid date');
+  if (date > today) fail_('A day that has not happened yet cannot be closed');
+  var closes = dayCloses_();
+  var done = closes.filter(function (c) { return c.account_id === acc.id && c.date === date; }).pop() || null;
+  var history = closes.filter(function (c) { return c.account_id === acc.id; }).sort(function (a, b) { return b.date.localeCompare(a.date) || String(b.closed_at).localeCompare(String(a.closed_at)); }).slice(0, 60);
+  return Object.assign({ date: date, today: today, account: { id: acc.id, name: acc.name, type: acc.type },
+    accounts: accs.map(function (a) { return { id: a.id, name: a.name, type: a.type }; }), closed: done, history: history }, dayCloseFigures_(acc, date));
+}
+function dayCloseSave_(p, user) {
+  var acc = all_('Accounts').filter(function (a) { return a.id === p.account_id && a.active; })[0]; if (!acc) fail_('Select an active account');
+  var date = bookDate_(p.date, 'day close');
+  if (dayCloses_().some(function (c) { return c.account_id === acc.id && c.date === date; })) fail_(acc.name + ' is already closed for ' + date);
+  var notes = {}, fromNotes = 0, hasNotes = false;
+  Object.keys(p.notes || {}).forEach(function (k) {
+    var face = Number(k), n = Number(p.notes[k]);
+    if (!(face > 0) || !isFinite(n) || n < 0 || Math.floor(n) !== n) fail_('Note and coin counts must be whole numbers, 0 or more');
+    if (n) { notes[k] = n; fromNotes += face * n; hasNotes = true; }
+  });
+  var counted = p.counted === '' || p.counted === undefined || p.counted === null ? NaN : Number(p.counted);
+  if (!isFinite(counted) || counted < 0) fail_('Enter the counted amount (0 or more)');
+  counted = round_(counted);
+  if (hasNotes && Math.abs(round_(fromNotes) - counted) > 0.005) fail_('The counted amount does not match the notes and coins (' + round_(fromNotes) + ')');
+  var f = dayCloseFigures_(acc, date), diff = round_(counted - f.expected), note = String(p.note || '').trim().slice(0, 300);
+  if (Math.abs(diff) > 0.005 && !note) fail_('Write a note explaining the ' + (diff < 0 ? 'shortage' : 'extra cash'));
+  var adjustment = '';
+  if (p.adjust && Math.abs(diff) > 0.005) {
+    var t = acctTxn_(acc.id, diff > 0 ? 'in' : 'out', Math.abs(diff), 'manual', uid_(), (diff > 0 ? 'Deposit' : 'Withdrawal') + ' — cash count ' + (diff > 0 ? 'extra' : 'shortage') + ' on ' + date + ' — ' + note, user, date);
+    adjustment = t && t.id ? t.id : '';
+  }
+  var rec = { date: date, account_id: acc.id, account_name: acc.name, opening: f.opening, in: f.in, out: f.out, expected: f.expected, counted: counted,
+    difference: diff, notes: notes, note: note, adjusted: !!adjustment, adjustment_id: adjustment, lines: f.lines };
+  // Not audit_(): that one swallows errors, and a count that was not saved must not look saved.
+  var row = insert_('AuditLog', { ts: now_(), user: user.name, action: 'day_close', detail: JSON.stringify(rec) });
+  return Object.assign(rec, { id: row && row.id, closed_at: row && row.ts, closed_by: user.name });
+}
 function accountLedger_(p) {
   var acc = all_('Accounts').filter(function (a) { return a.id === p.account_id; })[0]; if (!acc) fail_('Account not found');
   var rows = all_('AccountTxns').filter(function (t) { return t.account_id === acc.id && !t.voided; });
@@ -1656,8 +1722,16 @@ function settingsSave_(p, user) {
   var allowed = ['shop_name', 'shop_phone', 'shop_tel', 'shop_email', 'shop_web', 'shop_social', 'shop_address', 'shop_footer', 'currency', 'invoice_prefix', 'receipt_width', 'low_stock_default', 'expense_categories',
     'sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_repair_template', 'sms_technician_template', 'sms_quote_template', 'sms_headers',
     'dashboard_hidden', 'invoice_template', 'invoice_paper', 'invoice_custom_width', 'invoice_custom_height', 'invoice_note',
-    'sms_invoice_link', 'invoice_link_base', 'books_locked_until'];
+    'sms_invoice_link', 'invoice_link_base', 'books_locked_until', 'shop_logo', 'invoice_qr'];
   var vals = Object.assign({}, p.values || {});
+  if (vals.shop_logo !== undefined) {
+    var logo = String(vals.shop_logo || '');
+    // A small picture only (the app shrinks it before upload): it travels with every invoice and the sign-in screen.
+    if (logo && !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+\/=]+$/.test(logo)) fail_('The logo must be a PNG, JPEG or WebP picture');
+    if (logo.length > 200000) fail_('The logo is too large; use a smaller picture (under about 150 KB)');
+    vals.shop_logo = logo;
+  }
+  if (vals.invoice_qr !== undefined) vals.invoice_qr = String(vals.invoice_qr) === 'false' ? 'false' : 'true';
   if (vals.expense_categories !== undefined) {
     var cats = vals.expense_categories;
     if (typeof cats === 'string') { try { cats = JSON.parse(cats); } catch(e) { fail_('Expense categories must be a valid list'); } }
@@ -1869,7 +1943,7 @@ function invoicePublic_(p) {
   var d = saleDetail_({ id: s.id }, null);
   var pick = function (o, keys) { var r = {}; keys.forEach(function (k) { if (o && o[k] !== undefined) r[k] = o[k]; }); return r; };
   var st = settingsMap_(), shop = {};
-  ['shop_name', 'shop_address', 'shop_phone', 'shop_tel', 'shop_email', 'shop_web', 'shop_social', 'shop_footer', 'currency', 'invoice_template', 'invoice_note']
+  ['shop_name', 'shop_address', 'shop_phone', 'shop_tel', 'shop_email', 'shop_web', 'shop_social', 'shop_footer', 'currency', 'invoice_template', 'invoice_note', 'shop_logo', 'invoice_qr']
     .forEach(function (k) { shop[k] = st[k] || ''; });
   var pays = []; try { pays = (typeof s.payments === 'string' ? JSON.parse(s.payments || '[]') : s.payments) || []; } catch (e) {}
   var returnedTotal = round_(sum_(d.returns.filter(function(r) { return r.status === 'active'; }), function(r) { return num_(r.total); }));
@@ -1965,7 +2039,7 @@ function quotePublic_(p) {
   if (!row) return { expired: true, message: bad };
   var quote; try { quote = JSON.parse(row[2]); } catch (e) { return { expired: true, message: bad }; }
   var st = settingsMap_(), shop = {};
-  ['shop_name', 'shop_address', 'shop_phone', 'shop_tel', 'shop_email', 'shop_web', 'shop_social', 'shop_footer', 'currency'].forEach(function (k) { shop[k] = st[k] || ''; });
+  ['shop_name', 'shop_address', 'shop_phone', 'shop_tel', 'shop_email', 'shop_web', 'shop_social', 'shop_footer', 'currency', 'shop_logo'].forEach(function (k) { shop[k] = st[k] || ''; });
   return { quote: quote, shop: shop, expires_at: quote.expires_at };
 }
 function smsTest_(p, user) {
@@ -4301,9 +4375,22 @@ function profitReport_(p, user) {
   return { from: from, to: to, group: group, summary: summary, timeline: timeline, products: products, staff: staff, expenses: expenses };
 }
 
+/** POS "Quick add": the products sold most often (by number of invoices) in the last 60 days. Staff who may not view
+ *  other staff's sales get their own best sellers. Only active, in-stock or service products are returned. */
+function posPicks_(p, user) {
+  var from = addDays_(today_(), -60), all = can_(user, 'sales.all');
+  var sales = indexBy_(all_('Sales').filter(function (s) { return s.status === 'active' && String(s.date).slice(0, 10) >= from && (all || s.user_id === user.id); }));
+  var count = {};
+  all_('SaleItems').forEach(function (i) { if (sales[i.sale_id]) { var c = count[i.product_id] = count[i.product_id] || {}; c[i.sale_id] = 1; } });
+  var prods = indexBy_(all_('Products'));
+  return Object.keys(count).map(function (id) { return { product_id: id, invoices: Object.keys(count[id]).length }; })
+    .filter(function (r) { var x = prods[r.product_id]; return x && x.active && (isService_(x) || x.stock > 0); })
+    .sort(function (a, b) { return b.invoices - a.invoices; }).slice(0, 12);
+}
+
 function dashboard_(p, user) {
-  var full = can_(user, 'reports'), showCost = can_(user, 'cost'), today = today_(), month = today.slice(0, 7);
-  var inP = { today: function (d) { return d === today; }, month: function (d) { return d.slice(0, 7) === month; }, total: function () { return true; } };
+  var full = can_(user, 'reports'), showCost = can_(user, 'cost'), today = today_(), month = today.slice(0, 7), yesterday = addDays_(today, -1);
+  var inP = { today: function (d) { return d === today; }, yesterday: function (d) { return d === yesterday; }, month: function (d) { return d.slice(0, 7) === month; }, total: function () { return true; } };
   var sales = all_('Sales').filter(function (s) { return s.status === 'active' && (full || s.user_id === user.id); });
   var out = { limited: !full, user: user.name, date: today };
 
@@ -4322,12 +4409,12 @@ function dashboard_(p, user) {
     c.expenses = round_(sum_(ex, function (x) { return x.amount; }));
     if (showCost) {
       c.gross_profit = round_(sum_(s, function (x) { return x.profit; }) - sum_(sr, function (x) { return returnProfit_(x); }));
-      c.stock_adjust = period === 'total' ? stockAdjustValue_('', '') : period === 'today' ? stockAdjustValue_(today, today) : stockAdjustValue_(month + '-01', today);
+      c.stock_adjust = period === 'total' ? stockAdjustValue_('', '') : period === 'today' ? stockAdjustValue_(today, today) : period === 'yesterday' ? stockAdjustValue_(yesterday, yesterday) : stockAdjustValue_(month + '-01', today);
       c.net_profit = round_(c.gross_profit - c.expenses + c.stock_adjust);
     }
     return c;
   }
-  out.today = cards('today'); out.month = cards('month'); out.total = cards('total');
+  out.today = cards('today'); out.yesterday = cards('yesterday'); out.month = cards('month'); out.total = cards('total');
 
   // Sales history cards: this week (Sat–Fri), this / last month, last 6 months, this / last year.
   var y = Number(today.slice(0, 4)), m = Number(today.slice(5, 7));
@@ -4386,6 +4473,8 @@ function dashboard_(p, user) {
   out.series = series;
   out.reminders = collectionReminders_(sales, today);
   if (user.role === 'admin') out.repair_alerts = repairAlerts_();
+  // "Needs attention": finished repair jobs (fixed or failed) still waiting for the customer to collect them.
+  if (can_(user, 'repairs')) out.repairs_waiting = all_('Repairs').filter(function (r) { var st = repairStatusOf_(r); return st === 'Completed' || st === 'Failed'; }).length;
   out.top_products = topProducts_(sales, today, showCost);
   out.recent = sales.slice(-8).reverse().map(function (s) { return { id: s.id, invoice_no: s.invoice_no, customer_name: s.customer_name, total: s.total, due: s.due, date: s.date }; });
 
@@ -4444,6 +4533,92 @@ function finishReport_(title, columns, rows, extra) {
   return Object.assign({ title: title, columns: columns, rows: rows, totals: totals }, extra || {});
 }
 /** Reports for staff without the cost permission never carry cost or profit, not even in hidden fields. */
+/* ---- Financial statements (Reports hub): Profit & loss and Balance sheet ----
+ * Each returns { title, columns: [{key,label}], lines: [{label, values:{key: amount}, kind, indent}] }.
+ * kind: 'section' (heading), 'line', 'total', 'grand'. Expenses and costs are negative numbers. */
+function statementAccess_(user) { if (!can_(user, 'reports') || !can_(user, 'cost')) fail_('Permission denied: the financial statements need "Reports" and "See cost price & profit margins"'); }
+function comparePeriod_(from, to) {
+  if (!from || !to) return null;
+  var lastOf = function (ym) { var d = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0); return ym + '-' + ('0' + d.getDate()).slice(-2); };
+  var prevMonth = function (ym) { var y = Number(ym.slice(0, 4)), m = Number(ym.slice(5, 7)) - 1; if (m < 1) { m = 12; y--; } return y + '-' + ('0' + m).slice(-2); };
+  if (from.slice(8) === '01' && from.slice(0, 7) === to.slice(0, 7)) {
+    var pm = prevMonth(from.slice(0, 7)), end = to === lastOf(to.slice(0, 7)) ? lastOf(pm) : pm + '-' + to.slice(8);
+    if (end > lastOf(pm)) end = lastOf(pm);
+    return { from: pm + '-01', to: end, label: pm };
+  }
+  var days = Math.round((new Date(to + 'T12:00:00') - new Date(from + 'T12:00:00')) / 864e5) + 1;
+  return { from: addDays_(from, -days), to: addDays_(from, -1), label: 'Previous ' + days + ' days' };
+}
+function profitLoss_(p, user) {
+  statementAccess_(user);
+  var from = p.from || '', to = p.to || '';
+  if ((from && !isDate_(from)) || (to && !isDate_(to))) fail_('Choose valid dates');
+  if (from && to && from > to) fail_('From date must not be after To date');
+  var cmp = p.compare === false ? null : comparePeriod_(from, to);
+  var periods = [{ key: 'current', from: from, to: to }].concat(cmp ? [{ key: 'previous', from: cmp.from, to: cmp.to }] : []);
+  var sums = {}, cats = {};
+  periods.forEach(function (per) {
+    sums[per.key] = profitSummary_(per.from, per.to);
+    all_('Expenses').forEach(function (e) {
+      if (e.status !== 'active' || !inRange_(e.date, per.from, per.to)) return;
+      var c = String(e.category || 'Other'); cats[c] = cats[c] || {}; cats[c][per.key] = round_((cats[c][per.key] || 0) + num_(e.amount));
+    });
+  });
+  var v = function (fn) { var o = {}; periods.forEach(function (per) { o[per.key] = round_(fn(sums[per.key])); }); return o; };
+  var lines = [
+    { label: 'Income', kind: 'section' },
+    { label: 'Sales (after discounts)', values: v(function (x) { return x.sales; }), kind: 'line', indent: 1 },
+    { label: 'Less: sales returns', values: v(function (x) { return -x.returns; }), kind: 'line', indent: 1 },
+    { label: 'Net sales', values: v(function (x) { return x.net_sales; }), kind: 'total' },
+    { label: 'Cost of goods sold', kind: 'section' },
+    { label: 'Cost of items sold', values: v(function (x) { return -x.cost; }), kind: 'line', indent: 1 },
+    { label: 'Less: cost of returned items', values: v(function (x) { return x.returns_cost; }), kind: 'line', indent: 1 },
+    { label: 'Gross profit', values: v(function (x) { return x.gross; }), kind: 'total' },
+    { label: 'Operating expenses', kind: 'section' }
+  ];
+  Object.keys(cats).sort(function (a, b) { return (cats[b].current || 0) - (cats[a].current || 0) || a.localeCompare(b); }).forEach(function (c) {
+    var o = {}; periods.forEach(function (per) { o[per.key] = -round_(cats[c][per.key] || 0); }); lines.push({ label: c, values: o, kind: 'line', indent: 1 });
+  });
+  if (!Object.keys(cats).length) lines.push({ label: 'No expenses in this period', values: v(function () { return 0; }), kind: 'line', indent: 1 });
+  lines.push({ label: 'Total expenses', values: v(function (x) { return -x.expenses; }), kind: 'total' });
+  if (periods.some(function (per) { return Math.abs(sums[per.key].stock_adjust) > 0.005; })) lines.push({ label: 'Stock adjustments (written off / found)', values: v(function (x) { return x.stock_adjust; }), kind: 'line' });
+  lines.push({ label: 'Net profit', values: v(function (x) { return x.net; }), kind: 'grand' });
+  var columns = [{ key: 'current', label: from || to ? (from || 'Start') + ' to ' + (to || today_()) : 'All time' }];
+  if (cmp) columns.push({ key: 'previous', label: cmp.from + ' to ' + cmp.to });
+  var margins = {}; periods.forEach(function (per) { margins[per.key] = { gross: sums[per.key].margin, net: sums[per.key].net_margin }; });
+  return { title: 'Profit & loss', from: from, to: to, compare: cmp, columns: columns, lines: lines, margins: margins };
+}
+function balanceSheet_(p, user) {
+  statementAccess_(user);
+  var accs = accountsList_().filter(function (a) { return a.active || Math.abs(a.balance) > 0.005; });
+  var stock = all_('Products').filter(function (x) { return !isService_(x) && x.stock > 0; });
+  var stockValue = round_(sum_(stock, function (x) { return x.stock * x.cost_price; }));
+  var custs = customersList_(), sups = suppliersList_();
+  var recv = round_(sum_(custs, function (c) { return c.balance > 0 ? c.balance : 0; })), custAdv = round_(sum_(custs, function (c) { return c.balance < 0 ? -c.balance : 0; }));
+  var pay = round_(sum_(sups, function (c) { return c.balance > 0 ? c.balance : 0; })), supAdv = round_(sum_(sups, function (c) { return c.balance < 0 ? -c.balance : 0; }));
+  var cash = round_(sum_(accs, function (a) { return a.balance; }));
+  var assets = round_(cash + stockValue + recv + supAdv), liab = round_(pay + custAdv), equity = round_(assets - liab);
+  var L = function (label, amount, kind, indent) { return { label: label, values: { current: round_(amount) }, kind: kind, indent: indent || 0 }; };
+  var lines = [{ label: 'Assets', kind: 'section' }, { label: 'Cash, bank & mobile banking', kind: 'section', indent: 1 }]
+    .concat(accs.map(function (a) { return L(a.name, a.balance, 'line', 2); }))
+    .concat([
+      L('Stock at purchase cost (' + stock.length + ' products)', stockValue, 'line', 1),
+      L('Customer dues (receivable)', recv, 'line', 1),
+      L('Advances paid to suppliers', supAdv, 'line', 1),
+      L('Total assets', assets, 'grand'),
+      { label: 'Liabilities', kind: 'section' },
+      L('Owed to suppliers (payable)', pay, 'line', 1),
+      L('Customer advances', custAdv, 'line', 1),
+      L('Total liabilities', liab, 'total'),
+      { label: "Owner's equity", kind: 'section' },
+      L('Capital and retained profit', equity, 'line', 1),
+      L('Total equity', equity, 'total'),
+      L('Liabilities + equity', round_(liab + equity), 'grand')
+    ]);
+  return { title: 'Balance sheet', date: today_(), columns: [{ key: 'current', label: 'As of ' + today_() }], lines: lines,
+    note: "Equity is what is left after everything owed is paid: assets − liabilities. Stock is valued at each product's current purchase cost." };
+}
+
 function reports_(p, user) {
   var rep = reportsRaw_(p, user);
   if (can_(user, 'cost')) return rep;
@@ -4613,6 +4788,11 @@ var ROUTES = {
   'serials.find':     r_(null, serialFind_),
   'product.history':  r_(null, function (p, u) { if (!can_(u, 'pos') && !can_(u, 'purchase')) fail_('Permission denied'); return productHistory_(p, u); }),
   'sale.promise':     r_('pos', salePromise_, true),
+  'pos.picks':        r_('pos', posPicks_),
+  'dayclose.get':     r_('accounts', dayCloseGet_),
+  'dayclose.save':    r_('accounts', dayCloseSave_, true),
+  'report.pnl':       r_(null, profitLoss_),
+  'report.balance':   r_(null, balanceSheet_),
   'stock.adjust':     r_('products', stockAdjust_, true),
   'master.save':      r_('products', masterSave_, true),
   'master.delete':    r_('products', masterDelete_, true),

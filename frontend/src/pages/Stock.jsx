@@ -6,7 +6,8 @@ import { money, qty as fqty, isDecimalUnit } from '../lib/format';
 import DataTable from '../components/DataTable';
 import { stockQuantityTotal, stockMoneyTotal } from '../lib/stockTotals';
 import MasterData from '../components/MasterData';
-import { PageHead, Tabs, Modal, Btn, Field, Badge, Select, useAction, useConfirm, noWheel } from '../components/ui';
+import { Link } from 'react-router-dom';
+import { PageHead, Tabs, Modal, Btn, Field, Badge, Select, Empty, useAction, useConfirm, noWheel } from '../components/ui';
 
 const blank = { name: '', sku: '', barcode: '', category_id: '', subcategory_id: '', brand_id: '', unit: 'pcs', roll_length: '', cost_price: '', sale_price: '', wholesale_price: '', low_stock: '', has_warranty: false, warranty_type: 'serial', warranty_days: 0, active: true, service: false, description: '' };
 // Auto name = Brand + Product group + Category + Model + optional # description.
@@ -16,7 +17,7 @@ export default function Stock() {
   const { products, categories, brands, can } = useStore();
   const [params] = useSearchParams();
   const [tab, setTab] = useState('stock');
-  const [f, setF] = useState({ cat: '', sub: '', brand: '', qty: '', low: params.get('low') === '1', inactive: false });
+  const [f, setF] = useState({ cat: '', sub: '', brand: '', qty: params.get('qty') ?? '', low: params.get('low') === '1', inactive: false });
   const [edit, setEdit] = useState(null);
   const [adj, setAdj] = useState(null);
   const lowDef = Number(useStore.getState().settings.low_stock_default || 5);
@@ -70,7 +71,9 @@ export default function Stock() {
             <label className="check" style={{ paddingBottom: 8 }}><input type="checkbox" checked={f.inactive} onChange={(e) => setF({ ...f, inactive: e.target.checked })} /> Show inactive</label>
             {(f.cat || f.sub || f.brand || f.qty !== '' || f.low) && <button className="link" style={{ paddingBottom: 10 }} onClick={() => setF({ cat: '', sub: '', brand: '', qty: '', low: false, inactive: false })}>Clear filters</button>}
           </div>
-          <DataTable title="Stock report" rows={rows} columns={cols} sumFilter={(r) => !r.service} onRowClick={can('products') ? (r) => setEdit(r) : undefined} />
+          <DataTable title="Stock report" rows={rows} columns={cols} sumFilter={(r) => !r.service} onRowClick={can('products') ? (r) => setEdit(r) : undefined}
+            empty={products.length ? <Empty icon="search" title="No products match these filters">Clear a filter above, or tick "Show inactive" to include hidden products.</Empty>
+              : <Empty icon="box" title="No products yet" action={<>{can('purchase') && <Link to="/purchases" className="btn">Record a purchase</Link>}{can('products') && <Btn kind="primary" onClick={() => setEdit({ ...blank, low_stock: '' })}>Add product</Btn>}</>}>Add your first product. Its cost comes from purchases; the selling price from a purchase or the Price manager.</Empty>} />
           <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>Totals include all matching stock products across pages and table search. Quantities are grouped by unit; services are excluded. Cost and Stock value totals = stock × unit cost; Price total = stock × selling price, including reserved stock.</p>
         </>
       ) : <MasterData />}

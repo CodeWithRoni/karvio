@@ -60,7 +60,7 @@ function NewClaim({ onClose, onDone }) {
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Scan serial number or type invoice number" style={{ flex: 1 }} autoFocus />
         <Btn kind="primary" busy={busy} type="submit">Find</Btn>
       </form>
-      {res && !res.length && <Empty title="No sold item found">Check the serial or invoice number. Items that were never sold from this shop cannot be claimed.</Empty>}
+      {res && !res.length && <Empty icon="search" title="No sold item found">Check the serial or invoice number. Items that were never sold from this shop cannot be claimed.</Empty>}
       {res && res.length > 0 && (
         <div className="dt" style={{ marginTop: 12 }}><div className="dt-scroll"><table>
           <thead><tr><th /><th>Product</th><th>Serial</th><th>Invoice</th><th>Customer</th><th>Warranty</th><th>Claims</th></tr></thead>

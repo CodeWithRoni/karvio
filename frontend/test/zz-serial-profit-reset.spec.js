@@ -141,7 +141,7 @@ test('Profit page and the dashboard profit row', async ({ page, request }) => {
   const head = page.locator('section .card-head h2');
   await expect(head.filter({ hasText: /^Profit$/ })).toBeVisible();
   const titles = await head.allTextContents();
-  expect(titles.indexOf('Profit')).toBe(titles.indexOf('Live balances') + 1); // the row sits right under Live balances
+  expect(titles.indexOf('Live balances')).toBe(titles.indexOf('Profit') + 1); // Profit and Live balances share one row
   const tiles = page.locator('.profit-stat');
   await expect(tiles).toHaveCount(4);
   await expect(tiles.locator('> span')).toHaveText(['Today', 'This week', 'This month', 'Last 6 months']);

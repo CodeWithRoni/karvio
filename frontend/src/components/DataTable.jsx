@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { money, fdate, qty as fqty } from '../lib/format';
 import { exportExcel, exportPdf, printTable } from '../lib/export';
-import { Empty, Loading } from './ui';
+import { Empty } from './ui';
+import { Bone } from './Skeleton';
 import { Pager, DEFAULT_PAGE_SIZE } from './Pager';
 
 /**
@@ -120,6 +121,10 @@ export default function DataTable({ columns, rows, loading, title = 'Export', ex
             </tr>
           </thead>
           <tbody>
+            {/* First load: grey placeholder rows shaped like the table, instead of a blank box. */}
+            {loading && !rows.length && Array.from({ length: 6 }, (_, r) => (
+              <tr key={`sk${r}`} className="sk-row" aria-hidden="true">{selectable && <td><Bone w={14} h={14} r={4} /></td>}{columns.map((c, i) => <td key={c.key}><Bone w={['72%', '55%', '86%', '48%', '64%'][(r + i) % 5]} style={c.type === 'money' || c.type === 'num' ? { marginLeft: 'auto', width: '50%' } : undefined} /></td>)}</tr>
+            ))}
             {slice.map((row, i) => (
               <tr key={row.id || i} onClick={onRowClick ? () => onRowClick(row) : undefined} className={`${onRowClick ? 'click' : ''} ${rowClass ? rowClass(row) : ''} ${sel.has(row) ? 'picked' : ''}`}
                 tabIndex={onRowClick ? 0 : undefined} onKeyDown={onRowClick ? (e) => e.key === 'Enter' && onRowClick(row) : undefined}>
@@ -134,8 +139,8 @@ export default function DataTable({ columns, rows, loading, title = 'Export', ex
             </tfoot>
           )}
         </table>
-        {loading && <Loading />}
-        {!loading && !filtered.length && (empty || <Empty title={q ? 'No rows match your search' : 'No records for this view'} />)}
+        {loading && !rows.length && <span className="sr-only" role="status">Loading…</span>}
+        {!loading && !filtered.length && (q ? <Empty icon="search" title="No rows match your search">Try fewer words, or clear the search box.</Empty> : (empty || <Empty title="No records for this view">Change the dates or filters above to see more.</Empty>))}
       </div>
       <Pager page={cur} pageSize={pageSize} total={filtered.length} onPage={setPage} onPageSize={(n) => { setPageSize(n); setPage(0); }} />
     </div>

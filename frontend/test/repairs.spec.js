@@ -31,10 +31,10 @@ test.beforeEach(async ({ page }) => {
 test('repair job: receive, mark completed, deliver with an invoice', async ({ page, request }) => {
   const errors = []; page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/#/customers');
-  // the menu item sits right under Customers & Dues (wait for the menu first)
+  // the menu item sits right under Customers & dues (wait for the menu first)
   await expect(page.locator('nav a', { hasText: 'Repairs' })).toBeVisible();
   const links = await page.locator('nav a').allTextContents();
-  const i = links.findIndex((t) => t.includes('Customers & Dues'));
+  const i = links.findIndex((t) => t.includes('Customers & dues'));
   expect(links[i + 1]).toContain('Repairs');
   await page.locator('nav a', { hasText: 'Repairs' }).click();
   await expect(page.locator('.page-head h1')).toHaveText('Repairs');
@@ -120,7 +120,7 @@ test('repair job: cancel and give the advance back', async ({ page, request }) =
   expect((await call(request, 'accounts.list')).find((a) => a.id === cash.id).balance).toBeCloseTo(cash0 - 200, 2);
 });
 
-test('technician role with a mobile number in Users & Roles', async ({ page, request }) => {
+test('technician role with a mobile number in Users & roles', async ({ page, request }) => {
   await page.goto('/#/users');
   await page.getByRole('button', { name: 'Add user' }).click();
   const dlg = page.getByRole('dialog', { name: 'Add user' });

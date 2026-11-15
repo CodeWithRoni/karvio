@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useStore } from '../lib/store';
 import { api, getApiConfig, setApiConfig, testConnection, endpoint, isOffline } from '../lib/api';
 import { Btn, Field } from '../components/ui';
+import { readBrand } from '../lib/brand';
 
 export default function Login() {
   const login = useStore((s) => s.login);
@@ -47,10 +48,21 @@ export default function Login() {
     try { await login(f.username, f.password); } catch (e2) { setErr(e2.message); setBusy(false); }
   };
 
+  // After the first sign-in on this device, the shop's own name and logo greet staff here.
+  const brand = !showApi && !setup && !isOffline() ? readBrand(endpoint()) : null;
+  const initials = brand ? brand.name.split(/\s+/).filter(Boolean).slice(0, 3).map((w) => w[0]).join('').toUpperCase() : '';
   return (
-    <div className="auth">
+    <div className={`auth ${brand ? 'branded' : ''}`}>
+      {brand && (
+        <div className="auth-brand">
+          {brand.logo ? <img className="auth-shop-logo" src={brand.logo} alt="" /> : <div className="auth-initials" aria-hidden="true">{initials}</div>}
+          <h2>{brand.name}</h2>
+          {(brand.address || brand.phone) && <p>{[brand.address, brand.phone].filter(Boolean).join(' · ')}</p>}
+          <ul>{['Point of sale with barcode and serial tracking', 'Warranty claims, repairs and service jobs', 'Customer dues, accounts and daily reports'].map((t) => <li key={t}><span aria-hidden="true">✓</span>{t}</li>)}</ul>
+        </div>
+      )}
       <div className="auth-card">
-        <img className="auth-logo" src={`${import.meta.env.BASE_URL}karvio-logo.png`} alt="Karvio" />
+        {!brand && <img className="auth-logo" src={`${import.meta.env.BASE_URL}karvio-logo.png`} alt="Karvio" />}
         {showApi ? (
           <>
             <h1>Connect your shop</h1>
@@ -80,7 +92,7 @@ export default function Login() {
         ) : (
           <>
             <h1>Sign in</h1>
-            <p className="muted">{isOffline() ? 'Offline — this computer has a separate database. Your online shop data is not shown or synced here.' : ok || 'Online shop — sign in with your existing shop account.'}</p>
+            <p className="muted">{brand && !ok ? `Welcome back to ${brand.name}.` : isOffline() ? 'Offline — this computer has a separate database. Your online shop data is not shown or synced here.' : ok || 'Online shop — sign in with your existing shop account.'}</p>
             <form onSubmit={submit}>
               <Field label="Username"><input value={f.username} onChange={(e) => setF({ ...f, username: e.target.value })} autoComplete="username" autoFocus required /></Field>
               <Field label="Password"><input type="password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} autoComplete="current-password" required /></Field>
@@ -88,6 +100,7 @@ export default function Login() {
               <Btn kind="primary" size="lg" busy={busy} type="submit">Sign in</Btn>
               {!isOffline() && <button type="button" className="link" onClick={() => setShowApi(true)}>Change API connection</button>}
             </form>
+            {brand && <p className="auth-powered">Powered by <b>Karvio</b></p>}
           </>
         )}
       </div>

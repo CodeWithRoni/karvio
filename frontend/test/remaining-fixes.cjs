@@ -75,7 +75,7 @@ target='shop2';eq(drafts.loadPosDraft(),null);
 const format={money:n=>String(n),qty:n=>String(n),fdate:n=>String(n),fdatetime:n=>String(n),splitList:s=>String(s||'').split(',').filter(Boolean),today:()=> '2026-11-11'};
 const settings={getState:()=>({settings:{invoice_template:'business'}})};
 let printed='';
-const imports={'./store':{useStore:settings},'./format':format,'./export':{esc:s=>String(s??''),shopContacts:()=>'',printHtml:html=>{printed=html;}},'./purchaseDocs':{pdfPages:()=>{}}};
+const imports={'./store':{useStore:settings},'./format':format,'./export':{esc:s=>String(s??''),shopContacts:()=>'',printHtml:html=>{printed=html;}},'./purchaseDocs':{pdfPages:()=>{}},'./qr':{invoiceQr:()=>'',logoImg:()=>'',qrSvg:()=>''}};
 const docs=load('../src/lib/salesDocs.js',imports);
 const document={sale:{...sale.sale,customer_name:'Snapshot'},customer:{balance:99999},items:[],returns:[]};
 let html=docs.saleDocHtml(document);
