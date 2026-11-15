@@ -9,7 +9,8 @@ test('streamed database backup downloads gzip, previews and restores through a r
  const payload=JSON.stringify([{id:'fixture',name:'Fixture'}]);let queued=false,uploaded=0,received=0,digest=hash(JSON.stringify(manifest));
  await page.route(endpoint,async route=>{
   const body=route.request().postDataJSON();const action=body.action;let data;
-  if(action==='bootstrap'){const response=await route.fetch();const b=await response.json();b.data.apiCapabilities={...b.data.apiCapabilities,boundedBackup:{}};return route.fulfill({json:b});}
+  // Fetched through the test's own request context (not route.fetch): a bootstrap the app abandons on reload must not fail the test.
+  if(action==='bootstrap'){const b=await (await request.post(endpoint,{data:body})).json();if(b.data)b.data.apiCapabilities={...b.data.apiCapabilities,boundedBackup:{}};return route.fulfill({json:b}).catch(()=>{});}
   if(action==='database.transfer.safety.list')data=[];
   else if(action==='database.transfer.export.begin')data={job_id:'export-fixture',manifest};
   else if(action==='database.transfer.export.page')data={payload,sha256:hash(payload),rows:1,next_cursor:2,done:true};
