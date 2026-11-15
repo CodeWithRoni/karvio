@@ -200,7 +200,7 @@ eval(harness + scenario);
 /* ---------- 15. offline: no whole-database copy per request, old daily copies pruned ---------- */
 {
   const assert = require('assert/strict');
-  const { OfflineRuntime } = require('../../frontend/desktop/offline-runtime.cjs');
+  const { OfflineRuntime } = require('./gs-runtime.cjs');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'karvio-review-'));
   let n = 0;
   try {

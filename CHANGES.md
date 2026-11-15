@@ -1,3 +1,7 @@
+# 15 November 2026 — repository cleanup (pending push)
+
+Removed files no build, deploy or test uses: the committed `frontend/dist` build (workflows build it), the Tauri wrapper (`frontend/src-tauri`, its scripts and `@tauri-apps/cli`), the retired offline desktop pieces and their tests (`data-folder.cjs`, `preload.cjs`, `offline*.cjs`, two unused UI checks, `supabase-sql.mjs`), Apps Script `appsscript.json`, old Google Sheets setup guides (`SETUP.md`, `UPLOAD_GUIDE-বাংলা.md`), old release notes 1.2.2/1.2.3, `docs/archive`, `docs/PRODUCTION-READINESS.md` and the hand-off checksum files (`SHA256SUMS.txt`, `RELEASE-MANIFEST.json`, `scripts/prepare-review.cjs`). The Code.gs test runner moved from `frontend/desktop/offline-runtime.cjs` to `backend/test/gs-runtime.cjs`. Everything remains in the git history.
+
 # 15 November 2026 — review fixes (pending push)
 
 - Request limits: requests without a session use their own buckets (sign-in 60/min, public invoice/quotation links 300/min, other 120/min) and never count against the shop's 900/min, so an anonymous flood cannot block signed-in counters. Migration karvio_request_limit_buckets; the one-argument function stays for the previous Edge build.
@@ -5,7 +9,7 @@
 - The app retries `purchase.warranty` and `repair.seen` with the same request ID like every other write (test: write-actions.mjs).
 - `constructor`, `toString` and other inherited names are "Unknown action" instead of an uncertain server error.
 - Sale and purchase payment lines: negative or non-numeric amounts are refused (they were silently dropped); blank lines are still skipped.
-- Docs, SHA256SUMS.txt / RELEASE-MANIFEST.json and frontend/dist brought up to date.
+- Docs brought up to date.
 - Not changed: decimal rounding (round_), react-router major upgrade, signed Android release build (needs the owner's signing key).
 
 # 15 November 2026 — database performance (published)
@@ -26,6 +30,6 @@ Common requests read relevant party/product history; read-only lists use SQL sum
 
 # Pending production-hardening patch
 
-Owner authorized publication of this prepared patch; rollout completion is recorded by GitHub Actions. No native release. See [implemented changes and remaining work](docs/PRODUCTION-READINESS.md).
+Owner authorized publication of this prepared patch; rollout completion is recorded by GitHub Actions. No native release. Details are in the git history.
 
-The three UI state fixes were already published in 944cf5589ad7d3a76d06536dad55214d955f8f83. This pending patch is separate. Older changes are in [the archive](docs/archive/CHANGES-before-2026-11-14.md).
+The three UI state fixes were already published in 944cf5589ad7d3a76d06536dad55214d955f8f83. This pending patch is separate. Older changes are in the git history.

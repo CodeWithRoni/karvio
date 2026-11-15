@@ -1,3 +1,5 @@
+// Test harness: runs backend/Code.gs (the business rules) in Node with a JSON file as the database.
+// Formerly the offline desktop runtime; the desktop app is online-only now, so only tests use it.
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');

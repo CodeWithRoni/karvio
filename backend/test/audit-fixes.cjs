@@ -122,7 +122,7 @@ eval(harness + scenario);
 // Native offline restore accepts backups made before Repairs was introduced.
 const assert = require('node:assert/strict');
 const os = require('node:os');
-const { OfflineRuntime } = require('../../frontend/desktop/offline-runtime.cjs');
+const { OfflineRuntime } = require('./gs-runtime.cjs');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'karvio-audit-legacy-'));
 try {
   const options = { dataDir: dir, codePath: path.join(__dirname, '..', 'Code.gs') };

@@ -177,7 +177,7 @@ eval(harness + scenario);
 {
   const assert = require('node:assert/strict');
   const os = require('node:os');
-  const { OfflineRuntime } = require('../../frontend/desktop/offline-runtime.cjs');
+  const { OfflineRuntime } = require('./gs-runtime.cjs');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'karvio-reset-test-'));
   let n = 0;
   try {

@@ -4,7 +4,7 @@ Published: database performance work (see CHANGES.md) and the service_role grant
 
 Rules from the owner: reply in Bangla; change nothing without permission; push or deploy only when the owner says so. Deploy order (deploy.yml): tests → migrations → Edge function → Pages. Every new database function must keep working with the previous Edge build for that minute. Tests call the database as service_role (backend/test/pg-harness.mjs), so missing grants fail in tests.
 
-After changing which tables an action uses, run `node scripts/trace-table-hints.mjs` (regenerates TABLE_HINTS / APPEND_HINTS / PRIVATE_HINTS). After editing backend/Code.gs, run `node scripts/generate-supabase.cjs` (restore supabase/functions/karvio-api/release.mjs afterwards; CI stamps it). Before handing over, run `node scripts/prepare-review.cjs` to refresh SHA256SUMS.txt / RELEASE-MANIFEST.json.
+After changing which tables an action uses, run `node scripts/trace-table-hints.mjs` (regenerates TABLE_HINTS / APPEND_HINTS / PRIVATE_HINTS). After editing backend/Code.gs, run `node scripts/generate-supabase.cjs` (restore supabase/functions/karvio-api/release.mjs afterwards; CI stamps it).
 
 Known remaining work: dashboard whole-history computation (SQL port), global write lock, signed Android release build, react-router upgrade, decimal rounding in round_. Off-site Google Drive backup is ready on branch offsite-backup-later.
 

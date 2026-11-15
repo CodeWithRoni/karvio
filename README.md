@@ -1,6 +1,6 @@
 # Karvio ERP
 
-[Documentation index](docs/README.md) · [Production readiness and pending work](docs/PRODUCTION-READINESS.md)
+[Documentation index](docs/README.md) · [Latest changes](CHANGES.md)
 
 Online shop management and point of sale for computer, IT, electronics and networking businesses.
 
@@ -10,7 +10,7 @@ Online shop management and point of sale for computer, IT, electronics and netwo
 
 The web, desktop and mobile apps connect to the same online shop through the Supabase API. Internet access and an existing shop account are required. There is no offline sales mode, local shop database or automatic import of old offline data. Older local databases are left untouched.
 
-The current online backend is **Supabase Edge Functions + PostgreSQL**. Google Sheets / Apps Script and offline-runtime files remain in the repository for compatibility/history and regression tests; they are not the active production database.
+The current online backend is **Supabase Edge Functions + PostgreSQL**. `backend/Code.gs` (originally a Google Apps Script backend) holds the business rules: it is generated into the Supabase engine and run by the regression tests through `backend/test/gs-runtime.cjs`. Google Sheets is not used as a database.
 
 ## Downloads
 
@@ -46,7 +46,7 @@ Read [v1.2.4 release notes](RELEASE-1.2.4.md) for the latest corrections.
 
 Use the same online credentials on every platform. The fresh Supabase shop is initialized with an owner-chosen password; there is **no default online password**. Configure a different shop endpoint through **Settings → API connection** when needed.
 
-See [SUPABASE-SETUP.md](SUPABASE-SETUP.md) for the authoritative online architecture, fresh setup, private backups and deployment. Follow current Supabase setup rather than legacy Google Sheets/offline instructions in historical documents. Installing a new app version does not reset the online shop.
+See [SUPABASE-SETUP.md](SUPABASE-SETUP.md) for the authoritative online architecture, fresh setup, private backups and deployment. Installing a new app version does not reset the online shop.
 
 ## Development
 
@@ -75,9 +75,8 @@ Browser tests use Microsoft Edge locally by default. CI installs Chromium and se
 ## Repository map
 
 - frontend/src — React UI, API transport and document/export rendering.
-- frontend/desktop — online Electron wrapper; legacy test runtimes are not shipped as offline features.
-- frontend/src-tauri — alternative native wrapper configuration.
-- backend/Code.gs — authoritative ERP business rules and legacy Apps Script adapter.
+- frontend/desktop — online Electron wrapper.
+- backend/Code.gs — authoritative ERP business rules (with supabase/engine-overrides.txt).
 - supabase/functions/karvio-api — generated business engine and hosted gateway/runtime.
 - supabase/migrations — versioned PostgreSQL schema and private transactional storage.
 - backend/test and frontend/test — accounting, access, recovery and browser regressions.
