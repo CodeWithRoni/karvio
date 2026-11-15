@@ -25,6 +25,8 @@ ROUTES['database.info'].fn = function(p,user) {
   return info;
 };
 ROUTES['sms.test'].fn = function(p) { return sendSms_(p.phone,'Test SMS from '+getSetting_('shop_name')+' - Karvio'); };
+// The scheduler's call: the Edge handler redeems its one-time code before this runs (see handler.mjs).
+ROUTES['summary.tick'] = { public: true, write: true, fn: function () { return dailySummaryTick_(); } };
 // Persist messages with the financial commit; the worker claims each job once.
 sendSms_ = function(phone, message, logMessage) {
   if (_txn) {

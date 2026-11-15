@@ -1,3 +1,15 @@
+# 15 November 2026 — features 2 (pending push)
+
+- Products from Excel (Products & stock → Import / Export): download a template, check the file first (new / update / problems per row; nothing saved), then import every row in one save. Rows match existing products by barcode, SKU or name; empty cells keep current values; missing product groups, categories and brands are created; stock is never imported. Export writes all products in the same layout.
+- Price list (Products & stock → Price list): choose groups, categories and brands, retail and/or wholesale, warranty and stock columns; print, save as PDF (with the shop logo) or Excel.
+- POS: Hold (F7) puts a sale aside and starts a fresh cart; "Held" lists up to 20 held sales on this computer to resume or remove. Stock is not reserved by a held sale.
+- Admin → Activity log: who did what and when (sales, returns, cancellations, price and stock changes, settings, day close…), with date, staff, type and text filters (needs "Users & roles").
+- Expenses → Monthly expenses: rent, salaries, bills set up once; each comes due on its day (1–28), is recorded with one click (amount and date editable) and shows on the dashboard's "Needs attention". Cancelling the recorded expense makes it due again.
+- Supplier prices: Reports hub → Supplier prices (per product and supplier: times bought, last / lowest / average cost, cheapest marked; needs cost permission), and the new-purchase form shows the cheapest supplier's last price.
+- Daily summary SMS to the owner (Settings → SMS): today's sales, profit, expenses, dues and cash to up to 3 numbers at a chosen evening hour, plus "Send now". On Supabase a pg_cron job (every 15 minutes, 17:00–23:45 Dhaka) calls the Edge function with a one-time code; migration 20261115120000_karvio_daily_summary adds pg_net, the code table and the endpoint record. The Edge function records its own address on start-up.
+- Server actions: products.import.check, products.import, audit.list, expense.recurring, expense.recurring.save, expense.recurring.record, supplier.prices, summary.preview, summary.send, summary.tick (scheduler only).
+- Tests: backend/test/features-2.mjs (35 checks), frontend/test/features-2.spec.js (6 browser tests).
+
 # 15 November 2026 — professional look, day close and financial statements (pending push)
 
 - Dashboard redesigned: Today / This month / All time overview (remembered per browser) with "vs yesterday" changes, a secondary figures row, a 14-day sales and profit chart, a "Needs attention" list, one History card with tabs (sales, returns, purchases, expenses, profits, receivable, payable), Profit beside Live balances, ranked leaderboard / best sellers / low stock with bars, and an "Inventory health" card. Every card can still be hidden in Settings → Dashboard. The big clock is now a small time next to the date. Collection reminders and repair results sit side by side.

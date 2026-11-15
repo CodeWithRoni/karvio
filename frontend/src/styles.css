@@ -1296,3 +1296,54 @@ b.up, .kpi > b.up { color: var(--ok); } b.down, .kpi > b.down { color: var(--bad
   .auth-brand ul { display: none; }
   .auth-initials, .auth-shop-logo { margin: 0 auto; }
 }
+
+/* ---------- Product import and price list ---------- */
+.imp-sum { display: flex; gap: 18px; margin: 14px 0 6px; flex-wrap: wrap; font-size: 13.5px; }
+.imp-sum span { display: inline-flex; gap: 6px; align-items: center; }
+.imp-new { font-size: 12.5px; margin: 4px 0 8px; }
+.imp-table { max-height: 320px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
+.imp-table table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.imp-table th { position: sticky; top: 0; background: var(--panel-2); text-align: left; padding: 7px 10px; font-size: 12px; color: var(--muted); }
+.imp-table td { padding: 7px 10px; border-top: 1px solid var(--line); }
+.imp-bad td { background: color-mix(in srgb, var(--bad) 8%, transparent); }
+.imp-err { color: var(--bad); font-size: 12.5px; }
+.pl-checks { display: flex; gap: 8px 18px; flex-wrap: wrap; }
+.pl-preview { margin-top: 12px; max-height: 300px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
+.pl-preview table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.pl-preview th { position: sticky; top: 0; background: var(--panel-2); padding: 7px 10px; font-size: 12px; color: var(--muted); text-align: left; }
+.pl-preview th.r, .pl-preview td.r { text-align: right; }
+.pl-preview td { padding: 6px 10px; border-top: 1px solid var(--line); }
+/* ---------- POS held sales ---------- */
+.btn.held-on { border-color: var(--fiber); color: var(--fiber); }
+.held-list { display: flex; flex-direction: column; gap: 8px; }
+.held-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+.held-row small { display: block; color: var(--muted); font-size: 12px; }
+/* ---------- Activity log ---------- */
+.act-list { display: flex; flex-direction: column; }
+.act-row { display: grid; grid-template-columns: 150px 130px 170px minmax(0, 1fr); gap: 12px; align-items: center; padding: 9px 4px; border-top: 1px solid var(--line); font-size: 13.5px; }
+.act-row time { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12.5px; }
+.act-user { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.act-row .badge { justify-self: start; }
+.act-detail { color: color-mix(in srgb, var(--text) 85%, var(--muted)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 860px) { .act-row { grid-template-columns: 1fr auto; } .act-detail { grid-column: 1 / -1; white-space: normal; } }
+/* ---------- Monthly expenses ---------- */
+.mx-list { display: flex; flex-direction: column; gap: 8px; }
+.mx-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 14px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+.mx-row.due { border-left: 3px solid var(--warn); }
+.mx-row.off { opacity: .6; }
+.mx-row small { display: block; color: var(--muted); font-size: 12px; }
+.mx-state { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+.mx-edit { display: flex; flex-direction: column; gap: 10px; }
+.mx-edit-row { display: grid; grid-template-columns: 1.4fr 1fr 110px 1fr 70px auto auto; gap: 8px; align-items: end; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.mx-edit-row .check { padding-bottom: 8px; }
+@media (max-width: 860px) { .mx-edit-row { grid-template-columns: 1fr 1fr; } .mx-row { grid-template-columns: 1fr auto; } .mx-state { grid-column: 1 / -1; justify-content: flex-start; } }
+tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
+.last-buy small.sup-compare, .sup-compare { display: flex; flex-direction: column; gap: 1px; margin-top: 3px; }
+.sup-compare span { color: var(--muted); }
+.sup-compare span.best { color: var(--ok); font-weight: 700; }
+.sup-compare span.this { text-decoration: underline; text-underline-offset: 2px; }
+/* ---------- Daily summary ---------- */
+.ds-card { margin: 0; }
+.ds-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.ds-preview { margin: 6px 0 0; padding: 12px 14px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); font: 13px/1.55 var(--font); white-space: pre-wrap; }
+@media (max-width: 860px) { .ds-grid { grid-template-columns: minmax(0, 1fr); } }

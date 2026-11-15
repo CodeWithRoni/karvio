@@ -5,6 +5,8 @@ import { money, today, monthStart, round2, fdate } from '../lib/format';
 import DataTable from '../components/DataTable';
 import { useApi, PageHead, Btn, Field, useAction, Select, DateRange, ErrorBox, Badge, statusTone, Tabs, useConfirm, Modal } from '../components/ui';
 import { ReverseDialog } from '../components/widgets';
+import { useSearchParams } from 'react-router-dom';
+import MonthlyExpenses from '../components/MonthlyExpenses';
 
 const catKey = (c) => String(c || '').trim().replace(/\s+/g, ' ').toLowerCase();
 
@@ -22,7 +24,8 @@ export default function Expenses() {
   const [busy, run] = useAction();
   const [rev, setRev] = useState(null);
   const [edit, setEdit] = useState(null);
-  const [tab, setTab] = useState('list');
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState(params.get('tab') === 'monthly' ? 'monthly' : 'list');
 
   const save = async (e) => {
     e.preventDefault();
@@ -54,9 +57,9 @@ export default function Expenses() {
   return (
     <>
       <PageHead title="Expenses" sub="Shop running costs are paid from an account, so the cash balance stays accurate.">
-        <Tabs tabs={[['list', 'Daily expenses'], ['cats', 'Expense categories']]} value={tab} onChange={setTab} />
+        <Tabs tabs={[['list', 'Daily expenses'], ['monthly', 'Monthly expenses'], ['cats', 'Expense categories']]} value={tab} onChange={setTab} />
       </PageHead>
-      {tab === 'cats' ? <ExpenseCategories cats={cats} /> : <>
+      {tab === 'cats' ? <ExpenseCategories cats={cats} /> : tab === 'monthly' ? <MonthlyExpenses cats={cats} onRecorded={changed} /> : <>
       <div className="split" style={{ marginBottom: 16 }}>
         <form className="card form" onSubmit={save}>
           <Field label="Date"><input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>

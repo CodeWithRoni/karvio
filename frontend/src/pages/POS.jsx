@@ -2,11 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import QuickPicks, { rememberRecent } from '../components/QuickPicks';
 import { useStore, shopDay } from '../lib/store';
 import { api } from '../lib/api';
-import { money, qty as fqty, round2, isDecimalUnit, fdate } from '../lib/format';
+import { money, qty as fqty, round2, isDecimalUnit, fdate, fdatetime } from '../lib/format';
 import { printReceipt, printInvoice, printPreviousDueReceipt } from '../lib/receipt';
 import { Btn, Modal, Field, Tabs, useAction, useHotkeys, useConfirm, noWheel } from '../components/ui';
 import { ProductSearch, PaymentSplit, defaultPay, cleanPays, QuickCustomer, CustomerPicker, SerialChooser } from '../components/widgets';
-import { loadPosDraft, savePosDraft } from '../lib/posDraft';
+import { loadPosDraft, savePosDraft, loadHolds, saveHolds } from '../lib/posDraft';
 
 // Next payment date picker works in the shop's date (server time zone), not this computer's clock.
 const inDays = (n) => shopDay(n);
@@ -38,6 +38,8 @@ export default function POS() {
   const [nextPay, setNextPay] = useState(''); // promised date for the due on this sale
   const [hist, setHist] = useState({}); // product_id -> { last_sales, last_purchase, avg_cost } (POS price history)
   const [oos, setOos] = useState(null); // out-of-stock product being looked at
+  const [holds, setHolds] = useState(loadHolds); // sales put aside on this computer
+  const [showHolds, setShowHolds] = useState(false);
   const [busy, run] = useAction();
   const checkingOut = useRef(false);
   const searchRef = useRef();
@@ -154,6 +156,29 @@ export default function POS() {
   const [confirmUI, ask] = useConfirm();
   const reset = () => { setPayPrevious(false); setPreviousPays(defaultPay('')); setNextPay(''); setSendSms(false); setCart([]); setCustomerId(''); setDiscount(''); setPaysRaw(defaultPay()); setPayTouched(false); setUseCredit(false); setNote(''); searchRef.current?.focus(); };
 
+  // Hold: put this cart aside (items, customer, discount, price tier, note) and start a fresh one.
+  const cartTotal = (c, disc) => Math.max(0, c.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.price) || 0), 0) - (Number(disc) || 0));
+  const currentHold = () => ({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: new Date().toISOString(), cart, customerId, discount, tier, note,
+    label: customer?.name || 'Cash sale', items: cart.length, total: cartTotal(cart, discount) });
+  const putHolds = (list) => { try { saveHolds(list); setHolds(list); return true; } catch (e) { toast(e.message, 'err'); return false; } };
+  const hold = () => {
+    if (!cart.length) return toast('Add items before holding a sale', 'err');
+    if (holds.length >= 20) return toast('20 sales are already on hold; finish or remove one first', 'err');
+    const h = currentHold();
+    if (putHolds([h, ...holds])) { reset(); toast(`Held: ${h.label} · ${money(h.total)}`); searchRef.current?.focus(); }
+  };
+  const resume = (h) => {
+    const rest = holds.filter((x) => x.id !== h.id);
+    const list = cart.length ? [currentHold(), ...rest] : rest; // the open cart swaps places with the held one
+    if (!putHolds(list)) return;
+    reset();
+    setCart(h.cart || []); setCustomerId(h.customerId || ''); setDiscount(h.discount || ''); setTier(h.tier || 'retail'); setNote(h.note || '');
+    if (h.customerId) setPayTouched(true);
+    setShowHolds(false);
+    toast(cart.length ? `Resumed ${h.label}; the open cart was held` : `Resumed ${h.label}`);
+  };
+  const dropHold = async (h) => { if (await ask({ title: 'Remove held sale?', message: `${h.label} · ${h.items} item${h.items === 1 ? '' : 's'} · ${money(h.total)} will be removed. Nothing was sold.`, confirmLabel: 'Remove' })) putHolds(holds.filter((x) => x.id !== h.id)); };
+
   const gatewayOn = settings.sms_enabled === 'true';
   const phone = customer?.phones?.split(',')[0]?.trim() || '';
   const smsReady = gatewayOn && !!customer && !!phone;
@@ -195,8 +220,9 @@ export default function POS() {
     F8: () => discRef.current?.focus(),
     F9: () => checkout(false),
     F10: () => checkout(true),
+    F7: () => hold(),
     'mod+delete': async () => { if (cart.length && await ask({ title: 'Clear the cart?', message: 'All items, the customer and payments on this screen will be removed.' })) reset(); }
-  }, [cart, pays, customerId, discount, useCredit, note, sendSms, busy, tier, nextPay]);
+  }, [cart, pays, customerId, discount, useCredit, note, sendSms, busy, tier, nextPay, holds]);
 
   return (
     <div className="pos">
@@ -204,7 +230,21 @@ export default function POS() {
         <div className="row">
           <div style={{ flex: 1 }}><ProductSearch camera onPick={(p) => add(p)} onCode={addBySerial} placeholder="Search product by serial, name, model or brand (F2)" inputRef={searchRef} autoFocus /></div>
           <Tabs tabs={[['retail', 'Retail'], ['wholesale', 'Wholesale']]} value={tier} onChange={setTier} />
+          <Btn onClick={hold} disabled={!cart.length} title="Put this sale aside and serve the next customer (F7)">Hold</Btn>
+          <Btn onClick={() => setShowHolds(true)} disabled={!holds.length} className={holds.length ? 'held-on' : ''} title="Sales on hold">Held{holds.length ? ` · ${holds.length}` : ''}</Btn>
         </div>
+        {showHolds && (
+          <Modal open size="md" title="Sales on hold" onClose={() => setShowHolds(false)} footer={<Btn onClick={() => setShowHolds(false)}>Close</Btn>}>
+            {holds.length ? <div className="held-list">{holds.map((h) => (
+              <div className="held-row" key={h.id}>
+                <div><b>{h.label}</b><small>{h.items} item{h.items === 1 ? '' : 's'} · held {fdatetime(h.at)}{h.note ? ` · ${h.note}` : ''}</small></div>
+                <b className="num">{money(h.total)}</b>
+                <div className="row" style={{ gap: 6 }}><Btn size="sm" kind="primary" onClick={() => resume(h)}>Resume</Btn><Btn size="sm" onClick={() => dropHold(h)}>Remove</Btn></div>
+              </div>
+            ))}</div> : <p className="muted">No sales on hold.</p>}
+            <p className="muted" style={{ fontSize: 12.5, marginBottom: 0 }}>Held sales stay on this computer until resumed. Stock is not reserved: it is checked when the sale is completed.</p>
+          </Modal>
+        )}
         <div className="cart">
           <table>
             <thead><tr><th>Item</th>{canCost && <th style={{ width: 110 }} className="cost-col"><label className="cost-toggle"><input type="checkbox" checked={costOn} onChange={(e) => { setCostOn(e.target.checked); setCostShown({}); }} aria-label="Show cost column" /> Cost</label></th>}<th style={{ width: 100 }} className="r">Qty</th><th style={{ width: 150 }} className="r">Price</th><th style={{ width: 110 }} className="r">Amount</th><th style={{ width: 30 }} /></tr></thead>
@@ -270,7 +310,7 @@ export default function POS() {
         </div>
         <div className="keys">
           <span><kbd>F2</kbd> search</span><span><kbd>F4</kbd> customer</span><span><kbd>F8</kbd> discount</span>
-          <span><kbd>F9</kbd> complete sale</span><span><kbd>F10</kbd> complete & print</span><span><kbd>Ctrl</kbd>+<kbd>Del</kbd> clear cart</span>
+          <span><kbd>F9</kbd> complete sale</span><span><kbd>F10</kbd> complete & print</span><span><kbd>F7</kbd> hold</span><span><kbd>Ctrl</kbd>+<kbd>Del</kbd> clear cart</span>
         </div>
       </div>
 

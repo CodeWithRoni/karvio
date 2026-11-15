@@ -24,4 +24,6 @@ const gateway=createHandler({rpc,log:logRequest,
  // client-controlled forwarding headers or a claimed username/user ID.
  allowRequest:body=>rpc('karvio_request_limit',{session_key:'tok_'+String(body.token||'').slice(0,512),action_name:body.action}),
  dispatch:()=>EdgeRuntime.waitUntil(dispatchSms(rpc).catch(()=>console.error('SMS worker unavailable')))});
+// Tell the database where this function lives, so its scheduler (daily summary SMS) can reach it.
+rpc('karvio_register_endpoint',{endpoint_url:`${url.replace(/\/+$/,'')}/functions/v1/karvio-api`}).catch(()=>console.error('Endpoint registration unavailable'));
 Deno.serve(gateway);

@@ -1012,6 +1012,109 @@ function productSave_(p, user) {
   row.stock = 0; row.created_at = now_();
   return insert_('Products', row);
 }
+/* ---- Products from Excel: check first (no changes), then import all rows in one save ----
+ * rows = [{name, sku, barcode, group, category, brand, unit, sale_price, wholesale_price, low_stock, warranty_days, warranty_type, description, service}]
+ * A row updates the product with the same barcode, else SKU, else name (capital letters ignored); otherwise it adds one.
+ * Empty cells keep what the product already has. Missing product groups, categories and brands are created.
+ * Stock is never imported: it comes from purchases (or Stock adjust). */
+var IMPORT_MAX_ROWS = 2000;
+function importText_(v, max) { return String(v === undefined || v === null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, max || 200); }
+function importNumber_(v) { var t = importText_(v).replace(/,/g, ''); if (t === '') return null; var n = Number(t); return isFinite(n) ? n : NaN; }
+function importBool_(v) { var t = importText_(v).toLowerCase(); return t === '' ? null : ['yes', 'y', 'true', '1', 'service'].indexOf(t) >= 0; }
+function productsImportPlan_(p) {
+  var rows = Array.isArray(p.rows) ? p.rows : [];
+  if (!rows.length) fail_('The file has no product rows');
+  if (rows.length > IMPORT_MAX_ROWS) fail_('Import up to ' + IMPORT_MAX_ROWS + ' products at a time; split the file');
+  var low = function (v) { return String(v || '').trim().toLowerCase(); };
+  var products = all_('Products'), byBarcode = {}, bySku = {}, byName = {};
+  products.forEach(function (x) { if (x.barcode) byBarcode[low(x.barcode)] = x; if (x.sku) bySku[low(x.sku)] = x; byName[nameKey_(x.name)] = x; });
+  var cats = all_('Categories'), groups = {}, subs = {}, brands = {};
+  cats.forEach(function (c) { if (!c.parent_id) groups[low(c.name)] = c; else subs[c.parent_id + '|' + low(c.name)] = c; });
+  all_('Brands').forEach(function (b) { brands[low(b.name)] = b; });
+  var unitNames = {}; units_().forEach(function (u) { unitNames[low(u.name)] = u; unitNames[low(u.label)] = u; });
+  var seen = { name: {}, code: {} }, plan = [], newGroups = {}, newCats = {}, newBrands = {};
+  rows.forEach(function (r, i) {
+    var line = i + 2, errors = [], name = importText_(r.name, 200), barcode = importText_(r.barcode, 60), sku = importText_(r.sku, 60);
+    var match = (barcode && byBarcode[low(barcode)]) || (sku && bySku[low(sku)]) || (name && byName[nameKey_(name)]) || null;
+    if (!name && !match) errors.push('Product name is required');
+    var finalName = name || (match && match.name) || '';
+    var unitIn = importText_(r.unit, 30), unit = unitIn ? unitNames[low(unitIn)] : null;
+    if (unitIn && !unit) errors.push('Unknown selling unit "' + unitIn + '" (add it in Products & stock → Categories, brands & warranty)');
+    var service = importBool_(r.service);
+    var nums = {}; ['sale_price', 'wholesale_price', 'low_stock', 'warranty_days'].forEach(function (k) {
+      var n = importNumber_(r[k]); if (n !== null && (isNaN(n) || n < 0)) errors.push(k.replace('_', ' ') + ' must be a number, 0 or more'); nums[k] = n;
+    });
+    var wt = low(r.warranty_type);
+    if (wt && ['serial', 'invoice', 'none'].indexOf(wt) < 0) errors.push('Warranty type must be serial, invoice or none');
+    var unitName = unit ? unit.name : (match ? match.unit : 'pcs'), decimal = unit ? unit.decimal : (match ? isDecimalUnit_(match.unit) : false);
+    var isService = service === null ? (match ? isService_(match) : false) : service;
+    if (wt === 'serial' && (decimal || isService)) errors.push('Serial warranty needs a whole-number unit (like pcs) and a stocked product');
+    // Names and codes must stay unique: against other products and other rows of this file.
+    var nk = nameKey_(finalName);
+    if (nk) { var other = byName[nk]; if (other && (!match || other.id !== match.id)) errors.push('Another product is already called "' + other.name + '"'); if (seen.name[nk]) errors.push('Same name as row ' + seen.name[nk]); seen.name[nk] = line; }
+    [barcode, sku].forEach(function (code, k) {
+      if (!code) return; var c = low(code), o = byBarcode[c] || bySku[c];
+      if (o && (!match || o.id !== match.id)) errors.push((k ? 'SKU' : 'Barcode') + ' ' + code + ' is used by ' + o.name);
+      if (seen.code[c] && seen.code[c] !== line) errors.push((k ? 'SKU' : 'Barcode') + ' ' + code + ' repeats row ' + seen.code[c]); seen.code[c] = line;
+    });
+    var g = importText_(r.group, 80), c2 = importText_(r.category, 80), b = importText_(r.brand, 80);
+    if (c2 && !g) errors.push('A category needs its product group');
+    if (g && !groups[low(g)]) newGroups[low(g)] = g;
+    if (c2 && g && !(groups[low(g)] && subs[groups[low(g)].id + '|' + low(c2)])) newCats[low(g) + '|' + low(c2)] = [g, c2];
+    if (b && !brands[low(b)]) newBrands[low(b)] = b;
+    plan.push({ line: line, action: errors.length ? 'error' : match ? 'update' : 'create', id: match ? match.id : '', name: finalName, errors: errors,
+      values: { name: name, sku: sku, barcode: barcode, group: g, category: c2, brand: b, unit: unitIn ? unitName : '', service: service, warranty_type: wt, description: importText_(r.description, 500), nums: nums } });
+  });
+  return { rows: plan, counts: { create: plan.filter(function (x) { return x.action === 'create'; }).length, update: plan.filter(function (x) { return x.action === 'update'; }).length, error: plan.filter(function (x) { return x.action === 'error'; }).length },
+    new_groups: Object.keys(newGroups).map(function (k) { return newGroups[k]; }), new_categories: Object.keys(newCats).map(function (k) { return newCats[k][0] + ' › ' + newCats[k][1]; }), new_brands: Object.keys(newBrands).map(function (k) { return newBrands[k]; }) };
+}
+function productsImportCheck_(p) { return productsImportPlan_(p); }
+function productsImport_(p, user) {
+  var plan = productsImportPlan_(p);
+  if (plan.counts.error) fail_(plan.counts.error + ' row' + (plan.counts.error === 1 ? ' has' : 's have') + ' problems; check the file again and fix them first');
+  var low = function (v) { return String(v || '').trim().toLowerCase(); };
+  var groupId = function (name) {
+    var g = all_('Categories').filter(function (c) { return !c.parent_id && low(c.name) === low(name); })[0];
+    return (g || masterSave_({ kind: 'group', name: name }, user)).id;
+  };
+  var catId = function (gid, name) {
+    var c = all_('Categories').filter(function (x) { return x.parent_id === gid && low(x.name) === low(name); })[0];
+    return (c || masterSave_({ kind: 'category', name: name, parent_id: gid }, user)).id;
+  };
+  var brandId = function (name) {
+    var b = all_('Brands').filter(function (x) { return low(x.name) === low(name); })[0];
+    return (b || masterSave_({ kind: 'brand', name: name }, user)).id;
+  };
+  var made = 0, changed = 0, priced = 0;
+  plan.rows.forEach(function (r) {
+    var v = r.values, cur = r.id ? all_('Products').filter(function (x) { return x.id === r.id; })[0] : null, n = v.nums;
+    var gid = v.group ? groupId(v.group) : (cur ? cur.category_id : ''), sid = v.category ? catId(gid, v.category) : (cur && (!v.group || gid === cur.category_id) ? cur.subcategory_id : '');
+    var wt = v.warranty_type || (cur ? (cur.has_warranty ? cur.warranty_type : 'none') : 'none');
+    var days = n.warranty_days !== null ? n.warranty_days : cur ? cur.warranty_days : 0;
+    var row = {
+      id: cur ? cur.id : undefined, name: v.name || cur.name,
+      // Same code typed in other capitals: keep the stored spelling (labels already printed with it).
+      sku: cur && low(v.sku) === low(cur.sku) ? cur.sku : v.sku || (cur ? cur.sku : ''), barcode: cur && low(v.barcode) === low(cur.barcode) ? cur.barcode : v.barcode || (cur ? cur.barcode : ''),
+      category_id: gid, subcategory_id: sid, brand_id: v.brand ? brandId(v.brand) : (cur ? cur.brand_id : ''), unit: v.unit || (cur ? cur.unit : 'pcs'),
+      roll_length: cur ? cur.roll_length : 0, low_stock: n.low_stock !== null ? n.low_stock : (cur ? cur.low_stock : 0),
+      service: v.service === null ? (cur ? isService_(cur) : false) : v.service, description: v.description || (cur ? cur.description : ''),
+      has_warranty: wt !== 'none' && days > 0, warranty_type: wt === 'none' ? '' : wt, warranty_days: days, active: cur ? cur.active : true,
+      sale_price: n.sale_price || 0, wholesale_price: n.wholesale_price || 0
+    };
+    var saved = productSave_(row, user);
+    if (cur) {
+      changed++;
+      var patch = {};
+      if (n.sale_price !== null && n.sale_price > 0 && n.sale_price !== cur.sale_price) patch.sale_price = n.sale_price;
+      if (n.wholesale_price !== null && n.wholesale_price !== cur.wholesale_price) patch.wholesale_price = n.wholesale_price;
+      if (Object.keys(patch).length) { update_('Products', cur.id, patch); priced++; }
+    } else { made++; if (n.sale_price > 0) priced++; }
+    return saved;
+  });
+  audit_(user, 'products_import', { added: made, updated: changed, prices: priced });
+  return { added: made, updated: changed, prices: priced };
+}
+
 /** Price manager: bulk update retail / wholesale prices. items = [{id, sale_price, wholesale_price}] */
 function priceUpdate_(p, user) {
   var items = Array.isArray(p.items) ? p.items : [];
@@ -1723,7 +1826,7 @@ function settingsSave_(p, user) {
   var allowed = ['shop_name', 'shop_phone', 'shop_tel', 'shop_email', 'shop_web', 'shop_social', 'shop_address', 'shop_footer', 'currency', 'invoice_prefix', 'receipt_width', 'low_stock_default', 'expense_categories',
     'sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_repair_template', 'sms_technician_template', 'sms_quote_template', 'sms_headers',
     'dashboard_hidden', 'invoice_template', 'invoice_paper', 'invoice_custom_width', 'invoice_custom_height', 'invoice_note',
-    'sms_invoice_link', 'invoice_link_base', 'books_locked_until', 'shop_logo', 'invoice_qr'];
+    'sms_invoice_link', 'invoice_link_base', 'books_locked_until', 'shop_logo', 'invoice_qr', 'daily_summary_enabled', 'daily_summary_phones', 'daily_summary_hour'];
   var vals = Object.assign({}, p.values || {});
   if (vals.shop_logo !== undefined) {
     var logo = String(vals.shop_logo || '');
@@ -1733,6 +1836,15 @@ function settingsSave_(p, user) {
     vals.shop_logo = logo;
   }
   if (vals.invoice_qr !== undefined) vals.invoice_qr = String(vals.invoice_qr) === 'false' ? 'false' : 'true';
+  if (vals.daily_summary_enabled !== undefined) vals.daily_summary_enabled = String(vals.daily_summary_enabled) === 'true' ? 'true' : 'false';
+  if (vals.daily_summary_phones !== undefined) {
+    var phones = parseList_(String(vals.daily_summary_phones || '')).map(function (x) { return x.replace(/[^0-9+]/g, ''); }).filter(Boolean);
+    if (phones.length > 3) fail_('Daily summary: up to 3 phone numbers');
+    phones.forEach(function (x) { if (!smsNumber_(x)) fail_('Daily summary: ' + x + ' is not a valid mobile number'); });
+    vals.daily_summary_phones = phones.join(', ');
+  }
+  if (vals.daily_summary_hour !== undefined) { var hr = Math.round(Number(vals.daily_summary_hour)); if (!(hr >= 17 && hr <= 23)) fail_('Daily summary time must be between 17:00 and 23:00'); vals.daily_summary_hour = String(hr); }
+  if (vals.daily_summary_enabled === 'true' && !String(vals.daily_summary_phones !== undefined ? vals.daily_summary_phones : getSetting_('daily_summary_phones', '')).trim()) fail_('Daily summary: add the phone number that should receive it');
   if (vals.expense_categories !== undefined) {
     var cats = vals.expense_categories;
     if (typeof cats === 'string') { try { cats = JSON.parse(cats); } catch(e) { fail_('Expense categories must be a valid list'); } }
@@ -2042,6 +2154,53 @@ function quotePublic_(p) {
   var st = settingsMap_(), shop = {};
   ['shop_name', 'shop_address', 'shop_phone', 'shop_tel', 'shop_email', 'shop_web', 'shop_social', 'shop_footer', 'currency', 'shop_logo'].forEach(function (k) { shop[k] = st[k] || ''; });
   return { quote: quote, shop: shop, expires_at: quote.expires_at };
+}
+/* ---- Daily summary SMS for the owner (Settings → SMS) ---- */
+function dailySummaryText_(date) {
+  var d = date || today_(), m = function (v) { return Math.round(num_(v)).toLocaleString('en-IN'); };
+  var x = profitSummary_(d, d);
+  var ins = {}; all_('AccountTxns').forEach(function (t) { if (!t.voided && String(t.date).slice(0, 10) === d && t.direction === 'in') ins[t.ref_type] = (ins[t.ref_type] || 0) + num_(t.amount); });
+  var sales = all_('Sales').filter(function (s) { return s.status === 'active' && s.date === d; });
+  var newDue = sum_(sales, function (s) { return s.due; });
+  var accs = accountsList_().filter(function (a) { return a.active; });
+  var cash = sum_(accs.filter(function (a) { return a.type === 'cash'; }), function (a) { return a.balance; }), total = sum_(accs, function (a) { return a.balance; });
+  var thDef = num_(getSetting_('low_stock_default', '5'));
+  var low = all_('Products').filter(function (p) { return p.active && !isService_(p) && p.stock <= (p.low_stock > 0 ? p.low_stock : thDef); }).length;
+  var lines = [
+    getSetting_('shop_name', 'Shop') + ' - ' + Utilities.formatDate(new Date(d + 'T12:00:00'), TZ_(), 'yyyy-MM-dd'),
+    'Sales ' + m(x.net_sales) + ' (' + x.invoices + ' inv)' + (x.returns ? ', returns ' + m(x.returns) : ''),
+    'Profit ' + m(x.gross) + ', net ' + m(x.net),
+    'Expenses ' + m(x.expenses),
+    'Due collected ' + m(ins.cpay || 0) + ', new due ' + m(newDue),
+    'Cash ' + m(cash) + ', all accounts ' + m(total)
+  ];
+  if (low) lines.push('Low stock: ' + low + ' item' + (low === 1 ? '' : 's'));
+  return lines.join('\n');
+}
+function summaryPhones_() { return parseList_(getSetting_('daily_summary_phones', '')).filter(Boolean).slice(0, 3); }
+function summaryPreview_() {
+  return { text: dailySummaryText_(), phones: summaryPhones_(), last_sent: getSetting_('daily_summary_last', ''), gateway: getSetting_('sms_enabled') === 'true' };
+}
+function summarySend_(p, user) {
+  if (getSetting_('sms_enabled') !== 'true') fail_('Turn on the SMS gateway first (Settings → SMS)');
+  var phones = summaryPhones_(); if (!phones.length) fail_('Add the phone number that should receive the daily summary, then save');
+  var text = dailySummaryText_(), out = phones.map(function (ph) { return Object.assign({ phone: ph }, sendSms_(ph, text)); });
+  audit_(user, 'daily_summary', { phones: phones.length, manual: true });
+  return { text: text, results: out };
+}
+/** Called by the scheduler (Supabase: pg_cron → Edge, with a one-time code). Sends at most once a day, at or after the chosen hour. */
+function dailySummaryTick_() {
+  if (getSetting_('daily_summary_enabled') !== 'true') return { skipped: 'off' };
+  if (getSetting_('sms_enabled') !== 'true') return { skipped: 'gateway off' };
+  var now = now_(), today = now.slice(0, 10), hour = Number(now.slice(11, 13)), at = Number(getSetting_('daily_summary_hour', '21')) || 21;
+  if (hour < at) return { skipped: 'not yet' };
+  if (getSetting_('daily_summary_last', '') === today) return { skipped: 'already sent' };
+  var phones = summaryPhones_(); if (!phones.length) return { skipped: 'no phone' };
+  var text = dailySummaryText_(today);
+  phones.forEach(function (ph) { sendSms_(ph, text); });
+  setSetting_('daily_summary_last', today);
+  audit_({ name: 'Daily summary' }, 'daily_summary', { phones: phones.length, manual: false });
+  return { sent: phones.length };
 }
 function smsTest_(p, user) {
   var r = sendSms_(p.phone, 'Test SMS from ' + getSetting_('shop_name') + ' - Karvio');
@@ -3175,6 +3334,53 @@ function expenseCreate_(p, user) {
   var e = insert_('Expenses', { date: date, category: cat, amount: amt, account_id: acc.id, note: p.note || '', user: user.name, status: 'active', created_at: now_() });
   acctTxn_(acc.id, 'out', amt, 'expense', e.id, 'Expense: ' + cat + (p.note ? ' — ' + p.note : ''), user, date);
   return e;
+}
+/* ---- Monthly expenses (rent, salary, internet…): templates in Settings 'recurring_expenses' ----
+ * Each month a template comes due on its day; "Record" books it as an ordinary expense (editable amount and date).
+ * A month counts as done while its recorded expense is active; cancelling that expense makes it due again. */
+function recurringTemplates_() { try { var v = JSON.parse(getSetting_('recurring_expenses', '[]')); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+function recurringStatus_() {
+  var today = today_(), month = today.slice(0, 7), exps = indexBy_(all_('Expenses'));
+  return recurringTemplates_().map(function (t) {
+    var rec = t.last_month === month && t.last_expense_id && exps[t.last_expense_id] && exps[t.last_expense_id].status === 'active';
+    var dueDate = month + '-' + ('0' + Math.min(28, Math.max(1, Number(t.day) || 1))).slice(-2);
+    return Object.assign({}, t, { month: month, due_date: dueDate, recorded: !!rec, due: t.active !== false && !rec && today >= dueDate });
+  });
+}
+function recurringList_() { var list = recurringStatus_(); return { templates: list, due: list.filter(function (t) { return t.due; }).length }; }
+function recurringSave_(p, user) {
+  var list = Array.isArray(p.templates) ? p.templates : [];
+  if (list.length > 50) fail_('Up to 50 monthly expenses');
+  var cats = []; try { cats = JSON.parse(getSetting_('expense_categories', '[]')); } catch (e) {}
+  var accs = indexBy_(all_('Accounts').filter(function (a) { return a.active; })), old = indexBy_(recurringTemplates_()), names = {};
+  var out = list.map(function (t) {
+    var name = String(t.name || '').trim().replace(/\s+/g, ' ').slice(0, 60); if (!name) fail_('Each monthly expense needs a name');
+    if (names[nameKey_(name)]) fail_('Two monthly expenses are called "' + name + '"'); names[nameKey_(name)] = 1;
+    var cat = (Array.isArray(cats) ? cats : []).filter(function (c) { return nameKey_(c) === nameKey_(t.category); })[0];
+    if (!cat) fail_(name + ': choose a category from the expense category list');
+    var amount = round_(t.amount); if (!(amount > 0)) fail_(name + ': amount must be more than 0');
+    if (!accs[t.account_id]) fail_(name + ': choose an active account');
+    var day = Math.round(Number(t.day)); if (!(day >= 1 && day <= 28)) fail_(name + ': day of the month must be 1 to 28');
+    var prev = t.id && old[t.id] ? old[t.id] : {};
+    return { id: prev.id || uid_(), name: name, category: String(cat).trim(), amount: amount, account_id: t.account_id, day: day, active: t.active !== false,
+      last_month: prev.last_month || '', last_expense_id: prev.last_expense_id || '' };
+  });
+  setSetting_('recurring_expenses', JSON.stringify(out));
+  audit_(user, 'recurring_expenses', { count: out.length });
+  return recurringList_();
+}
+function recurringRecord_(p, user) {
+  var list = recurringTemplates_(), t = list.filter(function (x) { return x.id === p.id; })[0];
+  if (!t) fail_('Monthly expense not found');
+  var st = recurringStatus_().filter(function (x) { return x.id === t.id; })[0];
+  if (st.recorded) fail_(t.name + ' is already recorded for ' + st.month);
+  var date = p.date ? String(p.date).slice(0, 10) : today_();
+  if (date.slice(0, 7) !== st.month) fail_('Record this month\'s ' + t.name + ' with a date in ' + st.month);
+  var e = expenseCreate_({ category: t.category, amount: p.amount === undefined || p.amount === '' ? t.amount : p.amount, account_id: p.account_id || t.account_id,
+    date: date, note: ('Monthly: ' + t.name + (p.note ? ' — ' + String(p.note).slice(0, 200) : '')) }, user);
+  t.last_month = st.month; t.last_expense_id = e.id;
+  setSetting_('recurring_expenses', JSON.stringify(list));
+  return { expense: e, list: recurringList_() };
 }
 /**
  * Edit an active expense and its account entry together. Category and note are ordinary edits;
@@ -4376,6 +4582,25 @@ function profitReport_(p, user) {
   return { from: from, to: to, group: group, summary: summary, timeline: timeline, products: products, staff: staff, expenses: expenses };
 }
 
+/** Activity log (Admin → Activity log): who did what, newest first. Filters: from / to (dates), user, text. Day-close
+ *  records and every other audited action are included; details are returned as stored (small JSON). */
+function auditList_(p, user) {
+  var from = p.from || '', to = p.to || '', who = String(p.user || ''), q = String(p.q || '').trim().toLowerCase(), act = String(p.action || '');
+  if ((from && !isDate_(from)) || (to && !isDate_(to))) fail_('Choose valid dates');
+  var rows = all_('AuditLog').filter(function (r) {
+    var d = String(r.ts || '').slice(0, 10);
+    if ((from && d < from) || (to && d > to)) return false;
+    if (who && r.user !== who) return false;
+    if (act && String(r.action || '').indexOf(act) !== 0) return false;
+    if (q && (String(r.action) + ' ' + String(r.detail) + ' ' + String(r.user)).toLowerCase().indexOf(q) < 0) return false;
+    return true;
+  });
+  var users = {}; all_('AuditLog').forEach(function (r) { if (r.user) users[r.user] = 1; });
+  var total = rows.length;
+  rows = rows.slice(-1000).reverse().map(function (r) { return { id: r.id, ts: r.ts, user: r.user, action: r.action, detail: String(r.detail || '').slice(0, 2000) }; });
+  return { rows: rows, total: total, users: Object.keys(users).sort() };
+}
+
 /** POS "Quick add": the products sold most often (by number of invoices) in the last 60 days. Staff who may not view
  *  other staff's sales get their own best sellers. Only active, in-stock or service products are returned. */
 function posPicks_(p, user) {
@@ -4475,6 +4700,7 @@ function dashboard_(p, user) {
   out.reminders = collectionReminders_(sales, today);
   if (user.role === 'admin') out.repair_alerts = repairAlerts_();
   // "Needs attention": finished repair jobs (fixed or failed) still waiting for the customer to collect them.
+  if (can_(user, 'expenses')) out.recurring_due = recurringStatus_().filter(function (t) { return t.due; }).length;
   if (can_(user, 'repairs')) out.repairs_waiting = all_('Repairs').filter(function (r) { var st = repairStatusOf_(r); return st === 'Completed' || st === 'Failed'; }).length;
   out.top_products = topProducts_(sales, today, showCost);
   out.recent = sales.slice(-8).reverse().map(function (s) { return { id: s.id, invoice_no: s.invoice_no, customer_name: s.customer_name, total: s.total, due: s.due, date: s.date }; });
@@ -4636,6 +4862,35 @@ function activeReportTotals_(report) {
   });
   return report;
 }
+/** What each supplier charged for each product: purchases in the period (all time when no dates), active only.
+ *  Rows per product and supplier: times bought, quantity, last / lowest / average unit cost; the cheapest
+ *  supplier of each product is marked. Optional filters: product_id, group_id, brand_id. */
+function supplierPricesData_(p) {
+  var from = p.from || '', to = p.to || '';
+  var purs = indexBy_(all_('Purchases').filter(function (x) { return x.status === 'active' && inRange_(x.date, from, to); }));
+  var prods = indexBy_(all_('Products')), sups = indexBy_(all_('Suppliers')), g = {};
+  all_('PurchaseItems').forEach(function (i) {
+    var pu = purs[i.purchase_id]; if (!pu || !(num_(i.qty) > 0)) return;
+    var pr = prods[i.product_id] || {};
+    if (p.product_id && i.product_id !== p.product_id) return;
+    if (p.group_id && pr.category_id !== p.group_id) return;
+    if (p.brand_id && pr.brand_id !== p.brand_id) return;
+    var sid = pu.supplier_id || '', k = i.product_id + '|' + sid, unit = num_(i.cost);
+    var r = g[k] = g[k] || { product_id: i.product_id, product: pr.name || i.name, supplier_id: sid, supplier: sid ? ((sups[sid] || {}).name || pu.supplier_name || 'Supplier') : 'No supplier', times: 0, qty: 0, spent: 0, last_date: '', last_cost: 0, min_cost: Infinity, _row: -1 };
+    r.times++; r.qty = round_(r.qty + num_(i.qty), 4); r.spent += unit * num_(i.qty); r.min_cost = Math.min(r.min_cost, unit);
+    var d = String(pu.date).slice(0, 10), row = pu._row || 0;
+    if (d > r.last_date || (d === r.last_date && row >= r._row)) { r.last_date = d; r.last_cost = unit; r._row = row; }
+  });
+  var rows = Object.keys(g).map(function (k) { var r = g[k]; r.avg_cost = round_(r.spent / r.qty); r.min_cost = round_(r.min_cost); r.spent = round_(r.spent); delete r._row; return r; });
+  var best = {}; rows.forEach(function (r) { if (!best[r.product_id] || r.last_cost < best[r.product_id]) best[r.product_id] = r.last_cost; });
+  rows.forEach(function (r) { var n = rows.filter(function (x) { return x.product_id === r.product_id; }).length; r.cheapest = n > 1 && r.last_cost === best[r.product_id]; r.suppliers = n; });
+  return rows.sort(function (a, b) { return a.product.localeCompare(b.product) || a.last_cost - b.last_cost; });
+}
+function supplierPrices_(p, user) {
+  if (!can_(user, 'purchase') && !(can_(user, 'reports') && can_(user, 'cost'))) fail_('Permission denied: ' + PERMS.purchase);
+  return supplierPricesData_(p);
+}
+
 function reportsRaw_(p, user) {
   var from = p.from || '', to = p.to || '', group = p.group || 'invoice', cost = can_(user, 'cost');
   // Without "View sales made by other staff", every report shows only the user's own sales (and their returns).
@@ -4645,6 +4900,12 @@ function reportsRaw_(p, user) {
   var period = (from || to) ? ' (' + (from || '…') + ' → ' + (to || '…') + ')' : '';
   var T = p.type;
   if (T === 'stock_summary') return stockSummaryReport_(p, user);
+  if (T === 'supplier_prices') {
+    if (!cost) fail_('Permission denied: the supplier price report needs "See cost price & profit margins"');
+    var sp = supplierPricesData_(p).map(function (r) { return Object.assign({}, r, { supplier: r.supplier + (r.cheapest ? ' ★ cheapest' : '') }); });
+    return finishReport_('Supplier prices' + period, [col_('product', 'Product'), col_('supplier', 'Supplier'), col_('times', 'Times bought', 'num'), col_('qty', 'Quantity', 'num'),
+      col_('last_date', 'Last bought', 'date'), col_('last_cost', 'Last unit cost', 'money'), col_('min_cost', 'Lowest', 'money'), col_('avg_cost', 'Average', 'money'), col_('spent', 'Total spent', 'money', true)], sp);
+  }
 
   if (T === 'sales') {
     var sl = all_('Sales').filter(function (s) { return (can_(user, 'sales.all') || s.user_id === user.id) && inRange_(s.date, from, to) && okStatus(s.status) && (!p.customer_id || s.customer_id === p.customer_id) && (!p.user_id || s.user_id === p.user_id); });
@@ -4790,6 +5051,8 @@ var ROUTES = {
   'product.history':  r_(null, function (p, u) { if (!can_(u, 'pos') && !can_(u, 'purchase')) fail_('Permission denied'); return productHistory_(p, u); }),
   'sale.promise':     r_('pos', salePromise_, true),
   'pos.picks':        r_('pos', posPicks_),
+  'audit.list':       r_('users', auditList_),
+  'supplier.prices':  r_(null, supplierPrices_),
   'dayclose.get':     r_('accounts', dayCloseGet_),
   'dayclose.save':    r_('accounts', dayCloseSave_, true),
   'report.pnl':       r_(null, profitLoss_),
@@ -4807,6 +5070,8 @@ var ROUTES = {
   }, true),
   'master.import':    r_('products', masterImport_, true),
   'price.update':     r_('products', priceUpdate_, true),
+  'products.import.check': r_('products', productsImportCheck_),
+  'products.import': r_('products', productsImport_, true),
 
   'customers.list':   r_(null, function (p, user) { return visibleCustomers_(user); }),
   'customer.save':    r_(null, function (p, u) { if (!p.id && !can_(u, 'customers') && !can_(u, 'pos')) fail_('Permission denied'); return customerSave_(p, u); }, true),
@@ -4845,6 +5110,9 @@ var ROUTES = {
   'sreturns.list':    r_('sales.return', function (p, u) { return stripCost_(sreturnsList_(p, u), u); }),
 
   'expense.create':   r_('expenses', expenseCreate_, true),
+  'expense.recurring':        r_('expenses', recurringList_),
+  'expense.recurring.save':   r_('expenses', recurringSave_, true),
+  'expense.recurring.record': r_('expenses', recurringRecord_, true),
   'expense.update':   r_('expenses', expenseUpdate_, true),
   'expense.categories': r_('expenses', expenseCategoriesSave_, true),
   'expense.categories.usage': r_('expenses', expenseCategoryUsage_),
@@ -4885,6 +5153,8 @@ var ROUTES = {
   'backup.schedule':  r_('settings', backupSchedule_, false),
   'sale.link':        r_('pos', saleLink_, true),
   'sms.test':         r_('settings', smsTest_),
+  'summary.preview':  r_('settings', summaryPreview_),
+  'summary.send':     r_('settings', summarySend_, true),
   'sms.log':          r_('settings', smsLog_)
 };
 
@@ -4953,6 +5223,8 @@ ROUTES['database.info'].fn = function(p,user) {
   return info;
 };
 ROUTES['sms.test'].fn = function(p) { return sendSms_(p.phone,'Test SMS from '+getSetting_('shop_name')+' - Karvio'); };
+// The scheduler's call: the Edge handler redeems its one-time code before this runs (see handler.mjs).
+ROUTES['summary.tick'] = { public: true, write: true, fn: function () { return dailySummaryTick_(); } };
 // Persist messages with the financial commit; the worker claims each job once.
 sendSms_ = function(phone, message, logMessage) {
   if (_txn) {

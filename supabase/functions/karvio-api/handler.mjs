@@ -105,6 +105,8 @@ export function createHandler({rpc,dispatch=()=>{},protocol=2,scopedReads=true,n
    if(!body||typeof body.action!=='string'||body.action.length>100)return reply({ok:false,error:'Invalid action'},400);
    m.action=body.action;
    if(!await allowRequest(body))return finish(reply({ok:false,error:'Too many requests. Try again in a minute.'},429),'limited');
+   // The daily-summary scheduler (pg_cron) must hand over a one-time code the database minted for this call.
+   if(body.action==='summary.tick'){let ok=false;try{ok=await call('karvio_cron_claim',{nonce:String(body.payload?.nonce||'')})===true;}catch{}if(!ok)return finish(reply({ok:false,error:'Not allowed'},403),'rejected');}
    if(protocol===2&&body.action.startsWith('database.transfer.')){const data=await transferRequest(body,call);return finish(reply(data),data.ok?'ok':'rejected');}
    if(body.action==='ping'&&protocol===2){
     const status=await call('karvio_status',{});

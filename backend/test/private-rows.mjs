@@ -35,7 +35,7 @@ ok(legacy.privateSheets.__KarvioQuoteLinks.rows.some(r => r.some(v => v !== '' &
 // ---------- apply the migration (the API is already the new build) ----------
 for (const f of later) {
   let sql = fs.readFileSync(new URL('../../supabase/migrations/' + f, import.meta.url), 'utf8');
-  await db.exec(sql.replace(/create extension if not exists pg_cron[^;]*;/gi, ''));
+  await db.exec(sql.replace(/create extension if not exists pg_(cron|net)[^;]*;/gi, ''));
 }
 const moved = (await db.query(`select metadata from karvio_private.runtime`)).rows[0].metadata;
 ok(!('privateSheets' in moved), 'runtime JSON no longer carries private sheets');

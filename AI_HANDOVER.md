@@ -1,6 +1,8 @@
 # Current state — 15 November 2026
 
-Published: v1.2.5 (main b63d074). Pending, not pushed: branch ui-pro-1 — professional look, Day close, Profit & loss / Balance sheet, shop logo and invoice QR (first entry in CHANGES.md).
+Published: v1.2.5 plus ui-pro-1 (main a6235c1). Pending, not pushed: branch features-2 (first entry in CHANGES.md), with one migration (daily summary: pg_net + pg_cron job calling the Edge function with a one-time code).
+
+Monthly expense templates live in Settings 'recurring_expenses' (JSON); the daily summary's last send date in 'daily_summary_last'.
 
 Day close records live in AuditLog (action 'day_close', JSON detail) so no table or migration was needed; a counted difference is booked as an ordinary 'manual' deposit/withdrawal. The shop logo is a small data URL in Settings (shop_logo, max ~200 KB, validated server-side). The QR code library is vendored (frontend/src/lib/vendor/qrcode.mjs, MIT) because npm install is blocked locally by the xlsx CDN.
 

@@ -15,13 +15,17 @@ export async function freshDatabase({setupKey = 'harness-key', skip = []} = {}) 
     create schema cron; create table cron.job(jobname text primary key, schedule text, command text);
     create function cron.schedule(n text, s text, c text) returns bigint language sql as $$
       insert into cron.job values(n,s,c) on conflict (jobname) do update set schedule=excluded.schedule, command=excluded.command returning 1::bigint $$;
-    create function cron.unschedule(n text) returns boolean language sql as $$ delete from cron.job where jobname=n returning true $$;`);
+    create function cron.unschedule(n text) returns boolean language sql as $$ delete from cron.job where jobname=n returning true $$;
+    create schema net; create table net.calls(id bigserial primary key, url text, body jsonb, headers jsonb);
+    create function net.http_post(url text, body jsonb default '{}', params jsonb default '{}', headers jsonb default '{}', timeout_milliseconds integer default 5000) returns bigint language sql as $$
+      insert into net.calls(url, body, headers) values(url, body, headers) returning id $$;`);
   for (const f of migrationFiles()) {
     if (skip.includes(f)) continue;
     let sql = fs.readFileSync(new URL(f, dir), 'utf8');
     // The platform helper only exists on Supabase; the migration that hardens it is a no-op here.
     if (/rls_auto_enable/.test(sql) && !/create (or replace )?function public\.rls_auto_enable/.test(sql)) continue;
     sql = sql.replace(/create extension if not exists pg_cron[^;]*;/gi, ''); // stubbed above
+    sql = sql.replace(/create extension if not exists pg_net[^;]*;/gi, ''); // stubbed above
     await db.exec(sql);
   }
   if (setupKey) await db.query('update karvio_private.runtime set setup_hash=$1', [hash(setupKey)]);

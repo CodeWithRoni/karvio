@@ -28,6 +28,7 @@ const Expenses = lazy(() => import('./pages/Expenses'));
 const Profit = lazy(() => import('./pages/Profit'));
 const Reports = lazy(() => import('./pages/Reports'));
 const Users = lazy(() => import('./pages/Users'));
+const Activity = lazy(() => import('./pages/Activity'));
 const Settings = lazy(() => import('./pages/Settings'));
 const PublicInvoice = lazy(() => import('./pages/PublicInvoice'));
 const PublicQuote = lazy(() => import('./pages/PublicQuote'));
@@ -114,6 +115,7 @@ export default function App() {
               <Route path="expenses" element={<Guard perm="expenses"><Expenses /></Guard>} />
               <Route path="reports" element={<Guard perm="reports"><Reports /></Guard>} />
               <Route path="users" element={<Guard perm="users"><Users /></Guard>} />
+              <Route path="activity" element={<Guard perm="users"><Activity /></Guard>} />
               <Route path="settings" element={<Settings />} />
               <Route path="*" element={<UnknownRoute />} />
             </Route>

@@ -55,6 +55,7 @@ export const NAV = [
   { to: '/reports', label: 'Reports hub', perm: 'reports', key: '9' },
   { group: 'Admin' },
   { to: '/users', label: 'Users & roles', perm: 'users' },
+  { to: '/activity', label: 'Activity log', perm: 'users' },
   { to: '/settings', label: 'Settings' }
 ];
 

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useStore } from '../lib/store';
 import { api, getApiConfig, setApiConfig, testConnection, isOffline, getToken } from '../lib/api';
 import { DEFAULT_API_URL } from '../config';
-import { fdatetime } from '../lib/format';
+import { fdatetime, fdate } from '../lib/format';
 import DataTable from '../components/DataTable';
 import { PageHead, Btn, Field, useAction, Tabs, useApi, Badge } from '../components/ui';
 import { DASH_CARDS, hiddenCards } from '../lib/dashboardCards';
@@ -316,6 +316,7 @@ function SmsSettings() {
         <div className="wide row end"><span className="muted">{dirty?'Unsaved changes':'Settings saved'}</span><Btn kind="primary" disabled={!!configError || !dirty} busy={busy} onClick={()=>save().catch(()=>{})}>Save SMS settings</Btn></div>
       </div>
       <div className="grid">
+        <DailySummary />
         <div className="card">
           <h2 style={{ marginBottom: 10 }}>Send a test SMS</h2>
           <p className="muted">{dirty?'Save your changes before testing.':'Send one real SMS using your saved settings. Provider charges may apply.'}</p>
@@ -325,6 +326,34 @@ function SmsSettings() {
         {testResult&&<div className="card" role="status"><Badge tone={testResult.status==='sent'?'ok':'muted'}>{testResult.status || (testResult.ok?'sent':'unknown')}</Badge><p>{testResult.status==='queued'?'Queued for delivery. Check the SMS log for the final result.':testResult.response || 'Check the SMS log for delivery details.'}</p></div>}
         <DataTable title="SMS log" rows={log.data || []} loading={log.loading} exportable={false}
           columns={[{ key: 'ts', label: 'Time', value: (r) => fdatetime(r.ts) }, { key: 'phone', label: 'Phone' }, { key: 'status', label: 'Status', render: (r) => <Badge tone={r.status === 'sent' ? 'ok' : r.status==='failed'?'bad':'muted'}>{r.status}</Badge> }, { key: 'response', label: 'Gateway reply', className: 'clip' }]} />
+      </div>
+    </div>
+  );
+}
+
+/** Daily summary SMS: today's sales, profit, expenses, dues and cash, sent to the owner every evening. */
+function DailySummary() {
+  const { f, setF, save, busy } = useSettingsForm(['daily_summary_enabled', 'daily_summary_phones', 'daily_summary_hour']);
+  const gateway = useStore((st) => st.settings.sms_enabled === 'true');
+  const pv = useApi('summary.preview', {});
+  const [sending, run] = useAction();
+  const on = f.daily_summary_enabled === 'true';
+  return (
+    <div className="card ds-card">
+      <div className="card-head"><h2>Daily summary to the owner</h2>{pv.data?.last_sent && <span className="muted">Last sent {fdate(pv.data.last_sent)}</span>}</div>
+      <div className="ds-grid">
+        <div className="form" style={{ alignContent: 'start' }}>
+          <label className="check wide"><input type="checkbox" checked={on} onChange={(e) => setF({ ...f, daily_summary_enabled: String(e.target.checked) })} /> Send today's summary by SMS every evening</label>
+          <Field label="Phone numbers" wide hint="Up to 3, separated by commas."><input inputMode="tel" value={f.daily_summary_phones || ''} onChange={(e) => setF({ ...f, daily_summary_phones: e.target.value })} placeholder="01XXXXXXXXX" /></Field>
+          <Field label="Send at"><select value={f.daily_summary_hour || '21'} onChange={(e) => setF({ ...f, daily_summary_hour: e.target.value })}>{[17, 18, 19, 20, 21, 22, 23].map((h) => <option key={h} value={h}>{h > 12 ? h - 12 : h}:00 PM</option>)}</select></Field>
+          {!gateway && <p className="wide muted" style={{ margin: 0 }}>Turn on and save the SMS gateway above first.</p>}
+          <div className="wide row" style={{ gap: 8, justifyContent: 'flex-end' }}>
+            <Btn busy={sending} disabled={!gateway} onClick={async () => { await run(() => api('summary.send', {}), 'Summary queued — check the SMS log'); pv.reload(); }}>Send now</Btn>
+            <Btn kind="primary" busy={busy} onClick={async () => { await save(); pv.reload(); }}>Save</Btn>
+          </div>
+          <p className="wide muted" style={{ margin: 0, fontSize: 12.5 }}>Sent once a day, within 15 minutes after the chosen time (Supabase shops). Each SMS is charged by your provider.</p>
+        </div>
+        <div><span className="field-label">Today's message</span><pre className="ds-preview">{pv.data?.text || (pv.loading ? 'Loading…' : pv.error || '')}</pre></div>
       </div>
     </div>
   );

@@ -146,8 +146,10 @@ function NewPurchase({ onDone }) {
   const sup = suppliers.find((x) => x.id === supplier);
   const canCost = useStore((st) => st.can('cost'));
   const [lastBuy, setLastBuy] = useState({}); // product_id -> last purchase { cost, date, supplier, invoice_no } | null
+  const [supPrices, setSupPrices] = useState({}); // product_id -> [{supplier_id, supplier, last_cost, last_date}] (cheapest first)
   const loadLastBuy = (id) => {
     if (lastBuy[id] !== undefined) return;
+    api('supplier.prices', { product_id: id }).then((rows) => setSupPrices((m) => ({ ...m, [id]: rows.slice().sort((a, b) => a.last_cost - b.last_cost) }))).catch(() => {});
     api('product.history', { product_id: id }).then((h) => {
       const lp = h.last_purchase || null;
       setLastBuy((m) => ({ ...m, [id]: lp }));
@@ -283,6 +285,16 @@ function NewPurchase({ onDone }) {
                           {Number(l.cost) > 0 && Math.abs(Number(l.cost) - lp.cost) > 0.004 && <span className={Number(l.cost) > lp.cost ? 'chg up' : 'chg down'} title={Number(l.cost) > lp.cost ? 'Costlier than last time' : 'Cheaper than last time'}>{Number(l.cost) > lp.cost ? '▲' : '▼'}&nbsp;{money(Math.abs(Number(l.cost) - lp.cost), false)}</span>}
                         </div>
                         <small>{fdate(lp.date)}{lp.supplier ? ` · ${lp.supplier}` : ''} · {fqty(lp.qty, p?.unit)}</small>
+                        {(() => {
+                          const sp = supPrices[l.product_id] || [];
+                          if (sp.length < 2) return null;
+                          const best = sp[0], mine = sp.find((r) => r.supplier_id === supplier);
+                          return <small className="sup-compare" title={sp.map((r) => `${r.supplier}: ${money(r.last_cost, false)} (${fdate(r.last_date)})`).join('\n')}>
+                            <span className="best">★ Cheapest: {best.supplier} {money(best.last_cost, false)}</span>
+                            {mine && mine !== best && <span>This supplier last: {money(mine.last_cost, false)}</span>}
+                            <span>{sp.length} suppliers</span>
+                          </small>;
+                        })()}
                       </div>;
                     })()}
                     <div className="muted" style={{ fontSize: 12 }}>in stock {fqty(p?.stock, p?.unit)} · per {p?.unit}

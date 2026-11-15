@@ -1,5 +1,7 @@
 # Review fixes — verification (15 November 2026, not yet pushed)
 
+- 15 November 2026, features-2: npm test, test:supabase, test:performance (adds features-2.mjs: 35 checks), build and 164/164 Playwright tests (adds features-2.spec.js) passed locally.
+
 - 15 November 2026, ui-pro-1: npm test, test:supabase, test:performance (adds day-close-statements.mjs: 31 checks), build and 158/158 Playwright tests (adds ui-pro.spec.js) passed locally.
 
 - 15 November 2026, second review fixes: npm test, test:supabase, test:performance (adds review-fixes-2.mjs: 15 checks), build and 151/151 Playwright tests passed locally.

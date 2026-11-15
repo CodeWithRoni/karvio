@@ -29,9 +29,9 @@ export default function Reports() {
   const { customers, suppliers, accounts, categories, brands, products, can, settings } = useStore();
   const [params] = useSearchParams();
   const canStatements = can('cost');
-  const list = canStatements ? [...REPORTS, ...Object.entries(STATEMENTS).map(([k, v]) => [k, v[1]])] : REPORTS;
+  const list = canStatements ? [...REPORTS, ['supplier_prices', 'Supplier prices'], ...Object.entries(STATEMENTS).map(([k, v]) => [k, v[1]])] : REPORTS;
   const start = params.get('type');
-  const [type, setType] = useState(start === 'stock_summary' || (canStatements && STATEMENTS[start]) ? start : 'sales');
+  const [type, setType] = useState(start === 'stock_summary' || (canStatements && (STATEMENTS[start] || start === 'supplier_prices')) ? start : 'sales');
   const [sf, setSf] = useState({ stock_filter:params.get('filter') || 'all', group_id:'', category_id:'', brand_id:'', product_id:'', include_inactive:false });
   const [group, setGroup] = useState('invoice');
   const [range, setRange] = useState(PRESETS[2][2]());
@@ -44,7 +44,7 @@ export default function Reports() {
   const sheet = type === 'balance_sheet';
   const groups = stock ? ['product','group','category','lots'] : GROUPS[type];
   const g = groups ? (groups.includes(group) ? group : groups[0]) : '';
-  const payload = stock ? { type, group:g, ...sf } : { type, ...range, group: g, status: type === 'warranty' ? wst : status, customer_id: type === 'sales' ? party : '', supplier_id: type === 'purchases' ? party : '', account_id: type === 'payment_methods' ? party : '' };
+  const payload = stock ? { type, group:g, ...sf } : { type, ...range, group: g, status: type === 'warranty' ? wst : status, customer_id: type === 'sales' ? party : '', supplier_id: type === 'purchases' ? party : '', account_id: type === 'payment_methods' ? party : '', ...(type === 'supplier_prices' ? { group_id: sf.group_id, brand_id: sf.brand_id, product_id: sf.product_id } : {}) };
   const rep = useApi(statement ? statement[0] : 'reports', statement ? (sheet ? {} : { from: range.from, to: range.to }) : payload);
   const r = rep.data;
 
@@ -63,6 +63,11 @@ export default function Reports() {
           <Field label="Brand"><Select value={sf.brand_id} options={brands} placeholder="All brands" onChange={v=>setSf({...sf,brand_id:v,product_id:''})}/></Field>
           <Field label="Product"><Select value={sf.product_id} options={products.filter(x=>!x.service && (!sf.group_id || x.category_id===sf.group_id) && (!sf.category_id || x.subcategory_id===sf.category_id) && (!sf.brand_id || x.brand_id===sf.brand_id))} placeholder="All products" onChange={v=>setSf({...sf,product_id:v})}/></Field>
           <label className="check"><input type="checkbox" checked={sf.include_inactive} onChange={e=>setSf({...sf,include_inactive:e.target.checked})}/> Include inactive</label>
+        </>}
+        {type === 'supplier_prices' && <>
+          <Field label="Product group"><Select value={sf.group_id} options={categories.filter((x) => !x.parent_id)} placeholder="All product groups" onChange={(v) => setSf({ ...sf, group_id: v, product_id: '' })} /></Field>
+          <Field label="Brand"><Select value={sf.brand_id} options={brands} placeholder="All brands" onChange={(v) => setSf({ ...sf, brand_id: v, product_id: '' })} /></Field>
+          <Field label="Product"><Select value={sf.product_id} options={products.filter((x) => !x.service && (!sf.group_id || x.category_id === sf.group_id) && (!sf.brand_id || x.brand_id === sf.brand_id))} placeholder="All products" onChange={(v) => setSf({ ...sf, product_id: v })} /></Field>
         </>}
         {type === 'sales' && <Field label="Customer"><Select value={party} onChange={setParty} options={customers} placeholder="All customers" /></Field>}
         {type === 'purchases' && <Field label="Supplier"><Select value={party} onChange={setParty} options={suppliers} placeholder="All suppliers" /></Field>}
@@ -84,7 +89,7 @@ export default function Reports() {
       {statement ? (r?.lines ? <Statement s={r} shopName={settings.shop_name || 'Karvio'} /> : rep.loading ? <div className="card"><span className="sr-only">Loading…</span><div className="loading-lines"><span className="bone" style={{ height: 14, width: '40%' }} /><span className="bone" style={{ height: 12 }} /><span className="bone" style={{ height: 12, width: '80%' }} /></div></div> : null) : <>
       {r && <h2 style={{ marginBottom: 10 }}>{r.title}</h2>}
       <div className={stock ? 'stock-summary-report' : ''}><DataTable title={r?.title || 'Report'} loading={rep.loading} rows={r?.rows || []} totals={stock ? undefined : r?.totals} sumFilter={(row) => row.status === undefined || row.status === 'active'}
-        rowClass={(row) => (row.status === 'cancelled' ? 'dim' : '')}
+        rowClass={(row) => (row.status === 'cancelled' ? 'dim' : row.cheapest ? 'best' : '')}
         columns={(r?.columns || []).map((c) => ({ ...c, ...(type==='product_sales' && c.key==='qty' ? {total:rows=>quantityTotal(rows)} : type==='daily_summary' && c.key==='items' ? {total:rows=>quantityTotal(rows,'item_quantities')} : {}), ...(stock && c.type==='money' && c.sum ? {total:rows=>Math.round(rows.reduce((n,row)=>n+(Number(row[c.key]) || 0),0)*100)/100} : {}), className: c.key === 'items' || c.key === 'items_text' || c.key === 'issue' ? 'clip' : '' }))} /></div>
       {r?.totals && type === 'sales' && g === 'invoice' && status === 'all' && <p className="muted">Totals count active invoices only; cancelled ones are shown struck through.</p>}
       </>}

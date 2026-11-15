@@ -23,6 +23,7 @@ const shapes = {
   '/profit': <><path d="M3 4v17h18M6 15l5-5 4 3 6-8m-6 0h6v6"/></>,
   '/expenses': <><path d="M5 3h14v18l-3-2-4 2-4-2-3 2V3Zm4 4h6m-6 4h6m-6 4h6"/></>,
   '/reports': <><path d="M14 3H5v18h14V8l-5-5Zm0 0v5h5M8 17v-3m4 3v-6m4 6v-4"/></>,
+  '/activity': <><path d="M3 12h4l3-8 4 16 3-8h4"/></>,
   '/users': <><circle cx="9" cy="7" r="3"/><path d="M2 20v-2a7 7 0 0 1 11-5m4-2 4 2v3c0 3-4 5-4 5s-4-2-4-5v-3l4-2Z"/><path d="m15 16 1.5 1.5L19 15"/></>,
   '/settings': <><path d="M4 3v4m0 4v10m8-18v10m0 4v4m8-18v4m0 4v10"/><rect x="1" y="7" width="6" height="4" rx="1"/><rect x="9" y="13" width="6" height="4" rx="1"/><rect x="17" y="7" width="6" height="4" rx="1"/></>
 };
