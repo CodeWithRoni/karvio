@@ -74,6 +74,8 @@ function PartyList({ kind, rows, loading, onOpen }) {
   const [remind, setRemind] = useState(false);
   const canFn = useStore((s) => s.can);
   const canRemind = kind === 'customer' && canFn('customers');
+  // Reminders go to the ticked customers shown under the current tab, so the button and the window count the same people.
+  const remindRows = canRemind ? rows.filter((r) => sel[r.id]) : [];
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
   const shown = rows.filter((r) => words.every((w) => `${r.name} ${r.phones || ''} ${r.addresses || r.address || ''}`.toLowerCase().includes(w)))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -100,7 +102,7 @@ function PartyList({ kind, rows, loading, onOpen }) {
             <button disabled={!ids.length || !!busy} onClick={() => out('pdf')}>{busy === 'pdf' ? '…' : 'PDF'}</button>
             <button disabled={!ids.length || !!busy} onClick={() => out('print')}>{busy === 'print' ? '…' : 'Print'}</button>
           </div>
-          {canRemind && <Btn kind="primary" size="sm" disabled={!ids.length} onClick={() => setRemind(true)} title={ids.length ? 'Send a due reminder SMS to the ticked customers' : 'Tick customers first'}>Send due reminder{ids.length ? ` (${ids.length})` : ''}</Btn>}
+          {canRemind && <Btn kind="primary" size="sm" disabled={!remindRows.length} onClick={() => setRemind(true)} title={remindRows.length ? 'Send a due reminder SMS to the ticked customers' : 'Tick customers first'}>Send due reminder{remindRows.length ? ` (${remindRows.length})` : ''}</Btn>}
         </div>
       </div>
       <div className="dt-scroll"><table className="pl-table">
@@ -124,7 +126,7 @@ function PartyList({ kind, rows, loading, onOpen }) {
       {!loading && !shown.length && <div className="empty"><b>No {kind}s found</b><div>{q ? 'Try another search.' : `Add your first ${kind}.`}</div></div>}
       </div>
       <Pager page={cur - 1} pageSize={PER} total={shown.length} label={`${kind}s`} onPage={(n) => setPage(n + 1)} onPageSize={(n) => { setPer(n); setPage(1); }} />
-      {remind && <DueReminder customers={rows.filter((r) => sel[r.id])} onClose={() => setRemind(false)} />}
+      {remind && <DueReminder customers={remindRows} onClose={() => setRemind(false)} />}
     </div>
   );
 }

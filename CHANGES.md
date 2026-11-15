@@ -1,3 +1,10 @@
+# 16 November 2026 — review fixes (pending push)
+
+- Monthly expenses: a month that was never recorded no longer disappears when the next month starts. Up to 12 earlier months show as "Not recorded for Oct 2026" with their own Record button (date in that month or later; defaults to that month's due day unless the books are closed). They count in the "due" badge and on the dashboard. Each line keeps the months it was recorded for (done) and the month it started (since; older lists use the first save in the activity log). A paused line switched back on counts from that month. expense.recurring.record takes an optional month.
+- Date fields: while typing, a date is applied only once it is whole (4-digit year or yyyy-mm-dd), so "1/1" on the way to "15/11/2026" no longer reloads lists; shorter forms (15/11, 15 Nov) are applied on leaving the field or with Enter (the first Enter applies the date, the next submits the form).
+- Customers & dues: "Send due reminder (n)" counts only the ticked customers under the open tab — the same people the reminder window lists.
+- Tests: features-3.mjs now 23 checks (missed months); features-3.spec.js adds 2 browser tests.
+
 # 15 November 2026 — Bangladeshi number and date format, due reminder SMS (pending push)
 
 - Lakh commas everywhere: the A4 business invoice (unit prices and line totals) now prints 1,25,000.00 instead of 125,000.00, like the rest of the app. Taka amounts in sale, repair and quotation SMS read 1,25,000 instead of 125000.

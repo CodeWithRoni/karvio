@@ -4,7 +4,7 @@ Published: v1.2.5 plus ui-pro-1 (main a6235c1). Pending, not pushed: branch feat
 
 Date boxes use components/DateInput.jsx (text field + portal calendar; value yyyy-mm-dd; onChange gets {target:{value}}) — do not add new <input type="date">. Due reminder SMS: action customer.remind, template in Settings 'sms_due_template'. SMS amounts go through smsAmt_ (lakh commas).
 
-Monthly expense templates live in Settings 'recurring_expenses' (JSON); the daily summary's last send date in 'daily_summary_last'.
+Monthly expense templates live in Settings 'recurring_expenses' (JSON; each keeps done {YYYY-MM: expense id} and since; status lists missed months up to 12 back); the daily summary's last send date in 'daily_summary_last'.
 
 Day close records live in AuditLog (action 'day_close', JSON detail) so no table or migration was needed; a counted difference is booked as an ordinary 'manual' deposit/withdrawal. The shop logo is a small data URL in Settings (shop_logo, max ~200 KB, validated server-side). The QR code library is vendored (frontend/src/lib/vendor/qrcode.mjs, MIT) because npm install is blocked locally by the xlsx CDN.
 

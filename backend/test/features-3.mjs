@@ -47,4 +47,32 @@ await q('sale.create', {customer_id: big.id, items: [{product_id: svc.id, qty: 1
 const last = ((await q('sms.log')).rows || (await q('sms.log'))).map((x) => x.message).find((m) => /^Total/.test(m));
 ok(last.startsWith('Total 2,50,000, Paid 1,00,000, Due 1,50,000'), 'sale SMS with lakh commas: ' + last);
 
-console.log(`Features 3: ${checks} checks passed (due reminder SMS, lakh commas in SMS).`);
+// Monthly expenses: a month that was never recorded stays listed as missed (up to 12 months back).
+await q('settings.save', {values: {expense_categories: JSON.stringify(['Rent', 'Other'])}});
+const today = boot.serverToday, month = today.slice(0, 7);
+const addM = (ym, n) => { const d = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7) - 1 + n, 1)); return d.toISOString().slice(0, 7); };
+const list = await q('expense.recurring.save', {templates: [{name: 'Shop rent', category: 'Rent', amount: 3500, account_id: cash, day: 5}]});
+eq(list.templates[0].since, month, 'a new line starts this month');
+eq(list.templates[0].missed, [], 'nothing missed yet');
+const back = addM(month, -3);
+const tpl = JSON.parse((await db.query(`select value from public."Settings" where key='recurring_expenses'`)).rows[0].value);
+tpl[0].since = back;
+await db.query(`update public."Settings" set value=$1 where key='recurring_expenses'`, [JSON.stringify(tpl)]);
+let st = (await q('expense.recurring')).templates[0];
+eq(st.missed.map((m) => m.month), [back, addM(month, -2), addM(month, -1)], 'three earlier months missed');
+eq(st.missed[0].due_date, back + '-05', 'due on its day');
+const dueNow = (await q('expense.recurring')).due;
+eq(dueNow, 3 + (st.due ? 1 : 0), 'every missed month counts as due');
+eq((await q('dashboard')).recurring_due, dueNow, 'dashboard counts them too');
+ok(/a date in .* or later/.test((await raw('expense.recurring.record', {id: st.id, month: back, date: addM(back, -1) + '-10'})).error), 'not before that month');
+ok(/not waiting/.test((await raw('expense.recurring.record', {id: st.id, month: addM(month, -20)})).error), 'only missed months');
+const late = await q('expense.recurring.record', {id: st.id, month: back, date: back + '-07', amount: 3600});
+eq([late.expense.date, late.expense.amount, /\(/.test(late.expense.note)], [back + '-07', 3600, true], 'recorded in its own month');
+st = late.list.templates[0];
+eq(st.missed.map((m) => m.month), [addM(month, -2), addM(month, -1)], 'that month is no longer missed');
+const paused = await q('expense.recurring.save', {templates: [{...st, active: false}]});
+eq(paused.templates[0].missed, [], 'paused: nothing missed');
+const resumed = await q('expense.recurring.save', {templates: [{...paused.templates[0], active: true}]});
+eq([resumed.templates[0].since, resumed.templates[0].missed], [month, []], 'switched back on: counts from this month');
+
+console.log(`Features 3: ${checks} checks passed (due reminder SMS, lakh commas in SMS, missed monthly expenses).`);

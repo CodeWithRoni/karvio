@@ -1427,3 +1427,7 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
 .remind-due { color: var(--warn); }
 .remind-text { margin-top: 6px; font-size: 13px; line-height: 1.45; }
 .remind-foot { font-size: 12px; margin-top: 10px; }
+
+/* Monthly expenses: months that were never recorded */
+.mx-missed { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 6px 0 0; font-size: 12.5px; }
+.mx-missed .btn { margin-left: auto; }

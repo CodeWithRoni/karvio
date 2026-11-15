@@ -104,3 +104,45 @@ test('due reminder SMS goes to the ticked customers with dues', async ({ page, r
   expect((log.rows || log).some((x) => x.message === `Hi Remind A ${stamp}, Tk 1,50,000 is due.`)).toBe(true);
   await call(request, 'settings.save', { values: { sms_enabled: 'false', sms_due_template: '' } });
 });
+
+test('typing a date applies it only when the whole date is there', async ({ page }) => {
+  await page.goto('/#/expenses');
+  const from = page.getByLabel('From date', { exact: true });
+  await expect(page.locator('.exp-summary, .empty').first()).toBeVisible();
+  const calls = [];
+  page.on('request', (r) => { if (r.method() === 'POST' && /expenses\.list/.test(r.postData() || '')) calls.push(r.postData()); });
+  await from.fill('');
+  await from.pressSequentially('5/1');
+  await page.waitForTimeout(400);
+  expect(calls.length, 'no reload for "5/1"').toBe(0);
+  await from.pressSequentially('0/202');
+  await page.waitForTimeout(300);
+  expect(calls.length, 'no reload for "5/10/202"').toBe(0);
+  await from.pressSequentially('6');
+  await expect.poll(() => calls.length).toBeGreaterThan(0);
+  await from.blur();
+  await expect(from).toHaveValue('5 Oct 2026');
+  await from.fill('3/2');
+  await from.press('Enter');
+  const y = new Date().getFullYear();
+  await expect(from).toHaveValue(new RegExp(`^3 Feb (${y}|${y - 1}|${y + 1})$`));
+});
+
+test('due reminder counts only the ticked customers under the open tab', async ({ page, request }) => {
+  const stamp = Date.now();
+  const svc = await call(request, 'product.save', { name: `Tab svc ${stamp}`, service: true, sale_price: 100 });
+  const ph = () => '017' + String(Math.floor(Math.random() * 1e8)).padStart(8, '0');
+  const owes = await call(request, 'customer.save', { name: `Tab owes ${stamp}`, phones: ph() });
+  await call(request, 'customer.save', { name: `Tab clear ${stamp}`, phones: ph() });
+  await call(request, 'sale.create', { customer_id: owes.id, items: [{ product_id: svc.id, qty: 1, price: 500 }], payments: [] });
+  await page.goto('/#/customers');
+  await page.getByLabel('Search customers').fill(`Tab ${stamp}`);
+  await page.getByLabel(`Select Tab owes ${stamp}`).check();
+  await page.getByLabel(`Select Tab clear ${stamp}`).check();
+  await expect(page.getByRole('button', { name: 'Send due reminder (2)' })).toBeVisible();
+  await page.getByRole('tab', { name: 'With dues' }).click();
+  await page.getByLabel('Search customers').fill(`Tab ${stamp}`);
+  await expect(page.getByText('2 selected')).toBeVisible();
+  await page.getByRole('button', { name: 'Send due reminder (1)' }).click();
+  await expect(page.getByRole('dialog', { name: 'Send due reminder — 1 customer' })).toBeVisible();
+});

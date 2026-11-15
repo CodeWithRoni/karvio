@@ -62,15 +62,25 @@ export default function DateInput({ value = '', onChange, min, max, required, di
     return () => { window.removeEventListener('scroll', place, true); window.removeEventListener('resize', place); document.removeEventListener('mousedown', away); };
   }, [open]);
 
+  // While typing, only a whole date with a 4-digit year is applied (so "1/1" on the way to "15/11/2026"
+  // never reloads a list). Anything shorter is read when the field is left or Enter is pressed.
+  const whole = (t) => /^\d{4}-\d{1,2}-\d{1,2}$/.test(t.trim()) || /\d{4}$/.test(t.trim());
+  const commit = (t) => {
+    if (!t.trim()) { if (!required && value) emit(''); setText(''); return; }
+    const iso = parseDate(t);
+    if (iso && inRange(iso, min, max)) { if (iso !== value) emit(iso); setText(fdate(iso)); setView(iso.slice(0, 7)); } else setText(fdate(value));
+  };
   const type = (e) => {
     const t = e.target.value; setText(t);
-    if (!t.trim()) { if (!required) emit(''); return; }
+    if (!whole(t)) return;
     const iso = parseDate(t);
     if (iso && inRange(iso, min, max) && iso !== value) { emit(iso); setView(iso.slice(0, 7)); }
   };
-  const leave = () => { setEditing(false); const iso = parseDate(text); if (text.trim() && !(iso && inRange(iso, min, max))) setText(fdate(value)); else if (iso) setText(fdate(iso)); };
+  const leave = () => { setEditing(false); commit(text); };
   const key = (e) => {
     if (e.key === 'Escape' && open) { e.stopPropagation(); setOpen(false); return; }
+    // Enter with a typed but not yet applied date: apply it first (a second Enter submits the form).
+    if (e.key === 'Enter' && text.trim() && text !== fdate(value)) { e.preventDefault(); commit(text); setOpen(false); return; }
     if ((e.key === 'ArrowDown' && e.altKey) || (e.key === 'Enter' && !open && !text.trim())) { e.preventDefault(); show(); return; }
     if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && value) {
       e.preventDefault(); const iso = addDays(value, e.key === 'ArrowUp' ? 1 : -1);

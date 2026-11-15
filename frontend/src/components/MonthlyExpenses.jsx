@@ -6,6 +6,10 @@ import { useApi, Btn, Field, Badge, Modal, Select, Empty, ErrorBox, useAction } 
 import { TableSkeleton } from './Skeleton';
 import DateInput from './DateInput';
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const monthName = (ym) => `${MONTHS[Number(ym.slice(5, 7)) - 1]} ${ym.slice(0, 4)}`;
+/** True when the books are closed up to (and including) this date in Settings. */
+const isLocked = (d) => { const l = String(useStore.getState().settings.books_locked_until || '').slice(0, 10); return !!l && d <= l; };
 const blank = (cats, accounts) => ({ name: '', category: cats[0] || '', amount: '', account_id: (accounts.find((a) => a.type === 'cash') || accounts[0])?.id || '', day: 1, active: true });
 
 /** Expenses → Monthly expenses: rent, salary, internet… set once, then recorded each month with one click. */
@@ -24,13 +28,20 @@ export default function MonthlyExpenses({ cats, onRecorded }) {
       {d.templates.length ? (
         <div className="mx-list">
           {d.templates.map((t) => (
-            <div className={`mx-row ${t.due ? 'due' : ''} ${t.active === false ? 'off' : ''}`} key={t.id}>
+            <div className={`mx-row ${t.due || t.missed?.length ? 'due' : ''} ${t.active === false ? 'off' : ''}`} key={t.id}>
               <div><b>{t.name}</b><small>{t.category} · from {acc[t.account_id] || '—'} · every month on day {t.day}</small></div>
               <b className="num">{money(t.amount)}</b>
               <div className="mx-state">
                 {t.active === false ? <Badge tone="muted">Paused</Badge> : t.recorded ? <Badge tone="ok">Recorded for this month</Badge> : t.due ? <Badge tone="warn">Due since {fdate(t.due_date)}</Badge> : <Badge tone="muted">Due {fdate(t.due_date)}</Badge>}
-                {t.active !== false && !t.recorded && <Btn size="sm" kind={t.due ? 'primary' : ''} onClick={() => setRec({ ...t, amount: t.amount, date: today(), note: '' })}>Record</Btn>}
+                {t.active !== false && !t.recorded && <Btn size="sm" kind={t.due ? 'primary' : ''} onClick={() => setRec({ ...t, amount: t.amount, date: today(), note: '', for: t.month })}>Record</Btn>}
               </div>
+              {(t.missed || []).map((m) => (
+                <div className="mx-missed" key={m.month}>
+                  <Badge tone="bad">Not recorded for {monthName(m.month)}</Badge>
+                  <span className="muted">was due {fdate(m.due_date)}</span>
+                  <Btn size="sm" kind="primary" onClick={() => setRec({ ...t, amount: t.amount, date: isLocked(m.due_date) ? today() : m.due_date, note: '', for: m.month })} aria-label={`Record ${t.name} for ${monthName(m.month)}`}>Record {monthName(m.month)}</Btn>
+                </div>
+              ))}
             </div>
           ))}
         </div>
@@ -70,12 +81,13 @@ function EditList({ list, cats, accounts, onClose, onSaved }) {
 function RecordOne({ t, accounts, onClose, onSaved }) {
   const [f, setF] = useState(t);
   const [busy, run] = useAction();
-  const save = async () => onSaved(await run(() => api('expense.recurring.record', { id: t.id, amount: Number(f.amount), date: f.date, account_id: f.account_id, note: f.note }), `${t.name} recorded`));
+  const late = t.for && t.for !== t.month;
+  const save = async () => onSaved(await run(() => api('expense.recurring.record', { id: t.id, month: t.for, amount: Number(f.amount), date: f.date, account_id: f.account_id, note: f.note }), `${t.name} recorded${late ? ` for ${monthName(t.for)}` : ''}`));
   return (
-    <Modal open size="sm" title={`Record ${t.name}`} onClose={onClose} footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={save}>Record expense</Btn></>}>
+    <Modal open size="sm" title={`Record ${t.name}${late ? ` — ${monthName(t.for)}` : ''}`} onClose={onClose} footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={save}>Record expense</Btn></>}>
       <div className="form">
         <Field label="Amount" wide hint="Change it if this month's bill is different."><input type="number" min="0" step="any" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></Field>
-        <Field label="Date"><DateInput value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
+        <Field label="Date" hint={late ? `${monthName(t.for)} or later. Use the day it was actually paid.` : undefined}><DateInput value={f.date} min={late ? `${t.for}-01` : undefined} max={today()} required onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
         <Field label="Paid from"><Select value={f.account_id} onChange={(v) => setF({ ...f, account_id: v })} options={accounts} allowEmpty={false} /></Field>
         <Field label="Note" wide><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} placeholder="Optional" /></Field>
       </div>

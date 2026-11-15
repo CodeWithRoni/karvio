@@ -3393,15 +3393,28 @@ function expenseCreate_(p, user) {
  * Each month a template comes due on its day; "Record" books it as an ordinary expense (editable amount and date).
  * A month counts as done while its recorded expense is active; cancelling that expense makes it due again. */
 function recurringTemplates_() { try { var v = JSON.parse(getSetting_('recurring_expenses', '[]')); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+/** Months a template was recorded for: { 'YYYY-MM': expense id } (older lists kept only last_month). */
+function recurringDone_(t) { var d = Object.assign({}, t.done && typeof t.done === 'object' ? t.done : {}); if (t.last_month && t.last_expense_id && !d[t.last_month]) d[t.last_month] = t.last_expense_id; return d; }
+/** Month the list was first saved (lists saved before 'since' existed): the first "recurring_expenses" activity entry. */
+function recurringFirstMonth_() {
+  var first = ''; all_('AuditLog').forEach(function (r) { if (r.action === 'recurring_expenses' && r.ts && (!first || String(r.ts) < first)) first = String(r.ts); });
+  return first ? first.slice(0, 7) : today_().slice(0, 7);
+}
+function monthAdd_(ym, n) { var y = Number(ym.slice(0, 4)), m = Number(ym.slice(5, 7)) - 1 + n; y += Math.floor(m / 12); m = ((m % 12) + 12) % 12; return y + '-' + ('0' + (m + 1)).slice(-2); }
+var RECURRING_BACKLOG = 12; // months looked back for missed entries
 function recurringStatus_() {
-  var today = today_(), month = today.slice(0, 7), exps = indexBy_(all_('Expenses'));
+  var today = today_(), month = today.slice(0, 7), exps = indexBy_(all_('Expenses')), fallback = null;
   return recurringTemplates_().map(function (t) {
-    var rec = t.last_month === month && t.last_expense_id && exps[t.last_expense_id] && exps[t.last_expense_id].status === 'active';
-    var dueDate = month + '-' + ('0' + Math.min(28, Math.max(1, Number(t.day) || 1))).slice(-2);
-    return Object.assign({}, t, { month: month, due_date: dueDate, recorded: !!rec, due: t.active !== false && !rec && today >= dueDate });
+    var done = recurringDone_(t), day = ('0' + Math.min(28, Math.max(1, Number(t.day) || 1))).slice(-2);
+    var isDone = function (m) { return !!(done[m] && exps[done[m]] && exps[done[m]].status === 'active'); };
+    var since = t.since || (fallback = fallback || recurringFirstMonth_()), from = monthAdd_(month, -RECURRING_BACKLOG), missed = [];
+    if (t.active !== false) for (var m = since > from ? since : from; m < month; m = monthAdd_(m, 1)) if (!isDone(m)) missed.push({ month: m, due_date: m + '-' + day });
+    var rec = isDone(month), dueDate = month + '-' + day, due = t.active !== false && !rec && today >= dueDate;
+    var out = Object.assign({}, t, { month: month, due_date: dueDate, recorded: rec, due: due, missed: missed, due_count: missed.length + (due ? 1 : 0) });
+    delete out.done; return out;
   });
 }
-function recurringList_() { var list = recurringStatus_(); return { templates: list, due: list.filter(function (t) { return t.due; }).length }; }
+function recurringList_() { var list = recurringStatus_(); return { templates: list, due: sum_(list, function (t) { return t.due_count; }) }; }
 function recurringSave_(p, user) {
   var list = Array.isArray(p.templates) ? p.templates : [];
   if (list.length > 50) fail_('Up to 50 monthly expenses');
@@ -3417,6 +3430,8 @@ function recurringSave_(p, user) {
     var day = Math.round(Number(t.day)); if (!(day >= 1 && day <= 28)) fail_(name + ': day of the month must be 1 to 28');
     var prev = t.id && old[t.id] ? old[t.id] : {};
     return { id: prev.id || uid_(), name: name, category: String(cat).trim(), amount: amount, account_id: t.account_id, day: day, active: t.active !== false,
+      // a paused line that is switched back on starts counting again from this month
+      since: !prev.id || (prev.active === false && t.active !== false) ? today_().slice(0, 7) : prev.since || recurringFirstMonth_(), done: recurringDone_(prev),
       last_month: prev.last_month || '', last_expense_id: prev.last_expense_id || '' };
   });
   setSetting_('recurring_expenses', JSON.stringify(out));
@@ -3427,12 +3442,16 @@ function recurringRecord_(p, user) {
   var list = recurringTemplates_(), t = list.filter(function (x) { return x.id === p.id; })[0];
   if (!t) fail_('Monthly expense not found');
   var st = recurringStatus_().filter(function (x) { return x.id === t.id; })[0];
-  if (st.recorded) fail_(t.name + ' is already recorded for ' + st.month);
-  var date = p.date ? String(p.date).slice(0, 10) : today_();
-  if (date.slice(0, 7) !== st.month) fail_('Record this month\'s ' + t.name + ' with a date in ' + st.month);
+  var month = p.month ? String(p.month).slice(0, 7) : st.month;
+  if (month === st.month) { if (st.recorded) fail_(t.name + ' is already recorded for ' + month); }
+  else if (!st.missed.some(function (m) { return m.month === month; })) fail_(t.name + ' is not waiting to be recorded for ' + month);
+  var date = p.date ? String(p.date).slice(0, 10) : (month === st.month ? today_() : month + '-' + ('0' + t.day).slice(-2));
+  if (date.slice(0, 7) < month) fail_('Record ' + t.name + ' for ' + month + ' with a date in ' + month + ' or later');
   var e = expenseCreate_({ category: t.category, amount: p.amount === undefined || p.amount === '' ? t.amount : p.amount, account_id: p.account_id || t.account_id,
-    date: date, note: ('Monthly: ' + t.name + (p.note ? ' — ' + String(p.note).slice(0, 200) : '')) }, user);
-  t.last_month = st.month; t.last_expense_id = e.id;
+    date: date, note: ('Monthly: ' + t.name + (month !== st.month ? ' (' + month + ')' : '') + (p.note ? ' — ' + String(p.note).slice(0, 200) : '')) }, user);
+  t.done = recurringDone_(t); t.done[month] = e.id;
+  if (!t.since) t.since = recurringFirstMonth_();
+  if (!t.last_month || month >= t.last_month) { t.last_month = month; t.last_expense_id = e.id; }
   setSetting_('recurring_expenses', JSON.stringify(list));
   return { expense: e, list: recurringList_() };
 }
@@ -4755,7 +4774,7 @@ function dashboard_(p, user) {
   out.reminders = collectionReminders_(sales, today);
   if (user.role === 'admin') out.repair_alerts = repairAlerts_();
   // "Needs attention": finished repair jobs (fixed or failed) still waiting for the customer to collect them.
-  if (can_(user, 'expenses')) out.recurring_due = recurringStatus_().filter(function (t) { return t.due; }).length;
+  if (can_(user, 'expenses')) out.recurring_due = recurringList_().due;
   if (can_(user, 'repairs')) out.repairs_waiting = all_('Repairs').filter(function (r) { var st = repairStatusOf_(r); return st === 'Completed' || st === 'Failed'; }).length;
   out.top_products = topProducts_(sales, today, showCost);
   out.recent = sales.slice(-8).reverse().map(function (s) { return { id: s.id, invoice_no: s.invoice_no, customer_name: s.customer_name, total: s.total, due: s.due, date: s.date }; });
