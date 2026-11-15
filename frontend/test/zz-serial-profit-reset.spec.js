@@ -181,7 +181,7 @@ test('database backup downloads every table and restore brings it back exactly',
   await expect(overview.locator('.db-tables div').filter({ hasText: /^Products/ })).toContainText(String(productsBefore));
 
   // backup (export)
-  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download backup' }).click()]);
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download Backup' }).click()]);
   expect(download.suggestedFilename()).toMatch(/^Karvio-backup-[A-Za-z0-9-]+-\d{4}-\d{2}-\d{2}-\d{4}\.json$/);
   const file = info.outputPath('backup.json');
   await download.saveAs(file);
@@ -252,7 +252,7 @@ test('database reset: only the Administrator sees it, and it leaves a fresh shop
   const cards = page.locator('.db-grid.three > .card');
   await expect(cards).toHaveCount(3);
   expect(new Set((await cards.evaluateAll((cs) => cs.map((c) => Math.round(c.getBoundingClientRect().top))))).size).toBe(1);
-  await page.getByRole('button', { name: 'Reset database', exact: true }).click();
+  await page.getByRole('button', { name: 'Reset Database', exact: true }).click();
   const go = page.getByRole('dialog', { name: 'Reset the whole database' }).getByRole('button', { name: 'Delete everything' });
   await expect(go).toBeDisabled();
   await page.getByLabel('Administrator password').fill('wrong-pass');

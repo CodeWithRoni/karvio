@@ -22,11 +22,11 @@ test('streamed database backup downloads gzip, previews and restores through a r
   return route.fulfill({json:{ok:true,data}});
  });
  await page.goto('/#/settings');await page.getByRole('tab',{name:'Database',exact:true}).click();
- const downloadEvent=page.waitForEvent('download');await page.getByRole('button',{name:'Download backup',exact:true}).click();const download=await downloadEvent;expect(download.suggestedFilename()).toMatch(/\.karvio\.gz$/);
+ const downloadEvent=page.waitForEvent('download');await page.getByRole('button',{name:'Download Backup',exact:true}).click();const download=await downloadEvent;expect(download.suggestedFilename()).toMatch(/\.karvio\.gz$/);
  const path=await download.path();await expect(page.getByText('Backup saved and verified')).toBeVisible();
  await page.getByLabel('Backup file',{exact:true}).setInputFiles({name:'test.karvio.gz',mimeType:'application/gzip',buffer:await (await import('node:fs/promises')).readFile(path)});
  await expect(page.locator('.db-preview')).toContainText('Stream Test');
- const restore=page.locator('.db-card').filter({has:page.getByRole('heading',{name:'Import',exact:true})});
+ const restore=page.locator('.db-card').filter({has:page.getByRole('heading',{name:'Import Backup',exact:true})});
  await restore.getByLabel('Administrator password',{exact:true}).fill('fixture-password-123');await restore.getByLabel('Type RESTORE to confirm',{exact:true}).fill('RESTORE');
  await restore.getByRole('button',{name:'Restore database',exact:true}).click();await expect(restore).toContainText('Restored the backup');expect(uploaded).toBe(1);expect(queued).toBe(true);
 });

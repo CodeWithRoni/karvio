@@ -419,13 +419,13 @@ function DatabaseReset({ onDone }) {
   };
   return (
     <div className="card form db-card db-danger">
-      <div className="wide db-card-head"><span className="db-ic bad" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" /><path d="M10 11v6M14 11v6" /></svg></span><h2>Reset database</h2></div>
+      <div className="wide db-card-head"><span className="db-ic bad" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" /><path d="M10 11v6M14 11v6" /></svg></span><h2>Reset Database</h2></div>
       {done && <div className="wide note reset-done" role="status">
         <b>Done — Karvio is fresh.</b>{' '}
         {done.backup ? <>A full safety backup of the old data was saved as <b>{done.backup.name}</b>{done.backup.url ? <> (<a href={done.backup.url} target="_blank" rel="noreferrer">open the copy</a>)</> : null}.</>
           : offline ? 'The previous data file is kept in the data folder on this computer.' : null}
       </div>}
-      <div className="wide row end db-card-foot"><Btn kind="danger" onClick={() => setOpen(true)}>Reset database</Btn></div>
+      <div className="wide row end db-card-foot"><Btn kind="danger" onClick={() => setOpen(true)}>Reset Database</Btn></div>
       {open && (
         <Modal open size="md" title="Reset the whole database" onClose={() => { setOpen(false); setF(blank); }}
           footer={<><Btn onClick={() => { setOpen(false); setF(blank); }}>Cancel</Btn><Btn kind="danger" busy={busy} disabled={!ready} onClick={reset}>Delete everything</Btn></>}>

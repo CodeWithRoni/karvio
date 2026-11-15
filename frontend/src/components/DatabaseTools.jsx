@@ -72,11 +72,11 @@ export function DatabaseBackup({ onDone }) {
   };
   return (
     <div className="card form db-card">
-<div className="wide db-card-head"><span className="db-ic ok" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M4 17v3h16v-3" /></svg></span><h2>Backup</h2></div>
+<div className="wide db-card-head"><span className="db-ic ok" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M4 17v3h16v-3" /></svg></span><h2>Export Backup</h2></div>
       {saved && <div className="wide note reset-done" role="status"><b>Saved:</b> {saved.name} · {size(saved.size)} · {saved.records.toLocaleString('en-IN')} records</div>}
       {progress&&<p className="wide muted" role="status">{progress}</p>}
       <div className="wide row end db-card-foot">
-        <Btn kind="primary" busy={busy} onClick={bounded?streamed:download}>Download backup</Btn>
+        <Btn kind="primary" busy={busy} onClick={bounded?streamed:download}>Download Backup</Btn>
       </div>
     </div>
   );
@@ -134,7 +134,7 @@ export function DatabaseRestore({ onDone }) {
   const m = file?.meta;
   return (
     <div className="card form db-card">
-<div className="wide db-card-head"><span className="db-ic aqua" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 15V3" /><path d="m7 8 5-5 5 5" /><path d="M4 17v3h16v-3" /></svg></span><h2>Import</h2></div>
+<div className="wide db-card-head"><span className="db-ic aqua" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 15V3" /><path d="m7 8 5-5 5 5" /><path d="M4 17v3h16v-3" /></svg></span><h2>Import Backup</h2></div>
       {busy && progress && <p className="wide muted" role="status">{progress}</p>}
       {done && <div className="wide note reset-done" role="status">
         <b>Restored</b> the backup of {done.shop_name || 'the shop'} made {fdatetime(done.backup_created_at)}.{' '}
@@ -143,8 +143,8 @@ export function DatabaseRestore({ onDone }) {
       <input ref={input} type="file" hidden accept=".json,.jsonl,.gz,application/json,application/gzip" onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ''; }} aria-label="Backup file" />
       <div className={`wide row end ${file ? '' : 'db-card-foot'}`}>
         {file && <span className="muted">{file.name} · {size(file.size)}</span>}
-        <span className="spacer" />
-        <Btn kind={file?.meta && !file.error ? undefined : 'primary'} busy={busy} onClick={() => input.current?.click()}>{file ? 'Choose another file' : 'Import'}</Btn>
+        {file && <span className="spacer" />}
+        <Btn kind={file?.meta && !file.error ? undefined : 'primary'} busy={busy} onClick={() => input.current?.click()}>{file ? 'Choose another file' : 'Upload Backup'}</Btn>
       </div>
       {file?.error && <div className="wide errbox" role="alert">{file.error}</div>}
       {m && !file.error && <div className="wide db-preview">
