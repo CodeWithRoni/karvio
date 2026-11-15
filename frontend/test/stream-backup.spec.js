@@ -26,7 +26,7 @@ test('streamed database backup downloads gzip, previews and restores through a r
  const path=await download.path();await expect(page.getByText('Backup saved and verified')).toBeVisible();
  await page.getByLabel('Backup file',{exact:true}).setInputFiles({name:'test.karvio.gz',mimeType:'application/gzip',buffer:await (await import('node:fs/promises')).readFile(path)});
  await expect(page.locator('.db-preview')).toContainText('Stream Test');
- const restore=page.locator('.db-card').filter({has:page.getByRole('heading',{name:'Restore (import)',exact:true})});
+ const restore=page.locator('.db-card').filter({has:page.getByRole('heading',{name:'Import',exact:true})});
  await restore.getByLabel('Administrator password',{exact:true}).fill('fixture-password-123');await restore.getByLabel('Type RESTORE to confirm',{exact:true}).fill('RESTORE');
  await restore.getByRole('button',{name:'Restore database',exact:true}).click();await expect(restore).toContainText('Restored the backup');expect(uploaded).toBe(1);expect(queued).toBe(true);
 });

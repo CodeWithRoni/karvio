@@ -52,8 +52,8 @@ export function DatabaseBackup({ onDone }) {
   const [saved, setSaved] = useState(null);
   const [progress,setProgress]=useState('');
   const bounded=useStore(s=>!!s.apiCapabilities?.boundedBackup);
-  const streamed=async(directToFile=false)=>{
-    let result;try{result=await run(()=>downloadStreamBackup({call:api,progress:setProgress,directToFile,date:today()}));}catch{return;}
+  const streamed=async()=>{
+    let result;try{result=await run(()=>downloadStreamBackup({call:api,progress:setProgress,date:today()}));}catch{return;}
     setSaved({name:result.name,size:result.bytes||0,records:result.records});setProgress('Backup saved and verified');onDone?.();
   };
   const download = async () => {
@@ -72,16 +72,11 @@ export function DatabaseBackup({ onDone }) {
   };
   return (
     <div className="card form db-card">
-      <h2 className="wide">Backup (export)</h2>
-      <p className="muted wide">Downloads one file with <b>all</b> data — products, stock and serials, sales, purchases, returns, customers, suppliers, dues, accounts, expenses, warranty, users and settings. Keep it on another drive or in Google Drive. The file is checked when it is restored, so a damaged or edited file is refused.</p>
-      <p className="wide db-secret">The file also holds user password hashes and the SMS API key — share it with nobody.</p>
+      <h2 className="wide">Backup</h2>
       {saved && <div className="wide note reset-done" role="status"><b>Saved:</b> {saved.name} · {size(saved.size)} · {saved.records.toLocaleString('en-IN')} records</div>}
-      {bounded&&<p className="wide muted">Compressed streamed backups transfer small verified pages. Old JSON files remain supported. For very large backups, save directly to a file when your browser supports it.</p>}
       {progress&&<p className="wide muted" role="status">{progress}</p>}
       <div className="wide row end">
-        {bounded&&<Btn busy={busy} onClick={download}>Legacy JSON</Btn>}
-        {bounded&&typeof window.showSaveFilePicker==='function'&&<Btn busy={busy} onClick={()=>streamed(true)}>Save directly to file</Btn>}
-        <Btn kind="primary" busy={busy} onClick={bounded?()=>streamed():download}>Download backup</Btn>
+        <Btn kind="primary" busy={busy} onClick={bounded?streamed:download}>Download backup</Btn>
       </div>
     </div>
   );
@@ -92,7 +87,6 @@ export function DatabaseRestore({ onDone }) {
   const [file, setFile] = useState(null); // { name, size, text, meta, verified, error }
   const [f, setF] = useState({ password: '', confirm: '' });
   const [done, setDone] = useState(null);
-  const [drag, setDrag] = useState(false);
   const [progress, setProgress] = useState('');
   const [busy, run] = useAction();
   const input = useRef();
@@ -140,20 +134,18 @@ export function DatabaseRestore({ onDone }) {
   const m = file?.meta;
   return (
     <div className="card form db-card">
-      <h2 className="wide">Restore (import)</h2>
-      <p className="muted wide">Legacy JSON: up to 16 MiB. Streamed backups: up to 256 MiB of data / 2 million records, uploaded in bounded pages. The complete staged backup is checked before an atomic background restore.</p>
+      <h2 className="wide">Import</h2>
       {busy && progress && <p className="wide muted" role="status">{progress}</p>}
-      <p className="muted wide">Replaces <b>everything</b> in Karvio with the data in a backup file. {offline ? 'The current data file is kept on this computer first.' : 'A full safety backup is saved in your backend first — if it cannot be saved, nothing changes.'}</p>
       {done && <div className="wide note reset-done" role="status">
         <b>Restored</b> the backup of {done.shop_name || 'the shop'} made {fdatetime(done.backup_created_at)}.{' '}
         {done.safety ? <>The data from before the restore was saved as <b>{done.safety.name}</b>{done.safety.url ? <> (<a href={done.safety.url} target="_blank" rel="noreferrer">open the copy</a>)</> : null}.</> : offline ? 'The data from before the restore is kept in the data folder on this computer.' : null}
       </div>}
-      <label className={`wide db-drop ${drag ? 'on' : ''}`} onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)}
-        onDrop={(e) => { e.preventDefault(); setDrag(false); pick(e.dataTransfer.files?.[0]); }}>
-        <input ref={input} type="file" accept=".json,.jsonl,.gz,application/json,application/gzip" onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ''; }} aria-label="Backup file" />
-        <b>{file ? file.name : 'Choose a backup file'}</b>
-        <small>{file ? size(file.size) : 'Click here, or drop the Karvio-backup-….json file'}</small>
-      </label>
+      <input ref={input} type="file" hidden accept=".json,.jsonl,.gz,application/json,application/gzip" onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ''; }} aria-label="Backup file" />
+      <div className="wide row end">
+        {file && <span className="muted">{file.name} · {size(file.size)}</span>}
+        <span className="spacer" />
+        <Btn kind={file?.meta && !file.error ? undefined : 'primary'} busy={busy} onClick={() => input.current?.click()}>{file ? 'Choose another file' : 'Import'}</Btn>
+      </div>
       {file?.error && <div className="wide errbox" role="alert">{file.error}</div>}
       {m && !file.error && <div className="wide db-preview">
         <div className="db-preview-head">
@@ -165,7 +157,6 @@ export function DatabaseRestore({ onDone }) {
       {m && !file.error && <>
         <Field label="Administrator password" wide><input type="password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} autoComplete="current-password" /></Field>
         <Field label={`Type ${RESTORE_WORD} to confirm`} wide><input value={f.confirm} onChange={(e) => setF({ ...f, confirm: e.target.value })} placeholder={RESTORE_WORD} autoComplete="off" autoCapitalize="characters" spellCheck={false} /></Field>
-        <p className="muted wide" style={{ margin: 0, fontSize: 12.5 }}>After the restore, sign-ins come from the backup: if the Administrator password in the backup is different, you are signed out and sign in with that password.</p>
         <div className="wide row end"><Btn kind="danger" busy={busy} disabled={!ready} onClick={restore}>Restore database</Btn></div>
       </>}
     </div>
@@ -175,9 +166,7 @@ export function DatabaseRestore({ onDone }) {
 /** The whole Database tab. `Reset` is the existing reset card. */
 export function DatabaseTab({ Reset }) {
   const info = useApi('database.info', {});
-  const bounded=useStore(s=>!!s.apiCapabilities?.boundedBackup);
-  const safety=useApi('database.transfer.safety.list',{},[],{skip:!bounded});
-  const changed=()=>{info.reload();if(bounded)safety.reload();};
+  const changed=()=>info.reload();
   return (
     <div className="db-tab">
       <DatabaseOverview info={info} />
@@ -185,38 +174,7 @@ export function DatabaseTab({ Reset }) {
         <DatabaseBackup onDone={changed} />
         <DatabaseRestore onDone={changed} />
       </div>
-      {bounded&&<SafetyBackups list={safety}/>}
-      {info.data && !info.data.offline && <DailyBackup info={info.data} onDone={info.reload} />}
       <Reset onDone={info.reload} />
-    </div>
-  );
-}
-
-function SafetyBackups({list}){
- const [busy,run]=useAction();const [progress,setProgress]=useState('');
- return <div className="card form db-card"><h2 className="wide">Recovery copies before restore</h2>
-  <p className="wide muted">These private recovery points contain the data from before a streamed restore. Download and keep an independent copy.</p>
-  <ErrorBox error={list.error} onRetry={list.reload}/>
-  {progress&&<p className="wide muted" role="status">{progress}</p>}
-  {(list.data||[]).map(r=><div className="wide row" key={r.id}><span>{fdatetime(r.created_at)} · {r.rows} records</span><span className="spacer"/><Btn busy={busy} onClick={()=>run(()=>downloadStreamBackup({call:api,sourceId:r.id,progress:setProgress,date:today()}))}>Download recovery copy</Btn></div>)}
-  {!list.loading&&!list.error&&!list.data?.length&&<p className="wide muted">No streamed restore recovery copies yet.</p>}
- </div>;
-}
-
-/** Nightly backup: a private Supabase snapshot, or (Apps Script) a copy of the Google Sheet in the Drive folder "Karvio backups". */
-function DailyBackup({ info, onDone }) {
-  const supabase = info.backend === 'supabase';
-  const [on, setOn] = useState(!!info.daily_backup);
-  const [keep, setKeep] = useState(info.backup_keep_days || 30);
-  const [busy, run] = useAction();
-  const save = async () => { await run(() => api('backup.schedule', { enabled: on, keep_days: Number(keep) }), on ? 'Daily backup is on' : 'Daily backup is off'); onDone?.(); };
-  return (
-    <div className="card form">
-      <div className="card-head wide"><h2>Automatic daily backup</h2><span className="muted">{supabase ? 'Private Supabase snapshots' : `Google Drive folder “${info.backup_folder || 'Karvio backups'}”`}</span></div>
-      <Field label="Back up every night"><label className="check"><input type="checkbox" checked={on} onChange={(e) => setOn(e.target.checked)} /> {supabase ? 'Save a private database snapshot at 2 AM (Dhaka)' : 'Copy the database to Google Drive at about 2 AM'}</label></Field>
-      <Field label="Keep copies for (days)" hint={supabase ? 'Expired daily snapshots are deleted. Also keep downloaded exports outside this project.' : 'Older copies are moved to the Drive trash.'}><input type="number" min="1" max="365" value={keep} onChange={(e) => setKeep(e.target.value)} /></Field>
-      <p className="muted wide" style={{ margin: 0 }}>Last automatic backup: {info.last_daily_backup ? fdatetime(info.last_daily_backup) : 'none yet'}</p>
-      <div className="wide row end"><Btn kind="primary" busy={busy} onClick={save}>Save</Btn></div>
     </div>
   );
 }
