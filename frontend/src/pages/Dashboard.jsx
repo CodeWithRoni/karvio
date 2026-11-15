@@ -81,7 +81,6 @@ export default function Dashboard() {
   const [lb, setLb] = useState('month');
   const [scope, setScopeState] = useState(readScope);
   const [hist, setHist] = useState('sales');
-  const [showEmpty, setShowEmpty] = useState(false);
   const setScope = (v) => { setScopeState(v); try { localStorage.setItem(SCOPE_KEY, v); } catch { /* private mode */ } };
 
   if (loading && !d) return <DashboardSkeleton />;
@@ -241,18 +240,15 @@ export default function Dashboard() {
             <section className="card">
               <div className="card-head"><h2>Live balances</h2>{can('accounts') && <Link to="/accounts" className="link">Manage accounts</Link>}</div>
               <div className="bal-list">
-                {/* Accounts holding money first; empty ones fold into one line that opens on click. */}
-                {[...d.accounts].sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance)).filter((a) => showEmpty || Math.abs(a.balance) > 0.005).map((a) => (
-                  <div className="bal-row" data-type={a.type} key={a.id}>
-                    <span><b>{a.name}</b><small>{a.type === 'mfs' ? 'Mobile banking' : a.type === 'cash' ? 'Cash' : 'Bank'}{a.number ? ` · ${a.number}` : ''}</small></span>
-                    <b className={`num ${a.balance < 0 ? 'down' : ''}`}>{money(a.balance)}</b>
-                  </div>
-                ))}
-                {d.accounts.some((a) => Math.abs(a.balance) <= 0.005) && (
-                  <button type="button" className="bal-empty" onClick={() => setShowEmpty(!showEmpty)} aria-expanded={showEmpty}>
-                    {showEmpty ? 'Hide accounts with Tk 0' : `${d.accounts.filter((a) => Math.abs(a.balance) <= 0.005).length} more account${d.accounts.filter((a) => Math.abs(a.balance) <= 0.005).length === 1 ? '' : 's'} with Tk 0`}
-                  </button>
-                )}
+                {/* Every account, those holding money first; the list scrolls inside the card so it never outgrows Profit. */}
+                <div className="bal-scroll-wrap"><div className="bal-scroll" tabIndex={0} aria-label="Account balances">
+                  {[...d.accounts].sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance) || a.name.localeCompare(b.name)).map((a) => (
+                    <div className={`bal-row ${Math.abs(a.balance) <= 0.005 ? 'zero' : ''}`} data-type={a.type} key={a.id}>
+                      <span><b>{a.name}</b><small>{a.type === 'mfs' ? 'Mobile banking' : a.type === 'cash' ? 'Cash' : 'Bank'}{a.number ? ` · ${a.number}` : ''}</small></span>
+                      <b className={`num ${a.balance < 0 ? 'down' : ''}`}>{money(a.balance)}</b>
+                    </div>
+                  ))}
+                </div></div>
                 <div className="bal-row total"><span><b>All accounts</b><small>Total money in hand</small></span><b className="num">{money(d.accounts.reduce((a, x) => a + x.balance, 0))}</b></div>
               </div>
             </section>
