@@ -5,7 +5,7 @@ import { api, getApiConfig, setApiConfig, testConnection, isOffline, getToken } 
 import { DEFAULT_API_URL } from '../config';
 import { fdatetime, fdate } from '../lib/format';
 import DataTable from '../components/DataTable';
-import { PageHead, Btn, Field, useAction, Tabs, useApi, Badge } from '../components/ui';
+import { PageHead, Btn, Field, useAction, Tabs, useApi, Badge, Modal } from '../components/ui';
 import { DASH_CARDS, hiddenCards } from '../lib/dashboardCards';
 import { PAPERS, TEMPLATES, printInvoice } from '../lib/receipt';
 import { PRESETS, matchPreset } from '../lib/smsPresets';
@@ -400,7 +400,9 @@ function MyPassword() {
 const RESET_WORD = 'RESET';
 /** Empties the whole shop database (Administrator account only). The server copies the spreadsheet first. */
 function DatabaseReset({ onDone }) {
-  const [f, setF] = useState({ password: '', confirm: '', keep_settings: false, keep_users: false });
+  const blank = { password: '', confirm: '', keep_settings: false, keep_users: false };
+  const [f, setF] = useState(blank);
+  const [open, setOpen] = useState(false);
   const [done, setDone] = useState(null);
   const [busy, run] = useAction();
   const offline = isOffline();
@@ -410,29 +412,36 @@ function DatabaseReset({ onDone }) {
     let r; try { r = await run(() => api('database.reset', f), 'Database reset — Karvio is fresh'); } catch { return; } // shown as a message; nothing changed
     // this computer's saved cart and saved PC Builder quotes point at products that no longer exist
     if (!clearShopDrafts()) useStore.getState().toast('Database changed, but saved carts could not be cleared. Clear this site’s saved data before opening POS.', 'err');
-    setF({ password: '', confirm: '', keep_settings: false, keep_users: false });
+    setF(blank); setOpen(false);
     setDone(r);
     await useStore.getState().refresh('all').catch(() => {});
     onDone?.();
   };
   return (
-    <div className="card form reset-card">
-      <h2 className="wide" style={{ margin: 0 }}>Reset the whole database</h2>
+    <div className="card form db-card db-danger">
+      <div className="wide db-card-head"><span className="db-ic bad" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" /><path d="M10 11v6M14 11v6" /></svg></span><h2>Reset database</h2></div>
       {done && <div className="wide note reset-done" role="status">
         <b>Done — Karvio is fresh.</b>{' '}
         {done.backup ? <>A full safety backup of the old data was saved as <b>{done.backup.name}</b>{done.backup.url ? <> (<a href={done.backup.url} target="_blank" rel="noreferrer">open the copy</a>)</> : null}.</>
           : offline ? 'The previous data file is kept in the data folder on this computer.' : null}
       </div>}
-      <div className="wide reset-warn">
-        <b>This deletes everything:</b> products and stock, serial numbers, purchases, sales, returns, customers, suppliers, dues and ledgers,
-        accounts and their balances, expenses, warranty claims, SMS log, invoice links and history. Invoice numbers start again from 1.
-        <div style={{ marginTop: 6 }}>Your Administrator account stays, with the same password. {offline ? 'The previous data file is kept on this computer.' : 'Before deleting, a full safety backup is saved in your backend — if it cannot be saved, nothing is deleted.'}</div>
-      </div>
-      <label className="check wide"><input type="checkbox" checked={f.keep_settings} onChange={(e) => setF({ ...f, keep_settings: e.target.checked })} /> Keep shop settings (shop name, invoice, SMS gateway, dashboard)</label>
-      <label className="check wide"><input type="checkbox" checked={f.keep_users} onChange={(e) => setF({ ...f, keep_users: e.target.checked })} /> Keep the other user accounts</label>
-      <Field label="Administrator password" wide><input type="password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} autoComplete="current-password" /></Field>
-      <Field label={`Type ${RESET_WORD} to confirm`} wide><input value={f.confirm} onChange={(e) => setF({ ...f, confirm: e.target.value })} placeholder={RESET_WORD} autoComplete="off" autoCapitalize="characters" spellCheck={false} /></Field>
-      <div className="wide row end"><Btn kind="danger" busy={busy} disabled={!ready} onClick={reset}>Reset database</Btn></div>
+      <div className="wide row end db-card-foot"><Btn kind="danger" onClick={() => setOpen(true)}>Reset database</Btn></div>
+      {open && (
+        <Modal open size="md" title="Reset the whole database" onClose={() => { setOpen(false); setF(blank); }}
+          footer={<><Btn onClick={() => { setOpen(false); setF(blank); }}>Cancel</Btn><Btn kind="danger" busy={busy} disabled={!ready} onClick={reset}>Delete everything</Btn></>}>
+          <div className="form">
+            <div className="wide reset-warn">
+              <b>This deletes everything:</b> products and stock, serial numbers, purchases, sales, returns, customers, suppliers, dues and ledgers,
+              accounts and their balances, expenses, warranty claims, SMS log, invoice links and history. Invoice numbers start again from 1.
+              <div style={{ marginTop: 6 }}>Your Administrator account stays, with the same password. {offline ? 'The previous data file is kept on this computer.' : 'Before deleting, a full safety backup is saved in your backend — if it cannot be saved, nothing is deleted.'}</div>
+            </div>
+            <label className="check wide"><input type="checkbox" checked={f.keep_settings} onChange={(e) => setF({ ...f, keep_settings: e.target.checked })} /> Keep shop settings (shop name, invoice, SMS gateway, dashboard)</label>
+            <label className="check wide"><input type="checkbox" checked={f.keep_users} onChange={(e) => setF({ ...f, keep_users: e.target.checked })} /> Keep the other user accounts</label>
+            <Field label="Administrator password" wide><input type="password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} autoComplete="current-password" /></Field>
+            <Field label={`Type ${RESET_WORD} to confirm`} wide><input value={f.confirm} onChange={(e) => setF({ ...f, confirm: e.target.value })} placeholder={RESET_WORD} autoComplete="off" autoCapitalize="characters" spellCheck={false} /></Field>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

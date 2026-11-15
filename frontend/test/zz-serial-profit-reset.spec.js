@@ -248,7 +248,12 @@ test('database reset: only the Administrator sees it, and it leaves a fresh shop
   await signIn(page, token);
   await page.goto('/#/settings');
   await page.getByRole('tab', { name: 'Database', exact: true }).click();
-  const go = page.getByRole('button', { name: 'Reset database' });
+  // Backup, Import and Reset sit side by side; Reset opens its own confirmation window.
+  const cards = page.locator('.db-grid.three > .card');
+  await expect(cards).toHaveCount(3);
+  expect(new Set((await cards.evaluateAll((cs) => cs.map((c) => Math.round(c.getBoundingClientRect().top))))).size).toBe(1);
+  await page.getByRole('button', { name: 'Reset database', exact: true }).click();
+  const go = page.getByRole('dialog', { name: 'Reset the whole database' }).getByRole('button', { name: 'Delete everything' });
   await expect(go).toBeDisabled();
   await page.getByLabel('Administrator password').fill('wrong-pass');
   await page.getByLabel('Type RESET to confirm').fill('RESET');
