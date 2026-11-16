@@ -1,3 +1,13 @@
+# 16 November 2026 — supplier rebates (pending push)
+
+- Pay supplier has a third type, "Rebate / discount from supplier (no money moves)": it lowers what we owe, asks for no account, and never changes Cash, bank or MFS or any product cost. Kinds: invoice rebate, target bonus, price protection, cash payment discount, other. A reason is required; an optional purchase links the rebate to that invoice (shown on the purchase; its own due falls first). Ledger row type 'rebate', numbers RB-000001…; action supplier.rebate.
+- Rebates count as other income: "Supplier rebates" in the Profit page, the profit timeline, Profit & loss ("Other income: supplier rebates") and the dashboard net profit.
+- Promised rebates (not received yet) are only reminders (Settings 'rebates_pending'): listed on the supplier with Mark received / Drop, counted on the dashboard, shown in the report. Actions rebate.promise, rebate.promise.cancel, rebate.options.
+- Reports hub → Supplier rebates: received and promised rebates with totals by supplier and by kind.
+- Safety: every rebate, promise and drop is written to the activity log; a rebate is cancelled with Void (admin password and reason, reverse type 'rebate'); a purchase with a rebate cannot be cancelled until the rebate is voided.
+- Tabs inside a form label were named after the whole label (slow-stock days); they now sit beside the label.
+- Tests: backend/test/features-5.mjs (35 checks), frontend/test/features-5.spec.js (2 browser tests).
+
 # 16 November 2026 — five features (pending push)
 
 - Slow-moving stock (Reports hub, needs cost permission): products in stock with no sale for 30/60/90/180/365 days (never-sold ones count from the day they arrived), value at cost, last supplier, money tied up and its share of all stock. Report type slow_stock.

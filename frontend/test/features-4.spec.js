@@ -58,12 +58,12 @@ test('slow-moving stock report shows the money tied up', async ({ page, request 
   const old = new Date(Date.parse(today + 'T12:00:00Z') - 95 * 864e5).toISOString().slice(0, 10);
   await call(request, 'purchase.create', { supplier_id: sup.id, date: old, items: [{ product_id: p.id, qty: 3, cost: 1000, sale_price: 1500 }], payments: [] });
   await page.goto('/#/reports?type=slow_stock');
-  await page.getByRole('tab', { name: '90 days', exact: true }).first().click();
+  await page.getByRole('tab', { name: '90 days', exact: true }).click();
   await expect(page.locator('.om-kpis')).toContainText('Money tied up');
   const row = page.locator('tbody tr').filter({ hasText: p.name });
   await expect(row).toContainText('Never sold');
   await expect(row).toContainText('3,000');
-  await page.getByRole('tab', { name: '180 days', exact: true }).first().click();
+  await page.getByRole('tab', { name: '180 days', exact: true }).click();
   await expect(page.locator('tbody tr').filter({ hasText: p.name })).toHaveCount(0);
 });
 

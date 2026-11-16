@@ -29,9 +29,9 @@ export default function Reports() {
   const { customers, suppliers, accounts, categories, brands, products, can, settings } = useStore();
   const [params] = useSearchParams();
   const canStatements = can('cost');
-  const list = canStatements ? [...REPORTS, ['slow_stock', 'Slow-moving stock'], ['supplier_prices', 'Supplier prices'], ...Object.entries(STATEMENTS).map(([k, v]) => [k, v[1]])] : REPORTS;
+  const list = canStatements ? [...REPORTS, ['slow_stock', 'Slow-moving stock'], ['supplier_prices', 'Supplier prices'], ['supplier_rebates', 'Supplier rebates'], ...Object.entries(STATEMENTS).map(([k, v]) => [k, v[1]])] : REPORTS;
   const start = params.get('type');
-  const [type, setType] = useState(start === 'stock_summary' || (canStatements && (STATEMENTS[start] || start === 'supplier_prices' || start === 'slow_stock')) ? start : 'sales');
+  const [type, setType] = useState(start === 'stock_summary' || (canStatements && (STATEMENTS[start] || start === 'supplier_prices' || start === 'supplier_rebates' || start === 'slow_stock')) ? start : 'sales');
   const [slowDays, setSlowDays] = useState(60);
   const slow = type === 'slow_stock';
   const [sf, setSf] = useState({ stock_filter:params.get('filter') || 'all', group_id:'', category_id:'', brand_id:'', product_id:'', include_inactive:false });
@@ -56,7 +56,7 @@ export default function Reports() {
       <div className="filters">
         <Field label="Report"><select value={type} onChange={(e) => { setType(e.target.value); setParty(''); }}>{list.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
         {groups && !statement && <Field label="View"><select value={g} onChange={(e) => setGroup(e.target.value)}>{groups.map((x) => <option key={x} value={x}>{GLABEL[x] || ({product:'By product',group:'By product group',category:'By category',lots:'Purchase lots & warranty'})[x]}</option>)}</select></Field>}
-        {slow && <Field label="Not sold in the last"><Tabs tabs={[30, 60, 90, 180, 365].map((n) => [n, `${n} days`])} value={slowDays} onChange={setSlowDays} /></Field>}
+        {slow && <div className="field"><span className="field-label">Not sold in the last</span><Tabs tabs={[30, 60, 90, 180, 365].map((n) => [n, `${n} days`])} value={slowDays} onChange={setSlowDays} /></div>}
         {!stock && !sheet && !slow && <Field label="Period"><Tabs tabs={PRESETS.map(([v, l]) => [v, l])} value={preset} onChange={(v) => { setPreset(v); setRange(PRESETS.find((p) => p[0] === v)[2]()); }} /></Field>}
         {!stock && !sheet && !slow && <Field label="Custom range"><DateRange {...range} onChange={(x) => { setPreset(''); setRange(x); }} /></Field>}
         {stock && <>
@@ -92,6 +92,21 @@ export default function Reports() {
           <div className="card"><span>Products</span><b>{r.slow.products}</b><small>not sold in the last {r.slow.days} days</small></div>
           <div className="card"><span>Share of stock value</span><b>{r.slow.share}%</b><small>of {money(r.slow.stock_value)} total stock</small></div>
         </div>
+      )}
+      {r?.rebates && (
+        <>
+          <div className="om-kpis">
+            <div className="card"><span>Rebates received</span><b className="ok">{money(r.rebates.received)}</b><small>{r.rebates.count} in this period</small></div>
+            <div className="card"><span>Promised, not received</span><b className="warn">{money(r.rebates.promised)}</b><small>{r.rebates.promised_count} waiting (all dates)</small></div>
+            <div className="card"><span>Best supplier</span><b>{r.rebates.by_supplier[0]?.supplier || '—'}</b><small>{r.rebates.by_supplier[0] ? money(r.rebates.by_supplier[0].amount) : 'no rebates in this period'}</small></div>
+          </div>
+          {(r.rebates.by_supplier.length > 1 || r.rebates.by_kind.length > 1) && (
+            <div className="rb-split">
+              <div className="card"><b>By supplier</b>{r.rebates.by_supplier.map((x) => <div key={x.supplier}><span>{x.supplier} <small className="muted">({x.count})</small></span><b>{money(x.amount)}</b></div>)}</div>
+              <div className="card"><b>By kind</b>{r.rebates.by_kind.map((x) => <div key={x.kind}><span>{x.kind}</span><b>{money(x.amount)}</b></div>)}</div>
+            </div>
+          )}
+        </>
       )}
       {r?.summary && (
         <div className="row" style={{ marginBottom: 12 }}>{Object.entries(r.summary).map(([k, v]) => <Badge key={k} tone={k === 'Delivered' ? 'muted' : k === 'Pending' ? 'warn' : 'info'}>{k}: {v}</Badge>)}</div>

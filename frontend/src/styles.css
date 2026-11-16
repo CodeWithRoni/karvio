@@ -1447,3 +1447,16 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
 .sess td small { font-size: 12px; }
 .sess-note { font-size: 12.5px; margin: 10px 2px 0; }
 .dc-lock { margin: 12px 0 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); font-size: 13px; }
+
+/* Supplier rebates */
+.rb-preview { display: grid; grid-template-columns: 1fr auto; row-gap: 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); font-size: 13.5px; }
+.rb-preview span { color: var(--muted); } .rb-preview b { text-align: right; font-variant-numeric: tabular-nums; } .rb-preview b.ok { color: var(--ok); }
+.rb-note { margin: 0; padding: 9px 12px; border: 1px dashed var(--line); border-radius: 10px; font-size: 12.5px; color: var(--muted); }
+.rb-note b { color: var(--text); }
+.rb-pending { margin: 0 0 12px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--warn) 8%, transparent); font-size: 13.5px; }
+.rb-pend-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.rb-pend-row .spacer { flex: 1; }
+.rb-line { margin: 8px 0 0; font-size: 13.5px; color: var(--ok); }
+.rb-split { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.rb-split .card { padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; }
+.rb-split .card > div { display: flex; justify-content: space-between; gap: 10px; }

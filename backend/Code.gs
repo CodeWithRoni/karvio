@@ -2964,7 +2964,8 @@ function purchaseDetail_(p) {
       return o;
     }),
     supplier: pur.supplier_id ? all_('Suppliers').filter(function (s) { return s.id === pur.supplier_id; })[0] || null : null,
-    returns: returns
+    returns: returns,
+    rebates: rebateRows_().filter(function (r) { return r.purchase_id === pur.id; })
   };
 }
 /** Full details of several purchases at once (for exporting / printing the selected invoices). */
@@ -3465,6 +3466,81 @@ function supplierPayment_(p, user) {
   audit_(user, 'supplier_payment', { supplier: s.name, amount: amt });
   return { entry: row, balance: supplierBalances_()[s.id], receipt_no: no };
 }
+/* ---- Supplier rebates: a discount the supplier gives after the purchase. It lowers what we owe, moves no money,
+ * and counts as other income ("Supplier rebates") — product costs and past profits are not touched.
+ * A received rebate is a SupplierLedger row of type 'rebate' (ref_id = the purchase it belongs to, when one was chosen);
+ * rebates that were promised but not received yet wait in Settings 'rebates_pending'. */
+var REBATE_KINDS = { invoice: 'Invoice rebate', target: 'Target bonus', price: 'Price protection', cash: 'Cash payment discount', other: 'Other rebate' };
+function rebateKind_(k) { var key = String(k || 'invoice'); if (!REBATE_KINDS[key]) fail_('Choose the kind of rebate'); return key; }
+function rebateReason_(v) { var t = String(v || '').replace(/\s+/g, ' ').trim().slice(0, 200); if (t.length < 3) fail_('Write the reason for the rebate (for example the invoice or offer it is for)'); return t; }
+function rebateParse_(l, purchases) {
+  var note = String(l.note || ''), kind = 'other', reason = note;
+  Object.keys(REBATE_KINDS).forEach(function (k) { if (note.indexOf(REBATE_KINDS[k] + ' — ') === 0) { kind = k; reason = note.slice(REBATE_KINDS[k].length + 3); } });
+  var pur = purchases ? purchases[l.ref_id] : null;
+  return { id: l.id, date: String(l.date).slice(0, 10), supplier_id: l.supplier_id, ref_no: l.ref_no, amount: round_(num_(l.debit)), kind: kind, kind_label: REBATE_KINDS[kind], reason: reason,
+    purchase_id: pur ? pur.id : '', purchase_no: pur ? pur.invoice_no : '' };
+}
+function rebateRows_() {
+  var purchases = indexBy_(all_('Purchases'));
+  return all_('SupplierLedger').filter(function (l) { return l.type === 'rebate' && !l.voided; }).map(function (l) { return rebateParse_(l, purchases); });
+}
+/** Rebates received in a period; with `key` also grouped (for the profit timeline). */
+function rebateTotal_(from, to, key) {
+  var total = 0, by = {};
+  all_('SupplierLedger').forEach(function (l) {
+    if (l.type !== 'rebate' || l.voided || !inRange_(l.date, from, to)) return;
+    var a = num_(l.debit); total += a; if (key) by[key(l.date)] = (by[key(l.date)] || 0) + a;
+  });
+  return key ? by : round_(total);
+}
+function rebatesPending_() { var v = null; try { v = JSON.parse(getSetting_('rebates_pending', '[]')); } catch (e) {} return Array.isArray(v) ? v : []; }
+function rebatePurchase_(supplier, id) {
+  if (!id) return null;
+  var pur = all_('Purchases').filter(function (x) { return x.id === id; })[0];
+  if (!pur || pur.supplier_id !== supplier.id) fail_('That purchase is not from ' + supplier.name);
+  if (pur.status !== 'active') fail_('That purchase is cancelled');
+  return pur;
+}
+/** What the rebate window needs: this supplier's purchases (newest first) and the rebates still promised. */
+function rebateOptions_(p) {
+  var s = all_('Suppliers').filter(function (x) { return x.id === p.supplier_id; })[0]; if (!s) fail_('Supplier not found');
+  var got = {}; rebateRows_().forEach(function (r) { if (r.purchase_id) got[r.purchase_id] = round_((got[r.purchase_id] || 0) + r.amount); });
+  var purchases = all_('Purchases').filter(function (x) { return x.supplier_id === s.id && x.status === 'active'; })
+    .sort(function (a, b) { return String(b.date).localeCompare(String(a.date)) || b._row - a._row; }).slice(0, 60)
+    .map(function (x) { return { id: x.id, invoice_no: x.invoice_no, supplier_invoice: x.supplier_invoice || '', date: String(x.date).slice(0, 10), total: x.total, rebated: got[x.id] || 0 }; });
+  return { kinds: REBATE_KINDS, purchases: purchases, pending: rebatesPending_().filter(function (r) { return r.supplier_id === s.id; }), balance: supplierBalances_()[s.id] || 0 };
+}
+function supplierRebate_(p, user) {
+  var s = all_('Suppliers').filter(function (x) { return x.id === p.supplier_id; })[0]; if (!s) fail_('Supplier not found');
+  var amt = round_(p.amount); if (!(amt > 0)) fail_('Rebate amount must be greater than 0');
+  var kind = rebateKind_(p.kind), reason = rebateReason_(p.note), pur = rebatePurchase_(s, p.purchase_id);
+  var pending = rebatesPending_(), was = p.pending_id ? pending.filter(function (r) { return r.id === p.pending_id && r.supplier_id === s.id; })[0] : null;
+  if (p.pending_id && !was) fail_('That promised rebate is no longer waiting. Refresh and try again');
+  var date = bookDate_(p.date, 'rebate'), no = nextNo_('seq_rebate', 'RB-');
+  var row = insert_('SupplierLedger', { date: date, supplier_id: s.id, type: 'rebate', ref_id: pur ? pur.id : uid_(), ref_no: no, debit: amt, credit: 0, note: REBATE_KINDS[kind] + ' — ' + reason, voided: false });
+  if (was) setSetting_('rebates_pending', JSON.stringify(pending.filter(function (r) { return r.id !== was.id; })));
+  audit_(user, 'supplier_rebate', { supplier: s.name, ref: no, amount: amt, kind: REBATE_KINDS[kind], purchase: pur ? pur.invoice_no : '', reason: reason });
+  return { entry: row, receipt_no: no, balance: supplierBalances_()[s.id] };
+}
+/** A rebate the supplier promised but has not given yet: only a reminder, the books do not change. */
+function rebatePromise_(p, user) {
+  var s = all_('Suppliers').filter(function (x) { return x.id === p.supplier_id; })[0]; if (!s) fail_('Supplier not found');
+  var amt = round_(p.amount); if (!(amt > 0)) fail_('Rebate amount must be greater than 0');
+  var kind = rebateKind_(p.kind), reason = rebateReason_(p.note), pur = rebatePurchase_(s, p.purchase_id);
+  var expected = p.expected ? String(p.expected).slice(0, 10) : ''; if (expected && !isDate_(expected)) fail_('Choose a valid expected date');
+  var list = rebatesPending_(); if (list.length >= 200) fail_('Too many promised rebates are waiting. Receive or cancel some first');
+  var rec = { id: uid_(), supplier_id: s.id, supplier: s.name, kind: kind, amount: amt, purchase_id: pur ? pur.id : '', purchase_no: pur ? pur.invoice_no : '', note: reason, expected: expected, created: today_(), user: user.name };
+  list.push(rec); setSetting_('rebates_pending', JSON.stringify(list));
+  audit_(user, 'rebate_promised', { supplier: s.name, amount: amt, kind: REBATE_KINDS[kind], reason: reason });
+  return { promise: rec, pending: list.filter(function (r) { return r.supplier_id === s.id; }) };
+}
+function rebatePromiseCancel_(p, user) {
+  var list = rebatesPending_(), rec = list.filter(function (r) { return r.id === p.id; })[0]; if (!rec) fail_('That promised rebate is no longer waiting');
+  var reason = String(p.reason || '').trim().slice(0, 200); if (!reason) fail_('Write why the promised rebate is dropped');
+  setSetting_('rebates_pending', JSON.stringify(list.filter(function (r) { return r.id !== rec.id; })));
+  audit_(user, 'rebate_promise_cancelled', { supplier: rec.supplier, amount: rec.amount, reason: reason });
+  return { pending: rebatesPending_().filter(function (r) { return r.supplier_id === rec.supplier_id; }) };
+}
 function statement_(table, key, parties, sign, p) {
   var party = parties.filter(function (x) { return x.id === p[key]; })[0]; if (!party) fail_('Not found');
   var rows = all_(table).filter(function (l) { return l[key] === party.id && !l.voided; }).sort(function (a, b) { return String(a.date).localeCompare(String(b.date)) || a._row - b._row; });
@@ -3478,7 +3554,11 @@ function statement_(table, key, parties, sign, p) {
   return { party: party.name, phones: party.phones, address: party.addresses || party.address || '', opening: round_(opening), closing: round_(run), rows: out };
 }
 function customerStatement_(p) { return statement_('CustomerLedger', 'customer_id', all_('Customers'), 1, p); }
-function supplierStatement_(p) { return statement_('SupplierLedger', 'supplier_id', all_('Suppliers'), -1, p); }
+function supplierStatement_(p) {
+  var st = statement_('SupplierLedger', 'supplier_id', all_('Suppliers'), -1, p);
+  st.pending_rebates = rebatesPending_().filter(function (r) { return r.supplier_id === p.supplier_id; });
+  return st;
+}
 /** Statements of several customers / suppliers at once, for exporting the selected parties. */
 function partyStatements_(kind, p, user) {
   var ids = Array.isArray(p.ids) ? p.ids : [];
@@ -3633,9 +3713,9 @@ function reverse_(p, user) {
   need_(user, 'cancel');
   confirmAdmin_(user, p.password);
   var reason = String(p.reason || '').trim(); if (!reason) fail_('Enter a reason for the cancellation');
-  var fn = { sale: reverseSale_, purchase: reversePurchase_, sreturn: reverseSreturn_, preturn: reversePreturn_, cpay: reversePayment_, spay: reversePayment_, expense: reverseExpense_, account: reverseAccountEntry_ }[p.type];
+  var fn = { sale: reverseSale_, purchase: reversePurchase_, sreturn: reverseSreturn_, preturn: reversePreturn_, cpay: reversePayment_, spay: reversePayment_, expense: reverseExpense_, account: reverseAccountEntry_, rebate: reverseRebate_ }[p.type];
   if (!fn) fail_('Unknown transaction type');
-  var docTable = { sale: 'Sales', purchase: 'Purchases', sreturn: 'SalesReturns', preturn: 'PurchaseReturns', cpay: 'CustomerLedger', spay: 'SupplierLedger', expense: 'Expenses', account: 'AccountTxns' }[p.type];
+  var docTable = { sale: 'Sales', purchase: 'Purchases', sreturn: 'SalesReturns', preturn: 'PurchaseReturns', cpay: 'CustomerLedger', spay: 'SupplierLedger', rebate: 'SupplierLedger', expense: 'Expenses', account: 'AccountTxns' }[p.type];
   var doc = all_(docTable).filter(function (x) { return x.id === p.id; })[0];
   if (doc && doc.date) lockCheck_(doc.date, 'a transaction');
   var r = fn(p, user, reason);
@@ -3684,6 +3764,8 @@ function reversePurchase_(p, user, reason) {
   var pur = all_('Purchases').filter(function (x) { return x.id === p.id; })[0];
   if (!pur) fail_('Purchase not found'); if (pur.status !== 'active') fail_('Purchase is already cancelled');
   if (all_('PurchaseReturns').some(function (r) { return r.purchase_id === pur.id && r.status === 'active'; })) fail_('Cancel the return(s) of this purchase first');
+  var linked = all_('SupplierLedger').filter(function (l) { return l.type === 'rebate' && !l.voided && l.ref_id === pur.id; })[0];
+  if (linked) fail_('This purchase has a supplier rebate (' + linked.ref_no + '). Void the rebate first');
   var pmap = indexBy_(all_('Products')), sidx = serialIndex_(), items = all_('PurchaseItems').filter(function (i) { return i.purchase_id === pur.id; });
   var purchaseEvent = 0;
   all_('ItemEvents').forEach(function (e) { if (e.ref_type === 'purchase' && e.ref_id === pur.id && e.event === 'purchase') purchaseEvent = Math.max(purchaseEvent, e._row); });
@@ -3813,6 +3895,13 @@ function reversePayment_(p, user, reason) {
   var parties = p.type === 'cpay' ? 'Customers' : 'Suppliers', key = p.type === 'cpay' ? 'customer_id' : 'supplier_id';
   if (!all_(parties).some(function(party) { return party.id === row[key]; })) fail_('The customer or supplier record is missing. Restore that party before cancelling this payment');
   voidRefs_('AccountTxns', row.ref_id, refType); voidRefs_(table, row.ref_id);
+  return true;
+}
+function reverseRebate_(p, user, reason) {
+  var row = all_('SupplierLedger').filter(function (x) { return x.id === p.id; })[0];
+  if (!row || row.voided) fail_('Rebate not found or already cancelled');
+  if (row.type !== 'rebate') fail_('Only rebate entries can be cancelled here');
+  update_('SupplierLedger', row.id, { voided: true });
   return true;
 }
 /** Owner deposit / withdrawal / transfer between accounts (a transfer is cancelled on both sides). */
@@ -4443,8 +4532,8 @@ function purchaseOpenDues_() {
     }
     var amt = round_(num_(l.debit) - num_(l.credit));
     if (amt > 0) {
-      if (l.type === 'preturn') {
-        var own = x.open.filter(function (o) { return o.id && o.id === returnSale[l.ref_id]; })[0];
+      if (l.type === 'preturn' || l.type === 'rebate') {
+        var own = x.open.filter(function (o) { return o.id && o.id === (l.type === 'rebate' ? l.ref_id : returnSale[l.ref_id]); })[0];
         if (own) { var take = Math.min(own.left, amt); own.left = round_(own.left - take); amt = round_(amt - take); }
       }
       x.pool = round_(x.pool + amt);
@@ -4720,7 +4809,8 @@ function profitSummary_(from, to) {
   o.net_sales = round_(sales - returns);
   o.gross = round_(o.sales_profit - o.returns_profit);
   o.stock_adjust = stockAdjustValue_(from, to); // negative = stock written off
-  o.net = round_(o.gross - o.expenses + o.stock_adjust);
+  o.rebates = rebateTotal_(from, to); // supplier rebates: other income
+  o.net = round_(o.gross - o.expenses + o.stock_adjust + o.rebates);
   o.margin = o.net_sales > 0 ? round_(o.gross / o.net_sales * 100, 1) : 0;
   o.net_margin = o.net_sales > 0 ? round_(o.net / o.net_sales * 100, 1) : 0;
   return o;
@@ -4751,11 +4841,13 @@ function profitReport_(p, user) {
   rets.forEach(function (x) { var r = row(key(x.date)); r.returns += x.total; r.returns_profit += returnProfit_(x); r.gross -= returnProfit_(x); });
   exps.forEach(function (x) { row(key(x.date)).expenses += x.amount; });
   var adj = stockAdjustValue_(from, to, key);
-  Object.keys(adj).forEach(function (k) { row(k); });
+  var reb = rebateTotal_(from, to, key);
+  Object.keys(adj).concat(Object.keys(reb)).forEach(function (k) { row(k); });
   var timeline = Object.keys(tl).sort().map(function (k) {
     var r = tl[k]; ['sales', 'cost', 'returns', 'returns_profit', 'gross', 'expenses'].forEach(function (f) { r[f] = round_(r[f]); });
     r.stock_adjust = round_(adj[k] || 0);
-    r.net = round_(r.gross - r.expenses + r.stock_adjust); return r;
+    r.rebates = round_(reb[k] || 0);
+    r.net = round_(r.gross - r.expenses + r.stock_adjust + r.rebates); return r;
   });
 
   // Per product: item profit before invoice discounts, less profit on returned units.
@@ -4843,7 +4935,8 @@ function dashboard_(p, user) {
     if (showCost) {
       c.gross_profit = round_(sum_(s, function (x) { return x.profit; }) - sum_(sr, function (x) { return returnProfit_(x); }));
       c.stock_adjust = period === 'total' ? stockAdjustValue_('', '') : period === 'today' ? stockAdjustValue_(today, today) : period === 'yesterday' ? stockAdjustValue_(yesterday, yesterday) : stockAdjustValue_(month + '-01', today);
-      c.net_profit = round_(c.gross_profit - c.expenses + c.stock_adjust);
+      c.rebates = period === 'total' ? rebateTotal_('', '') : period === 'today' ? rebateTotal_(today, today) : period === 'yesterday' ? rebateTotal_(yesterday, yesterday) : rebateTotal_(month + '-01', today);
+      c.net_profit = round_(c.gross_profit - c.expenses + c.stock_adjust + c.rebates);
     }
     return c;
   }
@@ -4879,7 +4972,7 @@ function dashboard_(p, user) {
       row.expenses = { amount: round_(sum_(ex, function (x) { return x.amount; })), count: ex.length };
       if (row.profit !== undefined) {
         row.gross_profit = { amount: row.profit, count: s.length };
-        row.net_profit = { amount: round_(row.profit - row.expenses.amount + stockAdjustValue_(r[2], r[3])), count: ex.length };
+        row.net_profit = { amount: round_(row.profit - row.expenses.amount + stockAdjustValue_(r[2], r[3]) + rebateTotal_(r[2], r[3])), count: ex.length };
       }
       var sd = s.filter(function (x) { return x.due > 0; }), pd = pu.filter(function (x) { return x.due > 0; });
       row.receivable = { amount: round_(sum_(sd, function (x) { return x.due; })), count: sd.length };
@@ -4909,6 +5002,7 @@ function dashboard_(p, user) {
   if (user.role === 'admin') out.repair_alerts = repairAlerts_();
   // "Needs attention": finished repair jobs (fixed or failed) still waiting for the customer to collect them.
   if (can_(user, 'expenses')) out.recurring_due = recurringList_().due;
+  if (can_(user, 'suppliers')) { var waiting = rebatesPending_(); out.rebates_pending = { count: waiting.length, amount: round_(sum_(waiting, function (r) { return r.amount; })) }; }
   if (can_(user, 'repairs')) out.repairs_waiting = all_('Repairs').filter(function (r) { var st = repairStatusOf_(r); return st === 'Completed' || st === 'Failed'; }).length;
   out.top_products = topProducts_(sales, today, showCost);
   out.recent = sales.slice(-8).reverse().map(function (s) { return { id: s.id, invoice_no: s.invoice_no, customer_name: s.customer_name, total: s.total, due: s.due, date: s.date }; });
@@ -5017,6 +5111,7 @@ function profitLoss_(p, user) {
   if (!Object.keys(cats).length) lines.push({ label: 'No expenses in this period', values: v(function () { return 0; }), kind: 'line', indent: 1 });
   lines.push({ label: 'Total expenses', values: v(function (x) { return -x.expenses; }), kind: 'total' });
   if (periods.some(function (per) { return Math.abs(sums[per.key].stock_adjust) > 0.005; })) lines.push({ label: 'Stock adjustments (written off / found)', values: v(function (x) { return x.stock_adjust; }), kind: 'line' });
+  if (periods.some(function (per) { return Math.abs(sums[per.key].rebates) > 0.005; })) lines.push({ label: 'Other income: supplier rebates', values: v(function (x) { return x.rebates; }), kind: 'line' });
   lines.push({ label: 'Net profit', values: v(function (x) { return x.net; }), kind: 'grand' });
   var columns = [{ key: 'current', label: from || to ? (from || 'Start') + ' to ' + (to || today_()) : 'All time' }];
   if (cmp) columns.push({ key: 'previous', label: cmp.from + ' to ' + cmp.to });
@@ -5139,6 +5234,25 @@ function reportsRaw_(p, user) {
     return finishReport_('Slow-moving stock — not sold in the last ' + sdays + ' days', [col_('product', 'Product'), col_('category', 'Category'), col_('brand', 'Brand'), col_('last_sold', 'Last sold'),
       col_('idle_days', 'Days without a sale', 'num'), col_('stock', 'In stock', 'num'), col_('cost_price', 'Unit cost', 'money'), col_('value', 'Value at cost', 'money', true), col_('supplier', 'Last supplier')], slow,
       { slow: { days: sdays, tied: tied, products: slow.length, stock_value: round_(allValue), share: allValue > 0 ? round_(tied / allValue * 100, 1) : 0 } });
+  }
+  if (T === 'supplier_rebates') {
+    if (!can_(user, 'suppliers')) fail_('Permission denied: the rebate report needs the Suppliers permission');
+    var sups = indexBy_(all_('Suppliers')), bySup = {}, byKind = {};
+    var got = rebateRows_().filter(function (r) { return inRange_(r.date, from, to) && (!p.supplier_id || r.supplier_id === p.supplier_id); })
+      .sort(function (a, b) { return String(b.date).localeCompare(String(a.date)); });
+    var rrows = got.map(function (r) {
+      var name = sups[r.supplier_id] ? sups[r.supplier_id].name : '';
+      bySup[name] = bySup[name] || { supplier: name, amount: 0, count: 0 }; bySup[name].amount = round_(bySup[name].amount + r.amount); bySup[name].count++;
+      byKind[r.kind_label] = round_((byKind[r.kind_label] || 0) + r.amount);
+      return { date: r.date, ref_no: r.ref_no, supplier: name, kind: r.kind_label, purchase: r.purchase_no, reason: r.reason, status: 'Received', received: r.amount, promised: 0 };
+    });
+    var waiting = rebatesPending_().filter(function (r) { return !p.supplier_id || r.supplier_id === p.supplier_id; });
+    waiting.forEach(function (r) { rrows.push({ date: r.expected || r.created, ref_no: '', supplier: r.supplier, kind: REBATE_KINDS[r.kind] || '', purchase: r.purchase_no || '', reason: r.note, status: 'Promised — not received', received: 0, promised: r.amount }); });
+    return finishReport_('Supplier rebates', [col_('date', 'Date', 'date'), col_('ref_no', 'Ref'), col_('supplier', 'Supplier'), col_('kind', 'Kind'), col_('purchase', 'Purchase'), col_('reason', 'Reason'), col_('status', 'Status'),
+      col_('received', 'Received', 'money', true), col_('promised', 'Promised', 'money', true)], rrows,
+      { rebates: { received: round_(sum_(got, function (r) { return r.amount; })), count: got.length, promised: round_(sum_(waiting, function (r) { return r.amount; })), promised_count: waiting.length,
+        by_supplier: Object.keys(bySup).map(function (k) { return bySup[k]; }).sort(function (a, b) { return b.amount - a.amount; }),
+        by_kind: Object.keys(byKind).map(function (k) { return { kind: k, amount: byKind[k] }; }).sort(function (a, b) { return b.amount - a.amount; }) } });
   }
   if (T === 'supplier_prices') {
     if (!cost) fail_('Permission denied: the supplier price report needs "See cost price & profit margins"');
@@ -5331,6 +5445,10 @@ var ROUTES = {
   'supplier.save':    r_('suppliers', supplierSave_, true),
   'supplier.statement': r_('suppliers', supplierStatement_),
   'supplier.payment': r_('suppliers', supplierPayment_, true),
+  'supplier.rebate':  r_('suppliers', supplierRebate_, true),
+  'rebate.options':   r_('suppliers', rebateOptions_),
+  'rebate.promise':   r_('suppliers', rebatePromise_, true),
+  'rebate.promise.cancel': r_('suppliers', rebatePromiseCancel_, true),
 
   'accounts.list':    r_('accounts', function () { return accountsList_(); }),
   'account.save':     r_('accounts', accountSave_, true),

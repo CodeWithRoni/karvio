@@ -12,6 +12,7 @@ import { useApi, PageHead, Modal, Btn, Field, Loading, ErrorBox, useAction, Sele
 import { ReverseDialog } from './widgets';
 import { excelParties, pdfParties, printParties } from '../lib/partyDocs';
 import DueReminder from './DueReminder';
+import RebateForm from './RebateForm';
 
 const CFG = {
   customer: {
@@ -23,7 +24,7 @@ const CFG = {
   supplier: {
     title: 'Suppliers', sub: 'Supplier directory, accounts payable and payment history.',
     list: 'suppliers.list', save: 'supplier.save', statement: 'supplier.statement', statements: 'supplier.statements', del: 'supplier.delete', payment: 'supplier.payment', key: 'supplier_id', path: '/suppliers', perm: 'suppliers', revType: 'spay',
-    pos: 'We owe', neg: 'Advance paid', payLabel: 'Pay supplier', dirs: [['pay', 'Pay to supplier'], ['receive', 'Receive from supplier (refund)']],
+    pos: 'We owe', neg: 'Advance paid', payLabel: 'Pay supplier', dirs: [['pay', 'Pay to supplier'], ['receive', 'Receive from supplier (refund)'], ['rebate', 'Rebate / discount from supplier (no money moves)']],
     debit: 'Paid / returned', credit: 'Purchased'
   }
 };
@@ -182,6 +183,8 @@ function PartyDetail({ kind, id, onClose, onEdit, onChanged, onDeleted }) {
   const st = useApi(c.statement, { [c.key]: id, ...range });
   const party = useApi(c.list, {}).data?.find((x) => x.id === id);
   const [pay, setPay] = useState(false);
+  const [receive, setReceive] = useState(null);
+  const [drop, setDrop] = useState(null);
   const [rev, setRev] = useState(null);
   const [confirmUI, ask] = useConfirm();
   const [busy, run] = useAction();
@@ -221,19 +224,45 @@ function PartyDetail({ kind, id, onClose, onEdit, onChanged, onDeleted }) {
             </div>
             <DateRange {...range} onChange={setRange} />
           </div>
+          {kind === 'supplier' && st.data.pending_rebates?.length > 0 && (
+            <div className="rb-pending" role="region" aria-label="Promised rebates">
+              <b>Promised rebates not received yet</b>
+              {st.data.pending_rebates.map((r) => (
+                <div className="rb-pend-row" key={r.id}>
+                  <span><b>{money(r.amount)}</b> · {r.note}{r.purchase_no ? ` · ${r.purchase_no}` : ''}{r.expected ? ` · expected by ${fdate(r.expected)}` : ''}</span>
+                  <span className="spacer" />
+                  <Btn size="sm" kind="primary" onClick={() => setReceive(r)} aria-label={`Mark the ${money(r.amount)} rebate received`}>Mark received</Btn>
+                  <Btn size="sm" onClick={() => setDrop(r)} aria-label={`Drop the ${money(r.amount)} promised rebate`}>Drop</Btn>
+                </div>
+              ))}
+            </div>
+          )}
           <DataTable title={`${st.data.party} statement`} rows={st.data.rows} searchable={false}
             columns={[
               { key: 'date', label: 'Date', type: 'date' }, { key: 'ref_no', label: 'Ref' }, { key: 'note', label: 'Details', className: 'clip' },
               { key: 'debit', label: c.debit, type: 'money', sum: true }, { key: 'credit', label: c.credit, type: 'money', sum: true },
               { key: 'balance', label: 'Balance', type: 'money' },
               ...(kind === 'customer' ? [{key:'receipt',label:'',noSort:true,noExport:true,render:(r)=>r.type==='payment' && <button className="link" onClick={()=>printMoneyReceipt({receipt_no:r.ref_no,customer:st.data.party,amount:r.credit,balance:r.balance,account:r.note.match(/\[([^\]]+)\]$/)?.[1] || r.note,date:r.date})}>Print receipt</button>}] : []),
-              ...(can('cancel') ? [{ key: 'x', label: '', noSort: true, noExport: true, render: (r) => (r.type === 'payment' || r.type === 'refund') && <button className="link" style={{ color: 'var(--bad)' }} onClick={() => setRev({ type: c.revType, id: r.id, label: `payment ${r.ref_no}` })}>Void</button> }] : [])
+              ...(can('cancel') ? [{ key: 'x', label: '', noSort: true, noExport: true, render: (r) => (r.type === 'payment' || r.type === 'refund' || r.type === 'rebate') && <button className="link" style={{ color: 'var(--bad)' }} onClick={() => setRev(r.type === 'rebate' ? { type: 'rebate', id: r.id, label: `rebate ${r.ref_no}` } : { type: c.revType, id: r.id, label: `payment ${r.ref_no}` })}>Void</button> }] : [])
             ]} />
         </>
       )}
       {pay && <PaymentForm kind={kind} id={id} name={st.data?.party} balance={liveBal} accounts={accounts} onClose={() => setPay(false)} onDone={() => { st.reload(); onChanged(); }} />}
+      {receive && <RebateForm supplierId={id} name={st.data?.party} balance={liveBal} pending={receive} onClose={() => setReceive(null)} onDone={() => { st.reload(); onChanged(); }} />}
+      {drop && <DropPromise promise={drop} onClose={() => setDrop(null)} onDone={() => st.reload()} />}
       <ReverseDialog open={!!rev} {...(rev || {})} onClose={() => setRev(null)} onDone={() => { st.reload(); onChanged(); }} />
       {confirmUI}
+    </Modal>
+  );
+}
+
+function DropPromise({ promise, onClose, onDone }) {
+  const [reason, setReason] = useState('');
+  const [busy, run] = useAction();
+  const save = async () => { await run(() => api('rebate.promise.cancel', { id: promise.id, reason }), 'Promised rebate dropped'); onDone(); onClose(); };
+  return (
+    <Modal open onClose={onClose} size="sm" title={`Drop the promised rebate of ${money(promise.amount)}?`} footer={<><Btn onClick={onClose}>Keep it</Btn><Btn kind="primary" busy={busy} disabled={!reason.trim()} onClick={save}>Drop it</Btn></>}>
+      <div className="form"><Field label="Why is it dropped?" wide><input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. target was not reached" autoFocus /></Field></div>
     </Modal>
   );
 }
@@ -245,6 +274,7 @@ function PaymentForm({ kind, id, name, balance, accounts, onClose, onDone }) {
   const [print, setPrint] = useState(kind === 'customer');
   const [busy, run] = useAction();
   useEffect(() => { if (!f.account_id && accounts[0]) setF((x) => ({ ...x, account_id: accounts[0].id })); }, [accounts, f.account_id]);
+  if (kind === 'supplier' && f.direction === 'rebate') return <RebateForm supplierId={id} name={name} balance={balance} types={c.dirs} onType={(v) => setF({ ...f, direction: v })} onClose={onClose} onDone={onDone} />;
   const returningAdvance = kind === 'customer' && f.direction === 'pay';
   const availableAdvance = Math.max(-Number(balance || 0), 0);
   const invalidAmount = !Number.isFinite(Number(f.amount)) || Number(f.amount) <= 0 || (returningAdvance && Number(f.amount) > availableAdvance + 0.005);

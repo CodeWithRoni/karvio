@@ -438,6 +438,7 @@ function PurchaseDetail({ id, onClose, onChanged }) {
             <td>{splitList(String(i.serials || '').replace(/\n/g, ',')).map((x) => <span key={x} className="sn-chip ro">{x}</span>)}</td>
             <td className="r num">{fqty(i.qty, i.unit)}</td><td className="r num">{money(i.cost, false)}</td><td className="r num">{money(i.total, false)}</td></tr>)}</tbody>
         </table></div></div>
+        {data.rebates?.length > 0 && <p className="rb-line">Supplier rebate received: <b>{money(data.rebates.reduce((a, r) => a + r.amount, 0))}</b> <span className="muted">({data.rebates.map((r) => `${r.ref_no} · ${r.kind_label} · ${fdate(r.date)}`).join(', ')})</span></p>}
         {data.returns.length > 0 && <p className="muted">Returns: {data.returns.map((r) => `${r.return_no} (${money(r.total, false)}, ${r.status})`).join(', ')}</p>}
       </>}
       {ret && <PReturnForm detail={data} onClose={() => setRet(false)} onDone={() => { setRet(false); reload(); onChanged(); }} />}
