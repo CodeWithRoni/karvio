@@ -632,6 +632,10 @@ test('working hours: set in Users, refused at sign-in outside them, and signed o
   await call(request, 'user.save', { ...u, access_from: pad(dhakaHour - 1), access_to: pad(dhakaHour + 2), access_days: 'sat,sun,mon,tue,wed,thu,fri' });
   await p2.getByRole('button', { name: /sign in/i }).click();
   await expect(p2.locator('.shell')).toBeVisible();
+  // let the dashboard finish its own requests first: one that lands after the hours change would sign this page out
+  // (showing the reason there), and the reload below would then find a plain sign-in page
+  await expect(p2.locator('.page-head h1')).toContainText('Shift Staff');
+  await p2.waitForLoadState('networkidle');
   await call(request, 'user.save', { ...u, access_from: pad(dhakaHour + 2), access_to: pad(dhakaHour + 3), access_days: 'sat,sun,mon,tue,wed,thu,fri' });
   await p2.reload();
   await expect(p2.locator('.errbox')).toContainText('Your working hours are');

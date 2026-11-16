@@ -125,7 +125,7 @@ input[type='checkbox'] { width: auto; min-height: 0; accent-color: var(--fiber);
   background: linear-gradient(160deg, color-mix(in srgb, var(--g) 9%, var(--panel)) 0%, var(--panel) 55%); box-shadow: 0 1px 0 color-mix(in srgb, var(--g) 25%, transparent) inset;
   transition: border-color .18s, box-shadow .18s, transform .18s; }
 .nav-card:hover { border-color: color-mix(in srgb, var(--g) 45%, var(--line)); box-shadow: 0 6px 18px -10px color-mix(in srgb, var(--g) 60%, transparent); }
-.nav-card.g-search { --g: #38bdf8; } .nav-card.g-daily { --g: #f2c230; } .nav-card.g-stock { --g: #12b5b0; } .nav-card.g-money { --g: #3fb950; } .nav-card.g-admin { --g: #a78bfa; }
+.nav-card.g-search { --g: #38bdf8; } .nav-card.g-daily { --g: #f2c230; } .nav-card.g-stock { --g: #12b5b0; } .nav-card.g-adjust { --g: #fb923c; } .nav-card.g-money { --g: #3fb950; } .nav-card.g-admin { --g: #a78bfa; }
 .nav-group { display: flex; align-items: center; gap: 7px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 700; padding: 6px 8px 5px; width: 100%; border: 0; background: none; border-radius: 7px; cursor: pointer; text-align: left; font-family: inherit; }
 .nav-group:hover { color: var(--text); }
 .nav-group:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }

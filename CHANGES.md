@@ -1,3 +1,13 @@
+# 17 November 2026 — Party Ledger Adjustment menu card
+
+- Side menu: a new card "Party Ledger Adjustment" above Money & Reports with two pages, Customer Ledger Adjustment (/customer-ledger-adjustment) and Supplier Ledger Adjustment (/supplier-ledger-adjustment). Admin only. The pages are placeholders ("Coming soon"); the adjustment itself is not built yet.
+- Tests: party-ledger-adjustment.spec.js.
+
+# 17 November 2026 — no full-screen flicker when a page opens for the first time
+
+- Opening a page for the first time replaced the whole screen (menu included) with the loading placeholder for a moment, because the page's file was still being fetched. The placeholder now sits inside the content area only (Layout.jsx), the previous page stays until the new one is ready (`v7_startTransition` on the router), and after sign-in the page files are fetched quietly in the background (skipped when the browser's data-saver is on).
+- Tests: page-open-no-flicker.spec.js (two browser tests; both fail on the old code).
+
 # 17 November 2026 — three fixes (pending push)
 
 - Pay supplier: switching the type to Rebate and back swapped one window for another and replayed the opening animation (a visible flicker). A window that replaces another now appears at once (Modal `instant`).

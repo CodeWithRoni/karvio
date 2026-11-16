@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '../lib/store';
-import { Btn } from './ui';
+import { Btn, Loading } from './ui';
 import { isOffline, endpoint } from '../lib/api';
 import { saveBrand } from '../lib/brand';
 import NavIcon from './NavIcon';
@@ -50,6 +50,9 @@ export const NAV = [
   { to: '/purchases', label: 'Purchases & returns', perm: 'purchase', key: '6' },
   { to: '/suppliers', label: 'Suppliers', perm: 'suppliers' },
   { to: '/warranty', label: 'Warranty claims', perm: 'warranty', key: '7' },
+  { group: 'Party Ledger Adjustment' },
+  { to: '/customer-ledger-adjustment', label: 'Customer Ledger Adjustment', perm: '*' }, // '*' = admin only
+  { to: '/supplier-ledger-adjustment', label: 'Supplier Ledger Adjustment', perm: '*' },
   { group: 'Money & Reports' },
   { to: '/accounts', label: 'Cash, bank & MFS', perm: 'accounts' },
   { to: '/profit', label: 'Profit', perm: ['reports', 'cost'] },
@@ -111,7 +114,7 @@ export default function Layout() {
   const visible = items.filter((n, i) => !n.group || (items[i + 1] && !items[i + 1].group));
   const groups = [];
   visible.forEach((n) => { if (n.group) groups.push({ title: n.group, links: [] }); else if (groups.length) groups[groups.length - 1].links.push(n); });
-  const tone = { Search: 'g-search', 'Daily Work': 'g-daily', Stock: 'g-stock', 'Money & Reports': 'g-money', Admin: 'g-admin' };
+  const tone = { Search: 'g-search', 'Daily Work': 'g-daily', Stock: 'g-stock', 'Party Ledger Adjustment': 'g-adjust', 'Money & Reports': 'g-money', Admin: 'g-admin' };
 
   return (
     <div className={`shell ${open ? 'nav-open' : ''} ${hidden ? 'nav-hidden' : ''} ${showKeys ? 'show-keys' : ''}`} onClick={(e) => open && e.target === e.currentTarget && setOpen(false)}>
@@ -151,7 +154,8 @@ export default function Layout() {
           <button onClick={() => setOpen(true)} aria-label="Open menu"><DoorIcon open={false} size={18} /></button>
           <span>{settings.shop_name || 'Karvio'}</span>
         </div>
-        <main className="content"><Outlet /></main>
+        {/* A page whose file is still loading shows its placeholder here only: the menu never leaves the screen. */}
+        <main className="content"><Suspense fallback={<Loading />}><Outlet /></Suspense></main>
       </div>
     </div>
   );

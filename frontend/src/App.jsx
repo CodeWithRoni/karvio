@@ -8,30 +8,42 @@ import Login from './pages/Login';
 import { NativeShell } from './components/NativeShell';
 import SelectPopup from './components/SelectPopup';
 
-// Route-level code splitting keeps the first load fast.
-const Dashboard = lazy(() => import('./pages/Dashboard'));
-const POS = lazy(() => import('./pages/POS'));
-const Sales = lazy(() => import('./pages/Sales'));
-const PCBuilder = lazy(() => import('./pages/PCBuilder'));
-const Customers = lazy(() => import('./pages/Customers'));
-const Collection = lazy(() => import('./pages/Collection'));
-const Payment = lazy(() => import('./pages/Payment'));
-const Suppliers = lazy(() => import('./pages/Suppliers'));
-const Stock = lazy(() => import('./pages/Stock'));
-const Purchases = lazy(() => import('./pages/Purchases'));
-const Prices = lazy(() => import('./pages/Prices'));
-const Barcodes = lazy(() => import('./pages/Barcodes'));
-const Warranty = lazy(() => import('./pages/Warranty'));
-const Repairs = lazy(() => import('./pages/Repairs'));
-const Service = lazy(() => import('./pages/Service'));
-const History = lazy(() => import('./pages/History'));
-const Accounts = lazy(() => import('./pages/Accounts'));
-const Expenses = lazy(() => import('./pages/Expenses'));
-const Profit = lazy(() => import('./pages/Profit'));
-const Reports = lazy(() => import('./pages/Reports'));
-const Users = lazy(() => import('./pages/Users'));
-const Activity = lazy(() => import('./pages/Activity'));
-const Settings = lazy(() => import('./pages/Settings'));
+// Route-level code splitting keeps the first load fast. Once signed in, the pages are fetched quietly in the
+// background (preloadPages), so opening a page for the first time does not wait for its file.
+const loaders = [];
+const page = (load) => { loaders.push(load); return lazy(load); };
+let preloaded = false;
+function preloadPages() {
+  if (preloaded || navigator.connection?.saveData) return;
+  preloaded = true;
+  const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 300));
+  const next = (i) => { if (i < loaders.length) idle(() => loaders[i]().catch(() => {}).finally(() => next(i + 1))); };
+  setTimeout(() => next(0), 1500);
+}
+const Dashboard = page(() => import('./pages/Dashboard'));
+const POS = page(() => import('./pages/POS'));
+const Sales = page(() => import('./pages/Sales'));
+const PCBuilder = page(() => import('./pages/PCBuilder'));
+const Customers = page(() => import('./pages/Customers'));
+const Collection = page(() => import('./pages/Collection'));
+const Payment = page(() => import('./pages/Payment'));
+const LedgerAdjustment = page(() => import('./pages/LedgerAdjustment'));
+const Suppliers = page(() => import('./pages/Suppliers'));
+const Stock = page(() => import('./pages/Stock'));
+const Purchases = page(() => import('./pages/Purchases'));
+const Prices = page(() => import('./pages/Prices'));
+const Barcodes = page(() => import('./pages/Barcodes'));
+const Warranty = page(() => import('./pages/Warranty'));
+const Repairs = page(() => import('./pages/Repairs'));
+const Service = page(() => import('./pages/Service'));
+const History = page(() => import('./pages/History'));
+const Accounts = page(() => import('./pages/Accounts'));
+const Expenses = page(() => import('./pages/Expenses'));
+const Profit = page(() => import('./pages/Profit'));
+const Reports = page(() => import('./pages/Reports'));
+const Users = page(() => import('./pages/Users'));
+const Activity = page(() => import('./pages/Activity'));
+const Settings = page(() => import('./pages/Settings'));
 const PublicInvoice = lazy(() => import('./pages/PublicInvoice'));
 const PublicQuote = lazy(() => import('./pages/PublicQuote'));
 
@@ -77,6 +89,7 @@ export default function App() {
 
   useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
   useEffect(() => { if (!pub && !pubQuote && token && !user && endpoint()) boot().catch(() => {}); }, [pub, pubQuote, token, user, boot]);
+  useEffect(() => { if (user && !pub && !pubQuote) preloadPages(); }, [user, pub, pubQuote]);
 
   let body;
   if (pubQuote) body = <Suspense fallback={<Loading />}><PublicQuote token={pubQuote} /></Suspense>;
@@ -90,7 +103,7 @@ export default function App() {
     );
   } else {
     body = (
-      <HashRouter>
+      <HashRouter future={{ v7_startTransition: true }}>
         <Suspense fallback={<Loading />}>
           <Routes>
             <Route element={<Layout />}>
@@ -105,6 +118,8 @@ export default function App() {
               <Route path="collection/:id" element={<Guard perm="customers"><Collection /></Guard>} />
               <Route path="payment" element={<Guard perm="suppliers"><Payment /></Guard>} />
               <Route path="payment/:id" element={<Guard perm="suppliers"><Payment /></Guard>} />
+              <Route path="customer-ledger-adjustment" element={<Guard perm="*"><LedgerAdjustment kind="customer" /></Guard>} />
+              <Route path="supplier-ledger-adjustment" element={<Guard perm="*"><LedgerAdjustment kind="supplier" /></Guard>} />
               <Route path="suppliers" element={<Guard perm="suppliers"><Suppliers /></Guard>} />
               <Route path="suppliers/:id" element={<Guard perm="suppliers"><Suppliers /></Guard>} />
               <Route path="stock" element={<Stock />} />
