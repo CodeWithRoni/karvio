@@ -1484,3 +1484,9 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
 .promise-bar { padding: 8px 12px; }
 .promise-bar:not(.late) { border-color: var(--line); background: var(--panel-2); }
 .next-due .field-hint b { color: var(--warn); }
+
+/* A window that replaces another one (type switch) appears at once */
+.modal-bg.instant, .modal-bg.instant > .modal { animation: none; }
+.sw-lot { display: grid; grid-template-columns: 1fr 170px auto; gap: 8px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 13.5px; }
+.sw-lot:last-child { border-bottom: 0; }
+.sw-lot small { display: block; color: var(--muted); font-size: 12px; }

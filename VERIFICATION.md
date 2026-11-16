@@ -1,5 +1,6 @@
 # Review fixes — verification (15 November 2026, not yet pushed)
 
+- 17 November 2026, three fixes (type switch flicker, profile over the edit form, supplier warranty from the stock report): npm test, test:supabase, test:performance, build and 184/184 Playwright tests passed locally.
 - 17 November 2026, Collection / Payment pages and purchase detail layout: npm test, build and 180/180 Playwright tests passed locally. With the next payment date: npm test, test:supabase, test:performance (features-6.mjs: 13 checks), build and 181 Playwright tests passed (one test's dialog locator was made exact after it matched two windows).
 - 16 November 2026, supplier rebates: npm test, test:supabase, test:performance (features-5.mjs: 35 checks), build and 178/178 Playwright tests passed locally.
 - 16 November 2026, five features (slow stock, owner's money, day lock, WhatsApp, devices & logins): npm test, test:supabase, test:performance (features-4.mjs: 33 checks), build and 176/176 Playwright tests passed locally.

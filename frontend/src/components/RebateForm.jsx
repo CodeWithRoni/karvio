@@ -28,7 +28,7 @@ export default function RebateForm({ supplierId, name, balance, types, onType, p
   };
   const kinds = opts.data?.kinds || { invoice: 'Invoice rebate', target: 'Target bonus', price: 'Price protection', cash: 'Cash payment discount', other: 'Other rebate' };
   return (
-    <Modal open onClose={onClose} size="sm" title={`${pending ? 'Receive promised rebate' : 'Supplier rebate'} — ${name}`}
+    <Modal open onClose={onClose} size="sm" instant={!!types} title={`${pending ? 'Receive promised rebate' : 'Supplier rebate'} — ${name}`}
       footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} disabled={bad || noReason} onClick={save}>{promised ? 'Save as promised' : 'Save rebate'}</Btn></>}>
       <div className="form">
         {types && <Field label="Type" wide><select value="rebate" onChange={(e) => onType(e.target.value)}>{types.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>}

@@ -1,3 +1,10 @@
+# 17 November 2026 — three fixes (pending push)
+
+- Pay supplier: switching the type to Rebate and back swapped one window for another and replayed the opening animation (a visible flicker). A window that replaces another now appears at once (Modal `instant`).
+- Customers / Suppliers: Edit details opened the form with the profile window still on screen over it. The profile now closes while the form is open and returns after saving.
+- Stock summary report (the dashboard's "Supplier warranty not set" tile opens it): clicking a product opens its purchase (the same window as on the Purchases page) so the supplier warranty can be set for any item of that invoice; when stock comes from several purchases a short list asks which one to open (needs the Purchases permission). Stock rows carry unset_lots.
+- Tests: three more browser tests in features-6.spec.js.
+
 # 17 November 2026 — Collection and Payment pages; purchase detail layout (pending push)
 
 - Daily work has two new pages. Collection (/collection, Customers permission): customer dues, ledger, collecting payments, returning an advance, due reminders, statements. Payment (/payment, Suppliers permission): what we owe, ledger, paying suppliers, refunds, rebates and promised rebates. Both open on the people with a balance (tabs: With dues / Payable, Advance, All).

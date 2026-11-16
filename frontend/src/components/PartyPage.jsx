@@ -1,6 +1,6 @@
 // Customers / Suppliers are plain directories (mode "directory": names, phones, addresses).
 // Collection / Payment (mode "money") show the dues, the ledger and take or make payments.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pager, DEFAULT_PAGE_SIZE } from './Pager';
 import { useNavigate, useParams } from 'react-router-dom';
 import { partyStatements } from '../lib/partyStatements';
@@ -56,7 +56,7 @@ export default function PartyPage({ kind, mode = 'directory' }) {
       <PartyList kind={kind} mode={mode} filter={filter} rows={rows} loading={list.loading} onOpen={canManage ? (r) => nav(`${path}/${r.id}`) : undefined} />
       {edit && <PartyForm kind={kind} initial={edit} onClose={() => setEdit(null)} onSaved={refreshAll} />}
       {id && canManage && money_ && <PartyDetail kind={kind} id={id} onClose={() => nav(path)} onChanged={list.reload} />}
-      {id && canManage && !money_ && <PartyProfile kind={kind} id={id} list={list.data} onClose={() => nav(path)} onEdit={startEdit} onMoney={() => nav(`${c.moneyPath}/${id}`)} onDeleted={() => { nav(path); refreshAll(); }} />}
+      {id && canManage && !money_ && !edit && <PartyProfile kind={kind} id={id} list={list.data} onClose={() => nav(path)} onEdit={startEdit} onMoney={() => nav(`${c.moneyPath}/${id}`)} onDeleted={() => { nav(path); refreshAll(); }} />}
     </>
   );
 }
@@ -310,7 +310,9 @@ function PaymentForm({ kind, id, name, balance, accounts, onClose, onDone }) {
   const [print, setPrint] = useState(kind === 'customer');
   const [busy, run] = useAction();
   useEffect(() => { if (!f.account_id && accounts[0]) setF((x) => ({ ...x, account_id: accounts[0].id })); }, [accounts, f.account_id]);
-  if (kind === 'supplier' && f.direction === 'rebate') return <RebateForm supplierId={id} name={name} balance={balance} types={c.dirs} onType={(v) => setF({ ...f, direction: v })} onClose={onClose} onDone={onDone} />;
+  // Switching the type swaps this window for the rebate one (and back): no opening animation then, or the screen flickers.
+  const swapped = useRef(false);
+  if (kind === 'supplier' && f.direction === 'rebate') { swapped.current = true; return <RebateForm supplierId={id} name={name} balance={balance} types={c.dirs} onType={(v) => setF({ ...f, direction: v })} onClose={onClose} onDone={onDone} />; }
   const returningAdvance = kind === 'customer' && f.direction === 'pay';
   const availableAdvance = Math.max(-Number(balance || 0), 0);
   const invalidAmount = !Number.isFinite(Number(f.amount)) || Number(f.amount) <= 0 || (returningAdvance && Number(f.amount) > availableAdvance + 0.005);
@@ -324,7 +326,7 @@ function PaymentForm({ kind, id, name, balance, accounts, onClose, onDone }) {
     onDone(); onClose();
   };
   return (
-    <Modal open onClose={onClose} size="sm" title={`${c.payLabel} — ${name}`} footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} disabled={invalidAmount} onClick={save}>Save payment</Btn></>}>
+    <Modal open onClose={onClose} size="sm" instant={swapped.current} title={`${c.payLabel} — ${name}`} footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} disabled={invalidAmount} onClick={save}>Save payment</Btn></>}>
       <div className="form">
         <Field label="Type" wide><select value={f.direction} onChange={(e) => setF({ ...f, direction: e.target.value })}>{c.dirs.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
         <Field label="Amount" wide hint={returningAdvance ? `Available advance ${money(availableAdvance)}. Refund cannot exceed this amount.` : `Current balance ${money(balance)}`}><input type="number" step="any" min="0" max={returningAdvance ? availableAdvance : undefined} value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></Field>

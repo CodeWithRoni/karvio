@@ -114,3 +114,59 @@ test('a part payment asks for the next payment date and reminds on the dashboard
   await row.getByRole('button', { name: 'Dismiss' }).click();
   await expect(page.locator('#reminders .rem-row').filter({ hasText: c.name })).toHaveCount(0);
 });
+
+test('editing a customer from the directory closes the profile window first', async ({ page, request }) => {
+  const c = await call(request, 'customer.save', { name: `Edit me ${Date.now()}`, phones: '015' + String(Date.now()).slice(-8) });
+  await page.goto(`/#/customers/${c.id}`);
+  await page.getByRole('dialog', { name: c.name, exact: true }).getByRole('button', { name: 'Edit details' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(1);
+  const form = page.getByRole('dialog', { name: `Edit ${c.name}` });
+  await form.getByLabel('Note').fill('VIP');
+  await form.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByRole('dialog', { name: c.name, exact: true })).toContainText('VIP');
+  await expect(page.getByRole('dialog')).toHaveCount(1);
+});
+
+test('switching the pay-supplier type to rebate and back does not replay the opening animation', async ({ page, request }) => {
+  const sup = await call(request, 'supplier.save', { name: `Flick sup ${Date.now()}` });
+  await page.goto(`/#/payment/${sup.id}`);
+  await page.getByRole('dialog', { name: sup.name, exact: true }).getByRole('button', { name: 'Pay supplier' }).click();
+  await expect(page.locator('.modal-bg').last()).not.toHaveClass(/instant/);
+  await page.getByRole('dialog', { name: /^Pay supplier/ }).getByLabel('Type').selectOption('rebate');
+  await expect(page.getByRole('dialog', { name: /^Supplier rebate/ })).toBeVisible();
+  await expect(page.locator('.modal-bg').last()).toHaveClass(/instant/);
+  await page.getByRole('dialog', { name: /^Supplier rebate/ }).getByLabel('Type').selectOption('pay');
+  await expect(page.getByRole('dialog', { name: /^Pay supplier/ })).toBeVisible();
+  await expect(page.locator('.modal-bg').last()).toHaveClass(/instant/);
+});
+
+test('stock report: click a product without supplier warranty to open its purchase and set the date', async ({ page, request }) => {
+  const stamp = Date.now();
+  const sup = await call(request, 'supplier.save', { name: `Warr sup ${stamp}` });
+  const p = await call(request, 'product.save', { name: `Warr item ${stamp}`, sale_price: 150 });
+  const other = await call(request, 'product.save', { name: `Warr other ${stamp}`, sale_price: 90 });
+  const pur = (await call(request, 'purchase.create', { supplier_id: sup.id, date: today, items: [{ product_id: p.id, qty: 5, cost: 100, sale_price: 150 }, { product_id: other.id, qty: 2, cost: 50, sale_price: 90 }], payments: [] })).purchase;
+  await page.goto('/#/reports?type=stock_summary&filter=warranty_unknown');
+  await page.getByPlaceholder(/Search/).first().fill(p.name);
+  await page.locator('tbody tr').filter({ hasText: p.name }).first().click();
+  // one purchase behind this stock: the full purchase window opens, with every item of that invoice
+  const dlg = page.getByRole('dialog', { name: `Purchase ${pur.invoice_no}` });
+  await expect(dlg).toContainText(other.name);
+  await dlg.locator('tr').filter({ hasText: p.name }).getByRole('button', { name: 'Set supplier warranty' }).click();
+  const w = page.getByRole('dialog', { name: 'Supplier warranty expiry' });
+  await w.locator('.dinput input').fill('15/11/2030'); await w.locator('.dinput input').blur();
+  await w.getByRole('button', { name: 'Save warranty date' }).click();
+  await expect(dlg).toContainText('Supplier warranty: 15 Nov 2030');
+  expect((await call(request, 'purchase.detail', { id: pur.id })).items[0].supplier_warranty_expiry).toBe('2030-11-15');
+  await dlg.getByRole('button', { name: 'Close' }).click();
+  await expect(page.locator('tbody tr').filter({ hasText: p.name })).toHaveCount(0);
+  // two purchases behind one product: choose which purchase to open
+  const pur2 = (await call(request, 'purchase.create', { supplier_id: sup.id, date: today, items: [{ product_id: other.id, qty: 3, cost: 50, sale_price: 90 }], payments: [] })).purchase;
+  await page.reload();
+  await page.getByPlaceholder(/Search/).first().fill(other.name);
+  await page.locator('tbody tr').filter({ hasText: other.name }).first().click();
+  const pick = page.getByRole('dialog', { name: `Supplier warranty not set — ${other.name}` });
+  await expect(pick).toContainText(pur.invoice_no);
+  await pick.getByRole('button', { name: `Open purchase ${pur2.invoice_no}` }).click();
+  await expect(page.getByRole('dialog', { name: `Purchase ${pur2.invoice_no}` })).toBeVisible();
+});

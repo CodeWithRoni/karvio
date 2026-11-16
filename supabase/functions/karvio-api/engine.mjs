@@ -4683,6 +4683,12 @@ function stockAnalysis_() {
       if (!l.expiry) row.warranty_unknown += l.qty; else if (l.expiry < today) row.expired += l.qty; else if (l.expiry <= soon) row.expiring += l.qty;
     });
     ['age3','age6','age12','age_unknown','expiring','expired','warranty_unknown'].forEach(function(k) { row[k] = round_(row[k], 4); });
+    // Purchase lines behind the "warranty not set" stock, so the date can be set straight from the report.
+    var unset = {}; remaining.forEach(function(l) {
+      if (l.expiry || !l.purchase_id) return;
+      var u = unset[l.id] = unset[l.id] || { item_id: l.id, purchase_id: l.purchase_id, invoice_no: l.invoice_no, supplier: l.supplier, date: l.date, qty: 0 }; u.qty = round_(u.qty + l.qty, 4);
+    });
+    if (Object.keys(unset).length) row.unset_lots = Object.keys(unset).map(function(k) { return unset[k]; }).sort(function(a, b) { return String(a.date).localeCompare(String(b.date)); });
     rows.push(row);
   });
   return _mem.__stockAnalysis = { today: today, rows: rows };

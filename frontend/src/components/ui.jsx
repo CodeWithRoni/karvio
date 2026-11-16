@@ -176,7 +176,7 @@ export function Tabs({ tabs, value, onChange }) {
   );
 }
 
-export function Modal({ open, title, onClose, children, footer, size = 'md' }) {
+export function Modal({ open, title, onClose, children, footer, size = 'md', instant = false }) {
   const ref = useRef();
   // Pages that refresh in the background pass a new onClose on every render; keep the latest in a ref so
   // a refresh never re-runs the "focus the first field" step and pulls the cursor out of what is being typed.
@@ -192,7 +192,7 @@ export function Modal({ open, title, onClose, children, footer, size = 'md' }) {
   }, [open]);
   if (!open) return null;
   return (
-    <div className="modal-bg" onMouseDown={(e) => e.target === e.currentTarget && onClose?.()}>
+    <div className={`modal-bg ${instant ? 'instant' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && onClose?.()}>
       <div className={`modal modal-${size}`} ref={ref} role="dialog" aria-modal="true" aria-label={title}>
         <div className="modal-head"><h2>{title}</h2><button className="x" onClick={onClose} aria-label="Close">×</button></div>
         <div className="modal-body">{children}</div>

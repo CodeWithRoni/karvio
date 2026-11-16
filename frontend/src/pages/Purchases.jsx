@@ -401,7 +401,7 @@ function NewPurchase({ onDone }) {
   );
 }
 
-function PurchaseDetail({ id, onClose, onChanged }) {
+export function PurchaseDetail({ id, onClose, onChanged }) {
   const can = useStore((s) => s.can);
   const { data, loading, error, reload } = useApi('purchase.detail', { id });
   const [ret, setRet] = useState(false);
