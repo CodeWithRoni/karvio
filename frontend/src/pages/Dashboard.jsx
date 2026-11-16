@@ -17,8 +17,8 @@ const HISTORY = [
   ['expenses', 'Expenses', 'expense', '', ['/expenses', 'Open expenses', 'expenses']],
   ['gross_profit', 'Gross profit', '', 'pl', null],
   ['net_profit', 'Net profit', '', 'pl', null],
-  ['receivable', 'Receivable', 'invoice with due', 'warn', ['/customers', 'Open customer dues', null]],
-  ['payable', 'Payable', 'purchase with due', 'down', ['/suppliers', 'Open suppliers', 'suppliers']]
+  ['receivable', 'Receivable', 'invoice with due', 'warn', ['/collection', 'Open customer dues', 'customers']],
+  ['payable', 'Payable', 'purchase with due', 'down', ['/payment', 'Open supplier dues', 'suppliers']]
 ];
 const SCOPES = [['today', 'Today'], ['month', 'This month'], ['total', 'All time']];
 const SCOPE_KEY = 'karvio_dash_scope';
@@ -137,8 +137,8 @@ export default function Dashboard() {
         {!d.limited && on('gross_profit') && c.gross_profit !== undefined && <Kpi label="Gross profit" value={money(c.gross_profit)} tone={plTone(c.gross_profit)} sub={y ? '' : 'Sales − cost − returns'}><Delta now={c.gross_profit} before={y?.gross_profit} /></Kpi>}
         {!d.limited && on('expenses') && <Kpi label="Expenses" value={money(c.expenses)} sub={y ? '' : 'Paid from accounts'}><Delta now={c.expenses} before={y?.expenses} lowerIsBetter /></Kpi>}
         {d.limited && on('new_dues') && <Kpi label="New dues on sales" value={money(c.due)} tone={c.due ? 'warn' : ''} sub="Left unpaid on your invoices" />}
-        {!d.limited && on('receivable') && <Kpi label="Receivable" value={money(d.receivable)} tone={d.receivable > 0 ? 'warn' : ''} to="/customers" title="Open customer dues" sub="All time · customers owe you" />}
-        {!d.limited && on('payable') && <Kpi label="Payable" value={money(d.payable)} tone={d.payable > 0 ? 'down' : ''} to={can('suppliers') ? '/suppliers' : undefined} title="Open supplier balances" sub="All time · you owe suppliers" />}
+        {!d.limited && on('receivable') && <Kpi label="Receivable" value={money(d.receivable)} tone={d.receivable > 0 ? 'warn' : ''} to={can('customers') ? '/collection' : undefined} title="Open customer dues" sub="All time · customers owe you" />}
+        {!d.limited && on('payable') && <Kpi label="Payable" value={money(d.payable)} tone={d.payable > 0 ? 'down' : ''} to={can('suppliers') ? '/payment' : undefined} title="Open supplier balances" sub="All time · you owe suppliers" />}
       </div>
       {!d.limited && (on('sales_returns') || on('purchases') || on('purchase_returns') || on('net_profit') || on('new_dues')) && (
         <div className="kpi-mini">

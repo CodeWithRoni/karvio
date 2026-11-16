@@ -17,6 +17,8 @@ const shapes = {
   '/barcodes': <><path d="M3 7V3h4m10 0h4v4M3 17v4h4m10 0h4v-4M6 7v10m3-10v10m3-10v10m3-10v10m3-10v10"/></>,
   '/prices': <><path d="M3 3h8l10 10-8 8L3 11V3Z"/><circle cx="7.5" cy="7.5" r="1"/><path d="m12 11 4 4m-4 0 4-4"/></>,
   '/purchases': <><path d="M2 3h3l3 13h11l3-9H6m3 13h.01M18 20h.01M13 3v8m-3-3 3 3 3-3"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></>,
+  '/collection': <><path d="M12 3v12m0 0-4-4m4 4 4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></>,
+  '/payment': <><path d="M12 15V3m0 0-4 4m4-4 4 4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></>,
   '/suppliers': <><path d="M2 5h12v12H2V5Zm12 4h4l4 4v4h-8"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="18" r="3"/></>,
   '/warranty': <><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z"/><path d="m8 12 3 3 5-6"/></>,
   '/accounts': <><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 8V6a2 2 0 0 1 2-2l12-2v3m-2 7h6v5h-6a2.5 2.5 0 0 1 0-5Z"/><path d="M17 14.5h.01"/></>,

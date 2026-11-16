@@ -1460,3 +1460,27 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
 .rb-split { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-bottom: 12px; }
 .rb-split .card { padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; }
 .rb-split .card > div { display: flex; justify-content: space-between; gap: 10px; }
+
+/* Purchase detail: item line, then its serial numbers in a short scrolling box */
+.pd-items td { vertical-align: top; }
+.pd-items .pd-name { min-width: 260px; }
+.pd-items .pd-name > b { display: block; line-height: 1.35; }
+.pd-items .pd-desc { font-size: 12px; margin-top: 2px; }
+.pd-warranty { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; margin-top: 4px; font-size: 12px; }
+.pd-items tr.pd-has-sn > td { border-bottom: 0; padding-bottom: 6px; }
+.pd-items tr.pd-sn-row > td { padding-top: 0; }
+.pd-sn-head { display: flex; gap: 8px; align-items: baseline; font-size: 12px; margin-bottom: 5px; }
+.pd-sn-head b { letter-spacing: .04em; text-transform: uppercase; font-size: 11px; color: var(--muted); }
+.pd-sn { display: flex; flex-wrap: wrap; gap: 5px; max-height: 104px; overflow-y: auto; padding: 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-2); scrollbar-width: thin; }
+.pd-sn:focus-visible { outline: 2px solid var(--fiber); outline-offset: 1px; }
+
+/* Customer / supplier profile (directory pages) */
+.pp-kv { grid-template-columns: 1fr; }
+.pp-note { margin: 12px 0 0; font-size: 12.5px; }
+
+/* Promised date for the rest of a customer's due */
+.pl-promise { margin-left: 6px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.pl-promise.late { color: var(--warn); font-weight: 700; }
+.promise-bar { padding: 8px 12px; }
+.promise-bar:not(.late) { border-color: var(--line); background: var(--panel-2); }
+.next-due .field-hint b { color: var(--warn); }

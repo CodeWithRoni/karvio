@@ -3,7 +3,7 @@ import CameraScanButton from '../components/CameraScanButton';
 import { purchaseDetails } from '../lib/purchaseDetails';
 import { Pager, DEFAULT_PAGE_SIZE } from '../components/Pager';
 import { returnValue } from '../lib/returnValue';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, Fragment } from 'react';
 import { Link } from 'react-router-dom';
 import { useStore, shopDay } from '../lib/store';
 import { api } from '../lib/api';
@@ -432,11 +432,27 @@ function PurchaseDetail({ id, onClose, onChanged }) {
           {data.supplier && <div><span>Supplier phone</span><b>{splitList(data.supplier.phones || '').join(', ') || '—'}</b></div>}
           {data.supplier?.address && <div><span>Supplier address</span><b>{data.supplier.address}</b></div>}
         </div>
-        <div className="dt" style={{ marginTop: 14 }}><div className="dt-scroll"><table>
-          <thead><tr><th>Item</th><th>Unit</th><th>Serial numbers</th><th className="r">Qty</th><th className="r">Purchase price</th><th className="r">Amount</th></tr></thead>
-          <tbody>{data.items.map((i) => <tr key={i.id}><td><b>{i.name}</b>{i.description && <div className="muted" style={{ fontSize: 12 }}>{i.description}</div>}<div className="muted" style={{fontSize:12}}>Supplier warranty: {i.supplier_warranty_expiry ? fdate(i.supplier_warranty_expiry) : 'Not set'}</div>{p.status==='active' && can('purchase') && <button className="link" onClick={()=>setWarranty(i)}>Set supplier warranty</button>}</td><td>{i.unit}</td>
-            <td>{splitList(String(i.serials || '').replace(/\n/g, ',')).map((x) => <span key={x} className="sn-chip ro">{x}</span>)}</td>
-            <td className="r num">{fqty(i.qty, i.unit)}</td><td className="r num">{money(i.cost, false)}</td><td className="r num">{money(i.total, false)}</td></tr>)}</tbody>
+        <div className="dt" style={{ marginTop: 14 }}><div className="dt-scroll"><table className="pd-items">
+          <thead><tr><th>Item</th><th>Unit</th><th className="r">Qty</th><th className="r">Purchase price</th><th className="r">Amount</th></tr></thead>
+          <tbody>{data.items.map((i) => {
+            const serials = splitList(String(i.serials || '').replace(/\n/g, ','));
+            return (
+              <Fragment key={i.id}>
+                <tr className={serials.length ? 'pd-has-sn' : ''}>
+                  <td className="pd-name"><b>{i.name}</b>{i.description && i.description !== i.name && <div className="muted pd-desc">{i.description}</div>}
+                    <div className="pd-warranty"><span className="muted">Supplier warranty: {i.supplier_warranty_expiry ? fdate(i.supplier_warranty_expiry) : 'Not set'}</span>{p.status === 'active' && can('purchase') && <button className="link" onClick={() => setWarranty(i)}>Set supplier warranty</button>}</div>
+                  </td>
+                  <td>{i.unit}</td><td className="r num">{fqty(i.qty, i.unit)}</td><td className="r num">{money(i.cost, false)}</td><td className="r num">{money(i.total, false)}</td>
+                </tr>
+                {serials.length > 0 && (
+                  <tr className="pd-sn-row"><td colSpan={5}>
+                    <div className="pd-sn-head"><b>Serial numbers</b><span className="muted">{serials.length}</span></div>
+                    <div className="pd-sn" tabIndex={0} role="group" aria-label={`Serial numbers of ${i.name}`}>{serials.map((x) => <span key={x} className="sn-chip ro">{x}</span>)}</div>
+                  </td></tr>
+                )}
+              </Fragment>
+            );
+          })}</tbody>
         </table></div></div>
         {data.rebates?.length > 0 && <p className="rb-line">Supplier rebate received: <b>{money(data.rebates.reduce((a, r) => a + r.amount, 0))}</b> <span className="muted">({data.rebates.map((r) => `${r.ref_no} · ${r.kind_label} · ${fdate(r.date)}`).join(', ')})</span></p>}
         {data.returns.length > 0 && <p className="muted">Returns: {data.returns.map((r) => `${r.return_no} (${money(r.total, false)}, ${r.status})`).join(', ')}</p>}

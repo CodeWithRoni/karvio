@@ -20,7 +20,8 @@ async function setup(request) {
   return { stamp, sup, pur };
 }
 const openSupplier = async (page, name) => {
-  await page.goto('/#/suppliers');
+  await page.goto('/#/payment');
+  await page.getByRole('tab', { name: 'All', exact: true }).click();
   await page.getByLabel('Search suppliers').fill(name);
   await page.getByText(name, { exact: true }).first().click();
   return page.getByRole('dialog', { name });

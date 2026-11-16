@@ -31,10 +31,10 @@ test.beforeEach(async ({ page }) => {
 test('repair job: receive, mark completed, deliver with an invoice', async ({ page, request }) => {
   const errors = []; page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/#/customers');
-  // the menu item sits right under Customers & dues (wait for the menu first)
+  // the menu item sits right under Customers, Collection and Payment (wait for the menu first)
   await expect(page.locator('nav a', { hasText: 'Repairs' })).toBeVisible();
   const links = await page.locator('nav a').allTextContents();
-  const i = links.findIndex((t) => t.includes('Customers & dues'));
+  const i = links.findIndex((t) => t.trim().startsWith('Payment'));
   expect(links[i + 1]).toContain('Repairs');
   await page.locator('nav a', { hasText: 'Repairs' }).click();
   await expect(page.locator('.page-head h1')).toHaveText('Repairs');

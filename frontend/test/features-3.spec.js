@@ -72,7 +72,7 @@ test('due reminder SMS goes to the ticked customers with dues', async ({ page, r
   const b = await call(request, 'customer.save', { name: `Remind B ${stamp}`, phones: '' });
   for (const c of [a, b]) await call(request, 'sale.create', { customer_id: c.id, items: [{ product_id: svc.id, qty: 1, price: 150000 }], payments: [] });
   await call(request, 'settings.save', { values: { sms_enabled: 'false' } });
-  await page.goto('/#/customers');
+  await page.goto('/#/collection');
   await page.getByRole('tab', { name: 'With dues' }).click();
   await page.getByLabel('Search customers').fill(`Remind ${stamp}`);
   const btn = page.getByRole('button', { name: /^Send due reminder/ });
@@ -135,7 +135,8 @@ test('due reminder counts only the ticked customers under the open tab', async (
   const owes = await call(request, 'customer.save', { name: `Tab owes ${stamp}`, phones: ph() });
   await call(request, 'customer.save', { name: `Tab clear ${stamp}`, phones: ph() });
   await call(request, 'sale.create', { customer_id: owes.id, items: [{ product_id: svc.id, qty: 1, price: 500 }], payments: [] });
-  await page.goto('/#/customers');
+  await page.goto('/#/collection');
+  await page.getByRole('tab', { name: 'All', exact: true }).click();
   await page.getByLabel('Search customers').fill(`Tab ${stamp}`);
   await page.getByLabel(`Select Tab owes ${stamp}`).check();
   await page.getByLabel(`Select Tab clear ${stamp}`).check();

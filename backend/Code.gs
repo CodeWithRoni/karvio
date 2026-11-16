@@ -1325,9 +1325,10 @@ function partyHistory_() {
   return history;
 }
 function customersList_() {
-  var bal = customerBalances_(), sb = null, history = partyHistory_().customer;
+  var bal = customerBalances_(), sb = null, history = partyHistory_().customer, promises = customerPromises_();
   return all_('Customers').map(function (c) {
-    var o = Object.assign({}, c); delete o._row; o.balance = bal[c.id] || 0; o.has_history = !!history[c.id]; o.combined = !!c.link_id;
+    var o = Object.assign({}, c); delete o._row; o.balance = bal[c.id] || 0;
+    if (promises[c.id] && o.balance > 0.005) o.next_payment_date = promises[c.id]; o.has_history = !!history[c.id]; o.combined = !!c.link_id;
     if (c.link_id) { sb = sb || supplierBalances_(); o.link_balance = sb[c.link_id] || 0; }
     return o;
   });
@@ -3453,7 +3454,10 @@ function customerPayment_(p, user) {
   var row = insert_('CustomerLedger', { date: date, customer_id: c.id, type: pay ? 'refund' : 'payment', ref_id: ref, ref_no: no, debit: pay ? amt : 0, credit: pay ? 0 : amt, note: (p.note || '') + ' [' + acc.name + ']', voided: false });
   audit_(user, 'customer_payment', { customer: c.name, amount: amt });
   var bal = customerBalances_()[c.id];
-  return { entry: row, date: date, balance: bal, receipt_no: no, customer: c.name, account: acc.name, amount: amt };
+  // Part payment with a date for the rest: remind on that day. Any other collection clears an older promise.
+  var t = today_(), next = !pay && bal > 0.005 && p.next_payment_date ? promiseDate_(p.next_payment_date, date > t ? date : t) : '';
+  if (!pay) customerPromiseSet_(c.id, next);
+  return { entry: row, date: date, balance: bal, receipt_no: no, customer: c.name, account: acc.name, amount: amt, next_payment_date: next };
 }
 function supplierPayment_(p, user) {
   var s = all_('Suppliers').filter(function (x) { return x.id === p.supplier_id; })[0]; if (!s) fail_('Supplier not found');
@@ -4426,14 +4430,38 @@ function salePromise_(p, user) {
   audit_(user, 'sale_promise', s.invoice_no + ' -> ' + (d || 'cleared'));
   return { id: s.id, next_payment_date: d };
 }
+/* ---- A customer's own promised date: set while collecting a part payment ("the rest on the 25th").
+ * It is about everything the customer still owes, not one invoice. Kept in Settings 'customer_promises' { customer id: date }. */
+function customerPromises_() { var m = null; try { m = JSON.parse(getSetting_('customer_promises', '{}')); } catch (e) {} return m && typeof m === 'object' && !Array.isArray(m) ? m : {}; }
+/** Set (date) or clear ('') the promise; a new promise replaces the dates on that customer's single invoices so one reminder shows. */
+function customerPromiseSet_(customerId, date) {
+  var m = customerPromises_(), had = m[customerId] || '';
+  if (date) m[customerId] = date; else delete m[customerId];
+  if (had !== (date || '')) setSetting_('customer_promises', JSON.stringify(m));
+  if (date) all_('Sales').forEach(function (x) { if (x.customer_id === customerId && x.status === 'active' && x.next_payment_date) update_('Sales', x.id, { next_payment_date: '' }); });
+}
+function customerPromise_(p, user) {
+  var c = all_('Customers').filter(function (x) { return x.id === p.customer_id; })[0]; if (!c) fail_('Customer not found');
+  var d = p.next_payment_date ? promiseDate_(p.next_payment_date, today_()) : '';
+  if (d && !((customerBalances_()[c.id] || 0) > 0.005)) fail_(c.name + ' owes nothing, so there is no payment to wait for');
+  customerPromiseSet_(c.id, d);
+  audit_(user, 'customer_promise', c.name + ' -> ' + (d || 'cleared'));
+  return { customer_id: c.id, next_payment_date: d };
+}
 /**
  * Collection reminders: due invoices whose promised payment date is today or already passed.
  * Use the same opening-debt/advance/return allocation as the invoice's current due.
  */
-function collectionReminders_(sales, today) {
+function collectionReminders_(sales, today, withCustomers) {
   var promised = sales.filter(function (s) { return s.customer_id && s.next_payment_date && s.due > 0.005; });
-  if (!promised.length) return [];
-  var bal = customerBalances_(), custs = indexBy_(all_('Customers')), due = saleOpenDues_(), out = [];
+  var own = withCustomers ? customerPromises_() : {}, ownIds = Object.keys(own).filter(function (id) { return own[id] <= today; });
+  if (!promised.length && !ownIds.length) return [];
+  var bal = customerBalances_(), custs = indexBy_(all_('Customers')), due = promised.length ? saleOpenDues_() : {}, out = [];
+  ownIds.forEach(function (id) {
+    var c = custs[id], left = round_(bal[id] || 0); if (!c || left <= 0.005) return;
+    out.push({ customer_id: id, customer_name: c.name, phone: parseList_(c.phones || '')[0] || '', sale_id: '', invoice_no: '', date: '', whole: true, next_payment_date: own[id],
+      overdue_days: Math.round((new Date(today + 'T12:00:00') - new Date(own[id] + 'T12:00:00')) / 864e5), invoice_due: left, remaining: left, customer_balance: left });
+  });
   promised.forEach(function (s) {
     var left = due[s.id] || 0;
     if (left <= 0.005 || s.next_payment_date > today) return;
@@ -4998,7 +5026,7 @@ function dashboard_(p, user) {
     series.push(row);
   }
   out.series = series;
-  out.reminders = collectionReminders_(sales, today);
+  out.reminders = collectionReminders_(sales, today, can_(user, 'customers'));
   if (user.role === 'admin') out.repair_alerts = repairAlerts_();
   // "Needs attention": finished repair jobs (fixed or failed) still waiting for the customer to collect them.
   if (can_(user, 'expenses')) out.recurring_due = recurringList_().due;
@@ -5404,6 +5432,7 @@ var ROUTES = {
   'serials.find':     r_(null, serialFind_),
   'product.history':  r_(null, function (p, u) { if (!can_(u, 'pos') && !can_(u, 'purchase')) fail_('Permission denied'); return productHistory_(p, u); }),
   'sale.promise':     r_('pos', salePromise_, true),
+  'customer.promise': r_('customers', customerPromise_, true),
   'pos.picks':        r_('pos', posPicks_),
   'audit.list':       r_('users', auditList_),
   'supplier.prices':  r_(null, supplierPrices_),

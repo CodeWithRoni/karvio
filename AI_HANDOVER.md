@@ -8,6 +8,8 @@ Day lock: acctTxn_ and voidRefs_('AccountTxns') call dayLockCheck_ (Settings 'da
 
 Supplier rebates: SupplierLedger rows of type 'rebate' (debit = amount, ref_id = linked purchase id or a fresh id, note = '<Kind label> — <reason>', see REBATE_KINDS); net profit everywhere adds rebateTotal_(from, to); promised ones wait in Settings 'rebates_pending'. Do not wrap <Tabs> in <Field> (a label names its first button after the whole label).
 
+components/PartyPage.jsx has two modes: "directory" (pages Customers, Suppliers: no money) and "money" (pages Collection, Payment: balances, ledger, payments, reminders, rebates). Link to dues with /collection/:id and /payment/:id.
+
 Monthly expense templates live in Settings 'recurring_expenses' (JSON; each keeps done {YYYY-MM: expense id} and since; status lists missed months up to 12 back); the daily summary's last send date in 'daily_summary_last'.
 
 Day close records live in AuditLog (action 'day_close', JSON detail) so no table or migration was needed; a counted difference is booked as an ordinary 'manual' deposit/withdrawal. The shop logo is a small data URL in Settings (shop_logo, max ~200 KB, validated server-side). The QR code library is vendored (frontend/src/lib/vendor/qrcode.mjs, MIT) because npm install is blocked locally by the xlsx CDN.

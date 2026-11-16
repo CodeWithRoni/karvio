@@ -1,3 +1,11 @@
+# 17 November 2026 — Collection and Payment pages; purchase detail layout (pending push)
+
+- Daily work has two new pages. Collection (/collection, Customers permission): customer dues, ledger, collecting payments, returning an advance, due reminders, statements. Payment (/payment, Suppliers permission): what we owe, ledger, paying suppliers, refunds, rebates and promised rebates. Both open on the people with a balance (tabs: With dues / Payable, Advance, All).
+- Customers and Suppliers are now plain directories: name, phones, address, All / Inactive, add, edit, delete. No balance column, ledger or payment button; a profile window has "Open in Collection" / "Open in Payment". Menu labels are "Customers" and "Suppliers". Dashboard Receivable / Payable and the reminder links go to the new pages.
+- Purchase detail: the item name has its own wide column and the serial numbers sit under the item in a short scrolling box with their count, so 100 serials no longer stretch the window.
+- Collecting less than a customer owes asks for an optional next payment date for the rest. On that day a reminder for everything the customer still owes appears under Collection reminders on the dashboard (Collect / New date / Dismiss); the date also shows in the Collection list and ledger. A later collection with a new date moves it, one without a date or a full payment clears it. Kept in Settings 'customer_promises'; action customer.promise; customer.payment takes next_payment_date.
+- Tests: backend/test/features-6.mjs (13 checks), frontend/test/features-6.spec.js (3 browser tests); older tests follow the new pages.
+
 # 16 November 2026 — supplier rebates (pending push)
 
 - Pay supplier has a third type, "Rebate / discount from supplier (no money moves)": it lowers what we owe, asks for no account, and never changes Cash, bank or MFS or any product cost. Kinds: invoice rebate, target bonus, price protection, cash payment discount, other. A reason is required; an optional purchase links the rebate to that invoice (shown on the purchase; its own due falls first). Ledger row type 'rebate', numbers RB-000001…; action supplier.rebate.

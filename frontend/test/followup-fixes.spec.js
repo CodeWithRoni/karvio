@@ -59,7 +59,7 @@ test('party Delete stays disabled at zero balance when cancelled payment history
   await call(request,'reverse',{type:supplier?'spay':'cpay',id:payment.entry.id,password:'admin123',reason:'Cancelled payment test'});
   await page.goto('/#/'+(supplier?'suppliers':'customers')+'/'+party.id);
   await expect(page.getByRole('dialog').getByRole('button',{name:'Delete',exact:true})).toBeDisabled();
-  await expect(page.getByRole('dialog')).toContainText('including cancelled entries');
+  await expect(page.getByRole('dialog')).toContainText('has history, so it cannot be deleted');
  }
  const unused=await call(request,'customer.save',{name:'Unused deletable profile'});await page.goto('/#/customers/'+unused.id);
  await expect(page.getByRole('dialog').getByRole('button',{name:'Delete',exact:true})).toBeEnabled();

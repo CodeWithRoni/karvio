@@ -17,13 +17,16 @@ export function CollectionReminders({ list, onChanged }) {
   const [edit, setEdit] = useState(null); // sale_id being re-dated
   const [date, setDate] = useState('');
   const [busy, setBusy] = useState('');
+  const key = (r) => r.sale_id || `c:${r.customer_id}`;
   if (!list || !list.length) return null;
   const total = list.reduce((a, r) => a + r.remaining, 0);
   const save = async (r, value) => {
-    setBusy(r.sale_id);
+    setBusy(key(r));
     try {
-      await api('sale.promise', { id: r.sale_id, next_payment_date: value });
-      toast(value ? `${r.invoice_no}: next payment date set to ${fdate(value)}` : `${r.invoice_no}: reminder removed`, 'ok');
+      if (r.whole) await api('customer.promise', { customer_id: r.customer_id, next_payment_date: value });
+      else await api('sale.promise', { id: r.sale_id, next_payment_date: value });
+      const what = r.whole ? r.customer_name : r.invoice_no;
+      toast(value ? `${what}: next payment date set to ${fdate(value)}` : `${what}: reminder removed`, 'ok');
       setEdit(null); onChanged?.();
     } catch (e) { toast(e.message, 'err'); } finally { setBusy(''); }
   };
@@ -35,10 +38,10 @@ export function CollectionReminders({ list, onChanged }) {
       </div>
       <div className="rem-list">
         {list.map((r) => (
-          <div className={`rem-row ${r.overdue_days > 0 ? 'late' : 'today'}`} key={r.sale_id}>
+          <div className={`rem-row ${r.overdue_days > 0 ? 'late' : 'today'}`} key={key(r)}>
             <div className="rem-who">
-              <Link to={`/customers/${r.customer_id}`}><b>{r.customer_name}</b></Link>
-              <small>{r.phone ? <a href={`tel:${r.phone}`}>{r.phone}</a> : 'No phone'} · <Link to={`/sales/${r.sale_id}`}>{r.invoice_no}</Link> · sold {fdate(r.date)}</small>
+              <Link to={`/collection/${r.customer_id}`}><b>{r.customer_name}</b></Link>
+              <small>{r.phone ? <a href={`tel:${r.phone}`}>{r.phone}</a> : 'No phone'} · {r.whole ? 'rest of the due, promised while paying' : <><Link to={`/sales/${r.sale_id}`}>{r.invoice_no}</Link> · sold {fdate(r.date)}</>}</small>
             </div>
             <div className="rem-when">
               <span className={`rem-tag ${r.overdue_days > 0 ? 'late' : 'today'}`}>{r.overdue_days > 0 ? `Overdue ${r.overdue_days} day${r.overdue_days === 1 ? '' : 's'}` : 'Payment due today'}</span>
@@ -46,17 +49,17 @@ export function CollectionReminders({ list, onChanged }) {
             </div>
             <div className="rem-amt"><b className="num">{money(r.remaining)}</b>{r.remaining < r.invoice_due - 0.004 && <small>of {money(r.invoice_due, false)} (part paid)</small>}</div>
             <div className="rem-act">
-              {edit === r.sale_id ? (
+              {edit === key(r) ? (
                 <>
-                  <DateInput min={localToday()} value={date} onChange={(e) => setDate(e.target.value)} aria-label={`New payment date for ${r.invoice_no}`} />
-                  <Btn size="sm" kind="primary" busy={busy === r.sale_id} disabled={!date} onClick={() => save(r, date)}>Save</Btn>
+                  <DateInput min={localToday()} value={date} onChange={(e) => setDate(e.target.value)} aria-label={`New payment date for ${r.whole ? r.customer_name : r.invoice_no}`} />
+                  <Btn size="sm" kind="primary" busy={busy === key(r)} disabled={!date} onClick={() => save(r, date)}>Save</Btn>
                   <Btn size="sm" onClick={() => setEdit(null)}>Cancel</Btn>
                 </>
               ) : (
                 <>
-                  <Link className="btn btn-sm btn-primary" to={`/customers/${r.customer_id}`}>Collect</Link>
-                  <Btn size="sm" onClick={() => { setEdit(r.sale_id); setDate(addDays(3)); }}>New date</Btn>
-                  <Btn size="sm" busy={busy === r.sale_id} onClick={() => save(r, '')} title="Stop reminding for this invoice">Dismiss</Btn>
+                  <Link className="btn btn-sm btn-primary" to={`/collection/${r.customer_id}`}>Collect</Link>
+                  <Btn size="sm" onClick={() => { setEdit(key(r)); setDate(addDays(3)); }}>New date</Btn>
+                  <Btn size="sm" busy={busy === key(r)} onClick={() => save(r, '')} title={r.whole ? 'Stop reminding for this customer' : 'Stop reminding for this invoice'}>Dismiss</Btn>
                 </>
               )}
             </div>

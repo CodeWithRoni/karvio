@@ -14,6 +14,8 @@ const POS = lazy(() => import('./pages/POS'));
 const Sales = lazy(() => import('./pages/Sales'));
 const PCBuilder = lazy(() => import('./pages/PCBuilder'));
 const Customers = lazy(() => import('./pages/Customers'));
+const Collection = lazy(() => import('./pages/Collection'));
+const Payment = lazy(() => import('./pages/Payment'));
 const Suppliers = lazy(() => import('./pages/Suppliers'));
 const Stock = lazy(() => import('./pages/Stock'));
 const Purchases = lazy(() => import('./pages/Purchases'));
@@ -99,6 +101,10 @@ export default function App() {
               <Route path="pc-builder" element={<Guard perm="pos"><PCBuilder /></Guard>} />
               <Route path="customers" element={<Customers />} />
               <Route path="customers/:id" element={<Customers />} />
+              <Route path="collection" element={<Guard perm="customers"><Collection /></Guard>} />
+              <Route path="collection/:id" element={<Guard perm="customers"><Collection /></Guard>} />
+              <Route path="payment" element={<Guard perm="suppliers"><Payment /></Guard>} />
+              <Route path="payment/:id" element={<Guard perm="suppliers"><Payment /></Guard>} />
               <Route path="suppliers" element={<Guard perm="suppliers"><Suppliers /></Guard>} />
               <Route path="suppliers/:id" element={<Guard perm="suppliers"><Suppliers /></Guard>} />
               <Route path="stock" element={<Stock />} />
