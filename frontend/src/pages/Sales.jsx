@@ -13,6 +13,7 @@ import { ReverseDialog, ProductSearch, SerialChooser, PaymentSplit, defaultPay, 
 import { salesDetails } from '../lib/salesDetails';
 import { returnValue } from '../lib/returnValue';
 import DateInput from '../components/DateInput';
+import WhatsAppBtn from '../components/WhatsAppBtn';
 
 export default function Sales() {
   const { id } = useParams();
@@ -103,6 +104,7 @@ function SaleDetail({ id, onClose, onChanged }) {
         {can('cancel') && s.status === 'active' && <Btn kind="danger" onClick={() => setRev(true)}>Cancel invoice</Btn>}
         {can('sales.return') && s.status === 'active' && <Btn onClick={() => setRet(true)}>Return / exchange</Btn>}
         {can('pos') && s.customer_id && <Btn busy={linkBusy} onClick={makeLink} title="A private link to this invoice for the customer (WhatsApp, Messenger…). Works for 15 days.">Customer link</Btn>}
+        {can('pos') && <WhatsAppBtn data={data} link={link} onLink={setLink} />}
         <span className="spacer" />
         <div className="seg">
           <button onClick={() => excelSales([data], `invoice-${s.invoice_no}.xlsx`)}>Excel</button>
@@ -122,7 +124,6 @@ function SaleDetail({ id, onClose, onChanged }) {
             <div className="cust-link" role="status">
               <span>Customer link (works until {fdate(link.expires_at)}):</span>
               <input readOnly value={link.url} onFocus={(e) => e.target.select()} aria-label="Customer invoice link" />
-              <a className="btn btn-sm btn-ghost" href={`https://wa.me/?text=${encodeURIComponent(`Invoice ${s.invoice_no}: ${link.url}`)}`} target="_blank" rel="noreferrer">WhatsApp</a>
             </div>
           )}
           <div className="kv">

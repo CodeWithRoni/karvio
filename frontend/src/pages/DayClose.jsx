@@ -3,7 +3,7 @@ import { useStore } from '../lib/store';
 import { api } from '../lib/api';
 import { money, fdate, fdatetime } from '../lib/format';
 import { printHtml, esc } from '../lib/export';
-import { useApi, Btn, Field, ErrorBox, Badge, Empty, Loading, useAction } from '../components/ui';
+import { useApi, Btn, Field, ErrorBox, Badge, Empty, Loading, useAction, Modal } from '../components/ui';
 import DateInput from '../components/DateInput';
 
 // Bangladeshi notes and coins, largest first.
@@ -25,7 +25,7 @@ export default function DayClose() {
         <Field label="Day"><DateInput value={d.date} max={d.today} onChange={(e) => e.target.value && setDate(e.target.value)} aria-label="Day to close" /></Field>
       </div>
       <ErrorBox error={q.error} onRetry={q.reload} />
-      {d.closed ? <ClosedView d={d} c={d.closed} /> : <CountForm key={`${d.account.id}:${d.date}`} d={d} onSaved={q.reload} />}
+      {d.closed ? <ClosedView d={d} c={d.closed} onChanged={q.reload} /> : <CountForm key={`${d.account.id}:${d.date}`} d={d} onSaved={q.reload} />}
       <History d={d} />
     </>
   );
@@ -100,11 +100,13 @@ function CountForm({ d, onSaved }) {
   );
 }
 
-function ClosedView({ d, c }) {
+function ClosedView({ d, c, onChanged }) {
+  const [reopen, setReopen] = useState(false);
+  const user = useStore((s) => s.user);
   return (
     <div className="dc-grid">
       <section className="card">
-        <div className="card-head"><h2>{c.account_name} — {fdate(c.date)}</h2><Badge tone="ok">Closed</Badge></div>
+        <div className="card-head"><h2>{c.account_name} — {fdate(c.date)}</h2><Badge tone="ok">{d.locked ? 'Closed · locked' : 'Closed'}</Badge></div>
         <p className="muted" style={{ marginTop: 0 }}>Closed by {c.closed_by} at {fdatetime(c.closed_at)}.{c.adjusted ? ' The balance was corrected to the counted amount.' : ''}</p>
         {Object.keys(c.notes || {}).length > 0 && (
           <div className="dc-notes readonly">
@@ -112,6 +114,9 @@ function ClosedView({ d, c }) {
           </div>
         )}
         {c.note && <p><b>Note:</b> {c.note}</p>}
+        {d.locked && <p className="dc-lock" role="note">This day is locked. Sales money, expenses, payments and cancellations dated <b>{fdate(c.date)}</b> can no longer be added or changed in <b>{c.account_name}</b>.</p>}
+        <div className="dc-actions"><Btn onClick={() => setReopen(true)}>Reopen the day</Btn></div>
+        {reopen && <ReopenDialog c={c} admin={user?.role === 'admin'} onClose={() => setReopen(false)} onDone={onChanged} />}
       </section>
       <section className="card">
         <div className="card-head"><h2>Expected vs counted</h2></div>
@@ -126,6 +131,27 @@ function ClosedView({ d, c }) {
   );
 }
 
+function ReopenDialog({ c, admin, onClose, onDone }) {
+  const [reason, setReason] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, run] = useAction();
+  const submit = async (e) => {
+    e?.preventDefault();
+    await run(() => api('dayclose.reopen', { account_id: c.account_id, date: c.date, reason, password }), `${c.account_name} reopened for ${fdate(c.date)}`);
+    onClose(); onDone();
+  };
+  return (
+    <Modal open size="sm" title={`Reopen ${c.account_name} — ${fdate(c.date)}`} onClose={onClose}
+      footer={<><Btn onClick={onClose}>Keep it closed</Btn><Btn kind="primary" busy={busy} disabled={!reason.trim() || !password} onClick={submit}>Reopen the day</Btn></>}>
+      <form className="form" onSubmit={submit}>
+        <p className="muted">Entries for this day can be added and changed again. The count stays in the history, marked reopened; close the day again when you are done.</p>
+        <Field label="Reason" wide><input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. an expense was missed" required /></Field>
+        <Field label={admin ? 'Your password' : 'Admin password'} wide hint="Required to reopen a closed day."><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" /></Field>
+      </form>
+    </Modal>
+  );
+}
+
 function History({ d }) {
   return (
     <section className="card" style={{ marginTop: 12 }}>
@@ -136,7 +162,7 @@ function History({ d }) {
           <tbody>{d.history.map((h) => (
             <tr key={h.id}><td>{fdate(h.date)}</td><td>{h.closed_by}</td><td className="r num">{money(h.expected, false)}</td><td className="r num">{money(h.counted, false)}</td>
               <td className="r num"><Badge tone={Math.abs(h.difference) <= 0.005 ? 'ok' : h.difference < 0 ? 'bad' : 'info'}>{Math.abs(h.difference) <= 0.005 ? '0' : sign(h.difference)}</Badge></td>
-              <td className="muted">{h.note || '—'}{h.adjusted ? ' · balance corrected' : ''}</td></tr>
+              <td className="muted">{h.note || '—'}{h.adjusted ? ' · balance corrected' : ''}{h.reopened ? ` · reopened by ${h.reopened_by}: ${h.reopen_reason}` : ''}</td></tr>
           ))}</tbody>
         </table></div>
       ) : <Empty compact icon="receipt" title="No closings yet">Closed days for this account will be listed here.</Empty>}

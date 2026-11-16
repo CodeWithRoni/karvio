@@ -3,6 +3,7 @@ import { useStore } from '../lib/store';
 import { api } from '../lib/api';
 import { money, splitList } from '../lib/format';
 import { Modal, Btn } from './ui';
+import { waNumber, waUrl } from '../lib/whatsapp';
 
 export const DEFAULT_DUE_SMS = 'Dear {name}, your due at {shop} is Tk {due}. Please pay at your earliest convenience. Thank you. {shop_phone}';
 const lakh = (v) => (Math.round((Number(v) || 0) * 100) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 });
@@ -56,6 +57,7 @@ export default function DueReminder({ customers, onClose }) {
                 </span>
               </div>
               <div className="remind-text">{r.why ? `Skipped — ${r.why}.` : r.text}</div>
+              {!r.why && waNumber(r.phone) && <a className="remind-wa" href={waUrl(r.phone, r.text)} target="_blank" rel="noreferrer">Send this one on WhatsApp instead</a>}
             </div>
           );
         })}

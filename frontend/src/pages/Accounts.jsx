@@ -8,6 +8,7 @@ import { useApi, PageHead, Modal, Btn, Field, useAction, Select, DateRange, Erro
 import DayClose from './DayClose';
 import { ReverseDialog } from '../components/widgets';
 import DateInput from '../components/DateInput';
+import OwnerMoney from '../components/OwnerMoney';
 
 const TYPES = [['cash', 'Cash'], ['mfs', 'Mobile banking (bKash, Nagad, Rocket…)'], ['bank', 'Bank account']];
 
@@ -19,7 +20,8 @@ export default function Accounts() {
   const accs = list.data || [];
   const active = accs.filter((a) => a.active);
   const [params, setParams] = useSearchParams();
-  const tab = params.get('tab') === 'dayclose' ? 'dayclose' : 'accounts';
+  const tab = ['dayclose', 'owner'].includes(params.get('tab')) ? params.get('tab') : 'accounts';
+  const [ownerVersion, setOwnerVersion] = useState(0);
   const [confirmUI, ask] = useConfirm();
   const [, runDelete] = useAction();
   // Delete unused accounts (no transactions, no opening balance). The server refuses any with history.
@@ -30,8 +32,15 @@ export default function Accounts() {
     await runDelete(() => api('account.delete', { ids: picked.map((a) => a.id) }), picked.length === 1 ? 'Account deleted' : `${picked.length} accounts deleted`);
     clear?.(); setEdit(null); list.reload(); useStore.getState().boot();
   };
-  const tabs = <Tabs tabs={[['accounts', 'Accounts'], ['dayclose', 'Day close']]} value={tab} onChange={(v) => setParams(v === 'dayclose' ? { tab: v } : {}, { replace: true })} />;
+  const tabs = <Tabs tabs={[['accounts', 'Accounts'], ['dayclose', 'Day close'], ['owner', "Owner's money"]]} value={tab} onChange={(v) => setParams(v === 'accounts' ? {} : { tab: v }, { replace: true })} />;
 
+  if (tab === 'owner') return (
+    <>
+      <PageHead title="Cash, bank & MFS" sub="What the owner has put into the shop and taken out — kept apart from sales and expenses.">{tabs}</PageHead>
+      <OwnerMoney version={ownerVersion} onEntry={(kind) => setEntry({ kind, owner: true })} />
+      {entry && <EntryForm initial={entry} accounts={active} onClose={() => setEntry(null)} onDone={() => { list.reload(); setOwnerVersion((n) => n + 1); }} />}
+    </>
+  );
   if (tab === 'dayclose') return (
     <>
       <PageHead title="Cash, bank & MFS" sub="Count the cash at the end of the day and compare it with the books.">{tabs}</PageHead>

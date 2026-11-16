@@ -1,3 +1,12 @@
+# 16 November 2026 — five features (pending push)
+
+- Slow-moving stock (Reports hub, needs cost permission): products in stock with no sale for 30/60/90/180/365 days (never-sold ones count from the day they arrived), value at cost, last supplier, money tied up and its share of all stock. Report type slow_stock.
+- Owner's money (Cash, bank & MFS → Owner's money): what the owner put in and took out (the existing deposit / withdraw entries, without Day close cash-count corrections), running net invested, period totals and the period's net profit. Action owner.money. The balance sheet splits equity into "Owner's money put in, less taken out" and "Profit kept in the shop and opening balances".
+- Day close locks the day: after an account's day is closed, money dated that day cannot be added, changed or cancelled in that account (sales, payments, expenses, transfers, cancellations) until an admin reopens it with the admin password and a reason (dayclose.reopen; history keeps the count, marked reopened). Closed days live in Settings 'day_close_locks'; Settings → Close books has the switch 'day_close_lock' (on by default).
+- Send on WhatsApp (sale detail and the POS "sale saved" window): opens WhatsApp for the customer's number with the invoice message and the customer link filled in — no WhatsApp API. Wording in Settings → SMS ('whatsapp_template'). The due reminder window has a per-customer WhatsApp link too.
+- Devices & logins (Users & roles): devices signed in now with last activity, sign one or all others out (their next request is refused), and the login history with wrong-password attempts. Sign-in sends a device name. Kept in script properties (sessions, log) and the cache (failed attempts); actions sessions.list / sessions.revoke.
+- Tests: backend/test/features-4.mjs (33 checks), frontend/test/features-4.spec.js (5 browser tests).
+
 # 16 November 2026 — review fixes (pending push)
 
 - Monthly expenses: a month that was never recorded no longer disappears when the next month starts. Up to 12 earlier months show as "Not recorded for Oct 2026" with their own Record button (date in that month or later; defaults to that month's due day unless the books are closed). They count in the "due" badge and on the dashboard. Each line keeps the months it was recorded for (done) and the month it started (since; older lists use the first save in the activity log). A paused line switched back on counts from that month. expense.recurring.record takes an optional month.

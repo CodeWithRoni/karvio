@@ -29,9 +29,11 @@ export default function Reports() {
   const { customers, suppliers, accounts, categories, brands, products, can, settings } = useStore();
   const [params] = useSearchParams();
   const canStatements = can('cost');
-  const list = canStatements ? [...REPORTS, ['supplier_prices', 'Supplier prices'], ...Object.entries(STATEMENTS).map(([k, v]) => [k, v[1]])] : REPORTS;
+  const list = canStatements ? [...REPORTS, ['slow_stock', 'Slow-moving stock'], ['supplier_prices', 'Supplier prices'], ...Object.entries(STATEMENTS).map(([k, v]) => [k, v[1]])] : REPORTS;
   const start = params.get('type');
-  const [type, setType] = useState(start === 'stock_summary' || (canStatements && (STATEMENTS[start] || start === 'supplier_prices')) ? start : 'sales');
+  const [type, setType] = useState(start === 'stock_summary' || (canStatements && (STATEMENTS[start] || start === 'supplier_prices' || start === 'slow_stock')) ? start : 'sales');
+  const [slowDays, setSlowDays] = useState(60);
+  const slow = type === 'slow_stock';
   const [sf, setSf] = useState({ stock_filter:params.get('filter') || 'all', group_id:'', category_id:'', brand_id:'', product_id:'', include_inactive:false });
   const [group, setGroup] = useState('invoice');
   const [range, setRange] = useState(PRESETS[2][2]());
@@ -45,7 +47,7 @@ export default function Reports() {
   const groups = stock ? ['product','group','category','lots'] : GROUPS[type];
   const g = groups ? (groups.includes(group) ? group : groups[0]) : '';
   const payload = stock ? { type, group:g, ...sf } : { type, ...range, group: g, status: type === 'warranty' ? wst : status, customer_id: type === 'sales' ? party : '', supplier_id: type === 'purchases' ? party : '', account_id: type === 'payment_methods' ? party : '', ...(type === 'supplier_prices' ? { group_id: sf.group_id, brand_id: sf.brand_id, product_id: sf.product_id } : {}) };
-  const rep = useApi(statement ? statement[0] : 'reports', statement ? (sheet ? {} : { from: range.from, to: range.to }) : payload);
+  const rep = useApi(statement ? statement[0] : 'reports', statement ? (sheet ? {} : { from: range.from, to: range.to }) : slow ? { type, days: slowDays } : payload);
   const r = rep.data;
 
   return (
@@ -54,8 +56,9 @@ export default function Reports() {
       <div className="filters">
         <Field label="Report"><select value={type} onChange={(e) => { setType(e.target.value); setParty(''); }}>{list.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
         {groups && !statement && <Field label="View"><select value={g} onChange={(e) => setGroup(e.target.value)}>{groups.map((x) => <option key={x} value={x}>{GLABEL[x] || ({product:'By product',group:'By product group',category:'By category',lots:'Purchase lots & warranty'})[x]}</option>)}</select></Field>}
-        {!stock && !sheet && <Field label="Period"><Tabs tabs={PRESETS.map(([v, l]) => [v, l])} value={preset} onChange={(v) => { setPreset(v); setRange(PRESETS.find((p) => p[0] === v)[2]()); }} /></Field>}
-        {!stock && !sheet && <Field label="Custom range"><DateRange {...range} onChange={(x) => { setPreset(''); setRange(x); }} /></Field>}
+        {slow && <Field label="Not sold in the last"><Tabs tabs={[30, 60, 90, 180, 365].map((n) => [n, `${n} days`])} value={slowDays} onChange={setSlowDays} /></Field>}
+        {!stock && !sheet && !slow && <Field label="Period"><Tabs tabs={PRESETS.map(([v, l]) => [v, l])} value={preset} onChange={(v) => { setPreset(v); setRange(PRESETS.find((p) => p[0] === v)[2]()); }} /></Field>}
+        {!stock && !sheet && !slow && <Field label="Custom range"><DateRange {...range} onChange={(x) => { setPreset(''); setRange(x); }} /></Field>}
         {stock && <>
           <Field label="Stock filter"><select value={sf.stock_filter} onChange={e=>setSf({...sf,stock_filter:e.target.value})}>{[['all','All stock products'],['in','In stock'],['out','Out of stock'],['age3','Stock over 3 months'],['age6','Stock over 6 months'],['age12','Stock over 1 year'],['idle3','No net sales for 3 months'],['idle6','No net sales for 6 months'],['idle12','No net sales for 1 year'],['expiring','Supplier warranty: next 30 days'],['expired','Supplier warranty expired'],['warranty_unknown','Supplier warranty not set'],['age_unknown','Stock age unknown'],['reserved','Reserved for repair']].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></Field>
           <Field label="Product group"><Select value={sf.group_id} options={categories.filter(x=>!x.parent_id)} placeholder="All product groups" onChange={v=>setSf({...sf,group_id:v,category_id:'',product_id:''})}/></Field>
@@ -83,6 +86,13 @@ export default function Reports() {
       {stock && r?.quantities && <div className="stock-report-summary">{r.quantities.map(x=><div className="card" key={x.unit}><b>{x.unit}</b><span>{r.quantity_scope==='lots'?'Filtered lot quantity':'Stock'} {qty(x.stock)}{r.quantity_scope!=='lots' && <> · Available {qty(x.available)} · Reserved {qty(x.reserved)}</>}</span><span>Over 3 / 6 / 12 months: {qty(x.age3)} / {qty(x.age6)} / {qty(x.age12)}</span><span>Warranty ending {qty(x.expiring)} · Expired {qty(x.expired)} · Not set {qty(x.warranty_unknown)}</span></div>)}</div>}
       {stock && r?.note && <p className="muted summary-note">{r.note}</p>}
       {stock && <p className="muted summary-note">Scroll the table sideways for all age, warranty and value columns. Quantities are shown separately by unit; age groups overlap.</p>}
+      {slow && r?.slow && (
+        <div className="om-kpis">
+          <div className="card"><span>Money tied up</span><b className="warn">{money(r.slow.tied)}</b><small>at purchase cost</small></div>
+          <div className="card"><span>Products</span><b>{r.slow.products}</b><small>not sold in the last {r.slow.days} days</small></div>
+          <div className="card"><span>Share of stock value</span><b>{r.slow.share}%</b><small>of {money(r.slow.stock_value)} total stock</small></div>
+        </div>
+      )}
       {r?.summary && (
         <div className="row" style={{ marginBottom: 12 }}>{Object.entries(r.summary).map(([k, v]) => <Badge key={k} tone={k === 'Delivered' ? 'muted' : k === 'Pending' ? 'warn' : 'info'}>{k}: {v}</Badge>)}</div>
       )}

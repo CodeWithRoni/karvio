@@ -88,7 +88,7 @@ test('day close: count the drawer, explain a shortage, then the day shows as clo
   await expect(close).toBeDisabled();
   await page.getByPlaceholder(/Gave change/).fill('Paid the tea boy');
   await close.click();
-  await expect(page.getByText('Closed', { exact: true })).toBeVisible();
+  await expect(page.getByText('Closed · locked', { exact: true })).toBeVisible();
   await expect(page.locator('.dc-hist')).toContainText('Paid the tea boy');
   expect((await call(request, 'accounts.list')).find((a) => a.id === acc.id).balance).toBe(900);
 });

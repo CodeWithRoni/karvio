@@ -3,6 +3,7 @@ import { useStore } from '../lib/store';
 import { api } from '../lib/api';
 import DataTable from '../components/DataTable';
 import { useApi, PageHead, Modal, Btn, Field, useAction, Badge, ErrorBox, Tabs } from '../components/ui';
+import Sessions from '../components/Sessions';
 
 const ROLE = { admin: 'Admin', manager: 'Manager', sales: 'Sales staff', technician: 'Technician' };
 
@@ -14,10 +15,10 @@ export default function Users() {
   return (
     <>
       <PageHead title="Users & roles" sub="Admins can do everything. Choose exactly what managers, sales staff and technicians can see and do.">
-        <Tabs tabs={[['users', 'Users'], ...(isAdmin ? [['roles', 'Role permissions']] : [])]} value={tab} onChange={setTab} />
+        <Tabs tabs={[['users', 'Users'], ...(isAdmin ? [['roles', 'Role permissions']] : []), ['devices', 'Devices & logins']]} value={tab} onChange={setTab} />
         {tab === 'users' && <Btn kind="primary" onClick={() => setEdit({ name: '', username: '', password: '', role: 'sales', active: true })}>Add user</Btn>}
       </PageHead>
-      {tab === 'users' ? (
+      {tab === 'devices' ? <Sessions /> : tab === 'users' ? (
         <>
           <ErrorBox error={list.error} onRetry={list.reload} />
           <DataTable title="Users" loading={list.loading} rows={list.data || []} onRowClick={(u) => setEdit({ ...u, password: '' })} exportable={false}

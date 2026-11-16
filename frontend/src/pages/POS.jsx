@@ -8,6 +8,7 @@ import { Btn, Modal, Field, Tabs, useAction, useHotkeys, useConfirm, noWheel } f
 import { ProductSearch, PaymentSplit, defaultPay, cleanPays, QuickCustomer, CustomerPicker, SerialChooser } from '../components/widgets';
 import { loadPosDraft, savePosDraft, loadHolds, saveHolds } from '../lib/posDraft';
 import DateInput from '../components/DateInput';
+import WhatsAppBtn from '../components/WhatsAppBtn';
 
 // Next payment date picker works in the shop's date (server time zone), not this computer's clock.
 const inDays = (n) => shopDay(n);
@@ -438,6 +439,7 @@ export default function POS() {
         footer={<>
           <Btn kind="primary" onClick={() => printInvoice(done)}>Print invoice</Btn>
           {done?.previous_due_payment && <Btn onClick={() => printPreviousDueReceipt(done.previous_due_payment)}>Print due payment receipt</Btn>}
+          <WhatsAppBtn data={done} />
           <Btn onClick={() => printReceipt(done, 58)}>Print 58mm</Btn>
           <Btn onClick={() => printReceipt(done, 80)}>Print 80mm</Btn>
           <Btn kind="primary" onClick={() => { setDone(null); searchRef.current?.focus(); }}>Next sale</Btn>

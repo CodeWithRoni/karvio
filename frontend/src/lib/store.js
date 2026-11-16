@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api, getToken, setToken, onAuthExpired } from './api';
+import { deviceLabel } from './device';
 
 const localYmd = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 const dayDiff = (a, b) => Math.round((Date.parse(a + 'T12:00:00Z') - Date.parse(b + 'T12:00:00Z')) / 864e5);
@@ -51,7 +52,7 @@ export const useStore = create((set, get) => ({
   },
 
   async login(username, password) {
-    const r = await api('login', { username, password });
+    const r = await api('login', { username, password, device: deviceLabel() });
     setToken(r.token);
     set({ token: r.token, user: r.user, perms: r.perms });
     await get().boot();

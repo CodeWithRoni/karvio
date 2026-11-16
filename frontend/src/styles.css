@@ -1431,3 +1431,19 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
 /* Monthly expenses: months that were never recorded */
 .mx-missed { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 6px 0 0; font-size: 12.5px; }
 .mx-missed .btn { margin-left: auto; }
+
+/* WhatsApp, owner's money, devices & logins, day lock */
+.btn.btn-wa { background: #25d366; border-color: #25d366; color: #06301a; font-weight: 800; }
+.btn.btn-wa:hover:not(:disabled) { background: #1fbd5a; border-color: #1fbd5a; }
+.remind-wa { display: inline-block; margin-top: 6px; font-size: 12.5px; font-weight: 700; color: #1fbd5a; }
+.om-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.om-bar .spacer { flex: 1; }
+.om-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.om-kpis .card { display: flex; flex-direction: column; gap: 3px; padding: 14px 16px; }
+.om-kpis .card span { font-size: 11.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.om-kpis .card b { font-size: 23px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.om-kpis .card b.ok { color: var(--ok); } .om-kpis .card b.warn { color: var(--warn); }
+.om-kpis .card small { font-size: 12.5px; color: var(--muted); }
+.sess td small { font-size: 12px; }
+.sess-note { font-size: 12.5px; margin: 10px 2px 0; }
+.dc-lock { margin: 12px 0 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); font-size: 13px; }

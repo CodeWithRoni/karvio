@@ -681,26 +681,91 @@ function authUser_(token) {
   // A reset/change invalidates every previously issued token, including tokens from older releases.
   if (!s.credential || s.credential !== hash_('karvio-session', u.salt + '|' + u.password_hash)) { cache.remove('tok_' + token); fail_('AUTH: Password changed; please sign in again'); }
   if (!accessAllowed_(u)) { cache.remove('tok_' + token); fail_('AUTH: ' + accessDenied_(u)); } // working hours ended: signed out
+  var live = s.sid ? propJson_('karvio_sessions', {}) : null;
+  if (live && live[s.sid] && live[s.sid].revoked) { cache.remove('tok_' + token); fail_('AUTH: This device was signed out by an admin. Please sign in again'); }
   // Sliding session, refreshed at most every SESSION_REFRESH_MS so ordinary reads stay read-only.
   var nowMs = Date.now(), last = num_(s.refreshed);
-  if (!last || nowMs - last > SESSION_REFRESH_MS || nowMs < last) { s.refreshed = nowMs; cache.put('tok_' + token, JSON.stringify(s), SESSION_TTL); }
+  if (!last || nowMs - last > SESSION_REFRESH_MS || nowMs < last) {
+    s.refreshed = nowMs; cache.put('tok_' + token, JSON.stringify(s), SESSION_TTL);
+    if (live && live[s.sid]) { live[s.sid].seen = nowMs; propPut_('karvio_sessions', live); }
+  }
   return u;
+}
+
+/* ---- Signed-in devices and login history ----
+ * Kept in script properties (two small JSON values), so a wrong password is recorded even though the request fails. */
+var LOGIN_LOG_KEEP = 150;
+function propJson_(key, fallback) {
+  try { var v = JSON.parse(PropertiesService.getScriptProperties().getProperty(key) || 'null'); return v && typeof v === 'object' ? v : fallback; } catch (e) { return fallback; }
+}
+function propPut_(key, v) { try { PropertiesService.getScriptProperties().setProperty(key, JSON.stringify(v)); } catch (e) {} }
+function deviceName_(v) { return String(v || '').replace(/[\x00-\x1f<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Unknown device'; }
+/** Sessions that can still be in use: seen within the session lifetime. */
+function sessionsLive_() {
+  var all = propJson_('karvio_sessions', {}), now = Date.now(), out = {};
+  Object.keys(all).forEach(function (sid) { var x = all[sid]; if (x && num_(x.seen) + SESSION_TTL * 1000 > now) out[sid] = x; });
+  return out;
+}
+function loginLog_(entry) {
+  var log = propJson_('karvio_login_log', []); if (!Array.isArray(log)) log = [];
+  log.push(entry); propPut_('karvio_login_log', log.slice(-LOGIN_LOG_KEEP));
+}
+/** A failed request keeps nothing but the cache, so wrong-password attempts are kept there (30 days). */
+function loginFails_() { try { var v = JSON.parse(CacheService.getScriptCache().get('karvio_login_fails') || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+function loginFailLog_(entry) { try { CacheService.getScriptCache().put('karvio_login_fails', JSON.stringify(loginFails_().concat([entry]).slice(-60)), 2592000); } catch (e) {} }
+function tokenSid_(token) { try { return (JSON.parse(CacheService.getScriptCache().get('tok_' + token) || 'null') || {}).sid || ''; } catch (e) { return ''; } }
+function sessionsList_(p, user, token) {
+  var live = sessionsLive_(), mine = tokenSid_(token);
+  var rows = Object.keys(live).filter(function (sid) { return !live[sid].revoked; }).map(function (sid) {
+    var x = live[sid];
+    return { sid: sid, user: x.user, username: x.username, role: x.role, device: x.device, signed_in: x.at, last_active: new Date(num_(x.seen)).toISOString(), current: sid === mine };
+  }).sort(function (a, b) { return (b.current ? 1 : 0) - (a.current ? 1 : 0) || String(b.last_active).localeCompare(String(a.last_active)); });
+  var log = propJson_('karvio_login_log', []);
+  var history = (Array.isArray(log) ? log : []).concat(loginFails_()).sort(function (a, b) { return String(b.ts).localeCompare(String(a.ts)); }).slice(0, LOGIN_LOG_KEEP);
+  return { sessions: rows, history: history };
+}
+/** Sign a device out from here: its next request is refused and it must sign in again. */
+function sessionsRevoke_(p, user, token) {
+  var all = sessionsLive_(), mine = tokenSid_(token), sids = p.others ? Object.keys(all).filter(function (sid) { return sid !== mine; }) : [String(p.sid || '')];
+  if (!p.others && !all[sids[0]]) fail_('That device is no longer signed in');
+  if (!p.others && sids[0] === mine) fail_('This is the device you are using — use Sign out instead');
+  var n = 0;
+  sids.forEach(function (sid) {
+    var x = all[sid]; if (!x || x.revoked) return;
+    x.revoked = true; n++;
+    loginLog_({ ts: now_(), user: x.username || x.user, device: x.device, result: 'signed_out', by: user.name });
+  });
+  propPut_('karvio_sessions', all);
+  if (n) audit_(user, 'session_signout', { devices: n });
+  return { signed_out: n, list: sessionsList_({}, user, token) };
 }
 
 function login_(p) {
   var name = String(p.username || '').trim().toLowerCase();
   var u = all_('Users').filter(function (x) { return x.username.toLowerCase() === name; })[0];
   loginAllowed_(name);
-  if (!u || !u.active || !pwCheck_(u, p.password)) { loginFailed_(name); fail_('Invalid username or password'); }
+  var device = deviceName_(p.device);
+  if (!u || !u.active || !pwCheck_(u, p.password)) { loginFailed_(name); loginFailLog_({ ts: now_(), user: name.slice(0, 40), device: device, result: 'failed' }); fail_('Invalid username or password'); }
   clearLoginFails_(name);
   // Older accounts used a single SHA-256; upgrade them on the first correct sign-in.
   if (!/^(?:v2|pbkdf2)\$/.test(String(u.password_hash))) update_('Users', u.id, { password_hash: pwHash_(u.salt, String(p.password || '')) });
   if (!accessAllowed_(u)) fail_(accessDenied_(u)); // checked after the password, so the hours are only shown to the right person
-  var token = Utilities.getUuid() + Utilities.getUuid();
-  CacheService.getScriptCache().put('tok_' + token, JSON.stringify({ id: u.id, credential: hash_('karvio-session', u.salt + '|' + u.password_hash), refreshed: Date.now() }), SESSION_TTL);
+  var token = Utilities.getUuid() + Utilities.getUuid(), sid = uid_();
+  CacheService.getScriptCache().put('tok_' + token, JSON.stringify({ id: u.id, sid: sid, credential: hash_('karvio-session', u.salt + '|' + u.password_hash), refreshed: Date.now() }), SESSION_TTL);
+  var sessions = sessionsLive_();
+  sessions[sid] = { user_id: u.id, user: u.name, username: u.username, role: u.role, device: device, at: now_(), seen: Date.now() };
+  propPut_('karvio_sessions', sessions);
+  loginLog_({ ts: now_(), user: u.username, device: device, result: 'ok' });
   return { token: token, user: pubUser_(u), perms: permsFor_(u.role) };
 }
-function logout_(p, user, token) { try { CacheService.getScriptCache().remove('tok_' + token); } catch (e) {} return true; }
+function logout_(p, user, token) {
+  try {
+    var sid = tokenSid_(token);
+    if (sid) { var all = sessionsLive_(); if (all[sid]) { delete all[sid]; propPut_('karvio_sessions', all); } }
+    CacheService.getScriptCache().remove('tok_' + token);
+  } catch (e) {}
+  return true;
+}
 
 var PASSWORD_MIN_LENGTH = 12;
 function requirePassword_(password) {
@@ -783,7 +848,19 @@ function partyBalances_(ledger, key, parties, sign) {
 function customerBalances_() { return partyBalances_('CustomerLedger', 'customer_id', all_('Customers'), 1); }
 function supplierBalances_() { return partyBalances_('SupplierLedger', 'supplier_id', all_('Suppliers'), -1); }
 
+/* ---- Closed days: once an account's day is closed (Day close), money dated that day cannot be added, changed or cancelled
+ * in that account until an admin reopens it. The closed days are kept in Settings 'day_close_locks' as { account id: [dates] }. */
+function dayLocks_() { var m = null; try { m = JSON.parse(getSetting_('day_close_locks', '{}')); } catch (e) {} return m && typeof m === 'object' && !Array.isArray(m) ? m : {}; }
+function dayLockOn_() { return getSetting_('day_close_lock', 'true') !== 'false'; }
+function dayLockCheck_(accId, date) {
+  if (!dayLockOn_()) return;
+  var d = String(date || '').slice(0, 10), days = dayLocks_()[accId];
+  if (!Array.isArray(days) || days.indexOf(d) < 0) return;
+  var acc = all_('Accounts').filter(function (a) { return a.id === accId; })[0];
+  fail_(d + ' is closed for ' + (acc ? acc.name : 'this account') + ', so money dated that day cannot be added, changed or cancelled there. Use another date, or ask an admin to reopen the day (Cash, bank & MFS → Day close).');
+}
 function acctTxn_(accId, dir, amount, refType, refId, note, user, date) {
+  dayLockCheck_(accId, date || today_());
   return insert_('AccountTxns', { date: date || today_(), account_id: accId, direction: dir, amount: round_(amount), ref_type: refType, ref_id: refId, note: note || '', user: user.name, voided: false });
 }
 /** Business dates: YYYY-MM-DD, not in the future, and not inside the closed books period. */
@@ -802,7 +879,10 @@ function bookDate_(v, what) {
 }
 function voidRefs_(table, refId, refType) {
   all_(table).forEach(function (r) {
-    if (r.ref_id === refId && !r.voided && (!refType || r.ref_type === refType)) update_(table, r.id, { voided: true });
+    if (r.ref_id === refId && !r.voided && (!refType || r.ref_type === refType)) {
+      if (table === 'AccountTxns') dayLockCheck_(r.account_id, r.date);
+      update_(table, r.id, { voided: true });
+    }
   });
 }
 function evBatch_(user, list) {
@@ -1431,10 +1511,38 @@ function accountEntry_(p, user) { // owner deposit / withdrawal / transfer
 var DAY_CLOSE_GROUPS = { sale: 'Sales received', cpay: 'Customer due payments', sreturn: 'Sales refunds', exchange: 'Exchanges', claim: 'Warranty claims',
   expense: 'Expenses paid', purchase: 'Purchase payments', spay: 'Supplier payments', preturn: 'Purchase return refunds', transfer: 'Transfers', manual: 'Deposits & withdrawals' };
 function dayCloses_() {
+  // A close that was reopened later (a 'day_reopen' entry after it) stays in the history, marked reopened.
+  var reopened = {};
+  all_('AuditLog').forEach(function (r) {
+    if (r.action !== 'day_reopen') return;
+    var d = {}; try { d = JSON.parse(r.detail || '{}'); } catch (e) {}
+    var k = d.account_id + '|' + d.date; if (!reopened[k] || r._row > reopened[k].row) reopened[k] = { row: r._row, by: r.user, at: r.ts, reason: d.reason || '' };
+  });
   return all_('AuditLog').filter(function (r) { return r.action === 'day_close'; }).map(function (r) {
     var d = {}; try { d = JSON.parse(r.detail || '{}'); } catch (e) {}
-    d.id = r.id; d.closed_at = r.ts; d.closed_by = r.user; return d;
+    d.id = r.id; d.closed_at = r.ts; d.closed_by = r.user;
+    var re = reopened[d.account_id + '|' + d.date];
+    if (re && re.row > r._row) { d.reopened = true; d.reopened_by = re.by; d.reopened_at = re.at; d.reopen_reason = re.reason; }
+    return d;
   }).filter(function (d) { return d.date && d.account_id; });
+}
+/** Rewrite the closed-days list from the day close history (after every close and reopen). */
+function dayLocksRebuild_() {
+  var m = {};
+  dayCloses_().forEach(function (c) { if (!c.reopened) (m[c.account_id] = m[c.account_id] || []).push(c.date); });
+  Object.keys(m).forEach(function (k) { m[k] = m[k].filter(function (d, i, a) { return a.indexOf(d) === i; }).sort(); });
+  setSetting_('day_close_locks', JSON.stringify(m));
+}
+function dayCloseReopen_(p, user) {
+  confirmAdmin_(user, p.password);
+  var reason = String(p.reason || '').trim().slice(0, 300); if (!reason) fail_('Write why the day is reopened');
+  var date = String(p.date || '').slice(0, 10); if (!isDate_(date)) fail_('Choose a valid date');
+  lockCheck_(date, 'a day close');
+  var c = dayCloses_().filter(function (x) { return x.account_id === p.account_id && x.date === date && !x.reopened; }).pop();
+  if (!c) fail_('That day is not closed');
+  insert_('AuditLog', { ts: now_(), user: user.name, action: 'day_reopen', detail: JSON.stringify({ date: date, account_id: c.account_id, account_name: c.account_name, reason: reason }) });
+  dayLocksRebuild_();
+  return dayCloseGet_({ account_id: c.account_id, date: date });
 }
 function dayCloseFigures_(acc, date) {
   var opening = num_(acc.opening_balance), lines = {}, totIn = 0, totOut = 0;
@@ -1459,15 +1567,15 @@ function dayCloseGet_(p) {
   if (!isDate_(date)) fail_('Choose a valid date');
   if (date > today) fail_('A day that has not happened yet cannot be closed');
   var closes = dayCloses_();
-  var done = closes.filter(function (c) { return c.account_id === acc.id && c.date === date; }).pop() || null;
+  var done = closes.filter(function (c) { return c.account_id === acc.id && c.date === date && !c.reopened; }).pop() || null;
   var history = closes.filter(function (c) { return c.account_id === acc.id; }).sort(function (a, b) { return b.date.localeCompare(a.date) || String(b.closed_at).localeCompare(String(a.closed_at)); }).slice(0, 60);
   return Object.assign({ date: date, today: today, account: { id: acc.id, name: acc.name, type: acc.type },
-    accounts: accs.map(function (a) { return { id: a.id, name: a.name, type: a.type }; }), closed: done, history: history }, dayCloseFigures_(acc, date));
+    accounts: accs.map(function (a) { return { id: a.id, name: a.name, type: a.type }; }), closed: done, locked: !!done && dayLockOn_(), history: history }, dayCloseFigures_(acc, date));
 }
 function dayCloseSave_(p, user) {
   var acc = all_('Accounts').filter(function (a) { return a.id === p.account_id && a.active; })[0]; if (!acc) fail_('Select an active account');
   var date = bookDate_(p.date, 'day close');
-  if (dayCloses_().some(function (c) { return c.account_id === acc.id && c.date === date; })) fail_(acc.name + ' is already closed for ' + date);
+  if (dayCloses_().some(function (c) { return c.account_id === acc.id && c.date === date && !c.reopened; })) fail_(acc.name + ' is already closed for ' + date);
   var notes = {}, fromNotes = 0, hasNotes = false;
   Object.keys(p.notes || {}).forEach(function (k) {
     var face = Number(k), n = Number(p.notes[k]);
@@ -1489,7 +1597,31 @@ function dayCloseSave_(p, user) {
     difference: diff, notes: notes, note: note, adjusted: !!adjustment, adjustment_id: adjustment, lines: f.lines };
   // Not audit_(): that one swallows errors, and a count that was not saved must not look saved.
   var row = insert_('AuditLog', { ts: now_(), user: user.name, action: 'day_close', detail: JSON.stringify(rec) });
+  dayLocksRebuild_();
   return Object.assign(rec, { id: row && row.id, closed_at: row && row.ts, closed_by: user.name });
+}
+/* ---- Owner's money: deposits (capital in) and withdrawals (drawings). They move an account balance
+ * but are never sales, expenses or profit. Cash-count corrections from Day close are not the owner's money. */
+function isCashCount_(t) { return /^(Deposit|Withdrawal) — cash count (extra|shortage) on \d{4}-\d{2}-\d{2} — /.test(String(t.note || '')); }
+function ownerEntries_() {
+  return all_('AccountTxns').filter(function (t) { return t.ref_type === 'manual' && !t.voided && !isCashCount_(t); })
+    .sort(function (a, b) { return String(a.date).localeCompare(String(b.date)) || a._row - b._row; });
+}
+function ownerMoney_(p, user) {
+  var from = p.from || '', to = p.to || '';
+  if ((from && !isDate_(from)) || (to && !isDate_(to))) fail_('Choose valid dates');
+  var accs = indexBy_(all_('Accounts')), run = 0, rows = [], putIn = 0, out = 0, nIn = 0, nOut = 0;
+  ownerEntries_().forEach(function (t) {
+    var a = num_(t.amount), isIn = t.direction === 'in', d = String(t.date).slice(0, 10);
+    if (to && d > to) return;
+    run = round_(run + (isIn ? a : -a));
+    if (from && d < from) return;
+    if (isIn) { putIn += a; nIn++; } else { out += a; nOut++; }
+    rows.push({ id: t.id, date: d, kind: isIn ? 'in' : 'out', account: accs[t.account_id] ? accs[t.account_id].name : '', note: String(t.note || '').replace(/^(Deposit|Withdrawal)( — )?/, ''), amount: a, invested: run, user: t.user });
+  });
+  var res = { from: from, to: to, put_in: round_(putIn), taken_out: round_(out), count_in: nIn, count_out: nOut, net: round_(putIn - out), invested: run, rows: rows.reverse() };
+  if (can_(user, 'cost') && can_(user, 'reports')) res.profit = profitSummary_(from, to).net;
+  return res;
 }
 function accountLedger_(p) {
   var acc = all_('Accounts').filter(function (a) { return a.id === p.account_id; })[0]; if (!acc) fail_('Account not found');
@@ -1849,7 +1981,7 @@ function settingsSave_(p, user) {
   var allowed = ['shop_name', 'shop_phone', 'shop_tel', 'shop_email', 'shop_web', 'shop_social', 'shop_address', 'shop_footer', 'currency', 'invoice_prefix', 'receipt_width', 'low_stock_default', 'expense_categories',
     'sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_repair_template', 'sms_technician_template', 'sms_quote_template', 'sms_due_template', 'sms_headers',
     'dashboard_hidden', 'invoice_template', 'invoice_paper', 'invoice_custom_width', 'invoice_custom_height', 'invoice_note',
-    'sms_invoice_link', 'invoice_link_base', 'books_locked_until', 'shop_logo', 'invoice_qr', 'daily_summary_enabled', 'daily_summary_phones', 'daily_summary_hour'];
+    'sms_invoice_link', 'invoice_link_base', 'books_locked_until', 'shop_logo', 'invoice_qr', 'daily_summary_enabled', 'daily_summary_phones', 'daily_summary_hour', 'day_close_lock', 'whatsapp_template'];
   var vals = Object.assign({}, p.values || {});
   if (vals.shop_logo !== undefined) {
     var logo = String(vals.shop_logo || '');
@@ -1859,6 +1991,8 @@ function settingsSave_(p, user) {
     vals.shop_logo = logo;
   }
   if (vals.invoice_qr !== undefined) vals.invoice_qr = String(vals.invoice_qr) === 'false' ? 'false' : 'true';
+  if (vals.day_close_lock !== undefined) vals.day_close_lock = String(vals.day_close_lock) === 'false' ? 'false' : 'true';
+  if (vals.whatsapp_template !== undefined) { vals.whatsapp_template = String(vals.whatsapp_template || '').trim(); if (vals.whatsapp_template.length > 700) fail_('The WhatsApp message is too long (700 letters at most)'); }
   if (vals.daily_summary_enabled !== undefined) vals.daily_summary_enabled = String(vals.daily_summary_enabled) === 'true' ? 'true' : 'false';
   if (vals.daily_summary_phones !== undefined) {
     var phones = parseList_(String(vals.daily_summary_phones || '')).map(function (x) { return x.replace(/[^0-9+]/g, ''); }).filter(Boolean);
@@ -3479,6 +3613,7 @@ function expenseUpdate_(p, user) {
   var txns = all_('AccountTxns').filter(function (t) { return t.ref_type === 'expense' && t.ref_id === e.id && !t.voided; });
   if (txns.length !== 1) fail_('The account entry of this expense is missing or duplicated. Review it before editing');
   var before = { date: e.date, category: e.category, amount: e.amount, account: accs[e.account_id] ? accs[e.account_id].name : e.account_id, note: e.note || '' };
+  if (moneyChanged) { dayLockCheck_(txns[0].account_id, txns[0].date); dayLockCheck_(acc.id, date); }
   update_('AccountTxns', txns[0].id, { account_id: acc.id, amount: amt, date: date, note: 'Expense: ' + cat + (note ? ' — ' + note : '') });
   var upd = update_('Expenses', e.id, { date: date, category: cat, amount: amt, account_id: acc.id, note: note });
   audit_(user, 'expense_update', { id: e.id, before: before, after: { date: date, category: cat, amount: amt, account: acc.name, note: note } });
@@ -4899,6 +5034,7 @@ function balanceSheet_(p, user) {
   var pay = round_(sum_(sups, function (c) { return c.balance > 0 ? c.balance : 0; })), supAdv = round_(sum_(sups, function (c) { return c.balance < 0 ? -c.balance : 0; }));
   var cash = round_(sum_(accs, function (a) { return a.balance; }));
   var assets = round_(cash + stockValue + recv + supAdv), liab = round_(pay + custAdv), equity = round_(assets - liab);
+  var ownerNet = round_(sum_(ownerEntries_(), function (t) { return t.direction === 'in' ? num_(t.amount) : -num_(t.amount); }));
   var L = function (label, amount, kind, indent) { return { label: label, values: { current: round_(amount) }, kind: kind, indent: indent || 0 }; };
   var lines = [{ label: 'Assets', kind: 'section' }, { label: 'Cash, bank & mobile banking', kind: 'section', indent: 1 }]
     .concat(accs.map(function (a) { return L(a.name, a.balance, 'line', 2); }))
@@ -4912,7 +5048,8 @@ function balanceSheet_(p, user) {
       L('Customer advances', custAdv, 'line', 1),
       L('Total liabilities', liab, 'total'),
       { label: "Owner's equity", kind: 'section' },
-      L('Capital and retained profit', equity, 'line', 1),
+      L("Owner's money put in, less taken out", ownerNet, 'line', 1),
+      L('Profit kept in the shop and opening balances', round_(equity - ownerNet), 'line', 1),
       L('Total equity', equity, 'total'),
       L('Liabilities + equity', round_(liab + equity), 'grand')
     ]);
@@ -4974,6 +5111,36 @@ function reportsRaw_(p, user) {
   var period = (from || to) ? ' (' + (from || '…') + ' → ' + (to || '…') + ')' : '';
   var T = p.type;
   if (T === 'stock_summary') return stockSummaryReport_(p, user);
+  if (T === 'slow_stock') {
+    if (!cost) fail_('Permission denied: the slow-moving stock report needs "See cost price & profit margins"');
+    var sdays = [30, 60, 90, 180, 365].indexOf(Number(p.days)) >= 0 ? Number(p.days) : 60, tdy = today_();
+    var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    var nice = function (d) { return Number(d.slice(8, 10)) + ' ' + MON[Number(d.slice(5, 7)) - 1] + ' ' + d.slice(0, 4); };
+    var activeSale = {}, lastSold = {}, firstIn = {}, lastSup = {};
+    all_('Sales').forEach(function (x) { if (x.status === 'active') activeSale[x.id] = String(x.date).slice(0, 10); });
+    all_('SaleItems').forEach(function (i) { var d = activeSale[i.sale_id]; if (d && (!lastSold[i.product_id] || d > lastSold[i.product_id])) lastSold[i.product_id] = d; });
+    var activePur = {}; all_('Purchases').forEach(function (x) { if (x.status === 'active') activePur[x.id] = x; });
+    all_('PurchaseItems').forEach(function (i) {
+      var pu = activePur[i.purchase_id]; if (!pu) return; var d = String(pu.date).slice(0, 10);
+      if (!firstIn[i.product_id] || d < firstIn[i.product_id]) firstIn[i.product_id] = d;
+      if (!lastSup[i.product_id] || d > lastSup[i.product_id].d || (d === lastSup[i.product_id].d && pu._row > lastSup[i.product_id].row)) lastSup[i.product_id] = { d: d, row: pu._row, name: pu.supplier_name || '' };
+    });
+    var catName = indexBy_(all_('Categories')), brandName = indexBy_(all_('Brands')), allValue = 0, slow = [];
+    all_('Products').forEach(function (pr) {
+      if (isService_(pr) || !(pr.stock > 0)) return;
+      var value = round_(pr.stock * pr.cost_price); allValue += value;
+      var sold = lastSold[pr.id] || '', base = sold || firstIn[pr.id] || String(pr.created_at || '').slice(0, 10);
+      var idle = isDate_(base) ? daysBetween_(base, tdy) : null;
+      if (idle !== null && idle < sdays) return;
+      slow.push({ product: pr.name, category: (catName[pr.subcategory_id] || catName[pr.category_id] || {}).name || '', brand: (brandName[pr.brand_id] || {}).name || '',
+        last_sold: sold ? nice(sold) : 'Never sold', idle_days: idle === null ? '' : idle, stock: pr.stock, unit: pr.unit, cost_price: pr.cost_price, value: value, supplier: (lastSup[pr.id] || {}).name || '' });
+    });
+    slow.sort(function (a, b) { return b.value - a.value || String(a.product).localeCompare(String(b.product)); });
+    var tied = round_(sum_(slow, function (r) { return r.value; }));
+    return finishReport_('Slow-moving stock — not sold in the last ' + sdays + ' days', [col_('product', 'Product'), col_('category', 'Category'), col_('brand', 'Brand'), col_('last_sold', 'Last sold'),
+      col_('idle_days', 'Days without a sale', 'num'), col_('stock', 'In stock', 'num'), col_('cost_price', 'Unit cost', 'money'), col_('value', 'Value at cost', 'money', true), col_('supplier', 'Last supplier')], slow,
+      { slow: { days: sdays, tied: tied, products: slow.length, stock_value: round_(allValue), share: allValue > 0 ? round_(tied / allValue * 100, 1) : 0 } });
+  }
   if (T === 'supplier_prices') {
     if (!cost) fail_('Permission denied: the supplier price report needs "See cost price & profit margins"');
     var sp = supplierPricesData_(p).map(function (r) { return Object.assign({}, r, { supplier: r.supplier + (r.cheapest ? ' ★ cheapest' : '') }); });
@@ -5129,6 +5296,10 @@ var ROUTES = {
   'supplier.prices':  r_(null, supplierPrices_),
   'dayclose.get':     r_('accounts', dayCloseGet_),
   'dayclose.save':    r_('accounts', dayCloseSave_, true),
+  'dayclose.reopen':  r_('accounts', dayCloseReopen_, true),
+  'owner.money':      r_('accounts', ownerMoney_),
+  'sessions.list':    r_('users', sessionsList_),
+  'sessions.revoke':  r_('users', sessionsRevoke_, true),
   'report.pnl':       r_(null, profitLoss_),
   'report.balance':   r_(null, balanceSheet_),
   'stock.adjust':     r_('products', stockAdjust_, true),
