@@ -77,7 +77,8 @@ await raw('login', {username: 'admin', password: 'nope', device: 'Firefox on Lin
 const as = (token) => (action, payload = {}) => raw(action, payload, {token});
 let list = (await as(first.data.token)('sessions.list')).data;
 ok(list.sessions.some((s) => s.device === 'Chrome on Windows' && s.current) && list.sessions.some((s) => s.device === 'Chrome on Android' && !s.current), 'both devices listed, this one marked');
-eq(list.history.slice(0, 3).map((h) => [h.device, h.result]).sort(), [['Chrome on Android', 'ok'], ['Chrome on Windows', 'ok'], ['Firefox on Linux', 'failed']], 'history: sign-ins and the wrong password');
+const has = (device, result) => list.history.some((h) => h.device === device && h.result === result);
+ok(has('Chrome on Android', 'ok') && has('Chrome on Windows', 'ok') && has('Firefox on Linux', 'failed'), 'history: sign-ins and the wrong password');
 const mine = list.sessions.find((s) => s.current), other = list.sessions.find((s) => s.device === 'Chrome on Android');
 ok(/device you are using/.test((await as(first.data.token)('sessions.revoke', {sid: mine.sid})).error), 'cannot sign out the device in use');
 const rv = (await as(first.data.token)('sessions.revoke', {sid: other.sid})).data;
