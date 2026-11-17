@@ -1,3 +1,29 @@
+# 18 November 2026 — Service jobs
+
+- Service page (field work — CC camera installation, new internet connection …), replacing the empty placeholder.
+  - Service list (admin only): the kinds of work with a usual charge; switch one off, or delete it while it has no jobs.
+  - New service (admin / manager): saved or new customer (name, phone, address), service, work details, work address (filled from the customer), technician, service charge and the products the technician takes from stock (serial numbers picked for serial items). It starts Pending and the products stay reserved: they cannot be sold or taken for another job.
+  - The technician gets an SMS with the job, the customer, phone number and address (Settings → SMS: "Service job message").
+  - Technicians see only their own jobs and press Work done (with an optional note); an SMS goes to the numbers in Settings → SMS → "Service done SMS goes to" ("Service done message"). The dashboard shows "Service jobs done — complete & invoice".
+  - Complete & invoice (admin / manager with POS): tick the serials used and type the quantity used; what came back goes back to stock. A normal sale invoice is made for the products used plus the service charge (discount, payment, due and next payment date as usual), and can be printed. Cancelling that invoice puts the job back to Work done.
+  - Cancel service frees the products.
+- New permission "Service jobs", on by default for managers and technicians (also in shops that saved their role settings before; later saves keep the admin's choice).
+- Server: actions services.meta, services.list, service.get, service.save, service.status, service.complete, service.cancel, service.type.save, service.type.delete. Service jobs are kept in the Repairs table with numbers SRV-… and are not shown under Repairs.
+- Tests: backend/test/features-8.mjs (40 checks); service-jobs.spec.js; repairs.cjs now expects technicians to have Service too.
+
+# 17 November 2026 — Party Ledger Adjust and Ledger Report
+
+- Customer Ledger Adjust / Supplier Ledger Adjust (admin only): Addition or Deduction on a customer's or supplier's ledger, with type, amount, date, optional invoice, reference no and a required reason. No money moves. Numbers CLA-… / SLA-…. A preview shows the balance (and the chosen invoice's due) before and after. Recent adjustments list with who saved them; Cancel needs the admin password (reverse types cadjust / sadjust).
+  - Supplier Deduction = rebate (Invoice rebate, Target bonus, Price protection, Cash payment discount, Other rebate), received now or only promised; promised rebates are listed on the page with Mark received / Drop, and the dashboard reminder opens this page for admins. New rebates are numbered SLA-… (old ones keep RB-…).
+  - Customer Deduction (leftover due written off, late discount, bad debt, other) cannot be more than the customer owes or the chosen invoice's due; "Whole invoice due" fills it in. It counts as "Customer dues written off" in the profit report, profit & loss and dashboard net profit. Additions only correct the balance.
+  - An adjustment chosen for an invoice settles (or raises) that invoice's due first.
+- Collection: Collect payment only collects now — "Pay to customer (return advance)" is gone. Old return-advance rows stay in the ledgers.
+- Payment: Pay supplier only pays now — "Receive from supplier (refund)" and the rebate type are gone, and so are the promised rebates in the supplier's ledger window (all of it is under Supplier Ledger Adjust). Old refund and rebate rows stay in the ledgers.
+- Customer Ledger Report / Supplier Ledger Report (admin only): with nobody chosen, every party in the period (opening, sales or purchases, paid + returns, adjusted, closing, oldest due); with one chosen, the full ledger in the app's style — each invoice with its items and serial numbers, the account money went through, adjustments with reason and who saved them, running balance, dues by age. Filters: period (today, this month, last month, this year, all time, custom), entry type, account, invoice / voucher no, items / serials / only invoices with due, hide zero balance, only overdue. Print and PDF give a paper statement with the shop header; Excel; WhatsApp sends the balance message.
+- Names shortened: Party Ledger Adjust, Customer Ledger Adjust, Supplier Ledger Adjust (menu and page titles; the page addresses stay the same). Menu card titles always stay on one line.
+- Server: actions adjust.options, adjust.list, ledger.adjust, ledger.report (all admin only).
+- Tests: backend/test/features-7.mjs (41 checks); party-ledger-adjustment.spec.js; features-5.spec.js now records rebates on Supplier Ledger Adjust; two older tests search their table so rows from other tests cannot push them off the first page.
+
 # 17 November 2026 — Party Ledger Adjustment menu card
 
 - Side menu: a new card "Party Ledger Adjustment" above Money & Reports with two pages, Customer Ledger Adjustment (/customer-ledger-adjustment) and Supplier Ledger Adjustment (/supplier-ledger-adjustment). Admin only. The pages are placeholders ("Coming soon"); the adjustment itself is not built yet.

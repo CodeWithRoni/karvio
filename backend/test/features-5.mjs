@@ -27,7 +27,7 @@ ok(/not from City IT/.test((await raw('supplier.rebate', {supplier_id: sup.id, a
 
 // 1 + 2: rebate lowers the debt, no money moves, linked to the invoice
 const rb = await q('supplier.rebate', {supplier_id: sup.id, amount: 10000, kind: 'invoice', note: 'Credit note CN-118', purchase_id: p2.id});
-eq([rb.receipt_no, rb.balance, rb.entry.type, rb.entry.debit], ['RB-000001', 90000, 'rebate', 10000], 'rebate recorded: we owe 90,000');
+eq([rb.receipt_no, rb.balance, rb.entry.type, rb.entry.debit], ['SLA-000001', 90000, 'rebate', 10000], 'rebate recorded: we owe 90,000');
 eq([await cashNow(), (await q('products.list')).find((x) => x.id === prod.id).cost_price], [cashBefore, costBefore], 'cash and product cost untouched');
 const st = await q('supplier.statement', {supplier_id: sup.id});
 eq([st.closing, st.rows.at(-1).type, st.rows.at(-1).note], [90000, 'rebate', 'Invoice rebate — Credit note CN-118'], 'statement shows the rebate line');
@@ -35,7 +35,7 @@ const d2 = await q('purchase.detail', {id: p2.id});
 eq([d2.rebates.length, d2.rebates[0].amount, d2.rebates[0].kind_label, d2.purchase.due_now], [1, 10000, 'Invoice rebate', 30000], 'the purchase shows its rebate and its own due falls first');
 eq((await q('purchase.detail', {id: p1.id})).purchase.due_now, 60000, 'the other invoice is unchanged');
 const audit = (await q('audit.list', {})); const arows = audit.rows || audit;
-ok(arows.some((a) => a.action === 'supplier_rebate' && /RB-000001/.test(a.detail)), 'written to the activity log');
+ok(arows.some((a) => a.action === 'supplier_rebate' && /SLA-000001/.test(a.detail)), 'written to the activity log');
 
 // profit: other income
 const ps = (await q('profit.report', {from: today, to: today})).summary;

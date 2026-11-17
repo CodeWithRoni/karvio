@@ -1,5 +1,7 @@
 # Review fixes — verification (15 November 2026, not yet pushed)
 
+- 18 November 2026, Service jobs (with Collection return-advance removed): npm test, test:supabase, test:performance (features-8.mjs: 40 checks), build and 190/190 Playwright tests passed locally.
+- 17 November 2026, Party Ledger Adjust and Ledger Report: npm test, test:supabase, test:performance (features-7.mjs: 41 checks), build and 189/189 Playwright tests passed locally.
 - 17 November 2026, three fixes (type switch flicker, profile over the edit form, supplier warranty from the stock report): npm test, test:supabase, test:performance, build and 184/184 Playwright tests passed locally.
 - 17 November 2026, Collection / Payment pages and purchase detail layout: npm test, build and 180/180 Playwright tests passed locally. With the next payment date: npm test, test:supabase, test:performance (features-6.mjs: 13 checks), build and 181 Playwright tests passed (one test's dialog locator was made exact after it matched two windows).
 - 16 November 2026, supplier rebates: npm test, test:supabase, test:performance (features-5.mjs: 35 checks), build and 178/178 Playwright tests passed locally.

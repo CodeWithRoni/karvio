@@ -127,19 +127,6 @@ test('editing a customer from the directory closes the profile window first', as
   await expect(page.getByRole('dialog')).toHaveCount(1);
 });
 
-test('switching the pay-supplier type to rebate and back does not replay the opening animation', async ({ page, request }) => {
-  const sup = await call(request, 'supplier.save', { name: `Flick sup ${Date.now()}` });
-  await page.goto(`/#/payment/${sup.id}`);
-  await page.getByRole('dialog', { name: sup.name, exact: true }).getByRole('button', { name: 'Pay supplier' }).click();
-  await expect(page.locator('.modal-bg').last()).not.toHaveClass(/instant/);
-  await page.getByRole('dialog', { name: /^Pay supplier/ }).getByLabel('Type').selectOption('rebate');
-  await expect(page.getByRole('dialog', { name: /^Supplier rebate/ })).toBeVisible();
-  await expect(page.locator('.modal-bg').last()).toHaveClass(/instant/);
-  await page.getByRole('dialog', { name: /^Supplier rebate/ }).getByLabel('Type').selectOption('pay');
-  await expect(page.getByRole('dialog', { name: /^Pay supplier/ })).toBeVisible();
-  await expect(page.locator('.modal-bg').last()).toHaveClass(/instant/);
-});
-
 test('stock report: click a product without supplier warranty to open its purchase and set the date', async ({ page, request }) => {
   const stamp = Date.now();
   const sup = await call(request, 'supplier.save', { name: `Warr sup ${stamp}` });

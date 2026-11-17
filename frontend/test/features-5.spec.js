@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-// Supplier rebates: record one from Pay supplier, see it in the ledger and the report, promised rebates, void with the admin password.
+// Supplier rebates on Supplier Ledger Adjust: record one, see it in the ledger and the report, promised rebates, cancel with the admin password.
 const endpoint = 'http://localhost:8787';
 let token, today;
 async function raw(request, action, payload = {}) { return (await request.post(endpoint, { data: { action, payload, token } })).json(); }
@@ -19,65 +19,74 @@ async function setup(request) {
   const pur = (await call(request, 'purchase.create', { supplier_id: sup.id, date: today, items: [{ product_id: prod.id, qty: 100, cost: 1000, sale_price: 1500 }], payments: [] })).purchase;
   return { stamp, sup, pur };
 }
-const openSupplier = async (page, name) => {
-  await page.goto('/#/payment');
-  await page.getByRole('tab', { name: 'All', exact: true }).click();
-  await page.getByLabel('Search suppliers').fill(name);
-  await page.getByText(name, { exact: true }).first().click();
-  return page.getByRole('dialog', { name });
+const openAdjust = async (page, name) => {
+  await page.goto('/#/supplier-ledger-adjustment');
+  await page.getByPlaceholder(/Search supplier/).fill(name);
+  await page.getByRole('option', { name: new RegExp(name) }).click();
+  return page.getByRole('region', { name: 'General information' });
 };
 
-test('a supplier rebate lowers what we owe without touching any account', async ({ page, request }) => {
+test('a supplier rebate (Supplier Ledger Adjust · Deduction) lowers what we owe without touching any account', async ({ page, request }) => {
   const { sup, pur } = await setup(request);
   const cashBefore = (await call(request, 'accounts.list')).reduce((a, x) => a + x.balance, 0);
-  const dlg = await openSupplier(page, sup.name);
-  await dlg.getByRole('button', { name: 'Pay supplier' }).click();
-  await page.getByRole('dialog', { name: /^Pay supplier/ }).getByLabel('Type').selectOption('rebate');
-  const rb = page.getByRole('dialog', { name: /^Supplier rebate/ });
-  await expect(rb.getByLabel('Account')).toHaveCount(0);
-  const save = rb.getByRole('button', { name: 'Save rebate' });
-  await rb.getByLabel('Rebate amount').fill('10000');
+  const form = await openAdjust(page, sup.name);
+  await expect(form.getByLabel('Account')).toHaveCount(0);
+  await expect(form.getByRole('radio', { name: /Deduction/ })).toBeChecked();
+  const save = form.getByRole('button', { name: 'Save adjustment' });
+  await form.getByLabel('Amount').fill('10000');
   await expect(save).toBeDisabled();
-  await rb.getByLabel('For which purchase (optional)').selectOption(pur.id);
-  await rb.getByLabel('Reason').fill('Credit note CN-118');
-  await expect(rb.locator('.rb-preview')).toContainText('Tk 1,00,000 · we owe');
-  await expect(rb.locator('.rb-preview')).toContainText('Tk 90,000 · we owe');
+  await form.getByLabel('Purchase invoice').selectOption(pur.id);
+  await form.getByLabel('Reference no').fill('CN-118');
+  await form.getByLabel('Reason').fill('Credit note');
+  await expect(form.getByLabel('Balance after')).toContainText('Tk 1,00,000 · we owe');
+  await expect(form.getByLabel('Balance after')).toContainText('Tk 90,000 · we owe');
   await save.click();
-  await expect(page.getByText('Rebate of Tk 10,000 recorded')).toBeVisible();
-  const row = dlg.locator('tbody tr').filter({ hasText: 'Invoice rebate — Credit note CN-118' });
-  await expect(row).toContainText('90,000');
+  await expect(page.getByText(/SLA-\d+ saved · supplier balance now Tk 90,000 · we owe/)).toBeVisible();
+  const row = page.getByRole('region', { name: 'Recent adjustments' }).locator('tbody tr').filter({ hasText: sup.name });
+  await expect(row).toContainText('Invoice rebate');
+  await expect(row).toContainText('Credit note · Ref: CN-118');
   expect((await call(request, 'accounts.list')).reduce((a, x) => a + x.balance, 0)).toBe(cashBefore);
-  // void: admin password and a reason
-  await row.getByRole('button', { name: 'Void' }).click();
+  // the Payment ledger shows it too, but it is cancelled from the adjust page
+  await page.goto(`/#/payment/${sup.id}`);
+  await expect(page.getByRole('dialog', { name: sup.name, exact: true }).locator('tbody tr').filter({ hasText: 'Invoice rebate — Credit note' })).toContainText('90,000');
+  await page.goto('/#/supplier-ledger-adjustment');
+  await page.getByRole('region', { name: 'Recent adjustments' }).locator('tbody tr').filter({ hasText: sup.name }).getByRole('button', { name: 'Cancel' }).click();
   const rev = page.getByRole('dialog').last();
   await rev.locator('input[type=password]').fill('admin123');
-  await rev.locator('textarea, input:not([type=password])').first().fill('Entered by mistake');
-  await rev.getByRole('button', { name: /Cancel|Void|Confirm/ }).last().click();
-  await expect(dlg.locator('tbody tr').filter({ hasText: 'Invoice rebate — Credit note CN-118' })).toHaveCount(0);
+  await rev.locator('input:not([type=password])').first().fill('Entered by mistake');
+  await rev.getByRole('button', { name: /^Cancel adjustment/ }).click();
+  await expect(page.getByRole('region', { name: 'Recent adjustments' }).locator('tbody tr').filter({ hasText: sup.name })).toHaveCount(0);
   expect((await call(request, 'suppliers.list')).find((s) => s.id === sup.id).balance).toBe(100000);
 });
 
-test('a promised rebate waits on the supplier until it is received', async ({ page, request }) => {
+test('a promised rebate waits on the adjust page until it is received', async ({ page, request }) => {
   const { sup } = await setup(request);
-  let dlg = await openSupplier(page, sup.name);
-  await dlg.getByRole('button', { name: 'Pay supplier' }).click();
-  await page.getByRole('dialog', { name: /^Pay supplier/ }).getByLabel('Type').selectOption('rebate');
-  const rb = page.getByRole('dialog', { name: /^Supplier rebate/ });
-  await rb.getByRole('tab', { name: 'Not yet — only promised' }).click();
-  await rb.getByLabel('Kind of rebate').selectOption('target');
-  await rb.getByLabel('Rebate amount').fill('4000');
-  await rb.getByLabel('Reason').fill('November target bonus');
-  await rb.getByRole('button', { name: 'Save as promised' }).click();
-  const pend = dlg.getByRole('region', { name: 'Promised rebates' });
-  await expect(pend).toContainText('Tk 4,000 · November target bonus');
+  const form = await openAdjust(page, sup.name);
+  await form.getByRole('tab', { name: 'Not yet — only promised' }).click();
+  await form.getByLabel('Adjustment type').selectOption('target');
+  await form.getByLabel('Amount').fill('4000');
+  await form.getByLabel('Reason').fill('November target bonus');
+  await form.getByRole('button', { name: 'Save as promised' }).click();
+  const pend = page.getByRole('region', { name: 'Promised rebates' });
+  await expect(pend).toContainText('November target bonus');
   expect((await call(request, 'suppliers.list')).find((s) => s.id === sup.id).balance).toBe(100000);
-  await pend.getByRole('button', { name: /^Mark the/ }).click();
-  const got = page.getByRole('dialog', { name: /^Receive promised rebate/ });
-  await expect(got.getByLabel('Rebate amount')).toHaveValue('4000');
-  await got.getByRole('button', { name: 'Save rebate' }).click();
-  await expect(dlg.getByRole('region', { name: 'Promised rebates' })).toHaveCount(0);
-  await expect(dlg.locator('tbody tr').filter({ hasText: 'Target bonus — November target bonus' })).toContainText('96,000');
+  await pend.getByRole('button', { name: new RegExp(`^Mark the .* rebate from ${sup.name} received`) }).click();
+  await expect(form.getByLabel('Amount')).toHaveValue('4000');
+  await expect(form).toContainText('Receiving a promised rebate');
+  await form.getByRole('button', { name: 'Save received rebate' }).click();
+  await expect(page.getByRole('region', { name: 'Promised rebates' }).getByText(sup.name)).toHaveCount(0);
+  expect((await call(request, 'suppliers.list')).find((s) => s.id === sup.id).balance).toBe(96000);
   await page.goto('/#/reports?type=supplier_rebates');
   await expect(page.locator('.om-kpis')).toContainText('Rebates received');
   await expect(page.locator('tbody tr').filter({ hasText: sup.name }).first()).toContainText('Target bonus');
+});
+
+test('Pay supplier only pays: no refund and no rebate there any more', async ({ page, request }) => {
+  const { sup } = await setup(request);
+  await page.goto(`/#/payment/${sup.id}`);
+  await page.getByRole('dialog', { name: sup.name, exact: true }).getByRole('button', { name: 'Pay supplier' }).click();
+  const pay = page.getByRole('dialog', { name: /^Pay supplier/ });
+  await expect(pay.getByLabel('Amount')).toBeVisible();
+  await expect(pay.getByLabel('Type')).toHaveCount(0);
+  await expect(pay.locator('.form')).not.toContainText(/refund|rebate/i);
 });

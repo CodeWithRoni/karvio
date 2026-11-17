@@ -253,7 +253,7 @@ export function smsParts(text) {
 
 const DEFAULT_QUOTE_SMS = 'Dear {name}, your quotation from {shop}: {title}, total {total}. View it here (valid {days} days): {link}';
 function SmsSettings() {
-  const { f, setF, bind, save, busy } = useSettingsForm(['sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_repair_template', 'sms_technician_template', 'sms_quote_template', 'whatsapp_template', 'sms_headers', 'sms_invoice_link', 'invoice_link_base']);
+  const { f, setF, bind, save, busy } = useSettingsForm(['sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_service_tech_template', 'sms_service_done_template', 'sms_service_done_numbers', 'sms_repair_template', 'sms_technician_template', 'sms_quote_template', 'whatsapp_template', 'sms_headers', 'sms_invoice_link', 'invoice_link_base']);
   const [builderVersion, setBuilderVersion] = useState(0);
   const [showKey, setShowKey] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -309,6 +309,9 @@ function SmsSettings() {
         <Field label="3. Sale message template" wide hint="Placeholders: {name} {shop} {items} {invoice} {total} {paid} {due} {date} {link}"><textarea {...bind('sms_template')} /></Field>
         <Field label="Repair completed message" wide hint="Sent to the customer when a repair job is marked Completed. Placeholders: {name} {device} {job} {shop} {total} {advance} {due}"><textarea {...bind('sms_repair_template')} /></Field>
         <Field label="Technician job message" wide hint="Sent to the technician when a repair job is given to them. Placeholders: {technician} {job} {device} {problem} {name} {phone} {shop}"><textarea {...bind('sms_technician_template')} /></Field>
+        <Field label="Service job message (to the technician)" wide hint="Sent when a service job is given to a technician. Placeholders: {technician} {job} {service} {details} {name} {phone} {address} {shop}"><textarea {...bind('sms_service_tech_template')} placeholder="{technician}, new service job {job}: {service}. {details}. Customer {name} {phone}. Address: {address}. {shop}" /></Field>
+        <Field label="Service done message" wide hint="Sent when the technician presses Work done. Placeholders: {job} {service} {name} {phone} {address} {technician} {note} {shop}"><textarea {...bind('sms_service_done_template')} placeholder="Service {job} is done: {service} for {name} {phone} by {technician}. {note}" /></Field>
+        <Field label="Service done SMS goes to" wide hint="Admin / manager mobile numbers, separated by commas."><input {...bind('sms_service_done_numbers')} placeholder="01XXXXXXXXX, 01XXXXXXXXX" inputMode="tel" aria-label="Service done SMS numbers" /></Field>
         <Field label="Quotation message" wide hint="Sent from PC builder → Send to customer. The link works for 3 days. Placeholders: {name} {shop} {title} {total} {days} {link}"><textarea {...bind('sms_quote_template')} placeholder={DEFAULT_QUOTE_SMS} /></Field>
         <Field label="WhatsApp invoice message" wide hint="Used by Send on WhatsApp (no SMS cost: it opens WhatsApp with the message filled in). Placeholders: {name} {shop} {invoice} {total} {paid} {due} {link} {shop_phone}"><textarea rows={5} {...bind('whatsapp_template')} placeholder={DEFAULT_WHATSAPP} /></Field>
         <div className="wide sms-link">

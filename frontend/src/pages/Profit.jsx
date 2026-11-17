@@ -71,6 +71,7 @@ function Report({ d, group, setGroup, view, setView }) {
           <tr><td>− Expenses <small className="muted">({s.expense_count})</small></td><td className="r num">{money(-s.expenses, false)}</td></tr>
           {!!s.stock_adjust && <tr><td>{s.stock_adjust < 0 ? '− Stock / warranty loss' : '+ Stock / warranty recovery'} <small className="muted">(stock adjustments at cost)</small></td><td className="r num">{money(s.stock_adjust, false)}</td></tr>}
           {!!s.rebates && <tr><td>+ Supplier rebates <small className="muted">(discounts suppliers gave after the purchase)</small></td><td className="r num">{money(s.rebates, false)}</td></tr>}
+          {!!s.writeoffs && <tr><td>− Customer dues written off <small className="muted">(Customer Ledger Adjust deductions)</small></td><td className="r num">{money(-s.writeoffs, false)}</td></tr>}
           <tr className={`sub total ${tone(s.net)}`}><td><b>= Net profit</b></td><td className="r num"><b>{money(s.net, false)}</b></td></tr>
         </tbody></table>
       </div>
@@ -92,6 +93,7 @@ function Report({ d, group, setGroup, view, setView }) {
             { key: 'expenses', label: 'Expenses', type: 'money', sum: true },
             { key: 'stock_adjust', label: 'Stock adjust', type: 'money', sum: true },
             { key: 'rebates', label: 'Rebates', type: 'money', sum: true },
+            { key: 'writeoffs', label: 'Dues written off', type: 'money', sum: true },
             { key: 'net', label: 'Net profit', type: 'money', sum: true, className: 'profit-net' }
           ]} />}
         {view === 'products' && <DataTable title={`Profit by product ${d.from} to ${d.to}`} rows={d.products} empty={<Empty title="Nothing sold in this period" />}

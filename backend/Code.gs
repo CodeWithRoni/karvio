@@ -74,16 +74,19 @@ var PERMS = {
   'expenses':     'Daily expenses',
   'warranty':     'Warranty claims',
   'repairs':      'Repair jobs (job cards, parts, delivery)',
+  'service':      'Service jobs (field work: give to technicians, complete with an invoice)',
   'reports':      'Reports hub & full dashboard',
   'cancel':       'Cancel / reverse transactions',
   'users':        'User management',
   'settings':     'System settings'
 };
 var DEFAULT_ROLE_PERMS = {
-  manager: ['pos','sales.all','sales.return','purchase','products','cost','customers','suppliers','accounts','expenses','warranty','repairs','reports'],
+  manager: ['pos','sales.all','sales.return','purchase','products','cost','customers','suppliers','accounts','expenses','warranty','repairs','service','reports'],
   sales:   ['pos','warranty'],
-  technician: ['repairs']
+  technician: ['repairs','service']
 };
+/** Permissions added after shops had already saved their role settings: such a shop gets them with the role defaults. */
+var PERMS_ADDED_LATER = ['service'];
 var STAFF_ROLES = ['manager', 'sales', 'technician'];
 
 /* ============================================================================
@@ -659,6 +662,9 @@ function rolePerms_() {
   if (!cfg) return DEFAULT_ROLE_PERMS;
   // A role added after the permissions were saved (e.g. technician) starts with its defaults.
   STAFF_ROLES.forEach(function (r) { if (!Array.isArray(cfg[r])) cfg[r] = DEFAULT_ROLE_PERMS[r] || []; });
+  // A permission that did not exist when the roles were saved starts with its role default (later saves list it in 'known').
+  var known = Array.isArray(cfg.known) ? cfg.known : Object.keys(PERMS).filter(function (k) { return PERMS_ADDED_LATER.indexOf(k) < 0; });
+  STAFF_ROLES.forEach(function (r) { (DEFAULT_ROLE_PERMS[r] || []).forEach(function (k) { if (known.indexOf(k) < 0 && cfg[r].indexOf(k) < 0) cfg[r] = cfg[r].concat([k]); }); });
   return cfg;
 }
 function permsFor_(role) { return role === 'admin' ? ['*'] : (rolePerms_()[role] || []); }
@@ -1686,6 +1692,7 @@ function rolePermsSave_(p, user) {
   if (user.role !== 'admin') fail_('Only an admin can change what each role may do');
   var cfg = {};
   STAFF_ROLES.forEach(function (r) { cfg[r] = (Array.isArray(p[r]) ? p[r] : (DEFAULT_ROLE_PERMS[r] || [])).filter(function (x) { return PERMS[x]; }); });
+  cfg.known = Object.keys(PERMS);
   setSetting_('role_perms', JSON.stringify(cfg));
   return cfg;
 }
@@ -1979,7 +1986,7 @@ function expenseCategoriesSave_(p, user) {
 }
 function settingsSave_(p, user) {
   var allowed = ['shop_name', 'shop_phone', 'shop_tel', 'shop_email', 'shop_web', 'shop_social', 'shop_address', 'shop_footer', 'currency', 'invoice_prefix', 'receipt_width', 'low_stock_default', 'expense_categories',
-    'sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_repair_template', 'sms_technician_template', 'sms_quote_template', 'sms_due_template', 'sms_headers',
+    'sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_repair_template', 'sms_technician_template', 'sms_quote_template', 'sms_due_template', 'sms_headers', 'sms_service_tech_template', 'sms_service_done_template', 'sms_service_done_numbers',
     'dashboard_hidden', 'invoice_template', 'invoice_paper', 'invoice_custom_width', 'invoice_custom_height', 'invoice_note',
     'sms_invoice_link', 'invoice_link_base', 'books_locked_until', 'shop_logo', 'invoice_qr', 'daily_summary_enabled', 'daily_summary_phones', 'daily_summary_hour', 'day_close_lock', 'whatsapp_template'];
   var vals = Object.assign({}, p.values || {});
@@ -2413,9 +2420,9 @@ var REPAIR_OPEN = ['Received', 'Completed', 'Failed'];
 var REPAIR_SERVICE_NAME = 'Repair service';
 /** Jobs saved before "Ready" was renamed read as "Completed". */
 function repairStatusOf_(r) { return r.status === 'Ready' ? 'Completed' : r.status; }
-function repairOpen_(r) { return REPAIR_OPEN.indexOf(repairStatusOf_(r)) >= 0; }
+function repairOpen_(r) { return isServiceJob_(r) ? SERVICE_OPEN.indexOf(r.status) >= 0 : REPAIR_OPEN.indexOf(repairStatusOf_(r)) >= 0; }
 function repairRow_(id) {
-  var r = all_('Repairs').filter(function (x) { return x.id === id; })[0];
+  var r = all_('Repairs').filter(function (x) { return x.id === id && !isServiceJob_(x); })[0];
   if (!r) fail_('Repair job not found');
   return r;
 }
@@ -2453,7 +2460,7 @@ function repairPartsClean_(list, exceptId) {
     if (!isDecimalUnit_(pr.unit) && qty % 1 !== 0) fail_('Quantity for ' + pr.name + ' must be a whole number');
     var price = round_(it.price); if (price < 0) fail_('Invalid price for ' + pr.name);
     quantities[pr.id] = (quantities[pr.id] || 0) + qty;
-    if (!isService_(pr) && quantities[pr.id] > pr.stock - (reserved.qty[pr.id] || 0) + 1e-9) fail_('Only ' + Math.max(0, pr.stock - (reserved.qty[pr.id] || 0)) + ' ' + pr.unit + ' of ' + pr.name + ' available; other parts are reserved for repairs');
+    if (!isService_(pr) && quantities[pr.id] > pr.stock - (reserved.qty[pr.id] || 0) + 1e-9) fail_('Only ' + Math.max(0, pr.stock - (reserved.qty[pr.id] || 0)) + ' ' + pr.unit + ' of ' + pr.name + ' available; the rest is reserved for repair or service jobs');
     var sers = [];
     if (isSerialProduct_(pr)) {
       sers = splitSerials_(it.serials);
@@ -2461,7 +2468,7 @@ function repairPartsClean_(list, exceptId) {
       sers.forEach(function (s) {
         var k = pr.id + '|' + s;
         if (!sidx[k] || sidx[k].status !== 'in_stock') fail_('Serial ' + s + ' is not in stock for ' + pr.name);
-        if (reserved.serial[sidx[k].id]) fail_('Serial ' + s + ' is reserved for another repair');
+        if (reserved.serial[sidx[k].id]) fail_('Serial ' + s + ' is reserved for another repair or service job');
         if (seen[k]) fail_('Duplicate serial ' + s); seen[k] = 1;
       });
     } else if (!isService_(pr) && pr.stock < qty - 1e-9) fail_('Only ' + pr.stock + ' ' + pr.unit + ' of ' + pr.name + ' in stock');
@@ -2514,6 +2521,7 @@ function repairsMeta_() {
 function repairsList_(p) {
   var q = String(p.q || '').toLowerCase(), sales = indexBy_(all_('Sales'));
   return all_('Repairs').filter(function (r) {
+    if (isServiceJob_(r)) return false;
     if (p.status && repairStatusOf_(r) !== p.status) return false;
     if (p.technician_id && r.technician_id !== p.technician_id) return false;
     if (!inRange_(r.date, p.from, p.to)) return false;
@@ -2617,7 +2625,7 @@ function repairSeen_(p, user) {
 }
 /** Dashboard alerts for admins: jobs the technician marked Completed or Failed that no admin has marked Seen. */
 function repairAlerts_() {
-  return all_('Repairs').filter(function (r) { var s = repairStatusOf_(r); return (s === 'Completed' || s === 'Failed') && !r.alert_seen; })
+  return all_('Repairs').filter(function (r) { var s = repairStatusOf_(r); return !isServiceJob_(r) && (s === 'Completed' || s === 'Failed') && !r.alert_seen; })
     .sort(function (a, b) { return String(b.result_at || b.updated_at).localeCompare(String(a.result_at || a.updated_at)) || String(b.job_no).localeCompare(String(a.job_no)); })
     .map(function (r) {
       var o = repairOut_(r);
@@ -2626,10 +2634,12 @@ function repairAlerts_() {
     });
 }
 /** The one service product that carries repair charges on invoices (made the first time it is needed). */
-function repairServiceProduct_() {
-  var pr = all_('Products').filter(function (x) { return isService_(x) && x.name === REPAIR_SERVICE_NAME; })[0];
+function repairServiceProduct_() { return serviceProductNamed_(REPAIR_SERVICE_NAME, 'Charges for repair jobs'); }
+/** A service product (no stock) with this exact name, made the first time it is needed. */
+function serviceProductNamed_(name, description) {
+  var pr = all_('Products').filter(function (x) { return isService_(x) && x.name === name; })[0];
   if (pr) { if (!pr.active) pr = update_('Products', pr.id, { active: true }); return pr; }
-  return insert_('Products', { sku: '', barcode: '', name: REPAIR_SERVICE_NAME, category_id: '', subcategory_id: '', brand_id: '', unit: 'pcs', roll_length: 0, cost_price: 0, sale_price: 0, wholesale_price: 0, stock: 0, low_stock: 0, has_warranty: false, warranty_type: '', warranty_days: 0, active: true, created_at: now_(), service: true, description: 'Charges for repair jobs' });
+  return insert_('Products', { sku: '', barcode: '', name: name, category_id: '', subcategory_id: '', brand_id: '', unit: 'pcs', roll_length: 0, cost_price: 0, sale_price: 0, wholesale_price: 0, stock: 0, low_stock: 0, has_warranty: false, warranty_type: '', warranty_days: 0, active: true, created_at: now_(), service: true, description: description || '' });
 }
 /** Hand the device back: a sale invoice for the parts and the charge; the advance is used as credit. */
 function repairDeliver_(p, user) {
@@ -2682,6 +2692,221 @@ function repairCancel_(p, user) {
   var upd = update_('Repairs', r.id, { status: 'Cancelled', cancel_reason: reason, log: log, updated_at: now_() });
   audit_(user, 'repair_cancel', { job: r.job_no, reason: reason });
   return repairOut_(upd);
+}
+
+/* ============================================================================
+ *  10c. SERVICE JOBS  (field work: CC camera installation, new internet connection …)
+ *  Kept in the Repairs table and told apart by the number (SRV-…), so stock reservations, customer checks and the
+ *  invoice work exactly like repair jobs. Columns used: device = service type name, serial = service type id,
+ *  problem = work details, accessories = work address, charge = service charge, parts = products the technician took.
+ *  Pending → Work done (by the technician; an SMS goes to the numbers in Settings → SMS) → Completed (the admin sets
+ *  what was used and what came back; an invoice is made) — or Cancelled. Products taken are reserved until then.
+ * ========================================================================== */
+var SERVICE_PREFIX = 'SRV-';
+var SERVICE_STATUSES = ['Pending', 'Work done', 'Completed', 'Cancelled'];
+var SERVICE_OPEN = ['Pending', 'Work done'];
+var DEFAULT_SERVICE_TECH_SMS = '{technician}, new service job {job}: {service}. {details}. Customer {name} {phone}. Address: {address}. {shop}';
+var DEFAULT_SERVICE_DONE_SMS = 'Service {job} is done: {service} for {name} {phone} by {technician}. {note}';
+function isServiceJob_(r) { return String(r && r.job_no || '').indexOf(SERVICE_PREFIX) === 0; }
+function serviceTypes_() { var v = null; try { v = JSON.parse(getSetting_('service_types', '[]')); } catch (e) {} return Array.isArray(v) ? v : []; }
+function serviceRow_(id, user) {
+  var r = all_('Repairs').filter(function (x) { return x.id === id && isServiceJob_(x); })[0];
+  if (!r) fail_('Service job not found');
+  if (user && user.role === 'technician' && r.technician_id !== user.id) fail_('This service job is not yours');
+  return r;
+}
+function serviceManager_(user) { if (user.role === 'technician') fail_('Only an admin or manager can do this'); }
+function serviceOut_(r, sales) {
+  var o = repairOut_(r, sales);
+  o.service = r.device; o.type_id = r.serial; o.details = r.problem; o.address = r.accessories;
+  return o;
+}
+/** What the Service page needs: the service types, technicians and accounts. */
+function servicesMeta_(p, user) {
+  var all = serviceTypes_();
+  return {
+    today: today_(), statuses: SERVICE_STATUSES, manage: user.role !== 'technician', admin: user.role === 'admin',
+    types: user.role === 'admin' ? all : all.filter(function (t) { return t.active !== false; }),
+    technicians: all_('Users').filter(function (u) { return u.active && u.role === 'technician'; }).map(function (u) { return { id: u.id, name: u.name, phone: u.phone || '' }; }),
+    accounts: user.role === 'technician' ? [] : all_('Accounts').filter(function (a) { return a.active; }).map(function (a) { return { id: a.id, name: a.name, type: a.type }; })
+  };
+}
+/** Admin: add or change a service type (name and the usual charge). A type in use can be switched off, not deleted. */
+function serviceTypeSave_(p, user) {
+  if (user.role !== 'admin') fail_('Only an admin can change the service types');
+  var name = String(p.name || '').replace(/\s+/g, ' ').trim().slice(0, 80); if (!name) fail_('Write the service name');
+  var charge = round_(p.charge); if (!(charge >= 0)) fail_('The charge cannot be negative');
+  var list = serviceTypes_(), same = list.filter(function (t) { return t.name.toLowerCase() === name.toLowerCase() && t.id !== p.id; })[0];
+  if (same) fail_('"' + same.name + '" is already in the list');
+  if (p.id) {
+    var t = list.filter(function (x) { return x.id === p.id; })[0]; if (!t) fail_('Service type not found');
+    t.name = name; t.charge = charge; t.active = p.active !== false;
+  } else {
+    if (list.length >= 300) fail_('Too many service types');
+    list.push({ id: uid_(), name: name, charge: charge, active: true });
+  }
+  setSetting_('service_types', JSON.stringify(list));
+  audit_(user, 'service_type_save', { name: name, charge: charge });
+  return list;
+}
+function serviceTypeDelete_(p, user) {
+  if (user.role !== 'admin') fail_('Only an admin can change the service types');
+  var list = serviceTypes_(), t = list.filter(function (x) { return x.id === p.id; })[0]; if (!t) fail_('Service type not found');
+  if (all_('Repairs').some(function (r) { return isServiceJob_(r) && r.serial === t.id; })) fail_('"' + t.name + '" has service jobs. Switch it off instead of deleting');
+  setSetting_('service_types', JSON.stringify(list.filter(function (x) { return x.id !== t.id; })));
+  audit_(user, 'service_type_delete', t.name);
+  return serviceTypes_();
+}
+function servicesList_(p, user) {
+  var q = String(p.q || '').toLowerCase(), sales = indexBy_(all_('Sales'));
+  return all_('Repairs').filter(function (r) {
+    if (!isServiceJob_(r)) return false;
+    if (user.role === 'technician' && r.technician_id !== user.id) return false;
+    if (p.status && r.status !== p.status) return false;
+    if (p.technician_id && r.technician_id !== p.technician_id) return false;
+    if (!inRange_(r.date, p.from, p.to)) return false;
+    if (q && [r.job_no, r.customer_name, r.phone, r.device, r.problem, r.accessories, r.invoice_no, r.technician_name].join(' ').toLowerCase().indexOf(q) < 0) return false;
+    return true;
+  }).sort(function (a, b) { return b._row - a._row; }).map(function (r) { return serviceOut_(r, sales); });
+}
+function serviceGet_(p, user) { return serviceOut_(serviceRow_(p.id, user), indexBy_(all_('Sales'))); }
+function serviceCustomer_(p) {
+  if (p.customer_id) {
+    var c = all_('Customers').filter(function (x) { return x.id === p.customer_id && x.active; })[0];
+    if (!c) fail_('Customer not found');
+    return c;
+  }
+  var name = String(p.customer_name || '').trim(), phone = String(p.phone || '').trim();
+  if (!name) fail_('Customer name is required');
+  if (!phone) fail_('Customer phone is required');
+  var same = customerByPhone_(phone);
+  if (same) return same; // the same phone number is the same customer
+  return insert_('Customers', { name: name, phones: phone, addresses: String(p.address || '').trim(), opening_balance: 0, note: '', active: true, created_at: now_() });
+}
+/** SMS to the technician given the job: what to do, the customer, number and address. */
+function serviceTechSms_(r, tech) {
+  if (!tech || getSetting_('sms_enabled', 'false') !== 'true') return null;
+  if (!tech.phone) return { ok: false, status: 'skipped', response: tech.name + ' has no phone number (Users & Roles)' };
+  var msg = fillTpl_(getSetting_('sms_service_tech_template') || DEFAULT_SERVICE_TECH_SMS, { technician: tech.name, job: r.job_no, service: r.device, details: r.problem,
+    name: r.customer_name, phone: r.phone, address: r.accessories, shop: getSetting_('shop_name') }, 'raw');
+  if (!String(msg).trim()) return null;
+  try { return sendSms_(tech.phone, msg); } catch (e) { return { ok: false, status: 'failed', response: String(e.message || e) }; }
+}
+/** New service job, or changes to an open one (the customer is fixed once the job exists). */
+function serviceSave_(p, user) {
+  serviceManager_(user);
+  var open = p.id ? serviceRow_(p.id) : null;
+  if (open && !repairOpen_(open)) fail_('Service ' + open.job_no + ' is ' + open.status + ' and can no longer be changed');
+  var type = serviceTypes_().filter(function (t) { return t.id === p.type_id; })[0];
+  if (!type) fail_('Choose the service');
+  if (type.active === false && !(open && open.serial === type.id)) fail_('"' + type.name + '" is switched off in the service list');
+  var details = String(p.details || '').trim(); if (!details) fail_('Write what work is to be done');
+  var address = String(p.address || '').trim();
+  var tech = repairTechnician_(p.technician_id, open ? open.technician_id : '');
+  var charge = round_(p.charge); if (!(charge >= 0)) fail_('The service charge cannot be negative');
+  var parts = repairPartsClean_(p.parts, p.id);
+  var fields = { device: type.name, serial: type.id, problem: details, accessories: address, technician_id: tech ? tech.id : '', technician_name: tech ? tech.name : '',
+    charge: charge, estimate: charge, parts: parts, note: String(p.note || '').trim(), updated_at: now_() };
+  if (open) {
+    var log = repairLog_(open), newTech = tech && open.technician_id !== tech.id;
+    log.push({ ts: now_(), status: open.status, note: newTech ? 'Given to ' + tech.name : 'Job updated', user: user.name });
+    fields.log = log;
+    var upd = update_('Repairs', open.id, fields);
+    audit_(user, 'service_update', open.job_no);
+    var outU = serviceOut_(upd); outU.tech_sms = newTech && p.send_tech_sms !== false ? serviceTechSms_(upd, tech) : null;
+    return outU;
+  }
+  var customer = serviceCustomer_(p);
+  if (!address) { address = String(customer.addresses || '').split('|')[0].trim(); fields.accessories = address; }
+  if (!address) fail_('Write the address where the work is');
+  var row = Object.assign({
+    job_no: nextNo_('seq_service', SERVICE_PREFIX), date: today_(), customer_id: customer.id, customer_name: customer.name,
+    phone: parseList_(customer.phones)[0] || String(p.phone || '').trim(), advance: 0, status: 'Pending',
+    sale_id: '', invoice_no: '', ready_date: '', delivered_date: '', cancel_reason: '', user: user.name, created_at: now_(), alert_seen: true
+  }, fields);
+  row.log = [{ ts: now_(), status: 'Pending', note: 'Service created' + (tech ? ' · Given to ' + tech.name : ''), user: user.name }];
+  var ins = insert_('Repairs', row);
+  audit_(user, 'service_create', ins.job_no);
+  var outN = serviceOut_(ins); outN.tech_sms = tech && p.send_tech_sms !== false ? serviceTechSms_(ins, tech) : null;
+  return outN;
+}
+/** The technician (or an admin / manager) says the work is done; an SMS goes to the numbers in Settings → SMS.
+ *  An admin or manager can also send it back to Pending. */
+function serviceStatus_(p, user) {
+  var r = serviceRow_(p.id, user), to = p.status;
+  if (to !== 'Work done' && to !== 'Pending') fail_('Use Complete or Cancel for that');
+  if (!repairOpen_(r)) fail_('Service ' + r.job_no + ' is ' + r.status);
+  if (r.status === to) fail_('Service ' + r.job_no + ' is already ' + to);
+  if (to === 'Pending') serviceManager_(user);
+  var note = String(p.note || '').trim().slice(0, 300), log = repairLog_(r);
+  log.push({ ts: now_(), status: to, note: note || (to === 'Work done' ? 'Work done' : 'Back to pending'), user: user.name });
+  var patch = { status: to, log: log, updated_at: now_() };
+  if (to === 'Work done') { patch.ready_date = today_(); patch.result_note = note; patch.result_by = user.name; patch.result_at = now_(); patch.alert_seen = false; patch.alert_seen_by = ''; }
+  else { patch.ready_date = ''; patch.result_note = ''; patch.result_by = ''; patch.result_at = ''; patch.alert_seen = true; }
+  var upd = update_('Repairs', r.id, patch);
+  audit_(user, to === 'Work done' ? 'service_done' : 'service_reopen', r.job_no);
+  var out = serviceOut_(upd);
+  if (to === 'Work done') out.sms = serviceDoneSms_(upd, note);
+  return out;
+}
+function serviceDoneSms_(r, note) {
+  if (getSetting_('sms_enabled', 'false') !== 'true') return null;
+  var numbers = String(getSetting_('sms_service_done_numbers', '') || '').split(/[,;\s]+/).map(function (x) { return x.trim(); }).filter(function (x) { return phoneKey_(x).length >= 10; });
+  if (!numbers.length) return { ok: false, status: 'skipped', response: 'No number for "service done" SMS in Settings → SMS' };
+  var msg = fillTpl_(getSetting_('sms_service_done_template') || DEFAULT_SERVICE_DONE_SMS, { job: r.job_no, service: r.device, name: r.customer_name, phone: r.phone,
+    address: r.accessories, technician: r.technician_name || r.result_by || '', note: note || '', shop: getSetting_('shop_name') }, 'raw');
+  var out = { ok: true, status: 'sent', sent: 0 };
+  numbers.forEach(function (n) { try { var x = sendSms_(n, msg); if (x && x.ok) out.sent++; else { out.ok = false; out.status = x ? x.status : 'failed'; out.response = x ? x.response : ''; } } catch (e) { out.ok = false; out.status = 'failed'; out.response = String(e.message || e); } });
+  return out;
+}
+/** Complete: what was used stays on the job (the rest goes back to stock) and becomes a normal sale invoice
+ *  together with the service charge. */
+function serviceComplete_(p, user) {
+  serviceManager_(user); need_(user, 'pos'); // the invoice can collect money and discount
+  var r = serviceRow_(p.id);
+  if (!repairOpen_(r)) fail_('Service ' + r.job_no + ' is ' + r.status);
+  var cust = all_('Customers').filter(function (c) { return c.id === r.customer_id; })[0]; if (!cust) fail_('Customer of this service not found');
+  var taken = repairParts_(r), byId = {}; taken.forEach(function (x) { byId[x.product_id] = x; });
+  var used = [], back = [];
+  (Array.isArray(p.used) ? p.used : []).forEach(function (u) { if (!byId[u.product_id]) fail_('That product was not taken for this service'); });
+  taken.forEach(function (x) {
+    var u = (Array.isArray(p.used) ? p.used : []).filter(function (y) { return y.product_id === x.product_id; })[0];
+    var qty = u ? num_(u.qty) : num_(x.qty), took = splitSerials_(x.serials), sers = took;
+    if (!(qty >= 0) || qty > num_(x.qty) + 1e-9) fail_('Used quantity of ' + x.name + ' must be between 0 and ' + x.qty);
+    if (took.length) {
+      sers = u && u.serials !== undefined ? splitSerials_(u.serials) : took;
+      sers.forEach(function (sn) { if (took.indexOf(sn) < 0) fail_('Serial ' + sn + ' was not taken for ' + x.name); });
+      qty = sers.length;
+    }
+    if (qty > 1e-9) used.push(Object.assign({}, x, { qty: round_(qty, 4), serials: sers.join(',') }));
+    if (num_(x.qty) - qty > 1e-9) back.push(round_(num_(x.qty) - qty, 4) + ' ' + (x.unit || 'pcs') + ' ' + x.name);
+  });
+  var charge = p.charge === undefined || p.charge === '' ? num_(r.charge) : round_(p.charge); if (!(charge >= 0)) fail_('The service charge cannot be negative');
+  var items = used.map(function (x) { return { product_id: x.product_id, qty: x.qty, price: x.price, serials: x.serials }; });
+  if (charge > 0) items.push({ product_id: serviceProductNamed_(r.device, 'Service charge').id, qty: 1, price: charge });
+  var log = repairLog_(r), sale = null;
+  update_('Repairs', r.id, { parts: used, charge: charge }); // what came back is no longer reserved
+  if (items.length) {
+    _mem.__repairDelivery = r.id;
+    try { sale = saleCreate_({ customer_id: cust.id, items: items, discount: Math.max(round_(p.discount), 0), payments: p.payments || [], credit_used: 0,
+      next_payment_date: p.next_payment_date, note: 'Service ' + r.job_no + ' · ' + r.device, send_sms: false }, user); } finally { delete _mem.__repairDelivery; }
+  }
+  log.push({ ts: now_(), status: 'Completed', note: (sale ? 'Invoice ' + sale.sale.invoice_no : 'Completed without charge') + (back.length ? ' · Back to stock: ' + back.join(', ') : ''), user: user.name });
+  var upd = update_('Repairs', r.id, { status: 'Completed', delivered_date: today_(), sale_id: sale ? sale.sale.id : '', invoice_no: sale ? sale.sale.invoice_no : '', log: log, alert_seen: true, updated_at: now_() });
+  audit_(user, 'service_complete', r.job_no);
+  var out = serviceOut_(upd, indexBy_(all_('Sales')));
+  out.sale = sale ? sale.sale : null; out.invoice = sale; out.returned = back;
+  return out;
+}
+function serviceCancel_(p, user) {
+  serviceManager_(user);
+  var r = serviceRow_(p.id);
+  if (!repairOpen_(r)) fail_('Service ' + r.job_no + ' is ' + r.status);
+  var reason = String(p.reason || '').trim(); if (!reason) fail_('Write why the service is cancelled');
+  var log = repairLog_(r); log.push({ ts: now_(), status: 'Cancelled', note: reason + (repairParts_(r).length ? ' · Products back to stock' : ''), user: user.name });
+  var upd = update_('Repairs', r.id, { status: 'Cancelled', cancel_reason: reason, log: log, alert_seen: true, updated_at: now_() });
+  audit_(user, 'service_cancel', { job: r.job_no, reason: reason });
+  return serviceOut_(upd);
 }
 
 /* ============================================================================
@@ -3520,10 +3745,10 @@ function supplierRebate_(p, user) {
   var kind = rebateKind_(p.kind), reason = rebateReason_(p.note), pur = rebatePurchase_(s, p.purchase_id);
   var pending = rebatesPending_(), was = p.pending_id ? pending.filter(function (r) { return r.id === p.pending_id && r.supplier_id === s.id; })[0] : null;
   if (p.pending_id && !was) fail_('That promised rebate is no longer waiting. Refresh and try again');
-  var date = bookDate_(p.date, 'rebate'), no = nextNo_('seq_rebate', 'RB-');
-  var row = insert_('SupplierLedger', { date: date, supplier_id: s.id, type: 'rebate', ref_id: pur ? pur.id : uid_(), ref_no: no, debit: amt, credit: 0, note: REBATE_KINDS[kind] + ' — ' + reason, voided: false });
+  var date = bookDate_(p.date, 'rebate'), no = nextNo_('seq_sla', 'SLA-'), ref = adjustRef_(p.ref);
+  var row = insert_('SupplierLedger', { date: date, supplier_id: s.id, type: 'rebate', ref_id: pur ? pur.id : uid_(), ref_no: no, debit: amt, credit: 0, note: REBATE_KINDS[kind] + ' — ' + reason + (ref ? ADJ_REF + ref : ''), voided: false });
   if (was) setSetting_('rebates_pending', JSON.stringify(pending.filter(function (r) { return r.id !== was.id; })));
-  audit_(user, 'supplier_rebate', { supplier: s.name, ref: no, amount: amt, kind: REBATE_KINDS[kind], purchase: pur ? pur.invoice_no : '', reason: reason });
+  audit_(user, 'supplier_rebate', { supplier: s.name, ref: no, amount: amt, kind: REBATE_KINDS[kind], purchase: pur ? pur.invoice_no : '', reason: reason, reference: ref });
   return { entry: row, receipt_no: no, balance: supplierBalances_()[s.id] };
 }
 /** A rebate the supplier promised but has not given yet: only a reminder, the books do not change. */
@@ -3533,7 +3758,7 @@ function rebatePromise_(p, user) {
   var kind = rebateKind_(p.kind), reason = rebateReason_(p.note), pur = rebatePurchase_(s, p.purchase_id);
   var expected = p.expected ? String(p.expected).slice(0, 10) : ''; if (expected && !isDate_(expected)) fail_('Choose a valid expected date');
   var list = rebatesPending_(); if (list.length >= 200) fail_('Too many promised rebates are waiting. Receive or cancel some first');
-  var rec = { id: uid_(), supplier_id: s.id, supplier: s.name, kind: kind, amount: amt, purchase_id: pur ? pur.id : '', purchase_no: pur ? pur.invoice_no : '', note: reason, expected: expected, created: today_(), user: user.name };
+  var rec = { id: uid_(), supplier_id: s.id, supplier: s.name, kind: kind, amount: amt, purchase_id: pur ? pur.id : '', purchase_no: pur ? pur.invoice_no : '', note: reason, ref: adjustRef_(p.ref), expected: expected, created: today_(), user: user.name };
   list.push(rec); setSetting_('rebates_pending', JSON.stringify(list));
   audit_(user, 'rebate_promised', { supplier: s.name, amount: amt, kind: REBATE_KINDS[kind], reason: reason });
   return { promise: rec, pending: list.filter(function (r) { return r.supplier_id === s.id; }) };
@@ -3557,6 +3782,211 @@ function statement_(table, key, parties, sign, p) {
   });
   return { party: party.name, phones: party.phones, address: party.addresses || party.address || '', opening: round_(opening), closing: round_(run), rows: out };
 }
+/* ---- Party ledger adjustments (Party Ledger Adjust, admin only): raise or lower what a customer owes us or what we
+ * owe a supplier. No money moves. A supplier deduction is a rebate (type 'rebate', counted as other income); every other
+ * adjustment is a ledger row of type 'adjust' (ref_id = the invoice it is for, when one was chosen). A customer deduction is
+ * a due written off: it lowers profit ("Customer dues written off"). Additions only correct the balance.
+ * Notes read '<Type label> — <reason>' plus ' · Ref: <reference no>' when one was given. */
+var ADJ_REF = ' · Ref: ';
+var ADJUST_TYPES = {
+  customer: { add: { charge: 'Missed charge', correction: 'Correction', other: 'Other addition' },
+              ded: { leftover: 'Leftover due written off', discount: 'Late discount', baddebt: 'Bad debt (will not pay)', other: 'Other deduction' } },
+  supplier: { add: { charge: 'Missed charge', correction: 'Correction', other: 'Other addition' }, ded: REBATE_KINDS }
+};
+function adminOnly_(user) { if (!user || user.role !== 'admin') fail_('Only an admin can use Party Ledger Adjust'); }
+function adjustRef_(v) { return String(v || '').replace(/\s+/g, ' ').trim().slice(0, 60); }
+function adjustKind_(k) { if (k !== 'customer' && k !== 'supplier') fail_('Choose customer or supplier'); return k; }
+/** Reads an adjustment / rebate ledger row back into its parts. */
+function adjustParse_(kind, l, docs) {
+  var note = String(l.note || ''), ref = '', at = note.lastIndexOf(ADJ_REF);
+  if (at >= 0) { ref = note.slice(at + ADJ_REF.length); note = note.slice(0, at); }
+  var dir = kind === 'customer' ? (num_(l.debit) > 0 ? 'add' : 'ded') : (l.type === 'rebate' || num_(l.debit) > 0 ? 'ded' : 'add');
+  var types = ADJUST_TYPES[kind][dir], type = 'other', label = types.other || 'Other', reason = note;
+  Object.keys(types).forEach(function (k) { if (note.indexOf(types[k] + ' — ') === 0) { type = k; label = types[k]; reason = note.slice(types[k].length + 3); } });
+  var doc = docs ? docs[l.ref_id] : null;
+  return { id: l.id, date: String(l.date).slice(0, 10), party_id: l[kind + '_id'], ref_no: l.ref_no, dir: dir, type: type, type_label: label, reason: reason, reference: ref,
+    amount: round_(num_(l.debit) + num_(l.credit)), invoice_id: doc ? doc.id : '', invoice_no: doc ? doc.invoice_no : '', ledger_type: l.type };
+}
+function adjustInvoice_(kind, party, id) {
+  if (!id) return null;
+  var doc = all_(kind === 'customer' ? 'Sales' : 'Purchases').filter(function (x) { return x.id === id; })[0];
+  if (!doc || doc[kind + '_id'] !== party.id) fail_('That invoice is not ' + party.name + "'s");
+  if (doc.status !== 'active') fail_('That invoice is cancelled');
+  return doc;
+}
+/** What the adjust page needs for one party: balance, recent invoices with what is still due, promised rebates. */
+function adjustOptions_(p, user) {
+  adminOnly_(user);
+  var kind = adjustKind_(p.kind), party = all_(kind === 'customer' ? 'Customers' : 'Suppliers').filter(function (x) { return x.id === p.party_id; })[0];
+  var out = { types: ADJUST_TYPES[kind], balance: 0, invoices: [], pending: [] };
+  if (!party) return out;
+  var open = kind === 'customer' ? saleOpenDues_() : purchaseOpenDues_();
+  out.balance = round_((kind === 'customer' ? customerBalances_() : supplierBalances_())[party.id] || 0);
+  out.invoices = all_(kind === 'customer' ? 'Sales' : 'Purchases').filter(function (x) { return x[kind + '_id'] === party.id && x.status === 'active'; })
+    .sort(function (a, b) { return String(b.date).localeCompare(String(a.date)) || b._row - a._row; }).slice(0, 80)
+    .map(function (x) { return { id: x.id, invoice_no: x.invoice_no, supplier_invoice: x.supplier_invoice || '', date: String(x.date).slice(0, 10), total: round_(x.total), due: round_(open[x.id] || 0) }; });
+  if (kind === 'supplier') out.pending = rebatesPending_().filter(function (r) { return r.supplier_id === party.id; });
+  return out;
+}
+/** Save an adjustment. Supplier deductions go through the rebate path (also receives / promises rebates). */
+function ledgerAdjust_(p, user) {
+  adminOnly_(user);
+  var kind = adjustKind_(p.kind), dir = p.dir === 'add' ? 'add' : p.dir === 'ded' ? 'ded' : fail_('Choose Addition or Deduction');
+  var party = all_(kind === 'customer' ? 'Customers' : 'Suppliers').filter(function (x) { return x.id === p.party_id; })[0];
+  if (!party) fail_('Choose the ' + kind);
+  var types = ADJUST_TYPES[kind][dir], type = String(p.type || ''); if (!types[type]) fail_('Choose the adjustment type');
+  var amt = round_(p.amount); if (!(amt > 0)) fail_('Amount must be greater than 0');
+  var reason = String(p.reason || '').replace(/\s+/g, ' ').trim().slice(0, 200); if (reason.length < 3) fail_('Write the reason for the adjustment');
+  if (kind === 'supplier' && dir === 'ded') {
+    var q = { supplier_id: party.id, kind: type, amount: amt, purchase_id: p.invoice_id || '', note: reason, date: p.date, ref: p.ref, pending_id: p.pending_id, expected: p.expected };
+    if (p.promised) return rebatePromise_(q, user);
+    var r = supplierRebate_(q, user);
+    return { ref_no: r.receipt_no, balance: round_(r.balance || 0) };
+  }
+  var doc = adjustInvoice_(kind, party, p.invoice_id), ref = adjustRef_(p.ref);
+  if (kind === 'customer' && dir === 'ded') {
+    var owed = round_(customerBalances_()[party.id] || 0);
+    if (amt > owed + 0.005) fail_(party.name + ' owes ' + owed + '. A deduction cannot be more than that');
+    if (doc) { var left = round_(saleOpenDues_()[doc.id] || 0); if (amt > left + 0.005) fail_(doc.invoice_no + ' has ' + left + ' still due. A deduction cannot be more than that'); }
+  }
+  var date = bookDate_(p.date, 'adjustment'), no = nextNo_(kind === 'customer' ? 'seq_cla' : 'seq_sla', kind === 'customer' ? 'CLA-' : 'SLA-');
+  var up = kind === 'customer' ? dir === 'add' : dir === 'ded'; // debit side for this ledger
+  var row = { date: date, type: 'adjust', ref_id: doc ? doc.id : uid_(), ref_no: no, debit: up ? amt : 0, credit: up ? 0 : amt, note: types[type] + ' — ' + reason + (ref ? ADJ_REF + ref : ''), voided: false };
+  row[kind + '_id'] = party.id;
+  insert_(kind === 'customer' ? 'CustomerLedger' : 'SupplierLedger', row);
+  audit_(user, 'ledger_adjust', { party: party.name, kind: kind, ref: no, direction: dir === 'add' ? 'Addition' : 'Deduction', type: types[type], amount: amt, invoice: doc ? doc.invoice_no : '', reason: reason, reference: ref });
+  return { ref_no: no, balance: round_((kind === 'customer' ? customerBalances_() : supplierBalances_())[party.id] || 0) };
+}
+/** Recent adjustments of one kind (newest first), with who saved them. */
+function adjustList_(p, user) {
+  adminOnly_(user);
+  var kind = adjustKind_(p.kind), table = kind === 'customer' ? 'CustomerLedger' : 'SupplierLedger';
+  var parties = indexBy_(all_(kind === 'customer' ? 'Customers' : 'Suppliers')), docs = indexBy_(all_(kind === 'customer' ? 'Sales' : 'Purchases'));
+  var by = {};
+  all_('AuditLog').forEach(function (a) {
+    if (a.action !== 'ledger_adjust' && a.action !== 'supplier_rebate') return;
+    try { var d = JSON.parse(a.detail || '{}'); if (d.ref) by[d.ref] = a.user; } catch (e) {}
+  });
+  var limit = Math.min(Math.max(Number(p.limit) || 100, 1), 500);
+  var rows = all_(table).filter(function (l) { return !l.voided && (l.type === 'adjust' || l.type === 'rebate'); })
+    .sort(function (a, b) { return String(b.date).localeCompare(String(a.date)) || b._row - a._row; }).slice(0, limit)
+    .map(function (l) { var x = adjustParse_(kind, l, docs); x.party = (parties[x.party_id] || {}).name || ''; x.by = by[l.ref_no] || ''; return x; });
+  return { rows: rows, pending: kind === 'supplier' ? rebatesPending_() : [] };
+}
+/** Customer dues written off in a period (customer 'adjust' deductions); with `key` grouped for the profit timeline. */
+function writeoffTotal_(from, to, key) {
+  var total = 0, by = {};
+  all_('CustomerLedger').forEach(function (l) {
+    if (l.type !== 'adjust' || l.voided || !(num_(l.credit) > 0) || !inRange_(l.date, from, to)) return;
+    var a = num_(l.credit); total += a; if (key) by[key(l.date)] = (by[key(l.date)] || 0) + a;
+  });
+  return key ? by : round_(total);
+}
+function reverseAdjust_(p, user, reason) {
+  adminOnly_(user);
+  var table = p.type === 'cadjust' ? 'CustomerLedger' : 'SupplierLedger';
+  var row = all_(table).filter(function (x) { return x.id === p.id; })[0];
+  if (!row || row.voided) fail_('Adjustment not found or already cancelled');
+  if (row.type !== 'adjust' && !(table === 'SupplierLedger' && row.type === 'rebate')) fail_('Only adjustments can be cancelled here');
+  update_(table, row.id, { voided: true });
+  return true;
+}
+
+/* ---- Customer / Supplier Ledger Report (admin only): every party in a period, or one party in full with the items of
+ * each invoice, the account money went through, adjustments with their reason, and dues by age. */
+var LEDGER_ENTRY = { sale: 'sale', purchase: 'sale', payment: 'payment', refund: 'payment', sreturn: 'return', preturn: 'return', adjust: 'adjust', rebate: 'adjust' };
+function ledgerReport_(p, user) {
+  adminOnly_(user);
+  var kind = adjustKind_(p.kind), cust = kind === 'customer', sign = cust ? 1 : -1, key = kind + '_id';
+  var from = p.from ? String(p.from).slice(0, 10) : '', to = p.to ? String(p.to).slice(0, 10) : '';
+  if ((from && !isDate_(from)) || (to && !isDate_(to))) fail_('Choose valid dates');
+  if (from && to && from > to) fail_('The start date is after the end date');
+  var parties = all_(cust ? 'Customers' : 'Suppliers'), docs = indexBy_(all_(cust ? 'Sales' : 'Purchases'));
+  var open = cust ? saleOpenDues_() : purchaseOpenDues_(), today = today_();
+  var one = p.party_id ? parties.filter(function (x) { return x.id === p.party_id; })[0] : null;
+  if (p.party_id && !one) fail_((cust ? 'Customer' : 'Supplier') + ' not found');
+  var ledger = all_(cust ? 'CustomerLedger' : 'SupplierLedger').filter(function (l) { return !l.voided && (!one || l[key] === one.id); })
+    .sort(function (a, b) { return String(a.date).localeCompare(String(b.date)) || a._row - b._row; });
+  // what one ledger row means for the totals: + raises the balance (sale / purchase), − lowers it
+  var split = function (l) {
+    var up = round_(sign * (num_(l.debit) - num_(l.credit))), t = l.type, o = { sales: 0, returns: 0, paid: 0, adjusted: 0 };
+    if (t === 'sale' || t === 'purchase') { o.sales = round_(cust ? num_(l.debit) : num_(l.credit)); o.paid = round_(cust ? num_(l.credit) : num_(l.debit)); }
+    else if (t === 'sreturn' || t === 'preturn') { o.returns = round_(cust ? num_(l.credit) : num_(l.debit)); o.paid = round_(-up - o.returns); }
+    else if (t === 'adjust' || t === 'rebate') o.adjusted = -up;
+    else o.paid = -up;
+    return o;
+  };
+  var age = function (pid) { // invoices still due, oldest first, with how many days old they are
+    return Object.keys(docs).filter(function (id) { var d = docs[id]; return d[key] === pid && d.status === 'active' && (open[id] || 0) > 0.004; })
+      .map(function (id) { var d = docs[id]; return { id: id, invoice_no: d.invoice_no, date: String(d.date).slice(0, 10), due: round_(open[id]), days: Math.max(daysBetween_(String(d.date).slice(0, 10), today), 0) }; })
+      .sort(function (a, b) { return b.days - a.days; });
+  };
+  var sum = { opening: 0, sales: 0, returns: 0, paid: 0, adjusted: 0, closing: 0, invoices: 0, payments: 0, return_count: 0, adjust_count: 0, add: 0, ded: 0 };
+  var add = function (o, l) {
+    var x = split(l); o.sales += x.sales; o.returns += x.returns; o.paid += x.paid; o.adjusted += x.adjusted;
+    if (LEDGER_ENTRY[l.type] === 'sale') o.invoices++; else if (LEDGER_ENTRY[l.type] === 'return') o.return_count++; else if (LEDGER_ENTRY[l.type] === 'adjust') { o.adjust_count++; if (x.adjusted < 0) o.add -= x.adjusted; else o.ded += x.adjusted; } else o.payments++;
+    if (LEDGER_ENTRY[l.type] === 'sale' && x.paid > 0) o.payments++;
+  };
+  var fin = function (o) { ['opening', 'sales', 'returns', 'paid', 'adjusted', 'add', 'ded'].forEach(function (f) { o[f] = round_(o[f]); }); o.closing = round_(o.opening + o.sales - o.returns - o.paid - o.adjusted); return o; };
+
+  if (!one) {
+    var by = {};
+    parties.forEach(function (x) { by[x.id] = { party_id: x.id, name: x.name, phone: parseList_(x.phones || '')[0] || '', opening: num_(x.opening_balance), sales: 0, returns: 0, paid: 0, adjusted: 0, invoices: 0, payments: 0, return_count: 0, adjust_count: 0, add: 0, ded: 0 }; });
+    ledger.forEach(function (l) {
+      var o = by[l[key]]; if (!o) return;
+      if (from && String(l.date).slice(0, 10) < from) { o.opening += sign * (num_(l.debit) - num_(l.credit)); return; }
+      if (to && String(l.date).slice(0, 10) > to) return;
+      add(o, l);
+    });
+    var rows = parties.map(function (x) {
+      var o = fin(by[x.id]), a = age(x.id);
+      o.oldest_days = a.length ? a[0].days : null; o.active = x.active !== false;
+      ['opening', 'sales', 'returns', 'paid', 'adjusted', 'closing', 'invoices', 'payments', 'return_count', 'adjust_count', 'add', 'ded'].forEach(function (f) { sum[f] += o[f]; });
+      return o;
+    }).sort(function (a, b) { return b.closing - a.closing || a.name.localeCompare(b.name); });
+    return { kind: kind, from: from, to: to, rows: rows, totals: fin(sum) };
+  }
+
+  // One party in full
+  var itemsBy = {}, acc = indexBy_(all_('Accounts')), txByRef = {}, adjBy = {};
+  all_(cust ? 'SaleItems' : 'PurchaseItems').forEach(function (i) { var d = i[cust ? 'sale_id' : 'purchase_id']; if (docs[d] && docs[d][key] === one.id) (itemsBy[d] = itemsBy[d] || []).push(i); });
+  all_('AccountTxns').forEach(function (t) { if (!t.voided) (txByRef[t.ref_id] = txByRef[t.ref_id] || []).push((acc[t.account_id] || {}).name || ''); });
+  all_('AuditLog').forEach(function (a) { if (a.action !== 'ledger_adjust' && a.action !== 'supplier_rebate') return; try { var d = JSON.parse(a.detail || '{}'); if (d.ref) adjBy[d.ref] = a.user; } catch (e) {} });
+  var o = { opening: num_(one.opening_balance), sales: 0, returns: 0, paid: 0, adjusted: 0, invoices: 0, payments: 0, return_count: 0, adjust_count: 0, add: 0, ded: 0 };
+  var run = o.opening, out = [], lastPay = null;
+  ledger.forEach(function (l) {
+    var d = String(l.date).slice(0, 10);
+    if (from && d < from) { run += sign * (num_(l.debit) - num_(l.credit)); o.opening = run; return; }
+    if (to && d > to) return;
+    run = round_(run + sign * (num_(l.debit) - num_(l.credit)));
+    add(o, l);
+    var r = { id: l.id, date: d, type: l.type, entry: LEDGER_ENTRY[l.type] || 'payment', ref_no: l.ref_no, ref_id: l.ref_id, note: l.note, debit: round_(num_(l.debit)), credit: round_(num_(l.credit)), balance: run,
+      accounts: (txByRef[l.ref_id] || []).filter(function (n, i, a) { return n && a.indexOf(n) === i; }) };
+    var doc = docs[l.ref_id];
+    if ((l.type === 'sale' || l.type === 'purchase') && doc) {
+      r.items = (itemsBy[doc.id] || []).map(function (i) { return { name: i.name, qty: round_(i.qty, 4), unit: i.unit || '', price: round_(cust ? i.price : i.cost), total: round_(i.total), serials: parseList_(i.serials) }; });
+      r.discount = round_(doc.discount); r.by = cust ? doc.user_name || '' : doc.user || ''; r.supplier_invoice = doc.supplier_invoice || ''; r.next_payment_date = doc.next_payment_date || ''; r.due_now = round_(open[doc.id] || 0);
+    }
+    if (l.type === 'adjust' || l.type === 'rebate') { var j = adjustParse_(kind, l, docs); r.adjust = { dir: j.dir, type_label: j.type_label, reason: j.reason, reference: j.reference, invoice_no: j.invoice_no, by: adjBy[l.ref_no] || '' }; }
+    if (l.type === 'payment' && (cust ? r.credit : r.debit) > 0) lastPay = { date: d, amount: cust ? r.credit : r.debit };
+    out.push(r);
+  });
+  var q = String(p.ref || '').trim().toLowerCase();
+  var shown = out.filter(function (r) {
+    if (p.entry && p.entry !== 'all' && r.entry !== p.entry) return false;
+    if (p.account && r.accounts.indexOf((acc[p.account] || {}).name) < 0) return false;
+    if (p.due_only && !(r.due_now > 0.004)) return false;
+    if (q && String(r.ref_no || '').toLowerCase().indexOf(q) < 0 && String(r.note || '').toLowerCase().indexOf(q) < 0 && !(r.adjust && r.adjust.invoice_no.toLowerCase().indexOf(q) >= 0)) return false;
+    return true;
+  });
+  var dues = age(one.id), buckets = { d30: 0, d60: 0, d90: 0, over90: 0 };
+  dues.forEach(function (x) { buckets[x.days <= 30 ? 'd30' : x.days <= 60 ? 'd60' : x.days <= 90 ? 'd90' : 'over90'] += x.due; });
+  Object.keys(buckets).forEach(function (k) { buckets[k] = round_(buckets[k]); });
+  var balance = round_((cust ? customerBalances_() : supplierBalances_())[one.id] || 0), onInvoices = round_(sum_(dues, function (x) { return x.due; }));
+  return { kind: kind, from: from, to: to, party: { id: one.id, name: one.name, phones: one.phones || '', address: one.addresses || one.address || '', balance: balance, last_payment: lastPay },
+    totals: fin(o), rows: shown, all_rows: out.length, aging: { buckets: buckets, invoices: dues, other: round_(Math.max(balance - onInvoices, 0)) } };
+}
+
 function customerStatement_(p) { return statement_('CustomerLedger', 'customer_id', all_('Customers'), 1, p); }
 function supplierStatement_(p) {
   var st = statement_('SupplierLedger', 'supplier_id', all_('Suppliers'), -1, p);
@@ -3717,9 +4147,9 @@ function reverse_(p, user) {
   need_(user, 'cancel');
   confirmAdmin_(user, p.password);
   var reason = String(p.reason || '').trim(); if (!reason) fail_('Enter a reason for the cancellation');
-  var fn = { sale: reverseSale_, purchase: reversePurchase_, sreturn: reverseSreturn_, preturn: reversePreturn_, cpay: reversePayment_, spay: reversePayment_, expense: reverseExpense_, account: reverseAccountEntry_, rebate: reverseRebate_ }[p.type];
+  var fn = { sale: reverseSale_, purchase: reversePurchase_, sreturn: reverseSreturn_, preturn: reversePreturn_, cpay: reversePayment_, spay: reversePayment_, expense: reverseExpense_, account: reverseAccountEntry_, rebate: reverseRebate_, cadjust: reverseAdjust_, sadjust: reverseAdjust_ }[p.type];
   if (!fn) fail_('Unknown transaction type');
-  var docTable = { sale: 'Sales', purchase: 'Purchases', sreturn: 'SalesReturns', preturn: 'PurchaseReturns', cpay: 'CustomerLedger', spay: 'SupplierLedger', rebate: 'SupplierLedger', expense: 'Expenses', account: 'AccountTxns' }[p.type];
+  var docTable = { sale: 'Sales', purchase: 'Purchases', sreturn: 'SalesReturns', preturn: 'PurchaseReturns', cpay: 'CustomerLedger', spay: 'SupplierLedger', rebate: 'SupplierLedger', cadjust: 'CustomerLedger', sadjust: 'SupplierLedger', expense: 'Expenses', account: 'AccountTxns' }[p.type];
   var doc = all_(docTable).filter(function (x) { return x.id === p.id; })[0];
   if (doc && doc.date) lockCheck_(doc.date, 'a transaction');
   var r = fn(p, user, reason);
@@ -3757,6 +4187,10 @@ function reverseSale_(p, user, reason) {
   });
   voidRefs_('AccountTxns', s.id, 'sale'); voidRefs_('CustomerLedger', s.id);
   update_('Sales', s.id, { status: 'cancelled', cancel_reason: reason });
+  all_('Repairs').filter(function (job) { return job.sale_id === s.id && isServiceJob_(job) && job.status === 'Completed'; }).forEach(function (job) {
+    var log = repairLog_(job); log.push({ ts: now_(), status: 'Work done', user: user.name, note: 'Service invoice cancelled: ' + reason });
+    update_('Repairs', job.id, { status: 'Work done', sale_id: '', invoice_no: '', delivered_date: '', log: log, updated_at: now_() });
+  });
   all_('Repairs').filter(function (job) { return job.sale_id === s.id && job.status === 'Delivered'; }).forEach(function (job) {
     var log = repairLog_(job); log.push({ ts: now_(), status: 'Completed', user: user.name, note: 'Delivery invoice cancelled: ' + reason });
     update_('Repairs', job.id, { status: 'Completed', sale_id: '', invoice_no: '', delivered_date: '', log: log, updated_at: now_() });
@@ -4510,8 +4944,8 @@ function saleOpenDues_() {
     }
     var amt = round_(num_(l.credit) - num_(l.debit));
     if (amt > 0) {
-      if (l.type === 'sreturn') {
-        var own = x.open.filter(function (o) { return o.id && o.id === returnSale[l.ref_id]; })[0];
+      if (l.type === 'sreturn' || l.type === 'adjust') {
+        var own = x.open.filter(function (o) { return o.id && o.id === (l.type === 'adjust' ? l.ref_id : returnSale[l.ref_id]); })[0];
         if (own) { var take = Math.min(own.left, amt); own.left = round_(own.left - take); amt = round_(amt - take); }
       }
       x.pool = round_(x.pool + amt);
@@ -4519,7 +4953,10 @@ function saleOpenDues_() {
     } else if (amt < 0) { // money paid out to the customer: first from their advance, otherwise new debt
       var fromPool = Math.min(x.pool, -amt);
       x.pool = round_(x.pool - fromPool);
-      if (-amt - fromPool > 0.0001) x.open.push({ id: '', left: round_(-amt - fromPool) });
+      if (-amt - fromPool > 0.0001) {
+        var mine = l.type === 'adjust' ? x.open.filter(function (o) { return o.id && o.id === l.ref_id; })[0] : null; // an addition on an invoice raises that invoice
+        if (mine) mine.left = round_(mine.left - amt - fromPool); else x.open.push({ id: '', left: round_(-amt - fromPool) });
+      }
     }
   });
   var seen = {};
@@ -4560,8 +4997,8 @@ function purchaseOpenDues_() {
     }
     var amt = round_(num_(l.debit) - num_(l.credit));
     if (amt > 0) {
-      if (l.type === 'preturn' || l.type === 'rebate') {
-        var own = x.open.filter(function (o) { return o.id && o.id === (l.type === 'rebate' ? l.ref_id : returnSale[l.ref_id]); })[0];
+      if (l.type === 'preturn' || l.type === 'rebate' || l.type === 'adjust') {
+        var own = x.open.filter(function (o) { return o.id && o.id === (l.type === 'preturn' ? returnSale[l.ref_id] : l.ref_id); })[0];
         if (own) { var take = Math.min(own.left, amt); own.left = round_(own.left - take); amt = round_(amt - take); }
       }
       x.pool = round_(x.pool + amt);
@@ -4569,7 +5006,10 @@ function purchaseOpenDues_() {
     } else if (amt < 0) { // money paid out to the customer: first from their advance, otherwise new debt
       var fromPool = Math.min(x.pool, -amt);
       x.pool = round_(x.pool - fromPool);
-      if (-amt - fromPool > 0.0001) x.open.push({ id: '', left: round_(-amt - fromPool) });
+      if (-amt - fromPool > 0.0001) {
+        var mine = l.type === 'adjust' ? x.open.filter(function (o) { return o.id && o.id === l.ref_id; })[0] : null; // an addition on an invoice raises that invoice
+        if (mine) mine.left = round_(mine.left - amt - fromPool); else x.open.push({ id: '', left: round_(-amt - fromPool) });
+      }
     }
   });
   var seen = {};
@@ -4844,7 +5284,8 @@ function profitSummary_(from, to) {
   o.gross = round_(o.sales_profit - o.returns_profit);
   o.stock_adjust = stockAdjustValue_(from, to); // negative = stock written off
   o.rebates = rebateTotal_(from, to); // supplier rebates: other income
-  o.net = round_(o.gross - o.expenses + o.stock_adjust + o.rebates);
+  o.writeoffs = writeoffTotal_(from, to); // customer dues written off (Customer Ledger Adjust)
+  o.net = round_(o.gross - o.expenses + o.stock_adjust + o.rebates - o.writeoffs);
   o.margin = o.net_sales > 0 ? round_(o.gross / o.net_sales * 100, 1) : 0;
   o.net_margin = o.net_sales > 0 ? round_(o.net / o.net_sales * 100, 1) : 0;
   return o;
@@ -4875,13 +5316,14 @@ function profitReport_(p, user) {
   rets.forEach(function (x) { var r = row(key(x.date)); r.returns += x.total; r.returns_profit += returnProfit_(x); r.gross -= returnProfit_(x); });
   exps.forEach(function (x) { row(key(x.date)).expenses += x.amount; });
   var adj = stockAdjustValue_(from, to, key);
-  var reb = rebateTotal_(from, to, key);
-  Object.keys(adj).concat(Object.keys(reb)).forEach(function (k) { row(k); });
+  var reb = rebateTotal_(from, to, key), wo = writeoffTotal_(from, to, key);
+  Object.keys(adj).concat(Object.keys(reb), Object.keys(wo)).forEach(function (k) { row(k); });
   var timeline = Object.keys(tl).sort().map(function (k) {
     var r = tl[k]; ['sales', 'cost', 'returns', 'returns_profit', 'gross', 'expenses'].forEach(function (f) { r[f] = round_(r[f]); });
     r.stock_adjust = round_(adj[k] || 0);
     r.rebates = round_(reb[k] || 0);
-    r.net = round_(r.gross - r.expenses + r.stock_adjust + r.rebates); return r;
+    r.writeoffs = round_(wo[k] || 0);
+    r.net = round_(r.gross - r.expenses + r.stock_adjust + r.rebates - r.writeoffs); return r;
   });
 
   // Per product: item profit before invoice discounts, less profit on returned units.
@@ -4970,7 +5412,8 @@ function dashboard_(p, user) {
       c.gross_profit = round_(sum_(s, function (x) { return x.profit; }) - sum_(sr, function (x) { return returnProfit_(x); }));
       c.stock_adjust = period === 'total' ? stockAdjustValue_('', '') : period === 'today' ? stockAdjustValue_(today, today) : period === 'yesterday' ? stockAdjustValue_(yesterday, yesterday) : stockAdjustValue_(month + '-01', today);
       c.rebates = period === 'total' ? rebateTotal_('', '') : period === 'today' ? rebateTotal_(today, today) : period === 'yesterday' ? rebateTotal_(yesterday, yesterday) : rebateTotal_(month + '-01', today);
-      c.net_profit = round_(c.gross_profit - c.expenses + c.stock_adjust + c.rebates);
+      c.writeoffs = period === 'total' ? writeoffTotal_('', '') : period === 'today' ? writeoffTotal_(today, today) : period === 'yesterday' ? writeoffTotal_(yesterday, yesterday) : writeoffTotal_(month + '-01', today);
+      c.net_profit = round_(c.gross_profit - c.expenses + c.stock_adjust + c.rebates - c.writeoffs);
     }
     return c;
   }
@@ -5006,7 +5449,7 @@ function dashboard_(p, user) {
       row.expenses = { amount: round_(sum_(ex, function (x) { return x.amount; })), count: ex.length };
       if (row.profit !== undefined) {
         row.gross_profit = { amount: row.profit, count: s.length };
-        row.net_profit = { amount: round_(row.profit - row.expenses.amount + stockAdjustValue_(r[2], r[3]) + rebateTotal_(r[2], r[3])), count: ex.length };
+        row.net_profit = { amount: round_(row.profit - row.expenses.amount + stockAdjustValue_(r[2], r[3]) + rebateTotal_(r[2], r[3]) - writeoffTotal_(r[2], r[3])), count: ex.length };
       }
       var sd = s.filter(function (x) { return x.due > 0; }), pd = pu.filter(function (x) { return x.due > 0; });
       row.receivable = { amount: round_(sum_(sd, function (x) { return x.due; })), count: sd.length };
@@ -5037,7 +5480,8 @@ function dashboard_(p, user) {
   // "Needs attention": finished repair jobs (fixed or failed) still waiting for the customer to collect them.
   if (can_(user, 'expenses')) out.recurring_due = recurringList_().due;
   if (can_(user, 'suppliers')) { var waiting = rebatesPending_(); out.rebates_pending = { count: waiting.length, amount: round_(sum_(waiting, function (r) { return r.amount; })) }; }
-  if (can_(user, 'repairs')) out.repairs_waiting = all_('Repairs').filter(function (r) { var st = repairStatusOf_(r); return st === 'Completed' || st === 'Failed'; }).length;
+  if (can_(user, 'service') && user.role !== 'technician') out.services_done = all_('Repairs').filter(function (r) { return isServiceJob_(r) && r.status === 'Work done'; }).length;
+  if (can_(user, 'repairs')) out.repairs_waiting = all_('Repairs').filter(function (r) { var st = repairStatusOf_(r); return !isServiceJob_(r) && (st === 'Completed' || st === 'Failed'); }).length;
   out.top_products = topProducts_(sales, today, showCost);
   out.recent = sales.slice(-8).reverse().map(function (s) { return { id: s.id, invoice_no: s.invoice_no, customer_name: s.customer_name, total: s.total, due: s.due, date: s.date }; });
 
@@ -5146,6 +5590,7 @@ function profitLoss_(p, user) {
   lines.push({ label: 'Total expenses', values: v(function (x) { return -x.expenses; }), kind: 'total' });
   if (periods.some(function (per) { return Math.abs(sums[per.key].stock_adjust) > 0.005; })) lines.push({ label: 'Stock adjustments (written off / found)', values: v(function (x) { return x.stock_adjust; }), kind: 'line' });
   if (periods.some(function (per) { return Math.abs(sums[per.key].rebates) > 0.005; })) lines.push({ label: 'Other income: supplier rebates', values: v(function (x) { return x.rebates; }), kind: 'line' });
+  if (periods.some(function (per) { return Math.abs(sums[per.key].writeoffs) > 0.005; })) lines.push({ label: 'Customer dues written off', values: v(function (x) { return -x.writeoffs; }), kind: 'line' });
   lines.push({ label: 'Net profit', values: v(function (x) { return x.net; }), kind: 'grand' });
   var columns = [{ key: 'current', label: from || to ? (from || 'Start') + ' to ' + (to || today_()) : 'All time' }];
   if (cmp) columns.push({ key: 'previous', label: cmp.from + ' to ' + cmp.to });
@@ -5484,6 +5929,10 @@ var ROUTES = {
   'rebate.options':   r_('suppliers', rebateOptions_),
   'rebate.promise':   r_('suppliers', rebatePromise_, true),
   'rebate.promise.cancel': r_('suppliers', rebatePromiseCancel_, true),
+  'adjust.options':   r_(null, adjustOptions_),
+  'adjust.list':      r_(null, adjustList_),
+  'ledger.adjust':    r_(null, ledgerAdjust_, true),
+  'ledger.report':    r_(null, ledgerReport_),
 
   'accounts.list':    r_('accounts', function () { return accountsList_(); }),
   'account.save':     r_('accounts', accountSave_, true),
@@ -5531,6 +5980,15 @@ var ROUTES = {
   'repair.deliver':   r_('repairs', repairDeliver_, true),
   'repair.cancel':    r_('repairs', repairCancel_, true),
   'repair.seen':      r_('repairs', repairSeen_, true),
+  'services.meta':    r_('service', servicesMeta_),
+  'services.list':    r_('service', servicesList_),
+  'service.get':      r_('service', serviceGet_),
+  'service.save':     r_('service', serviceSave_, true),
+  'service.status':   r_('service', serviceStatus_, true),
+  'service.complete': r_('service', serviceComplete_, true),
+  'service.cancel':   r_('service', serviceCancel_, true),
+  'service.type.save': r_('service', serviceTypeSave_, true),
+  'service.type.delete': r_('service', serviceTypeDelete_, true),
 
   'history':          r_(null, function (p, u) { return stripCost_(itemHistory_(p, u), u); }),
   'history.doc':      r_(null, function (p, u) { return stripCost_(historyDoc_route_(p, u), u); }),

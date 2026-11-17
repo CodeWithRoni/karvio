@@ -6,7 +6,7 @@ import { TableSkeleton } from '../components/Skeleton';
 // Friendly names for what the server records. Unknown codes are shown as they are.
 const ACTIONS = {
   sale_create: ['Sale', 'ok'], sale_exchange: ['Exchange', 'info'], sale_promise: ['Payment date set', 'info'], sreturn_create: ['Sales return', 'warn'],
-  purchase_create: ['Purchase', 'ok'], preturn_create: ['Purchase return', 'warn'], customer_payment: ['Customer payment', 'ok'], supplier_payment: ['Supplier payment', 'ok'], supplier_rebate: ['Supplier rebate', 'ok'], rebate_promised: ['Rebate promised', 'muted'], rebate_promise_cancelled: ['Promised rebate dropped', 'warn'], reverse_rebate: ['Rebate cancelled', 'bad'],
+  purchase_create: ['Purchase', 'ok'], preturn_create: ['Purchase return', 'warn'], customer_payment: ['Customer payment', 'ok'], supplier_payment: ['Supplier payment', 'ok'], supplier_rebate: ['Supplier rebate', 'ok'], ledger_adjust: ['Ledger adjustment', 'warn'], reverse_cadjust: ['Customer adjustment cancelled', 'bad'], reverse_sadjust: ['Supplier adjustment cancelled', 'bad'], rebate_promised: ['Rebate promised', 'muted'], rebate_promise_cancelled: ['Promised rebate dropped', 'warn'], reverse_rebate: ['Rebate cancelled', 'bad'],
   expense_update: ['Expense edited', 'warn'], expense_categories: ['Expense categories', 'muted'], price_update: ['Prices changed', 'warn'], stock_adjust: ['Stock adjusted', 'warn'],
   products_import: ['Products imported', 'info'], master_import: ['List imported', 'info'], barcode_assign: ['Barcodes assigned', 'muted'], claim_restock: ['Claim restocked', 'info'],
   repair_create: ['Repair job', 'info'], repair_update: ['Repair edited', 'muted'], repair_deliver: ['Repair delivered', 'ok'], repair_cancel: ['Repair cancelled', 'bad'],

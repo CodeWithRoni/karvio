@@ -28,6 +28,7 @@ const Customers = page(() => import('./pages/Customers'));
 const Collection = page(() => import('./pages/Collection'));
 const Payment = page(() => import('./pages/Payment'));
 const LedgerAdjustment = page(() => import('./pages/LedgerAdjustment'));
+const LedgerReport = page(() => import('./pages/LedgerReport'));
 const Suppliers = page(() => import('./pages/Suppliers'));
 const Stock = page(() => import('./pages/Stock'));
 const Purchases = page(() => import('./pages/Purchases'));
@@ -120,6 +121,8 @@ export default function App() {
               <Route path="payment/:id" element={<Guard perm="suppliers"><Payment /></Guard>} />
               <Route path="customer-ledger-adjustment" element={<Guard perm="*"><LedgerAdjustment kind="customer" /></Guard>} />
               <Route path="supplier-ledger-adjustment" element={<Guard perm="*"><LedgerAdjustment kind="supplier" /></Guard>} />
+              <Route path="customer-ledger-report" element={<Guard perm="*"><LedgerReport kind="customer" /></Guard>} />
+              <Route path="supplier-ledger-report" element={<Guard perm="*"><LedgerReport kind="supplier" /></Guard>} />
               <Route path="suppliers" element={<Guard perm="suppliers"><Suppliers /></Guard>} />
               <Route path="suppliers/:id" element={<Guard perm="suppliers"><Suppliers /></Guard>} />
               <Route path="stock" element={<Stock />} />
@@ -129,7 +132,8 @@ export default function App() {
               <Route path="warranty" element={<Guard perm="warranty"><Warranty /></Guard>} />
               <Route path="repairs" element={<Guard perm="repairs"><Repairs /></Guard>} />
               <Route path="repairs/:id" element={<Guard perm="repairs"><Repairs /></Guard>} />
-              <Route path="service" element={<Guard perm="repairs"><Service /></Guard>} />
+              <Route path="service" element={<Guard perm="service"><Service /></Guard>} />
+              <Route path="service/:id" element={<Guard perm="service"><Service /></Guard>} />
               <Route path="history" element={<History />} />
               <Route path="accounts" element={<Guard perm="accounts"><Accounts /></Guard>} />
               <Route path="profit" element={<Guard perm={['reports', 'cost']}><Profit /></Guard>} />

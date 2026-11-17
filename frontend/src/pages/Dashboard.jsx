@@ -99,10 +99,11 @@ export default function Dashboard() {
   const attention = [
     on('low_stock') && { key: 'low', label: 'Low stock items', n: d.low_stock.length, tone: 'warn', to: '/stock?low=1' },
     on('reminders') && Array.isArray(d.reminders) && { key: 'dues', label: 'Payments due or overdue', n: d.reminders.length, tone: 'bad', to: '#reminders' },
+    d.services_done !== undefined && { key: 'services', label: 'Service jobs done — complete & invoice', n: d.services_done, tone: 'info', to: '/service?tab=Work%20done' },
     d.repairs_waiting !== undefined && { key: 'repairs', label: 'Repairs waiting for pickup', n: d.repairs_waiting, tone: 'aqua', to: '/repairs' },
     d.claims && can('warranty') && { key: 'claims', label: 'Open warranty claims', n: claimsOpen, tone: 'violet', to: '/warranty' },
     d.recurring_due !== undefined && { key: 'monthly', label: 'Monthly expenses due', n: d.recurring_due, tone: 'warn', to: '/expenses?tab=monthly' },
-    d.rebates_pending && { key: 'rebates', label: 'Promised supplier rebates to collect', n: d.rebates_pending.count, tone: 'warn', to: '/reports?type=supplier_rebates' },
+    d.rebates_pending && { key: 'rebates', label: 'Promised supplier rebates to collect', n: d.rebates_pending.count, tone: 'warn', to: can('*') ? '/supplier-ledger-adjustment' : '/reports?type=supplier_rebates' },
     d.stock_summary && { key: 'oos', label: 'Out of stock products', n: d.stock_summary.out_of_stock, tone: 'muted', to: '/stock?qty=0' }
   ].filter(Boolean);
 

@@ -33,9 +33,9 @@ truthy(/mobile number/.test(QF('user.save', { name: 'Tanvir', username: 'tanvir'
 const tUser = Q('user.save', { name: 'Tanvir', username: 'tanvir', password: 'tanvir1-test-2026', role: 'technician', phone: '01700000091' });
 same([tUser.role, tUser.phone], ['technician', '01700000091'], 'technician with a phone');
 const tanvir = login('tanvir', 'tanvir1-test-2026');
-same(tanvir.perms, ['repairs'], 'a technician can use Repairs by default');
+same(tanvir.perms, ['repairs', 'service'], 'a technician can use Repairs and Service by default');
 Q('rolePerms.save', { manager: ['repairs'], sales: ['pos'] });
-same(Q('bootstrap', {}, tanvir.token).perms, ['repairs'], 'saving the other roles keeps the technician default');
+same(Q('bootstrap', {}, tanvir.token).perms, ['repairs', 'service'], 'saving the other roles keeps the technician default');
 Q('rolePerms.save', { manager: ['repairs'], sales: ['pos'], technician: ['repairs', 'warranty'] });
 same(Q('bootstrap', {}, tanvir.token).perms, ['repairs', 'warranty'], 'technician permissions can be changed');
 Q('rolePerms.save', { manager: ['repairs'], sales: ['pos'], technician: ['repairs'] });

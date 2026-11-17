@@ -42,7 +42,7 @@ export const NAV = [
   { to: '/collection', label: 'Collection', perm: 'customers' },
   { to: '/payment', label: 'Payment', perm: 'suppliers' },
   { to: '/repairs', label: 'Repairs', perm: 'repairs' },
-  { to: '/service', label: 'Service', perm: 'repairs' },
+  { to: '/service', label: 'Service', perm: 'service' },
   { group: 'Stock' },
   { to: '/stock', label: 'Products & stock', key: '5' },
   { to: '/barcodes', label: 'Barcode labels' },
@@ -50,9 +50,11 @@ export const NAV = [
   { to: '/purchases', label: 'Purchases & returns', perm: 'purchase', key: '6' },
   { to: '/suppliers', label: 'Suppliers', perm: 'suppliers' },
   { to: '/warranty', label: 'Warranty claims', perm: 'warranty', key: '7' },
-  { group: 'Party Ledger Adjustment' },
-  { to: '/customer-ledger-adjustment', label: 'Customer Ledger Adjustment', perm: '*' }, // '*' = admin only
-  { to: '/supplier-ledger-adjustment', label: 'Supplier Ledger Adjustment', perm: '*' },
+  { group: 'Party Ledger Adjust' },
+  { to: '/customer-ledger-adjustment', label: 'Customer Ledger Adjust', perm: '*' }, // '*' = admin only
+  { to: '/supplier-ledger-adjustment', label: 'Supplier Ledger Adjust', perm: '*' },
+  { to: '/customer-ledger-report', label: 'Customer Ledger Report', perm: '*' },
+  { to: '/supplier-ledger-report', label: 'Supplier Ledger Report', perm: '*' },
   { group: 'Money & Reports' },
   { to: '/accounts', label: 'Cash, bank & MFS', perm: 'accounts' },
   { to: '/profit', label: 'Profit', perm: ['reports', 'cost'] },
@@ -114,7 +116,7 @@ export default function Layout() {
   const visible = items.filter((n, i) => !n.group || (items[i + 1] && !items[i + 1].group));
   const groups = [];
   visible.forEach((n) => { if (n.group) groups.push({ title: n.group, links: [] }); else if (groups.length) groups[groups.length - 1].links.push(n); });
-  const tone = { Search: 'g-search', 'Daily Work': 'g-daily', Stock: 'g-stock', 'Party Ledger Adjustment': 'g-adjust', 'Money & Reports': 'g-money', Admin: 'g-admin' };
+  const tone = { Search: 'g-search', 'Daily Work': 'g-daily', Stock: 'g-stock', 'Party Ledger Adjust': 'g-adjust', 'Money & Reports': 'g-money', Admin: 'g-admin' };
 
   return (
     <div className={`shell ${open ? 'nav-open' : ''} ${hidden ? 'nav-hidden' : ''} ${showKeys ? 'show-keys' : ''}`} onClick={(e) => open && e.target === e.currentTarget && setOpen(false)}>
@@ -135,7 +137,7 @@ export default function Layout() {
             return (
               <section className={`nav-card ${tone[g.title] || ''} ${shut ? 'closed' : ''}`} key={g.title}>
                 <button type="button" className="nav-group" aria-expanded={!shut} aria-label={`${g.title} menu group`} onClick={() => toggleGroup(g.title)} title={shut ? `Show ${g.title}` : `Fold ${g.title}`}>
-                  <NavIcon name={g.title} group />{g.title}{shut && <span className="nav-count">{g.links.length}</span>}<Chevron />
+                  <NavIcon name={g.title} group /><span className="nav-group-label">{g.title}</span>{shut && <span className="nav-count">{g.links.length}</span>}<Chevron />
                 </button>
                 {!shut && g.links.map((n) => <NavLink key={n.to} to={n.to} end={n.end} title={n.key ? `${n.label} (Alt+${n.key})` : n.label}><NavIcon name={n.to} /><span className="nav-item-label">{n.label}</span>{n.key && <kbd>Alt {n.key}</kbd>}</NavLink>)}
               </section>

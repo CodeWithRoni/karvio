@@ -1,6 +1,6 @@
 // Customers / Suppliers are plain directories (mode "directory": names, phones, addresses).
 // Collection / Payment (mode "money") show the dues, the ledger and take or make payments.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pager, DEFAULT_PAGE_SIZE } from './Pager';
 import { useNavigate, useParams } from 'react-router-dom';
 import { partyStatements } from '../lib/partyStatements';
@@ -13,7 +13,6 @@ import { useApi, PageHead, Modal, Btn, Field, Loading, ErrorBox, useAction, Sele
 import { ReverseDialog } from './widgets';
 import { excelParties, pdfParties, printParties } from '../lib/partyDocs';
 import DueReminder from './DueReminder';
-import RebateForm from './RebateForm';
 import DateInput from './DateInput';
 
 const CFG = {
@@ -21,14 +20,14 @@ const CFG = {
     title: 'Customers', sub: 'Customer directory — names, phone numbers and addresses. Dues and payments are under Collection.',
     moneyTitle: 'Collection', moneySub: 'Customer dues (Bakir Khata) — collect payments, send due reminders and print statements.', moneyPath: '/collection',
     list: 'customers.list', save: 'customer.save', statement: 'customer.statement', statements: 'customer.statements', del: 'customer.delete', payment: 'customer.payment', key: 'customer_id', path: '/customers', perm: 'customers', revType: 'cpay',
-    pos: 'Customer owes', neg: 'Advance', payLabel: 'Collect payment', dirs: [['receive', 'Collect from customer'], ['pay', 'Pay to customer (return advance)']],
+    pos: 'Customer owes', neg: 'Advance', payLabel: 'Collect payment', dirs: [['receive', 'Collect from customer']],
     debit: 'Sales / paid out', credit: 'Received'
   },
   supplier: {
     title: 'Suppliers', sub: 'Supplier directory — names, phone numbers and addresses. Dues and payments are under Payment.',
-    moneyTitle: 'Payment', moneySub: 'What we owe suppliers — pay them, record rebates and see the payment history.', moneyPath: '/payment',
+    moneyTitle: 'Payment', moneySub: 'What we owe suppliers — pay them and see the payment history. Rebates and corrections are under Party Ledger Adjust.', moneyPath: '/payment',
     list: 'suppliers.list', save: 'supplier.save', statement: 'supplier.statement', statements: 'supplier.statements', del: 'supplier.delete', payment: 'supplier.payment', key: 'supplier_id', path: '/suppliers', perm: 'suppliers', revType: 'spay',
-    pos: 'We owe', neg: 'Advance paid', payLabel: 'Pay supplier', dirs: [['pay', 'Pay to supplier'], ['receive', 'Receive from supplier (refund)'], ['rebate', 'Rebate / discount from supplier (no money moves)']],
+    pos: 'We owe', neg: 'Advance paid', payLabel: 'Pay supplier', dirs: [['pay', 'Pay to supplier']],
     debit: 'Paid / returned', credit: 'Purchased'
   }
 };
@@ -88,7 +87,7 @@ function PartyProfile({ kind, id, list, onClose, onEdit, onMoney, onDeleted }) {
         <div><span>Status</span><b>{party.active ? 'Active' : 'Inactive'}{party.combined ? ` · also a ${kind === 'customer' ? 'supplier' : 'customer'}` : ''}</b></div>
         {party.note && <div><span>Note</span><b>{party.note}</b></div>}
       </div>
-      <p className="muted pp-note">{kind === 'customer' ? 'Dues, the ledger and collecting payments are under Collection.' : 'What we owe, the ledger, payments and rebates are under Payment.'}{party.has_history ? ` This ${kind} has history, so it cannot be deleted — turn Active off in Edit details instead.` : ''}</p>
+      <p className="muted pp-note">{kind === 'customer' ? 'Dues, the ledger and collecting payments are under Collection.' : 'What we owe, the ledger and payments are under Payment.'}{party.has_history ? ` This ${kind} has history, so it cannot be deleted — turn Active off in Edit details instead.` : ''}</p>
       {confirmUI}
     </Modal>
   );
@@ -223,8 +222,6 @@ function PartyDetail({ kind, id, onClose, onChanged }) {
   const partyList = useApi(c.list, {});
   const party = partyList.data?.find((x) => x.id === id);
   const [pay, setPay] = useState(false);
-  const [receive, setReceive] = useState(null);
-  const [drop, setDrop] = useState(null);
   const [rev, setRev] = useState(null);
   // Full-period statement closing is the live balance; with a date filter fall back to the directory balance.
   const liveBal = st.data && !range.from && !range.to ? st.data.closing : Number(party?.balance) || 0;
@@ -261,44 +258,18 @@ function PartyDetail({ kind, id, onClose, onChanged }) {
               </div>
             </div>
           )}
-          {kind === 'supplier' && st.data.pending_rebates?.length > 0 && (
-            <div className="rb-pending" role="region" aria-label="Promised rebates">
-              <b>Promised rebates not received yet</b>
-              {st.data.pending_rebates.map((r) => (
-                <div className="rb-pend-row" key={r.id}>
-                  <span><b>{money(r.amount)}</b> · {r.note}{r.purchase_no ? ` · ${r.purchase_no}` : ''}{r.expected ? ` · expected by ${fdate(r.expected)}` : ''}</span>
-                  <span className="spacer" />
-                  <Btn size="sm" kind="primary" onClick={() => setReceive(r)} aria-label={`Mark the ${money(r.amount)} rebate received`}>Mark received</Btn>
-                  <Btn size="sm" onClick={() => setDrop(r)} aria-label={`Drop the ${money(r.amount)} promised rebate`}>Drop</Btn>
-                </div>
-              ))}
-            </div>
-          )}
           <DataTable title={`${st.data.party} statement`} rows={st.data.rows} searchable={false}
             columns={[
               { key: 'date', label: 'Date', type: 'date' }, { key: 'ref_no', label: 'Ref' }, { key: 'note', label: 'Details', className: 'clip' },
               { key: 'debit', label: c.debit, type: 'money', sum: true }, { key: 'credit', label: c.credit, type: 'money', sum: true },
               { key: 'balance', label: 'Balance', type: 'money' },
               ...(kind === 'customer' ? [{key:'receipt',label:'',noSort:true,noExport:true,render:(r)=>r.type==='payment' && <button className="link" onClick={()=>printMoneyReceipt({receipt_no:r.ref_no,customer:st.data.party,amount:r.credit,balance:r.balance,account:r.note.match(/\[([^\]]+)\]$/)?.[1] || r.note,date:r.date})}>Print receipt</button>}] : []),
-              ...(can('cancel') ? [{ key: 'x', label: '', noSort: true, noExport: true, render: (r) => (r.type === 'payment' || r.type === 'refund' || r.type === 'rebate') && <button className="link" style={{ color: 'var(--bad)' }} onClick={() => setRev(r.type === 'rebate' ? { type: 'rebate', id: r.id, label: `rebate ${r.ref_no}` } : { type: c.revType, id: r.id, label: `payment ${r.ref_no}` })}>Void</button> }] : [])
+              ...(can('cancel') ? [{ key: 'x', label: '', noSort: true, noExport: true, render: (r) => (r.type === 'payment' || r.type === 'refund') && <button className="link" style={{ color: 'var(--bad)' }} onClick={() => setRev({ type: c.revType, id: r.id, label: `payment ${r.ref_no}` })}>Void</button> }] : [])
             ]} />
         </>
       )}
       {pay && <PaymentForm kind={kind} id={id} name={st.data?.party} balance={liveBal} accounts={accounts} onClose={() => setPay(false)} onDone={() => { st.reload(); onChanged(); partyList.reload(); }} />}
-      {receive && <RebateForm supplierId={id} name={st.data?.party} balance={liveBal} pending={receive} onClose={() => setReceive(null)} onDone={() => { st.reload(); onChanged(); }} />}
-      {drop && <DropPromise promise={drop} onClose={() => setDrop(null)} onDone={() => st.reload()} />}
       <ReverseDialog open={!!rev} {...(rev || {})} onClose={() => setRev(null)} onDone={() => { st.reload(); onChanged(); }} />
-    </Modal>
-  );
-}
-
-function DropPromise({ promise, onClose, onDone }) {
-  const [reason, setReason] = useState('');
-  const [busy, run] = useAction();
-  const save = async () => { await run(() => api('rebate.promise.cancel', { id: promise.id, reason }), 'Promised rebate dropped'); onDone(); onClose(); };
-  return (
-    <Modal open onClose={onClose} size="sm" title={`Drop the promised rebate of ${money(promise.amount)}?`} footer={<><Btn onClick={onClose}>Keep it</Btn><Btn kind="primary" busy={busy} disabled={!reason.trim()} onClick={save}>Drop it</Btn></>}>
-      <div className="form"><Field label="Why is it dropped?" wide><input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. target was not reached" autoFocus /></Field></div>
     </Modal>
   );
 }
@@ -310,9 +281,6 @@ function PaymentForm({ kind, id, name, balance, accounts, onClose, onDone }) {
   const [print, setPrint] = useState(kind === 'customer');
   const [busy, run] = useAction();
   useEffect(() => { if (!f.account_id && accounts[0]) setF((x) => ({ ...x, account_id: accounts[0].id })); }, [accounts, f.account_id]);
-  // Switching the type swaps this window for the rebate one (and back): no opening animation then, or the screen flickers.
-  const swapped = useRef(false);
-  if (kind === 'supplier' && f.direction === 'rebate') { swapped.current = true; return <RebateForm supplierId={id} name={name} balance={balance} types={c.dirs} onType={(v) => setF({ ...f, direction: v })} onClose={onClose} onDone={onDone} />; }
   const returningAdvance = kind === 'customer' && f.direction === 'pay';
   const availableAdvance = Math.max(-Number(balance || 0), 0);
   const invalidAmount = !Number.isFinite(Number(f.amount)) || Number(f.amount) <= 0 || (returningAdvance && Number(f.amount) > availableAdvance + 0.005);
@@ -326,9 +294,9 @@ function PaymentForm({ kind, id, name, balance, accounts, onClose, onDone }) {
     onDone(); onClose();
   };
   return (
-    <Modal open onClose={onClose} size="sm" instant={swapped.current} title={`${c.payLabel} — ${name}`} footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} disabled={invalidAmount} onClick={save}>Save payment</Btn></>}>
+    <Modal open onClose={onClose} size="sm" title={`${c.payLabel} — ${name}`} footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} disabled={invalidAmount} onClick={save}>Save payment</Btn></>}>
       <div className="form">
-        <Field label="Type" wide><select value={f.direction} onChange={(e) => setF({ ...f, direction: e.target.value })}>{c.dirs.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
+        {c.dirs.length > 1 && <Field label="Type" wide><select value={f.direction} onChange={(e) => setF({ ...f, direction: e.target.value })}>{c.dirs.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>}
         <Field label="Amount" wide hint={returningAdvance ? `Available advance ${money(availableAdvance)}. Refund cannot exceed this amount.` : `Current balance ${money(balance)}`}><input type="number" step="any" min="0" max={returningAdvance ? availableAdvance : undefined} value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></Field>
         <Field label="Account" wide><Select value={f.account_id} onChange={(v) => setF({ ...f, account_id: v })} options={accounts} allowEmpty={false} /></Field>
         {partPaid && (

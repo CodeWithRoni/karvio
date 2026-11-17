@@ -161,6 +161,7 @@ test('Profit page and the dashboard profit row', async ({ page, request }) => {
   await expect(page.locator('.profit-summary .stat').filter({ hasText: 'Gross profit' })).toContainText('Tk ' + rep.summary.gross.toLocaleString('en-IN'));
   await expect(page.locator('.profit-summary .stat').filter({ hasText: 'Net profit' })).toContainText(rep.summary.net.toLocaleString('en-IN'));
   await page.getByRole('tab', { name: 'By product' }).click();
+  await page.getByPlaceholder('Search this table').fill('Router Serial Test C54'); // other tests' products can push it past the first page
   await expect(page.locator('table').filter({ hasText: 'Router Serial Test C54' })).toBeVisible();
   await page.getByRole('tab', { name: 'Last 6 months' }).click();
   await expect(page.locator('.profit-summary')).toBeVisible();
