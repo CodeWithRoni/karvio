@@ -1,6 +1,6 @@
 # Current state — 15 November 2026
 
-Published: v1.2.5 plus ui-pro-1 (main a6235c1). Pending, not pushed: branch features-2 (first entry in CHANGES.md), with one migration (daily summary: pg_net + pg_cron job calling the Edge function with a one-time code).
+Published: v1.2.6 (main, tag v1.2.6) with everything in CHANGES.md through the Quotation CC Camera tab. Release notes: RELEASE-1.2.6.md.
 
 Date boxes use components/DateInput.jsx (text field + portal calendar; value yyyy-mm-dd; onChange gets {target:{value}}) — do not add new <input type="date">. Due reminder SMS: action customer.remind, template in Settings 'sms_due_template'. SMS amounts go through smsAmt_ (lakh commas).
 

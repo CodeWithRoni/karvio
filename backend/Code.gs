@@ -15,7 +15,7 @@
  * ============================================================================
  */
 
-var APP_VERSION = '1.2.5';
+var APP_VERSION = '1.2.6';
 // Your Karvio database spreadsheet. Lets this script also run as a standalone project.
 var DEFAULT_SHEET_ID = ''; // Standalone Apps Script users must explicitly configure SHEET_ID.
 var SESSION_TTL = 21600; // 6 hours (CacheService maximum)
