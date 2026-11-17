@@ -1,12 +1,12 @@
 import { quotationTotals } from '../lib/quotationTotals';
 import { shopStorageKey } from '../lib/shopStorage';
-import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useStore } from '../lib/store';
-import { money, qty as fqty, today } from '../lib/format';
+import { money, fdate, qty as fqty } from '../lib/format';
 import { printQuotation } from '../lib/receipt';
 import { textOf, cpuInfo, boardInfo, ramInfo, boardFitsCpu, ramFits } from '../lib/compat';
-import { PageHead, Btn, Field, noWheel, useConfirm, useAction } from '../components/ui';
+import { PageHead, Btn, Field, Tabs, Modal, noWheel, useApi, useConfirm, useAction } from '../components/ui';
 import { api } from '../lib/api';
 import { loadPosDraft, savePosDraft } from '../lib/posDraft';
 
@@ -16,9 +16,22 @@ const SLOTS = [
   ['Graphics card', ['gpu', 'graphics']], ['Power supply', ['power supply', 'psu']], ['Casing', ['casing', 'case']], ['CPU cooler / fans', ['cool', 'fan']],
   ['Monitor', ['monitor']], ['Keyboard', ['keyboard']], ['Mouse', ['mouse']], ['UPS', ['ups']]
 ];
+// CC camera setups: the same builder with its own rows.
+const CCTV_SLOTS = [
+  ['DVR / NVR', ['dvr', 'nvr', 'xvr']], ['Bullet Camera', ['bullet']], ['Dome Camera', ['dome']], ['HDD (Hard Disk Drive)', ['hdd', 'hard disk']],
+  ['Monitor', ['monitor']], ['Video Balun', ['balun']], ['Adapter', ['adapter']], ['POE Switch', ['poe']], ['UTP Cable', ['utp', 'cat6', 'cat 6']],
+  ['Power/AC Cable', ['power cable', 'ac cable']], ['Junction Box', ['junction']], ['Camera Stand', ['stand']], ['Server Rack', ['rack']],
+  ['Accessories', ['accessor']], ['Wall Mount', ['wall mount']], ['Giga Switch', ['giga']]
+];
+const KINDS = {
+  pc: { label: 'PC builder', slots: SLOTS, title: 'Custom PC build', note: 'Assembly charge, OS installation, delivery…', example: 'e.g. Gaming PC — Ryzen 5 / RTX 4060' },
+  cctv: { label: 'CC Camera', slots: CCTV_SLOTS, title: 'CC Camera setup', note: 'Cable laying, installation, delivery…', example: 'e.g. 4 camera setup — shop and office' }
+};
+const blankMeta = (k) => ({ customer: '', phone: '', title: KINDS[k].title, discount: '', note: '', validDays: 7 });
+// Quotations used to be saved only in this browser; they are moved to the server the first time the page opens.
 const savedKey = () => shopStorageKey('erp_quotes');
 const loadSaved = () => { try { const key=savedKey(); const rows=key ? JSON.parse(localStorage.getItem(key)) : []; return Array.isArray(rows) ? rows : []; } catch { return []; } };
-const newLines = () => SLOTS.map(([g]) => ({ group: g, product_id: '', name: '', qty: 1, price: '' }));
+const newLines = (k = 'pc') => KINDS[k].slots.map(([g]) => ({ group: g, product_id: '', name: '', qty: 1, price: '' }));
 
 export default function PCBuilder() {
   const userId = useStore((s) => s.user?.id);
@@ -29,9 +42,38 @@ function Builder() {
   const [sending, runSend] = useAction();
   const nav = useNavigate();
   const [confirmDialog, ask] = useConfirm();
-  const [lines, setLines] = useState(newLines);
-  const [meta, setMeta] = useState({ customer: '', phone: '', title: 'Custom PC build', discount: '', note: '', validDays: 7 });
-  const [saved, setSaved] = useState(loadSaved);
+  const [params] = useSearchParams();
+  const [kind, setKind] = useState(params.get('kind') === 'cctv' ? 'cctv' : 'pc');
+  const [lines, setLines] = useState(() => newLines(kind));
+  const [meta, setMeta] = useState(() => blankMeta(kind));
+  // Each tab keeps its own quote while you switch between them.
+  const drafts = useRef({});
+  const [touched, setTouched] = useState(false); // show the missing customer fields once an action needed them
+  const [showSaved, setShowSaved] = useState(false);
+  const phoneDigits = String(meta.phone || '').replace(/\D/g, '');
+  const phoneOk = /^(?:01\d{9}|8801\d{9})$/.test(phoneDigits);
+  const [savedId, setSavedId] = useState(''); // the saved quotation that is open (Save updates it)
+  const switchTo = (k, d) => {
+    if (k === kind && !d) return;
+    drafts.current[kind] = { lines, meta, savedId };
+    const next = d || drafts.current[k] || { lines: newLines(k), meta: blankMeta(k), savedId: '' };
+    setKind(k); setLines(next.lines); setMeta(next.meta); setSavedId(next.savedId || ''); setTouched(false);
+  };
+  // Saved quotations live on the server: every user, every device, until someone deletes them.
+  const savedList = useApi('quotes.list', {}, []);
+  const saved = savedList.data || [];
+  const [saving, runSave] = useAction();
+  useEffect(() => {
+    const local = loadSaved();
+    if (!local.length || !savedKey()) return;
+    (async () => {
+      let moved = 0;
+      for (const q of local) { try { await api('quote.save', { imported: true, kind: q.kind || 'pc', meta: q.meta || {}, lines: q.lines || [], date: q.date }); moved++; } catch { /* a broken old entry is skipped */ } }
+      try { localStorage.removeItem(savedKey()); } catch { /* nothing more to do */ }
+      savedList.reload();
+      if (moved) useStore.getState().toast(`${moved} quotation${moved > 1 ? 's' : ''} saved on this device ${moved > 1 ? 'are' : 'is'} now on the server for every user`);
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const catName = useMemo(() => Object.fromEntries(categories.map((c) => [c.id, c.name.toLowerCase()])), [categories]);
   const brandName = useMemo(() => Object.fromEntries(brands.map((b) => [b.id, b.name])), [brands]);
@@ -74,22 +116,34 @@ function Builder() {
   const pricing = quotationTotals(filled, meta.discount);
   const sub = pricing.subtotal, total = pricing.total;
 
-  const quote = () => { if (!pricing.valid) return useStore.getState().toast(pricing.error, 'err'); return printQuotation({ ...meta, discount: Number(meta.discount) || 0, lines: filled.map((l) => ({ ...l, price: Number(l.price) || 0 })) }); };
+  // A quotation needs the customer's name and mobile number (saving, printing and sending it).
+  const needCustomer = () => {
+    if (meta.customer.trim() && phoneOk) return true;
+    setTouched(true);
+    useStore.getState().toast(!meta.customer.trim() ? 'Write the customer name' : 'Write the customer\'s mobile number (01XXXXXXXXX)', 'err');
+    return false;
+  };
+  const quote = () => { if (!pricing.valid) return useStore.getState().toast(pricing.error, 'err'); if (!needCustomer()) return; return printQuotation({ ...meta, discount: Number(meta.discount) || 0, lines: filled.map((l) => ({ ...l, price: Number(l.price) || 0 })) }); };
   const save = () => {
     if (!pricing.valid) return useStore.getState().toast(pricing.error, 'err');
-    const q = { id: Date.now(), date: today(), meta, lines };
-    const next = [q, ...saved].slice(0, 30); setSaved(next);
-    try { if (!savedKey()) throw new Error(); localStorage.setItem(savedKey(), JSON.stringify(next)); } catch { setSaved(saved); return useStore.getState().toast('Could not save the quote on this device', 'err'); }
-    useStore.getState().toast('Quote saved for this user and shop');
+    if (!needCustomer()) return;
+    return runSave(async () => {
+      const r = await api('quote.save', { id: savedId || undefined, kind, meta, lines });
+      setSavedId(r.id); savedList.reload();
+      useStore.getState().toast(`${savedId ? 'Quotation updated' : 'Quotation saved'} — ${meta.customer.trim()}`);
+    }).catch(() => {});
   };
   // Send the quotation to the customer's mobile: an SMS with a private link that works for 3 days.
-  const phoneDigits = String(meta.phone || '').replace(/\D/g, '');
-  const phoneOk = /^(?:01\d{9}|8801\d{9})$/.test(phoneDigits);
   const smsOn = settings.sms_enabled === 'true';
   const sendTitle = !smsOn ? 'Turn on SMS in Settings to send quotations' : !phoneOk ? 'Enter the customer\'s mobile number (01XXXXXXXXX)' : 'Send this quotation to the customer by SMS (link valid 3 days)';
+  const clearAll = async () => {
+    const used = filled.length || meta.customer.trim() || meta.phone.trim() || meta.note.trim() || String(meta.discount).trim();
+    if (used && !await ask({ title: 'Clear this quotation?', message: `Every part, the customer and the notes on the ${KINDS[kind].label} tab are cleared. Saved quotations are not touched.`, confirmLabel: 'Clear' })) return;
+    setLines(newLines(kind)); setMeta(blankMeta(kind)); setTouched(false); setSavedId('');
+  };
   const toCustomer = async () => {
     if (!pricing.valid) return useStore.getState().toast(pricing.error, 'err');
-    if (!phoneOk) return useStore.getState().toast('Enter the customer\'s mobile number (01XXXXXXXXX)', 'err');
+    if (!needCustomer()) return;
     if (!await ask({ title: 'Send quotation by SMS?', message: <>Send <b>{meta.title || 'this quotation'}</b> ({money(total)}) to <b>{meta.phone}</b>? The customer gets a link that works for <b>3 days</b>; then it is deleted.</>, confirmLabel: 'Send SMS' })) return;
     try {
       const r = await runSend(() => api('quote.send', {
@@ -114,20 +168,31 @@ function Builder() {
     nav('/pos');
   };
 
+  const deleteSaved = async (id) => {
+    try { await api('quote.delete', { id }); useStore.getState().toast('Quotation deleted'); } catch (e) { useStore.getState().toast(e.message, 'err'); }
+    if (id === savedId) setSavedId('');
+    Object.values(drafts.current).forEach((d) => { if (d && d.savedId === id) d.savedId = ''; });
+    savedList.reload();
+  };
   return (
     <>
-      {confirmDialog}
-      <PageHead title="PC builder & quotations" sub="Build a setup part by part, print a quote for the customer, or send it straight to the POS.">
-        <Btn onClick={() => setLines(newLines())}>Start over</Btn>
-        <Btn onClick={save} disabled={!filled.length || !pricing.valid}>Save quote</Btn>
+      {showSaved && <SavedQuotes saved={saved} onClose={() => setShowSaved(false)} onOpen={(q) => { switchTo(q.kind === 'cctv' ? 'cctv' : 'pc', { lines: q.lines, meta: q.meta, savedId: q.id }); setShowSaved(false); }} loading={savedList.loading && !savedList.data} error={savedList.error}
+        onPrint={(q) => { const ls = q.lines.filter((l) => String(l.name || '').trim() && Number(l.qty) > 0); printQuotation({ ...q.meta, discount: Number(q.meta.discount) || 0, lines: ls.map((l) => ({ ...l, price: Number(l.price) || 0 })) }); }}
+        onDelete={async (q) => { if (await ask({ title: 'Delete this saved quotation?', message: `${q.meta.customer || 'No name'} — ${q.meta.title}`, confirmLabel: 'Delete' })) deleteSaved(q.id); }} />}
+      {confirmDialog /* after the saved list, so a question asked from it shows on top */}
+      <PageHead title="Quotation" sub="Build a PC or a CC camera setup part by part, print a quote for the customer, or send it straight to the POS.">
+        <Btn className="btn-clear" onClick={clearAll} aria-label="Clear this quotation"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 11v6m4-6v6" /></svg>Clear</Btn>
+        <Btn onClick={save} busy={saving} disabled={!filled.length || !pricing.valid} title={savedId ? 'Saves the changes to the quotation you opened' : ''}>{savedId ? 'Save changes' : 'Save quotation'}</Btn>
+        <Btn onClick={() => { savedList.reload(); setShowSaved(true); }}>See Saved Quotations{saved.length ? <span className="pcb-count">{saved.length}</span> : null}</Btn>
         <Btn onClick={toCustomer} busy={sending} disabled={!filled.length || !pricing.valid || !phoneOk || !smsOn} title={sendTitle}>Send to customer</Btn>
         <Btn onClick={toPos} disabled={!filled.some((l) => l.product_id) || !pricing.valid}>Send to POS</Btn>
         <Btn kind="primary" onClick={quote} disabled={!filled.length || !pricing.valid}>Print / PDF quote</Btn>
       </PageHead>
       <div className="split">
         <div className="card">
+          <div style={{ marginBottom: 10 }}><Tabs tabs={Object.entries(KINDS).map(([k, v]) => [k, v.label])} value={kind} onChange={(k) => switchTo(k)} /></div>
           {lines.map((l, i) => {
-            const slot = SLOTS.find((s) => s[0] === l.group);
+            const slot = KINDS[kind].slots.find((s) => s[0] === l.group);
             const all = slot ? optionsFor(slot[1]) : inStock;
             const opts = all.filter((p) => fit(l.group, p) === 'ok');
             const maybe = all.filter((p) => fit(l.group, p) === 'unknown');
@@ -161,32 +226,58 @@ function Builder() {
         </div>
         <div className="grid">
           <div className="card form">
-            <Field label="Customer name" wide><input value={meta.customer} onChange={(e) => setMeta({ ...meta, customer: e.target.value })} /></Field>
-            <Field label="Phone"><input value={meta.phone} onChange={(e) => setMeta({ ...meta, phone: e.target.value })} /></Field>
+            <Field label={<>Customer name <i className="req">*</i></>} wide error={touched && !meta.customer.trim() ? 'Customer name is required' : ''}><input value={meta.customer} onChange={(e) => setMeta({ ...meta, customer: e.target.value })} aria-label="Customer name" aria-required="true" /></Field>
+            <Field label={<>Phone <i className="req">*</i></>} error={(touched || phoneDigits.length >= 11) && !phoneOk ? (phoneDigits ? 'Use a mobile number like 01XXXXXXXXX' : 'Phone is required') : ''}><input value={meta.phone} inputMode="tel" placeholder="01XXXXXXXXX" onChange={(e) => setMeta({ ...meta, phone: e.target.value })} aria-label="Phone" aria-required="true" /></Field>
             <Field label="Valid for (days)"><input type="number" value={meta.validDays} onChange={(e) => setMeta({ ...meta, validDays: e.target.value })} /></Field>
-            <Field label="Quote title" wide><input value={meta.title} onChange={(e) => setMeta({ ...meta, title: e.target.value })} placeholder="e.g. Gaming PC — Ryzen 5 / RTX 4060" /></Field>
+            <Field label="Quote title" wide><input value={meta.title} onChange={(e) => setMeta({ ...meta, title: e.target.value })} placeholder={KINDS[kind].example} /></Field>
             <Field label="Discount"><input type="number" step="any" value={meta.discount} onChange={(e) => setMeta({ ...meta, discount: e.target.value })} /></Field>
-            <Field label="Notes" wide><textarea value={meta.note} onChange={(e) => setMeta({ ...meta, note: e.target.value })} placeholder="Assembly charge, OS installation, delivery…" /></Field>
+            <Field label="Notes" wide><textarea value={meta.note} onChange={(e) => setMeta({ ...meta, note: e.target.value })} placeholder={KINDS[kind].note} /></Field>
             <div className="wide totals">
               <span>{filled.length} parts</span><b className="num">{money(sub, false)}</b>
               <span>Grand total</span><span className="grand">{pricing.valid ? money(total) : '—'}</span>
             </div>
           </div>
           {pricing.error && <p className="errbox" role="alert">{pricing.error}</p>}
-          {saved.length > 0 && (
-            <div className="card">
-              <h2 style={{ marginBottom: 8 }}>Saved quotes</h2>
-              {saved.map((q) => (
-                <div className="row" key={q.id} style={{ padding: '4px 0' }}>
-                  <span>{q.meta.customer || 'No name'} — {q.meta.title}</span><span className="muted">{q.date}</span><span className="spacer" />
-                  <button className="link" onClick={() => { setLines(q.lines); setMeta(q.meta); }}>Open</button>
-                  <button className="x" onClick={() => { const n = saved.filter((x) => x.id !== q.id); setSaved(n); try { localStorage.setItem(savedKey(), JSON.stringify(n)); } catch {} }} aria-label="Delete quote">×</button>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       </div>
     </>
+  );
+}
+
+/** Every saved quotation (all users, all devices): search, open, print or delete. */
+function SavedQuotes({ saved, loading, error, onClose, onOpen, onPrint, onDelete }) {
+  const [q, setQ] = useState('');
+  const [kind, setKind] = useState('all');
+  const rows = saved.map((x) => {
+    const ls = (x.lines || []).filter((l) => String(l.name || '').trim() && Number(l.qty) > 0);
+    const t = quotationTotals(ls, x.meta.discount);
+    return { ...x, parts: ls.length, total: t.valid ? t.total : 0 };
+  }).filter((x) => (kind === 'all' || (x.kind || 'pc') === kind) && (!q.trim() || [x.meta.customer, x.meta.phone, x.meta.title].join(' ').toLowerCase().includes(q.trim().toLowerCase())));
+  return (
+    <Modal open onClose={onClose} size="lg" title="Saved quotations" footer={<Btn onClick={onClose}>Close</Btn>}>
+      <div className="row pcb-saved-bar">
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search customer, phone or title" aria-label="Search saved quotations" autoFocus />
+        <Tabs tabs={[['all', 'All'], ['pc', 'PC builder'], ['cctv', 'CC Camera']]} value={kind} onChange={setKind} />
+      </div>
+      <div className="dt" style={{ marginTop: 10 }}><div className="dt-scroll"><table>
+        <thead><tr><th>Date</th><th>Customer</th><th>Phone</th><th>Type</th><th>Title</th><th className="r">Parts</th><th className="r">Total</th><th>Saved by</th><th /></tr></thead>
+        <tbody>
+          {rows.map((x) => (
+            <tr key={x.id}>
+              <td style={{ whiteSpace: 'nowrap' }}>{fdate(x.date)}</td><td><b>{x.meta.customer || 'No name'}</b></td><td style={{ whiteSpace: 'nowrap' }}>{x.meta.phone || '—'}</td>
+              <td><span className={`badge ${x.kind === 'cctv' ? 'badge-info' : 'badge-violet'}`}>{KINDS[x.kind || 'pc'].label}</span></td>
+              <td>{x.meta.title}</td><td className="r">{x.parts}</td><td className="r num">{money(x.total, false)}</td><td className="muted">{x.updated_by || x.created_by || ''}</td>
+              <td className="r pcb-saved-actions">
+                <Btn size="sm" kind="primary" onClick={() => onOpen(x)}>Open</Btn>
+                <Btn size="sm" onClick={() => onPrint(x)}>Print</Btn>
+                <button className="link" style={{ color: 'var(--bad)' }} onClick={() => onDelete(x)} aria-label={`Delete the quotation for ${x.meta.customer || 'no name'}`}>Delete</button>
+              </td>
+            </tr>
+          ))}
+          {!rows.length && <tr><td colSpan={9} className="muted">{loading ? 'Loading…' : error ? error : saved.length ? 'No saved quotation matches.' : 'No quotations saved yet. Fill one in and press Save quotation.'}</td></tr>}
+        </tbody>
+      </table></div></div>
+      <p className="muted" style={{ margin: '8px 0 0', fontSize: 12.5 }}>Saved on the server: every user sees them on every device, and they stay until someone deletes them. Open one and press Save changes to update it.</p>
+    </Modal>
   );
 }

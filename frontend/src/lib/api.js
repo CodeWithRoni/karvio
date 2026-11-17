@@ -23,7 +23,7 @@ export class ApiError extends Error {
   constructor(msg, auth, uncertain = false) { super(msg); this.auth = auth; this.uncertain = uncertain; }
 }
 
-const WRITES = new Set(['service.save', 'service.status', 'service.complete', 'service.cancel', 'service.type.save', 'service.type.delete', 'ledger.adjust', 'customer.promise', 'supplier.rebate', 'rebate.promise', 'rebate.promise.cancel', 'dayclose.reopen', 'sessions.revoke', 'customer.remind', 'dayclose.save', 'account.delete', 'summary.send', 'products.import', 'expense.recurring.save', 'expense.recurring.record', 
+const WRITES = new Set(['quote.save', 'quote.delete', 'service.save', 'service.status', 'service.complete', 'service.cancel', 'service.type.save', 'service.type.delete', 'ledger.adjust', 'customer.promise', 'supplier.rebate', 'rebate.promise', 'rebate.promise.cancel', 'dayclose.reopen', 'sessions.revoke', 'customer.remind', 'dayclose.save', 'account.delete', 'summary.send', 'products.import', 'expense.recurring.save', 'expense.recurring.record', 
   'password.change', 'product.save', 'product.delete', 'product.barcodes', 'sale.promise',
   'stock.adjust', 'master.save', 'master.delete', 'master.deleteMany', 'master.import', 'price.update',
   'customer.save', 'customer.quickAdd', 'customer.delete', 'customer.payment',

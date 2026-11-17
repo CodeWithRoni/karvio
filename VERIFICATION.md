@@ -1,5 +1,6 @@
 # Review fixes — verification (15 November 2026, not yet pushed)
 
+- 18 November 2026, Quotation CC Camera tab, required customer, Clear and saved quotations on the server: npm test, test:supabase, test:performance (features-9.mjs: 12 checks), build and 191/191 Playwright tests passed locally.
 - 18 November 2026, Service jobs (with Collection return-advance removed): npm test, test:supabase, test:performance (features-8.mjs: 40 checks), build and 190/190 Playwright tests passed locally.
 - 17 November 2026, Party Ledger Adjust and Ledger Report: npm test, test:supabase, test:performance (features-7.mjs: 41 checks), build and 189/189 Playwright tests passed locally.
 - 17 November 2026, three fixes (type switch flicker, profile over the edit form, supplier warranty from the stock report): npm test, test:supabase, test:performance, build and 184/184 Playwright tests passed locally.

@@ -2263,6 +2263,62 @@ function cleanupQuoteLinks_() {
   return live;
 }
 function quoteText_(v, max) { return String(v === undefined || v === null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, max); }
+/* ---- Saved quotations (Quotation page): kept on the server for every user and device until someone deletes them.
+ * One row per quotation in the private sheet __KarvioSavedQuotes: [id, updated (ms), JSON]. */
+var SAVED_QUOTE_SHEET = '__KarvioSavedQuotes', SAVED_QUOTE_MAX = 5000;
+function savedQuoteRows_() {
+  var sh = privateSheet_(SAVED_QUOTE_SHEET), last = sh.getLastRow(), rows = [];
+  if (last) sh.getRange(1, 1, last, 3).getValues().forEach(function (r, i) { if (r[0]) rows.push({ pos: i + 1, id: String(r[0]), cells: r }); });
+  return { sh: sh, rows: rows };
+}
+function savedQuoteParse_(r) { try { var q = JSON.parse(r.cells[2]); q.id = r.id; return q; } catch (e) { return null; } }
+function quotesList_() {
+  return savedQuoteRows_().rows.sort(function (a, b) { return num_(b.cells[1]) - num_(a.cells[1]) || b.pos - a.pos; }) // newest change first
+    .map(savedQuoteParse_).filter(Boolean);
+}
+/** Save a new quotation, or update the one that was opened (p.id). Customer name and mobile number are required
+ *  (quotations brought over from a device's old local list may lack them: p.imported). */
+function quoteSave_(p, user) {
+  var meta = p.meta || {}, kind = p.kind === 'cctv' ? 'cctv' : 'pc';
+  var customer = quoteText_(meta.customer, 120), phone = quoteText_(meta.phone, 30), digits = phone.replace(/\D/g, '');
+  if (!p.imported) {
+    if (!customer) fail_('Write the customer name');
+    if (!/^(?:01\d{9}|8801\d{9})$/.test(digits)) fail_('Write the customer\'s mobile number (01XXXXXXXXX)');
+  }
+  var lines = (Array.isArray(p.lines) ? p.lines : []).slice(0, 120).map(function (l) {
+    l = l || {};
+    return { group: quoteText_(l.group, 60), product_id: quoteText_(l.product_id, 40), name: quoteText_(l.name, 200), qty: String(l.qty === undefined ? '' : l.qty).slice(0, 20),
+      price: String(l.price === undefined ? '' : l.price).slice(0, 20), warranty: quoteText_(l.warranty, 40), manual: !!l.manual };
+  });
+  if (!lines.some(function (l) { return l.name && Number(l.qty) > 0; })) fail_('Add at least one part to the quotation');
+  var clean = { customer: customer, phone: phone, title: quoteText_(meta.title, 120) || (kind === 'cctv' ? 'CC Camera setup' : 'Custom PC build'),
+    discount: String(meta.discount === undefined ? '' : meta.discount).slice(0, 20), note: String(meta.note || '').slice(0, 1000), validDays: Math.min(Math.max(Math.round(num_(meta.validDays)) || 7, 1), 365) };
+  var all = savedQuoteRows_(), old = p.id ? all.rows.filter(function (r) { return r.id === p.id; })[0] : null, prev = old ? savedQuoteParse_(old) : null;
+  if (p.id && !old) fail_('That saved quotation was deleted. Save it again as a new one');
+  var now = now_(), q = { kind: kind, meta: clean, lines: lines, date: prev ? prev.date : (p.imported && isDate_(String(p.date || '')) ? p.date : today_()),
+    created_by: prev ? prev.created_by : user.name, created_at: prev ? prev.created_at : now, updated_by: user.name, updated_at: now };
+  var json = JSON.stringify(q); if (json.length > 60000) fail_('This quotation is too long to save');
+  if (old) all.sh.getRange(old.pos, 1, 1, 3).setValues([[old.id, Date.now(), json]]);
+  else {
+    if (all.rows.length >= SAVED_QUOTE_MAX) fail_('There are ' + SAVED_QUOTE_MAX + ' saved quotations. Delete some old ones first');
+    var id = uid_(), pos = all.sh.getLastRow() + 1; ensureRows_(all.sh, pos);
+    all.sh.getRange(pos, 1, 1, 3).setValues([[id, Date.now(), json]]);
+    q.id = id;
+  }
+  if (old) q.id = old.id;
+  flush_();
+  audit_(user, old ? 'quote_update' : 'quote_save', { customer: customer, title: clean.title, kind: kind });
+  return q;
+}
+function quoteDelete_(p, user) {
+  var all = savedQuoteRows_(), gone = all.rows.filter(function (r) { return r.id === p.id; })[0];
+  if (!gone) fail_('That saved quotation is already deleted');
+  var q = savedQuoteParse_(gone) || { meta: {} };
+  all.sh.getRange(gone.pos, 1, 1, 3).setValues([['', '', '']]); // an empty row is skipped when reading
+  flush_();
+  audit_(user, 'quote_delete', { customer: q.meta.customer || '', title: q.meta.title || '' });
+  return true;
+}
 function quoteSend_(p, user) {
   if (getSetting_('sms_enabled', 'false') !== 'true') fail_('SMS is turned off. Turn it on in Settings → SMS before sending a quotation');
   var digits = String(p.phone || '').replace(/\D/g, '');
@@ -5870,6 +5926,9 @@ var ROUTES = {
   'invoice.public':   { public: true, fn: invoicePublic_, write: false },
   'quote.public':     { public: true, fn: quotePublic_, write: false },
   'quote.send':       r_('pos', quoteSend_, true),
+  'quotes.list':      r_('pos', quotesList_),
+  'quote.save':       r_('pos', quoteSave_, true),
+  'quote.delete':     r_('pos', quoteDelete_, true),
   login:              { public: true, lockIfDirty: true, fn: login_, write: false },
   logout:             r_(null, logout_),
   'password.change':  r_(null, changePassword_, true),

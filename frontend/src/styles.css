@@ -1585,3 +1585,9 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
 .sv-type-form { gap: 8px; align-items: center; } .sv-type-form input:first-child { flex: 1; min-width: 0; }
 @media (max-width: 760px) { .sv-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .sv-clip { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.btn.btn-clear { background: var(--bad); border-color: var(--bad); color: #fff; gap: 6px; box-shadow: 0 2px 10px color-mix(in srgb, var(--bad) 35%, transparent); }
+.btn.btn-clear:hover:not(:disabled) { background: color-mix(in srgb, var(--bad) 85%, #000); border-color: color-mix(in srgb, var(--bad) 85%, #000); }
+.btn.btn-clear svg { flex: none; }
+.pcb-count { display: inline-block; min-width: 20px; margin-left: 7px; padding: 0 6px; border-radius: 99px; background: var(--fiber); color: var(--fiber-ink); font-size: 11.5px; font-weight: 800; line-height: 18px; text-align: center; }
+.pcb-saved-bar { gap: 10px; flex-wrap: wrap; } .pcb-saved-bar input { flex: 1; min-width: 220px; }
+.pcb-saved-actions { white-space: nowrap; } .pcb-saved-actions > * + * { margin-left: 6px; }

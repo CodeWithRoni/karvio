@@ -1,3 +1,13 @@
+# 18 November 2026 — Quotation: CC Camera tab
+
+- PC builder & quotes is now "Quotation" (menu and page title) with two tabs: PC builder (as before) and CC Camera. CC Camera rows, in order: DVR / NVR, Bullet Camera, Dome Camera, HDD (Hard Disk Drive), Monitor, Video Balun, Adapter, POE Switch, UTP Cable, Power/AC Cable, Junction Box, Camera Stand, Server Rack, Accessories, Wall Mount, Giga Switch, then "+ Add another part". Each row lists in-stock products whose name or category has its word (dvr/nvr/xvr, bullet, dome, hdd/hard disk, monitor, balun, adapter, poe, utp/cat6, power cable/ac cable, junction, stand, rack, accessor, wall mount, giga). The quote title starts as "CC Camera setup".
+- Each tab keeps its own quote while switching. Saved quotes remember their tab and reopen in it. Print / PDF, Send to customer and Send to POS work the same for both.
+- Customer name and phone (a mobile number, 01XXXXXXXXX) are required, marked with a red *, before a quotation is saved, printed or sent to the customer; the missing field turns red with a message. Send to POS does not need them (the customer is chosen at the POS).
+- "Start over" is now a red "Clear" button with an icon; it asks first, then clears the parts, the customer and the notes of that tab (saved quotations stay).
+- "Save quote" is now "Save quotation". Next to it, "See Saved Quotations" (with a count) opens every saved quotation: search by customer, phone or title, filter PC builder / CC Camera, who saved it, Open, Print or Delete (asks first). The saved list no longer sits under the form.
+- Saved quotations are now kept on the server (private sheet __KarvioSavedQuotes; actions quotes.list, quote.save, quote.delete, POS permission): every user sees them on every device and they stay until someone deletes them. An opened quotation is updated in place with "Save changes". Quotations saved earlier in a browser are moved to the server the first time the page opens there. Note: database backups (Settings → Database) hold the business tables, not these saved quotations.
+- Tests: backend/test/features-9.mjs (12 checks); pc-builder.spec.js (CC Camera rows, separate drafts, required customer, Clear, saved quotations window, update and delete); older quotation tests now fill in the customer and read saved quotations from the server.
+
 # 18 November 2026 — Service jobs
 
 - Service page (field work — CC camera installation, new internet connection …), replacing the empty placeholder.

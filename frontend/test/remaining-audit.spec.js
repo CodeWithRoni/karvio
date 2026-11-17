@@ -42,12 +42,20 @@ test('reset and restore cleanup removes all users drafts for this shop only',asy
  expect(result).toEqual([null,null,'{}',null]);
 });
 
-test('saved quotations are isolated by user and API connection',async({page})=>{
+test('saved quotations are kept on the server: every user and every device sees them',async({page,request})=>{
+ const name=`Shared quote ${Date.now()%100000}`;
  await page.goto('/#/pc-builder');await expect(page.locator('.pcb-row')).toHaveCount(12);
- await page.locator('.pcb-row').first().getByLabel('Processor typed by hand').fill('Private PC quote');await page.locator('.pcb-row').first().getByLabel('Price',{exact:true}).fill('100');await page.getByRole('button',{name:'Save quote',exact:true}).click();
- await expect(page.getByRole('heading',{name:'Saved quotes'})).toBeVisible();
- const result=await page.evaluate(async()=>{const {shopStorageKey}=await import('/src/lib/shopStorage.js');const {useStore}=await import('/src/lib/store.js');const {setApiConfig}=await import('/src/lib/api.js');const mine=shopStorageKey('erp_quotes'),before=useStore.getState().user;useStore.setState({user:{...before,id:'another-user'}});const otherUser=localStorage.getItem(shopStorageKey('erp_quotes'));useStore.setState({user:before});setApiConfig({scriptUrl:'https://another-shop.invalid'});const otherShop=localStorage.getItem(shopStorageKey('erp_quotes'));return {mine:JSON.parse(localStorage.getItem(mine)).length,otherUser,otherShop};});
- expect(result).toEqual({mine:1,otherUser:null,otherShop:null});
+ await page.locator('.pcb-row').first().getByLabel('Processor typed by hand').fill('Private PC quote');await page.locator('.pcb-row').first().getByLabel('Price',{exact:true}).fill('100');await page.getByLabel('Customer name').fill(name);await page.getByLabel('Phone',{exact:true}).fill('01712345678');await page.getByRole('button',{name:'Save quotation',exact:true}).click();
+ await expect(page.getByText(`Quotation saved — ${name}`)).toBeVisible();
+ // another device: this browser's storage is empty, the quotation is still there
+ await page.evaluate(()=>{for(const k of Object.keys(localStorage))if(k.startsWith('erp_quotes'))localStorage.removeItem(k);});await page.reload();
+ await page.getByRole('button',{name:/See Saved Quotations/}).click();await page.getByLabel('Search saved quotations').fill(name);
+ await expect(page.getByRole('dialog',{name:'Saved quotations'}).locator('tbody tr').filter({hasText:name})).toContainText('Administrator');
+ // another user
+ const u=`quoteuser${Date.now()%100000}`;await call(request,'user.save',{name:'Quote user',username:u,role:'sales',password:'quote-pass-123'});
+ const other=(await (await request.post(endpoint,{data:{action:'login',payload:{username:u,password:'quote-pass-123'}}})).json()).data.token;
+ const seen=(await (await request.post(endpoint,{data:{action:'quotes.list',payload:{},token:other}})).json()).data;
+ expect(seen.some(q=>q.meta.customer===name)).toBe(true);
 });
 
 test('online wrapper keeps a 900px shell while the main page scrolls independently',async({page})=>{
