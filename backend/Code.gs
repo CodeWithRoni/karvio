@@ -1797,6 +1797,7 @@ function tableRows_(name) {
 function databaseInfo_(p, user) {
   if (!isOwner_(user)) fail_('Only the Administrator account can see this');
   var tables = Object.keys(SCHEMA).map(function (name) { return { name: name, rows: name === 'Settings' ? tableRows_(name).length : all_(name).length }; });
+  tables.push({ name: 'SavedQuotes', rows: savedQuoteRows_().rows.length });
   return {
     tables: tables, total: sum_(tables, function (t) { return t.rows; }),
     last_backup: getSetting_('last_backup_at', ''), last_restore: getSetting_('last_restore_at', ''),
@@ -1815,10 +1816,38 @@ function databaseExport_(p, user) {
   var created = now_();
   var out = { format: BACKUP_FORMAT, version: BACKUP_VERSION, app_version: APP_VERSION, created_at: created,
     shop_name: getSetting_('shop_name', ''), created_by: user.name, counts: counts, tables: tables, checksum: backupDigest_(tables) };
+  // Saved quotations live in a private sheet; they travel beside the tables with their own checksum,
+  // so an older Karvio still restores this file (it ignores the extra field).
+  var quotes = backupQuoteRows_();
+  out.saved_quotes = quotes; out.quotes_checksum = quotesDigest_(quotes); counts.SavedQuotes = quotes.length;
   setSetting_('last_backup_at', created); // straight to the sheet: this route is not journaled
   audit_(user, 'database_backup', { rows: sum_(Object.keys(counts), function (k) { return counts[k]; }) });
   flush_();
   return out;
+}
+function quotesDigest_(rows) { return hash_('karvio-quotes-v1', JSON.stringify(rows)); }
+/** Saved quotations as [id, last change (ms), quotation JSON] rows, oldest sheet row first. */
+function backupQuoteRows_() {
+  return savedQuoteRows_().rows.map(function (r) { return [r.id, num_(r.cells[1]), String(r.cells[2] === null || r.cells[2] === undefined ? '' : r.cells[2])]; });
+}
+/** The saved quotations of a backup, checked; null when the backup was made before quotations were backed up. */
+function checkBackupQuotes_(b) {
+  if (b.saved_quotes === undefined) return null;
+  if (!Array.isArray(b.saved_quotes) || quotesDigest_(b.saved_quotes) !== b.quotes_checksum) fail_('The saved quotations in the backup are damaged or were edited — nothing was restored');
+  var seen = {};
+  b.saved_quotes.forEach(function (r) {
+    if (!Array.isArray(r) || r.length !== 3 || typeof r[0] !== 'string' || !r[0] || typeof r[1] !== 'number' || typeof r[2] !== 'string') fail_('A saved quotation in the backup is damaged');
+    try { JSON.parse(r[2]); } catch (e) { fail_('A saved quotation in the backup is damaged'); }
+    if (seen[r[0]]) fail_('Duplicate saved quotation in the backup: ' + r[0]);
+    seen[r[0]] = 1;
+  });
+  return b.saved_quotes;
+}
+/** Replace every saved quotation with the backup's list. */
+function writeBackupQuotes_(rows) {
+  var sh = privateSheet_(SAVED_QUOTE_SHEET), last = sh.getLastRow();
+  if (last) sh.getRange(1, 1, last, 3).setValues(blankRows_(last, 3));
+  if (rows.length) sh.getRange(1, 1, rows.length, 3).setValues(rows.map(function (r) { return [r[0], r[1], r[2]]; }));
 }
 /** Checks a backup completely and returns the rows to write. Throws (changing nothing) on any problem. */
 function checkBackup_(b) {
@@ -1858,7 +1887,7 @@ function databaseRestore_(p, user) {
   if (!pwCheck_(user, p.password)) fail_('Incorrect password — nothing was restored');
   if (String(p.confirm || '').trim() !== RESTORE_WORD) fail_('Type RESTORE to confirm — nothing was restored');
   var b; try { b = JSON.parse(String(p.backup_text || '')); } catch (e) { fail_('This is not a Karvio database backup file'); }
-  var plan = checkBackup_(b);
+  var plan = checkBackup_(b), quotes = checkBackupQuotes_(b);
   var ss = ss_(), stamp = now_().replace('T', ' ');
   var safety = driveCopy_(ss, 'Karvio backup before restore ' + stamp);
   return withMaintenance_(function () {
@@ -1871,6 +1900,7 @@ function databaseRestore_(p, user) {
       sh.getRange(2 + i, 1, part.length, part[0].length).setValues(part);
     }
   });
+  if (quotes) writeBackupQuotes_(quotes); // a backup made before quotations were backed up keeps today's list
   flush_();
   _mem = { __ss: ss };
   setupDatabase(); // only fills what is missing (settings added after this backup was made)
@@ -1882,6 +1912,7 @@ function databaseRestore_(p, user) {
   var me = all_('Users').filter(function (u) { return u.id === user.id; })[0];
   var stillSignedIn = !!me && me.active && me.salt === user.salt && me.password_hash === user.password_hash && isOwner_(me);
   var counts = {}; Object.keys(plan).forEach(function (k) { counts[k] = plan[k].length; });
+  if (quotes) counts.SavedQuotes = quotes.length;
   return { safety: safety, backup_created_at: b.created_at, shop_name: b.shop_name, counts: counts, signed_out: !stillSignedIn, restored_at: restoredAt };
   });
 }

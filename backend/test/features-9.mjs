@@ -38,4 +38,23 @@ const old = await q('quote.save', {imported: true, kind: 'pc', meta: {customer: 
 eq([old.date, old.meta.title], ['2026-10-01', 'Custom PC build'], 'an old device quotation keeps its date');
 const audit = await q('audit.list', {}); ok((audit.rows || audit).some((x) => x.action === 'quote_delete'), 'deleting is in the activity log');
 
+// the backup file carries the saved quotations; restoring it brings them back
+const names = async () => (await q('quotes.list')).map((x) => x.meta.customer || x.meta.title).sort();
+const kept = await names();
+const backup = await q('database.export');
+eq([backup.counts.SavedQuotes, backup.saved_quotes.length], [2, 2], 'the backup holds the saved quotations');
+ok((await q('database.info')).tables.some((t) => t.name === 'SavedQuotes' && t.rows === 2), 'the database overview counts them');
+await q('quote.save', {kind: 'pc', meta: {customer: 'After backup', phone: '01711000000'}, lines: [{name: 'RAM', qty: 1, price: 3000}]});
+const restore = (b) => raw('database.restore', {password: 'harness-password-1', confirm: 'RESTORE', backup_text: JSON.stringify(b)});
+let r = await restore(backup); ok(r.ok, r.error); eq(r.data.counts.SavedQuotes, 2, 'restore reports the quotations');
+api.setToken((await q('login', {username: 'admin', password: 'harness-password-1'})).token);
+eq(await names(), kept, 'restore brings back exactly the quotations of the backup');
+const edited = {...backup, saved_quotes: backup.saved_quotes.map((x, i) => i ? x : [x[0], x[1], x[2].replace('Karim', 'Kabir')])};
+ok(/damaged or were edited/.test((await restore(edited)).error), 'an edited quotation in the file is refused');
+await q('quote.save', {kind: 'pc', meta: {customer: 'Stays', phone: '01711000001'}, lines: [{name: 'SSD', qty: 1, price: 4000}]});
+const older = {...backup}; delete older.saved_quotes; delete older.quotes_checksum;
+r = await restore(older); ok(r.ok, r.error);
+api.setToken((await q('login', {username: 'admin', password: 'harness-password-1'})).token);
+eq(await names(), [...kept, 'Stays'].sort(), 'a backup made before quotations were backed up keeps today\'s quotations');
+
 console.log(`Features 9: ${checks} checks passed (saved quotations on the server).`);

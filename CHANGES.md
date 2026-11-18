@@ -1,3 +1,10 @@
+# 18 November 2026 — Saved quotations in the database backup
+
+- Download Backup now includes the saved quotations. Streamed backup (Supabase): an extra section "SavedQuotes" after the 29 business tables (migration 20261118052545_karvio_backup_saved_quotes.sql); the safety copy before a restore includes them too. JSON backup: `saved_quotes` rows with their own `quotes_checksum`.
+- Restore puts back exactly the quotations in the file. A backup made before this change (no quotations in it) still restores, and today's saved quotations are kept instead of being cleared.
+- Settings → Database shows "Saved quotes" with the other tables.
+- Tests: bounded-transfers.mjs (streamed backup with quotations, older backup keeps them), features-9.mjs (JSON backup, edited file refused, older backup).
+
 # 18 November 2026 — Quotation: CC Camera tab
 
 - PC builder & quotes is now "Quotation" (menu and page title) with two tabs: PC builder (as before) and CC Camera. CC Camera rows, in order: DVR / NVR, Bullet Camera, Dome Camera, HDD (Hard Disk Drive), Monitor, Video Balun, Adapter, POE Switch, UTP Cable, Power/AC Cable, Junction Box, Camera Stand, Server Rack, Accessories, Wall Mount, Giga Switch, then "+ Add another part". Each row lists in-stock products whose name or category has its word (dvr/nvr/xvr, bullet, dome, hdd/hard disk, monitor, balun, adapter, poe, utp/cat6, power cable/ac cable, junction, stand, rack, accessor, wall mount, giga). The quote title starts as "CC Camera setup".
