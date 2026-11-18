@@ -347,14 +347,19 @@ test('purchase shows the last purchase price and the new average cost', async ({
   await expect(row.locator('.avg-next')).toContainText('11,000');
 });
 
-test('Advanced search has its own menu card above Daily Work', async ({ page }) => {
+test('side menu cards: Home, Sales, Purchase, Stock, Service & Warranty, Party Ledger, Money & Reports, Admin', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.goto('/#/');
   const cards = page.locator('.nav-card');
-  await expect(cards.first()).toContainText('Advanced search');
-  await expect(cards.first().locator('a')).toHaveCount(1);
-  await expect(cards.nth(1)).toContainText('Daily Work');
-  await expect(page.locator('.nav-card', { hasText: 'Stock' }).getByText('Advanced search')).toHaveCount(0);
+  expect((await cards.locator('.nav-group').allInnerTexts()).map((t) => t.trim().toLowerCase())).toEqual(['home', 'sales', 'purchase', 'stock', 'service & warranty', 'party ledger', 'money & reports', 'admin']);
+  const links = async (title) => (await page.locator('.nav-card', { has: page.locator('.nav-group', { hasText: new RegExp(`^${title}$`, 'i') }) }).getByRole('link').allInnerTexts()).map((t) => t.split('\n')[0].trim());
+  expect(await links('Home')).toEqual(['Dashboard', 'Advanced search']);
+  expect(await links('Sales')).toEqual(['Point of sale', 'Sales & returns', 'Quotation', 'Customers', 'Collection']);
+  expect(await links('Purchase')).toEqual(['Purchases & returns', 'Suppliers', 'Payment']);
+  expect(await links('Stock')).toEqual(['Products & stock', 'Price manager', 'Barcode labels']);
+  expect(await links('Service & Warranty')).toEqual(['Repairs', 'Service', 'Warranty claims']);
+  expect(await links('Money & Reports')).toEqual(['Cash, bank & MFS', 'Expenses', 'Profit', 'Reports hub']);
+  expect(await links('Admin')).toEqual(['Users & roles', 'Activity log', 'Settings']);
   await page.keyboard.press('Alt+8');
   await expect(page).toHaveURL(/#\/history/);
 });

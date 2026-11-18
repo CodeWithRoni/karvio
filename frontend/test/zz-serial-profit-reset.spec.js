@@ -151,10 +151,10 @@ test('Profit page and the dashboard profit row', async ({ page, request }) => {
   await expect(tiles.first()).toContainText('Gross profit');
   await expect(tiles.first()).toContainText('Tk ' + dash.profit[0].gross.toLocaleString('en-IN'));
 
-  // nav: Profit sits above Expenses under Money & Reports
+  // nav: Profit sits right after Expenses under Money & Reports
   const navText = await page.locator('nav a, .nav a').allTextContents();
   const clean = navText.map((t) => t.replace(/Alt\s*\d/, '').trim());
-  expect(clean.indexOf('Profit')).toBe(clean.indexOf('Expenses') - 1);
+  expect(clean.indexOf('Profit')).toBe(clean.indexOf('Expenses') + 1);
   await page.locator('nav a, .nav a').filter({ hasText: /^Profit/ }).first().click();
   await expect(page.locator('.page-head h1')).toHaveText('Profit');
   const rep = await call(request, 'profit.report', {});

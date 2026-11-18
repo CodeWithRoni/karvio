@@ -31,34 +31,36 @@ const Chevron = () => <svg className="nav-chev" width="14" height="14" viewBox="
 
 /** Navigation. `key` = Alt+key shortcut. */
 export const NAV = [
-  { group: 'Search' },
-  { to: '/history', label: 'Advanced search', key: '8' },
-  { group: 'Daily Work' },
+  { group: 'Home' },
   { to: '/', label: 'Dashboard', key: '1', end: true },
+  { to: '/history', label: 'Advanced search', key: '8' },
+  { group: 'Sales' },
   { to: '/pos', label: 'Point of sale', perm: 'pos', key: '2' },
   { to: '/sales', label: 'Sales & returns', perm: 'pos', key: '3' },
   { to: '/pc-builder', label: 'Quotation', perm: 'pos' },
   { to: '/customers', label: 'Customers', key: '4' },
   { to: '/collection', label: 'Collection', perm: 'customers' },
-  { to: '/payment', label: 'Payment', perm: 'suppliers' },
-  { to: '/repairs', label: 'Repairs', perm: 'repairs' },
-  { to: '/service', label: 'Service', perm: 'service' },
-  { group: 'Stock' },
-  { to: '/stock', label: 'Products & stock', key: '5' },
-  { to: '/barcodes', label: 'Barcode labels' },
-  { to: '/prices', label: 'Price manager', perm: 'products' },
+  { group: 'Purchase' },
   { to: '/purchases', label: 'Purchases & returns', perm: 'purchase', key: '6' },
   { to: '/suppliers', label: 'Suppliers', perm: 'suppliers' },
+  { to: '/payment', label: 'Payment', perm: 'suppliers' },
+  { group: 'Stock' },
+  { to: '/stock', label: 'Products & stock', key: '5' },
+  { to: '/prices', label: 'Price manager', perm: 'products' },
+  { to: '/barcodes', label: 'Barcode labels' },
+  { group: 'Service & Warranty' },
+  { to: '/repairs', label: 'Repairs', perm: 'repairs' },
+  { to: '/service', label: 'Service', perm: 'service' },
   { to: '/warranty', label: 'Warranty claims', perm: 'warranty', key: '7' },
-  { group: 'Party Ledger Adjust' },
-  { to: '/customer-ledger-adjustment', label: 'Customer Ledger Adjust', perm: '*' }, // '*' = admin only
-  { to: '/supplier-ledger-adjustment', label: 'Supplier Ledger Adjust', perm: '*' },
-  { to: '/customer-ledger-report', label: 'Customer Ledger Report', perm: '*' },
+  { group: 'Party Ledger' },
+  { to: '/customer-ledger-report', label: 'Customer Ledger Report', perm: '*' }, // '*' = admin only
   { to: '/supplier-ledger-report', label: 'Supplier Ledger Report', perm: '*' },
+  { to: '/customer-ledger-adjustment', label: 'Customer Ledger Adjust', perm: '*' },
+  { to: '/supplier-ledger-adjustment', label: 'Supplier Ledger Adjust', perm: '*' },
   { group: 'Money & Reports' },
   { to: '/accounts', label: 'Cash, bank & MFS', perm: 'accounts' },
-  { to: '/profit', label: 'Profit', perm: ['reports', 'cost'] },
   { to: '/expenses', label: 'Expenses', perm: 'expenses' },
+  { to: '/profit', label: 'Profit', perm: ['reports', 'cost'] },
   { to: '/reports', label: 'Reports hub', perm: 'reports', key: '9' },
   { group: 'Admin' },
   { to: '/users', label: 'Users & roles', perm: 'users' },
@@ -116,7 +118,7 @@ export default function Layout() {
   const visible = items.filter((n, i) => !n.group || (items[i + 1] && !items[i + 1].group));
   const groups = [];
   visible.forEach((n) => { if (n.group) groups.push({ title: n.group, links: [] }); else if (groups.length) groups[groups.length - 1].links.push(n); });
-  const tone = { Search: 'g-search', 'Daily Work': 'g-daily', Stock: 'g-stock', 'Party Ledger Adjust': 'g-adjust', 'Money & Reports': 'g-money', Admin: 'g-admin' };
+  const tone = { Home: 'g-search', Sales: 'g-daily', Purchase: 'g-purchase', Stock: 'g-stock', 'Service & Warranty': 'g-service', 'Party Ledger': 'g-adjust', 'Money & Reports': 'g-money', Admin: 'g-admin' };
 
   return (
     <div className={`shell ${open ? 'nav-open' : ''} ${hidden ? 'nav-hidden' : ''} ${showKeys ? 'show-keys' : ''}`} onClick={(e) => open && e.target === e.currentTarget && setOpen(false)}>

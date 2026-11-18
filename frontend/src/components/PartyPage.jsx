@@ -25,7 +25,7 @@ const CFG = {
   },
   supplier: {
     title: 'Suppliers', sub: 'Supplier directory — names, phone numbers and addresses. Dues and payments are under Payment.',
-    moneyTitle: 'Payment', moneySub: 'What we owe suppliers — pay them and see the payment history. Rebates and corrections are under Party Ledger Adjust.', moneyPath: '/payment',
+    moneyTitle: 'Payment', moneySub: 'What we owe suppliers — pay them and see the payment history. Rebates and corrections are under Party Ledger.', moneyPath: '/payment',
     list: 'suppliers.list', save: 'supplier.save', statement: 'supplier.statement', statements: 'supplier.statements', del: 'supplier.delete', payment: 'supplier.payment', key: 'supplier_id', path: '/suppliers', perm: 'suppliers', revType: 'spay',
     pos: 'We owe', neg: 'Advance paid', payLabel: 'Pay supplier', dirs: [['pay', 'Pay to supplier']],
     debit: 'Paid / returned', credit: 'Purchased'

@@ -1,17 +1,18 @@
 import { test, expect } from '@playwright/test';
 const endpoint = 'http://localhost:8787';
-// Menu card above Money & Reports with four admin-only pages: Customer / Supplier Ledger Adjust and Ledger Report.
-test('Party Ledger Adjust menu card sits above Money & Reports and opens its four pages', async ({ page, request }) => {
+// Party Ledger menu card above Money & Reports with four admin-only pages: Customer / Supplier Ledger Report, then Adjust.
+test('Party Ledger menu card sits above Money & Reports and opens its four pages', async ({ page, request }) => {
   const token = (await (await request.post(endpoint, { data: { action: 'login', payload: { username: 'admin', password: 'admin123' } } })).json()).data.token;
   await page.addInitScript(({ endpoint, token }) => { localStorage.setItem('erp_api_config', JSON.stringify({ scriptUrl: endpoint })); localStorage.setItem('erp_token', token); }, { endpoint, token });
   await page.setViewportSize({ width: 1366, height: 1000 });
   await page.goto('/#/');
   const titles = await page.locator('.nav-card .nav-group').allInnerTexts();
-  const at = titles.findIndex((t) => /party ledger adjust/i.test(t));
+  const at = titles.findIndex((t) => /^party ledger$/i.test(t));
   expect(at).toBeGreaterThan(-1);
   expect(titles[at + 1]).toMatch(/money & reports/i);
-  const card = page.locator('.nav-card', { hasText: 'Party Ledger Adjust' });
+  const card = page.locator('.nav-card', { hasText: 'Party Ledger' });
   await expect(card.getByRole('link')).toHaveCount(4);
+  expect((await card.getByRole('link').allInnerTexts()).map((t) => t.split('\n')[0].trim())).toEqual(['Customer Ledger Report', 'Supplier Ledger Report', 'Customer Ledger Adjust', 'Supplier Ledger Adjust']);
   await card.getByRole('link', { name: 'Customer Ledger Adjust' }).click();
   await expect(page.locator('.page-head h1')).toHaveText('Customer Ledger Adjust');
   await card.getByRole('link', { name: 'Supplier Ledger Adjust' }).click();
@@ -84,14 +85,14 @@ test('customer write-off from Customer Ledger Adjust, then the full ledger with 
   await expect(page.locator('tbody tr').filter({ hasText: c.name })).toContainText('10,250');
 });
 
-test('staff without admin do not see Party Ledger Adjust and cannot open its pages', async ({ page, request }) => {
+test('staff without admin do not see Party Ledger and cannot open its pages', async ({ page, request }) => {
   const admin = callAs(request, (await (await request.post(endpoint, { data: { action: 'login', payload: { username: 'admin', password: 'admin123' } } })).json()).data.token);
   const u = `ledgermgr${Date.now() % 100000}`;
   await admin('user.save', { name: 'Ledger manager', username: u, role: 'manager', password: 'ledger-pass-123' });
   await signIn(page, request, u, 'ledger-pass-123');
   await page.goto('/#/');
   await expect(page.locator('nav a', { hasText: 'Dashboard' })).toBeVisible();
-  await expect(page.locator('.nav-card', { hasText: 'Party Ledger Adjust' })).toHaveCount(0);
+  await expect(page.locator('.nav-card', { hasText: 'Party Ledger' })).toHaveCount(0);
   await page.goto('/#/supplier-ledger-report');
   await expect(page.getByText("You don't have access to this page")).toBeVisible();
 });

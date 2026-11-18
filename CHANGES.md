@@ -1,3 +1,9 @@
+# 18 November 2026 — Side menu reorganised
+
+- Menu cards, top to bottom: Home (Dashboard, Advanced search) · Sales (Point of sale, Sales & returns, Quotation, Customers, Collection) · Purchase (Purchases & returns, Suppliers, Payment) · Stock (Products & stock, Price manager, Barcode labels) · Service & Warranty (Repairs, Service, Warranty claims) · Party Ledger (Customer / Supplier Ledger Report, then Customer / Supplier Ledger Adjust) · Money & Reports (Cash, bank & MFS, Expenses, Profit, Reports hub) · Admin (Users & roles, Activity log, Settings).
+- New cards Purchase (violet) and Service & Warranty (pink) have their own icons. Pages, Alt shortcuts and permissions are unchanged.
+- Tests: shop.spec.js checks every card and its pages in order; party-ledger-adjustment.spec.js and ui-pro.spec.js follow the new cards.
+
 # 18 November 2026 — Saved quotations in the database backup
 
 - Download Backup now includes the saved quotations. Streamed backup (Supabase): an extra section "SavedQuotes" after the 29 business tables (migration 20261118052545_karvio_backup_saved_quotes.sql); the safety copy before a restore includes them too. JSON backup: `saved_quotes` rows with their own `quotes_checksum`.

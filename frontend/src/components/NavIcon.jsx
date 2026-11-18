@@ -1,10 +1,12 @@
 // Shared outline icon family. Native SVG stays sharp in web, desktop and mobile.
 const shapes = {
-  Search: <><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></>,
-  'Daily Work': <><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4m10-4v4M3 10h18m-13 5 3 3 5-5"/></>,
+  Home: <><path d="m3 11 9-8 9 8"/><path d="M5 10v11h14V10M10 21v-6h4v6"/></>,
+  Sales: <><path d="M5 3h14v18l-3-2-4 2-4-2-3 2V3Zm4 5h6m-6 4h6m-6 4h3"/></>,
+  Purchase: <><path d="M3 4h2l2.5 11h11L21 7H6.5"/><circle cx="9" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/></>,
+  'Service & Warranty': <><path d="M14 4a6 6 0 0 0-7 7l-4 6a2.5 2.5 0 0 0 4 4l6-5a6 6 0 0 0 7-7l-4 3-4-4 2-4Z"/></>,
+  'Party Ledger': <><path d="M5 3h14v18H5V3Zm4 5h6m-3-2.5v5M9 16h6"/></>,
   Stock: <><path d="m12 3 9 5-9 5-9-5 9-5Zm-9 5v9l9 5 9-5V8m-9 5v9M7.5 5.5l9 5"/></>,
   'Money & Reports': <><path d="M3 3v18h18M7 16v-4m5 4V8m5 8V5"/><path d="m6 8 5-4 5 1 5-3"/></>,
-  'Party Ledger Adjust': <><path d="M5 3h14v18H5V3Zm4 5h6m-3-2.5v5M9 16h6"/></>,
   Admin: <><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z"/><path d="m8 12 3 3 5-6"/></>,
   '/history': <><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6M10 7v3l2 1"/></>,
   '/': <><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="11" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="18" width="7" height="3" rx="1"/></>,
