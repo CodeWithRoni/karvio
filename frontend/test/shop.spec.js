@@ -428,11 +428,11 @@ test('barcode labels: create a shop barcode, custom size, A4 start position, pur
   });
   await page.addInitScript(() => { try { if (!sessionStorage.getItem('lbl_reset')) { localStorage.removeItem('karvio_label_opts'); sessionStorage.setItem('lbl_reset', '1'); } } catch {} });
 
-  // menu: right under Products & stock
+  // menu: under Products & stock and Price manager
   await page.goto('/#/stock');
   await expect(page.locator('.rail a', { hasText: 'Barcode labels' })).toBeVisible();
   const links = await page.locator('.rail a').allTextContents();
-  const i = links.findIndex((t) => t.includes('Products & stock'));
+  const i = links.findIndex((t) => t.includes('Price manager'));
   expect(links[i + 1]).toContain('Barcode labels');
   await page.locator('.rail a', { hasText: 'Barcode labels' }).click();
   await expect(page.locator('.page-head h1')).toHaveText('Barcode labels');
