@@ -89,6 +89,28 @@ const one = await q('daybook', {from: day, to: day, account_id: cash});
 eq([one.accounts.length, one.business], [1, null], 'one account only');
 ok(/valid dates/.test((await raw('daybook', {from: 'x'})).error), 'bad dates are refused');
 
+// ---- Stock count: compare, fix in one step, sales during the count are kept
+const cable = await q('product.save', {name: 'HDMI cable', sale_price: 300});
+const router = await q('product.save', {name: 'Router X1', sale_price: 2500, has_warranty: true, warranty_type: 'serial', warranty_days: 365});
+await q('purchase.create', {supplier_id: sup.id, items: [{product_id: cable.id, qty: 20, cost: 200, sale_price: 300}, {product_id: router.id, qty: 3, cost: 2000, sale_price: 2500, serials: ['R-1', 'R-2', 'R-3']}], payments: []});
+const start = await q('stockcount.start', {});
+const sc = (id) => start.products.find((x) => x.id === id);
+eq([sc(cable.id).stock, sc(pen.id).stock, sc(router.id).serials], [20, 100 - 11, ['R-1', 'R-2', 'R-3']], 'the count starts from the system stock and the serials in stock');
+ok(!start.products.some((x) => x.service), 'services are not counted');
+// a sale while counting
+await q('sale.create', {items: [{product_id: cable.id, qty: 2, price: 300}], payments: [{account_id: cash, amount: 600}]});
+ok(/negative/.test((await raw('stockcount.apply', {name: 'Bad', lines: [{product_id: cable.id, counted: 0, expected: 40}]})).error), 'a count that makes stock negative is refused');
+ok(/listed twice/.test((await raw('stockcount.apply', {name: 'Bad', lines: [{product_id: cable.id, counted: 19, expected: 20}, {product_id: cable.id, counted: 19, expected: 20}]})).error), 'no duplicate lines');
+const res = await q('stockcount.apply', {name: 'Shelf A', lines: [
+  {product_id: cable.id, counted: 17, expected: 20}, {product_id: pen.id, counted: 89, expected: 89},
+  {product_id: router.id, counted: 2, expected: 3, missing: ['R-2'], extra: []}]});
+eq([res.no, res.counted, res.short, res.over, res.adjusted, res.value], ['SC-000001', 3, 2, 0, 1, -600], 'two short (cable, router), one fixed, value −600 at cost');
+const prods = await q('products.list');
+eq(prods.find((x) => x.id === cable.id).stock, 15, 'cable: 20 − 2 sold while counting − 3 missing = 15');
+eq(prods.find((x) => x.id === router.id).stock, 3, 'serial products are only reported, not changed');
+const hist = await q('stockcount.history');
+eq([hist[0].no, hist[0].lines.find((l) => l.product_id === router.id).missing], ['SC-000001', ['R-2']], 'the count is kept with the missing serials');
+
 console.log(`Features 10: ${checks} checks passed`);
 await db.close?.();
 process.exit(0);

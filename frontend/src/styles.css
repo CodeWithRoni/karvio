@@ -1631,3 +1631,10 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
 .db-biz > div { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 3px; }
 .db-biz span { color: var(--muted); font-size: 12.5px; } .db-biz b { font-size: 17px; } .db-biz small { color: var(--muted); font-size: 12px; }
 @media (max-width: 900px) { .db-sum, .db-biz { grid-template-columns: 1fr 1fr; } }
+
+/* Stock count */
+.sc-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.sc-scan { display: grid; gap: 10px; }
+.sc-in { width: 96px; text-align: right; }
+.sc-table tr.sc-last td { background: color-mix(in srgb, var(--fiber) 10%, transparent); }
+.sc-ser { display: grid; gap: 2px; font-size: 12px; margin-top: 4px; } .sc-ser .bad { color: var(--bad); } .sc-ser .warn { color: var(--warn); }

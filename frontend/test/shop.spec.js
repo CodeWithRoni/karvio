@@ -356,7 +356,7 @@ test('side menu cards: Home, Sales, Purchase, Stock, Service & Warranty, Party L
   expect(await links('Home')).toEqual(['Dashboard', 'Advanced search']);
   expect(await links('Sales')).toEqual(['Point of sale', 'Sales & returns', 'Quotation', 'Customers', 'Collection']);
   expect(await links('Purchase')).toEqual(['Purchases & returns', 'Suppliers', 'Payment']);
-  expect(await links('Stock')).toEqual(['Products & stock', 'Price manager', 'Barcode labels']);
+  expect(await links('Stock')).toEqual(['Products & stock', 'Price manager', 'Barcode labels', 'Stock count']);
   expect(await links('Service & Warranty')).toEqual(['Repairs', 'Service', 'Warranty claims']);
   expect(await links('Money & Reports')).toEqual(['Cash, bank & MFS', 'Shift & day close', 'Day book', 'Expenses', 'Profit', 'Reports hub']);
   expect(await links('Admin')).toEqual(['Users & roles', 'Activity log', 'Settings']);

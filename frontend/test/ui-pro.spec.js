@@ -25,7 +25,7 @@ test('menu groups fold away, stay folded after a reload, and shortcuts show on h
   await expect(stock.getByRole('link', { name: /Products & stock/ })).toBeVisible();
   await stock.getByRole('button', { name: 'Stock menu group' }).click();
   await expect(stock.getByRole('link')).toHaveCount(0);
-  await expect(stock.locator('.nav-count')).toHaveText('3');
+  await expect(stock.locator('.nav-count')).toHaveText('4');
   await page.reload();
   await expect(page.locator('.nav-card', { hasText: 'Stock' }).getByRole('link')).toHaveCount(0);
   // The group of the open page never stays folded.

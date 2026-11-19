@@ -48,6 +48,7 @@ export const NAV = [
   { to: '/stock', label: 'Products & stock', key: '5' },
   { to: '/prices', label: 'Price manager', perm: 'products' },
   { to: '/barcodes', label: 'Barcode labels' },
+  { to: '/stock-count', label: 'Stock count', perm: 'products' },
   { group: 'Service & Warranty' },
   { to: '/repairs', label: 'Repairs', perm: 'repairs' },
   { to: '/service', label: 'Service', perm: 'service' },

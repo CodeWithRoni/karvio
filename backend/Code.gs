@@ -1303,6 +1303,64 @@ function stockAdjust_(p, user) {
   return true;
 }
 
+/* ---- Stock count (audit): count the shelves by scanning, compare with the system, fix every difference
+ * in one step. The count itself is kept in the browser while counting; only the result reaches the server.
+ * Sales made while counting are allowed: each product moves by (counted − system stock when counting began). */
+function stockCountStart_(p, user) {
+  var cat = String(p.category_id || ''), showCost = can_(user, 'cost'), serials = {};
+  all_('SerialItems').forEach(function (s) { if (s.status === 'in_stock') (serials[s.product_id] = serials[s.product_id] || []).push(String(s.serial)); });
+  var cats = indexBy_(all_('Categories'));
+  var list = all_('Products').filter(function (pr) { return pr.active && !isService_(pr) && (!cat || pr.category_id === cat || pr.subcategory_id === cat); })
+    .sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); })
+    .map(function (pr) {
+      var serial = isSerialProduct_(pr);
+      return { id: pr.id, name: pr.name, sku: pr.sku || '', barcode: pr.barcode || '', unit: pr.unit || '', category: (cats[pr.category_id] || {}).name || '',
+        stock: num_(pr.stock), cost: showCost ? num_(pr.cost_price) : null, serial: serial, serials: serial ? (serials[pr.id] || []).sort() : [] };
+    });
+  return { at: now_(), category_id: cat, category: cat ? (cats[cat] || {}).name || '' : '', products: list };
+}
+function stockCountApply_(p, user) {
+  var name = String(p.name || '').trim().slice(0, 120) || 'Stock count';
+  var lines = Array.isArray(p.lines) ? p.lines : [];
+  if (!lines.length) fail_('Count at least one product');
+  if (lines.length > 20000) fail_('Too many products in one count');
+  var pmap = indexBy_(all_('Products')), seen = {}, changed = [], rows = [], events = [], totalValue = 0, short = 0, over = 0;
+  lines.forEach(function (l) {
+    var pr = pmap[l.product_id]; if (!pr || isService_(pr)) fail_('A counted product no longer exists');
+    if (seen[pr.id]) fail_(pr.name + ' is listed twice'); seen[pr.id] = 1;
+    var counted = inventoryQuantity_(l.counted, pr.name, true), expected = inventoryQuantity_(l.expected, pr.name, true);
+    if (counted < 0) fail_('Counted quantity cannot be negative (' + pr.name + ')');
+    if (!isDecimalUnit_(pr.unit) && counted % 1 !== 0) fail_('Count of ' + pr.name + ' must be a whole number');
+    var diff = round_(counted - expected, 4), row = { product_id: pr.id, name: pr.name, unit: pr.unit || '', expected: expected, counted: counted, difference: diff, serial: isSerialProduct_(pr) };
+    if (row.serial) { row.missing = (l.missing || []).slice(0, 500).map(String); row.extra = (l.extra || []).slice(0, 500).map(String); }
+    if (Math.abs(diff) >= 1e-9) { if (diff < 0) short++; else over++; }
+    if (Math.abs(diff) >= 1e-9 && !row.serial) {
+      var now = num_(pr.stock), target = round_(now + diff, 4);
+      if (target < 0) fail_(pr.name + ': the count would make the stock negative (' + target + '). Count it again');
+      var value = round_(diff * num_(pr.cost_price));
+      row.from = now; row.to = target; row.value = value; totalValue += value;
+      changed.push({ id: pr.id, stock: target });
+      events.push({ product_id: pr.id, product_name: pr.name, event: 'stock_adjust', ref_type: 'adjust', qty: diff, amount: value, note: 'Stock count: ' + name });
+    }
+    rows.push(row);
+  });
+  changed.forEach(function (c) { update_('Products', c.id, { stock: c.stock }); });
+  if (events.length) evBatch_(user, events);
+  var rec = { id: uid_(), no: nextNo_('seq_stock_count', 'SC-'), name: name, note: String(p.note || '').trim().slice(0, 300), started_at: String(p.started_at || '').slice(0, 19),
+    applied_at: now_(), by: user.name, counted: rows.length, short: short, over: over, adjusted: changed.length, value: round_(totalValue), lines: rows };
+  insert_('AuditLog', { ts: rec.applied_at, user: user.name, action: 'stock_count', detail: JSON.stringify(rec) });
+  if (!can_(user, 'cost')) { rec.value = null; rec.lines.forEach(function (r) { delete r.value; }); }
+  return rec;
+}
+function stockCountHistory_(p, user) {
+  var showCost = can_(user, 'cost');
+  return all_('AuditLog').filter(function (r) { return r.action === 'stock_count'; }).map(function (r) {
+    var d = {}; try { d = JSON.parse(r.detail || '{}'); } catch (e) {}
+    if (!showCost) { d.value = null; (d.lines || []).forEach(function (l) { delete l.value; }); }
+    return d;
+  }).filter(function (d) { return d.id; }).sort(function (a, b) { return String(b.applied_at).localeCompare(String(a.applied_at)); }).slice(0, 200);
+}
+
 /* ============================================================================
  *  7. CUSTOMERS & SUPPLIERS
  * ========================================================================== */
@@ -6158,6 +6216,9 @@ var ROUTES = {
   'report.pnl':       r_(null, profitLoss_),
   'report.balance':   r_(null, balanceSheet_),
   'stock.adjust':     r_('products', stockAdjust_, true),
+  'stockcount.start': r_('products', stockCountStart_),
+  'stockcount.apply': r_('products', stockCountApply_, true),
+  'stockcount.history': r_('products', stockCountHistory_),
   'master.save':      r_('products', masterSave_, true),
   'master.delete':    r_('products', masterDelete_, true),
   'master.deleteMany':r_('products', function(p,u) {
