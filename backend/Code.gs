@@ -366,6 +366,7 @@ function insertMany_(name, objs) {
   var cs = cols_(name), sh = sheet_(name);
   var start = Math.max(dataLastRow_(name), 1) + 1;
   objs.forEach(function (o) { if (!o.id) o.id = uid_(); });
+  if (_branch) branchOnInsert_(name, objs);
   writeRows_(name, start, 1, objs.map(function (o) { return cs.map(function (c) { return ser_(o[c.k], c.t); }); }));
   var out = objs.map(function (o, i) {
     var full = { _row: start + i };
@@ -386,6 +387,7 @@ function update_(name, id, patch) {
   }
   if (name === 'SerialItems' && r.status === 'in_stock' && patch.status && patch.status !== 'in_stock' && repairReservations_(_mem.__repairDelivery).serial[id])
     fail_('Serial is reserved for an open repair job: ' + r.serial);
+  if (_branch) branchOnUpdate_(name, r, patch);
   var cs = cols_(name);
   cs.forEach(function (c) { if (patch.hasOwnProperty(c.k)) r[c.k] = cast_(ser_(patch[c.k], c.t), c.t); });
   writeRows_(name, r._row, 1, [cs.map(function (c) { return ser_(r[c.k], c.t); })]);
@@ -1044,6 +1046,11 @@ function productsList_(user) {
   var reservations = repairReservations_().qty, history = productUsageIndex_(), serialValues = {}, showCost = can_(user,'cost');
   if (showCost) all_('SerialItems').forEach(function(s) { if (s.status === 'in_stock') serialValues[s.product_id]=(serialValues[s.product_id] || 0)+num_(s.cost); });
   var list = all_('Products').map(function (p) { var c = Object.assign({}, p); delete c._row; c.has_history = !!history[p.id]; c.reserved = reservations[p.id] || 0; c.available = Math.max(0, round_(p.stock - c.reserved, 4)); if (showCost && isSerialProduct_(p)) c.inventory_cost=round_(serialValues[p.id] || 0,4); return c; });
+  if (_branch) list.forEach(function (c) {
+    if (isService_(c)) return;
+    c.stock_total = c.stock; c.stock_here = branchQty_(c.id, _branch); c.stock = c.stock_here; // this branch; the shop total stays in stock_total
+    c.available = Math.max(0, round_(Math.min(c.available, c.stock_here), 4));
+  });
   return stripCost_(list, user);
 }
 function productSave_(p, user) {
@@ -1293,8 +1300,9 @@ function stockAdjust_(p, user) {
   if (pr.has_warranty && pr.warranty_type === 'serial') fail_('Serial-tracked items must be adjusted through purchases / returns');
   var newStock = inventoryQuantity_(p.new_stock, pr.name, true); if (newStock < 0) fail_('Stock cannot be negative');
   if (!isDecimalUnit_(pr.unit) && newStock % 1 !== 0) fail_('Stock of ' + pr.name + ' must be a whole number');
-  var diff = round_(newStock - pr.stock, 4), oldStock = pr.stock;
+  var diff = round_(newStock - (_branch ? branchQty_(pr.id, _branch) : pr.stock), 4), oldStock = pr.stock;
   if (Math.abs(diff) < 1e-9) fail_('The stock is already ' + newStock);
+  if (_branch) newStock = round_(pr.stock + diff, 4); // the shop total moves by what this branch counted
   // The value at average cost: a shortage (lost, damaged) is a loss, a surplus a gain; both count in net profit.
   var value = round_(diff * num_(pr.cost_price));
   update_('Products', pr.id, { stock: newStock });
@@ -1308,14 +1316,14 @@ function stockAdjust_(p, user) {
  * Sales made while counting are allowed: each product moves by (counted − system stock when counting began). */
 function stockCountStart_(p, user) {
   var cat = String(p.category_id || ''), showCost = can_(user, 'cost'), serials = {};
-  all_('SerialItems').forEach(function (s) { if (s.status === 'in_stock') (serials[s.product_id] = serials[s.product_id] || []).push(String(s.serial)); });
+  all_('SerialItems').forEach(function (s) { if (s.status === 'in_stock' && (!_branch || serialBranch_(s.id) === _branch)) (serials[s.product_id] = serials[s.product_id] || []).push(String(s.serial)); });
   var cats = indexBy_(all_('Categories'));
   var list = all_('Products').filter(function (pr) { return pr.active && !isService_(pr) && (!cat || pr.category_id === cat || pr.subcategory_id === cat); })
     .sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); })
     .map(function (pr) {
       var serial = isSerialProduct_(pr);
       return { id: pr.id, name: pr.name, sku: pr.sku || '', barcode: pr.barcode || '', unit: pr.unit || '', category: (cats[pr.category_id] || {}).name || '',
-        stock: num_(pr.stock), cost: showCost ? num_(pr.cost_price) : null, serial: serial, serials: serial ? (serials[pr.id] || []).sort() : [] };
+        stock: _branch ? branchQty_(pr.id, _branch) : num_(pr.stock), cost: showCost ? num_(pr.cost_price) : null, serial: serial, serials: serial ? (serials[pr.id] || []).sort() : [] };
     });
   return { at: now_(), category_id: cat, category: cat ? (cats[cat] || {}).name || '' : '', products: list };
 }
@@ -2182,6 +2190,250 @@ function courierSend_(spec) {
 }
 function courierCall_(p, user) { return courierFinish_(p, user, courierSend_(courierPrepare_(p, user))); }
 
+/* ---- Branches (multi-branch). Off until an admin adds the first branch. Each user can be fixed to one
+ * branch (admins and unassigned users pick the branch they work in). Product stock (Products.stock) stays the
+ * shop total; the share of each branch, where each serial is, which branch made each invoice, purchase, return
+ * and expense, and the transfers between branches live in one private sheet, rows [key, number, text]:
+ *   s|product|branch  → quantity        n|serial item → (text) branch        d|table|id → (text) branch
+ *   t|transfer id     → (number) last change, (text) the transfer as JSON
+ * Every stock change (update_ / insertMany_) lands in the branch of the request, so sales, purchases, returns,
+ * adjustments and stock counts all follow without changes of their own. */
+var BRANCH_SHEET = '__KarvioBranchRows', BRANCH_TRANSIT = '__transit';
+var BRANCH_DOC_TABLES = ['Sales', 'Purchases', 'SalesReturns', 'PurchaseReturns', 'Expenses'];
+var _branch = '', _reqUser = null;
+function jsonSetting_(k, def) { var v = null; try { v = JSON.parse(getSetting_(k, '')); } catch (e) {} return v && typeof v === 'object' ? v : def; }
+function branchesAll_() { var a = jsonSetting_('branches', []); return Array.isArray(a) ? a : []; }
+function branchesOn_() { return branchesAll_().some(function (b) { return b.active; }); }
+function branchActive_(id) { return branchesAll_().some(function (b) { return b.id === id && b.active; }); }
+function branchName_(id) { if (id === BRANCH_TRANSIT) return 'in transit'; var b = branchesAll_().filter(function (x) { return x.id === id; })[0]; return b ? b.name : 'another branch'; }
+function branchDefault_() { var b = branchesAll_().filter(function (x) { return x.active; })[0]; return b ? b.id : ''; }
+function userBranches_() { return jsonSetting_('user_branches', {}); }
+function accountBranches_() { return jsonSetting_('account_branches', {}); }
+/** The branch a request works in: the user's own branch, or the one they chose, or the first branch. */
+function branchFor_(user, asked) {
+  if (!branchesOn_()) return '';
+  var fixed = user ? userBranches_()[user.id] : '';
+  if (fixed && branchActive_(fixed)) return fixed;
+  if (asked && branchActive_(String(asked))) return String(asked);
+  return branchDefault_();
+}
+function branchFixed_(user) { var f = user ? userBranches_()[user.id] : ''; return f && branchActive_(f) ? f : ''; }
+function branchRows_() {
+  if (_mem.__branchRows) return _mem.__branchRows;
+  var sh = privateSheet_(BRANCH_SHEET), last = sh.getLastRow(), idx = {}, rows = [];
+  if (last) sh.getRange(1, 1, last, 3).getValues().forEach(function (r, i) { if (r[0]) { var o = { pos: i + 1, key: String(r[0]), num: num_(r[1]), text: r[2] === null || r[2] === undefined ? '' : String(r[2]) }; rows.push(o); idx[o.key] = o; } });
+  _mem.__branchRows = { sh: sh, rows: rows, idx: idx, dirty: {} };
+  return _mem.__branchRows;
+}
+function branchGet_(key) { return branchRows_().idx[key] || null; }
+function branchPut_(key, num, text) {
+  var b = branchRows_(), r = b.idx[key];
+  if (!r) { r = { pos: 0, key: key, num: 0, text: '' }; b.idx[key] = r; b.rows.push(r); }
+  r.num = num; r.text = text === undefined ? r.text : String(text); b.dirty[key] = r;
+}
+/** Written once the request has done all its checks (doPost), so a refused request leaves no branch rows. */
+function branchFlush_() {
+  var b = _mem.__branchRows; if (!b || !Object.keys(b.dirty).length) return;
+  var next = b.sh.getLastRow() + 1;
+  Object.keys(b.dirty).forEach(function (k) {
+    var r = b.dirty[k];
+    if (!r.pos) { r.pos = next++; ensureRows_(b.sh, r.pos); }
+    b.sh.getRange(r.pos, 1, 1, 3).setValues([[r.key, r.num, r.text]]);
+  });
+  b.dirty = {};
+}
+function branchQty_(pid, bid) { var r = branchGet_('s|' + pid + '|' + bid); return r ? r.num : 0; }
+function branchMove_(pid, bid, delta, name) {
+  if (Math.abs(delta) < 1e-9) return;
+  var have = branchQty_(pid, bid), next = round_(have + delta, 4);
+  if (delta < 0 && next < -1e-9) fail_((bid === BRANCH_TRANSIT ? 'Only ' : 'Only ') + round_(have, 4) + ' of ' + name + ' in ' + branchName_(bid) + (bid === BRANCH_TRANSIT ? '' : '. Move stock from another branch first (Branch transfer)'));
+  branchPut_('s|' + pid + '|' + bid, next);
+}
+function serialBranch_(serialId) { var r = branchGet_('n|' + serialId); return r && r.text ? r.text : branchDefault_(); }
+/* Hooks called by insertMany_ and update_ (only while branches are on and the request has a branch). */
+function branchOnInsert_(name, objs) {
+  if (!_branch) return;
+  if (name === 'Products') objs.forEach(function (o) { if (num_(o.stock) && !isService_(o)) branchMove_(o.id, _branch, num_(o.stock), o.name); });
+  else if (name === 'SerialItems') objs.forEach(function (o) { if (o.status === 'in_stock') branchPut_('n|' + o.id, 0, _branch); });
+  else if (BRANCH_DOC_TABLES.indexOf(name) >= 0) objs.forEach(function (o) { branchPut_('d|' + name + '|' + o.id, 0, _branch); });
+  else if (name === 'AccountTxns' && _reqUser && branchFixed_(_reqUser)) {
+    var ab = accountBranches_(), mine = branchFixed_(_reqUser);
+    objs.forEach(function (o) { if (ab[o.account_id] && ab[o.account_id] !== mine) fail_('That account belongs to ' + branchName_(ab[o.account_id]) + ' — use an account of your branch'); });
+  }
+}
+function branchOnUpdate_(name, r, patch) {
+  if (!_branch || _mem.__branchSkip) return;
+  if (name === 'Products' && patch.stock !== undefined && !isService_(r)) branchMove_(r.id, _branch, round_(num_(patch.stock) - num_(r.stock), 4), r.name);
+  if (name === 'SerialItems' && patch.status !== undefined && patch.status !== r.status) {
+    if (r.status === 'in_stock' && patch.status !== 'in_stock') {
+      var at = serialBranch_(r.id);
+      if (at !== _branch) fail_('Serial ' + r.serial + ' is in ' + branchName_(at) + ', not in this branch. Move it with a branch transfer first');
+    } else if (patch.status === 'in_stock') branchPut_('n|' + r.id, 0, _branch);
+  }
+}
+/** A user fixed to a branch sees only that branch's documents; others see all. */
+function branchSees_(table, id) { var f = _reqUser ? branchFixed_(_reqUser) : ''; return !f || docBranch_(table, id) === f; }
+function docBranch_(table, id) { var r = branchGet_('d|' + table + '|' + id); return r && r.text ? r.text : branchDefault_(); }
+
+/* ---- Branch admin: list, add, change; who works where; which account belongs to which branch. */
+function branchesInfo_(user) {
+  var on = branchesOn_();
+  return { on: on, list: branchesAll_(), mine: branchFixed_(user), current: _branch, can_switch: on && !branchFixed_(user) };
+}
+function branchesGet_(p, user) {
+  var b = branchesInfo_(user), stock = {};
+  branchRows_().rows.forEach(function (r) { if (r.key.indexOf('s|') === 0) { var bid = r.key.split('|')[2]; stock[bid] = round_((stock[bid] || 0) + r.num, 4); } });
+  b.stock_units = stock; b.user_branches = userBranches_(); b.account_branches = accountBranches_();
+  b.users = all_('Users').filter(function (u) { return u.active; }).map(function (u) { return { id: u.id, name: u.name, role: u.role }; });
+  b.accounts = all_('Accounts').filter(function (a) { return a.active; }).map(function (a) { return { id: a.id, name: a.name, type: a.type }; });
+  return b;
+}
+function branchSave_(p, user) {
+  if (user.role !== 'admin') fail_('Only an admin can change branches');
+  var list = branchesAll_(), wasOn = branchesOn_(), name = String(p.name || '').trim().slice(0, 80);
+  if (!name) fail_('Write the branch name');
+  if (list.some(function (b) { return b.id !== p.id && nameKey_(b.name) === nameKey_(name); })) fail_('A branch named "' + name + '" already exists');
+  var row = { name: name, address: String(p.address || '').trim().slice(0, 300), phone: String(p.phone || '').trim().slice(0, 40), active: p.active === undefined ? true : (p.active === true || p.active === 'true') };
+  var b;
+  if (p.id) {
+    b = list.filter(function (x) { return x.id === p.id; })[0]; if (!b) fail_('Branch not found');
+    if (b.active && !row.active) {
+      var left = 0; branchRows_().rows.forEach(function (r) { if (r.key.indexOf('s|') === 0 && r.key.split('|')[2] === b.id) left += Math.abs(r.num); });
+      if (left > 1e-9) fail_(b.name + ' still has stock. Move it to another branch first');
+      if (branchTransfers_().some(function (t) { return t.status === 'in_transit' && (t.from === b.id || t.to === b.id); })) fail_(b.name + ' has a transfer on the way');
+      if (list.filter(function (x) { return x.active && x.id !== b.id; }).length === 0) fail_('Keep at least one branch open');
+    }
+    Object.assign(b, row);
+  } else {
+    b = Object.assign({ id: 'b' + uid_().slice(0, 10), created_at: now_() }, row);
+    list.push(b);
+  }
+  setSetting_('branches', JSON.stringify(list));
+  // The first branch takes all the stock and serials the shop has today.
+  if (!wasOn && branchesOn_()) {
+    var first = branchDefault_();
+    all_('Products').forEach(function (pr) { if (!isService_(pr) && Math.abs(num_(pr.stock)) > 1e-9 && !branchGet_('s|' + pr.id + '|' + first)) branchPut_('s|' + pr.id + '|' + first, num_(pr.stock)); });
+    all_('SerialItems').forEach(function (s) { if (s.status === 'in_stock' && !branchGet_('n|' + s.id)) branchPut_('n|' + s.id, 0, first); });
+  }
+  audit_(user, p.id ? 'branch_update' : 'branch_create', { name: b.name, active: b.active });
+  _branch = branchFor_(user, _branch);
+  return branchesGet_({}, user);
+}
+function branchAssign_(p, user) {
+  if (user.role !== 'admin') fail_('Only an admin can change branches');
+  if (!branchesOn_()) fail_('Add a branch first');
+  var ub = userBranches_(), ab = accountBranches_();
+  Object.keys(p.users || {}).forEach(function (uid) {
+    var bid = String(p.users[uid] || '');
+    if (!all_('Users').some(function (u) { return u.id === uid; })) fail_('User not found');
+    if (bid && !branchActive_(bid)) fail_('Choose an open branch');
+    if (bid) ub[uid] = bid; else delete ub[uid];
+  });
+  Object.keys(p.accounts || {}).forEach(function (aid) {
+    var bid = String(p.accounts[aid] || '');
+    if (!all_('Accounts').some(function (a) { return a.id === aid; })) fail_('Account not found');
+    if (bid && !branchActive_(bid)) fail_('Choose an open branch');
+    if (bid) ab[aid] = bid; else delete ab[aid];
+  });
+  setSetting_('user_branches', JSON.stringify(ub)); setSetting_('account_branches', JSON.stringify(ab));
+  audit_(user, 'branch_assign', { users: Object.keys(p.users || {}).length, accounts: Object.keys(p.accounts || {}).length });
+  return branchesGet_({}, user);
+}
+
+/* ---- Branch transfers: stock leaves the sending branch at once and waits "in transit" until the receiving
+ * branch takes it in (or the sender cancels). Serial products move by serial number. */
+function branchTransfers_() {
+  return branchRows_().rows.filter(function (r) { return r.key.indexOf('t|') === 0; }).map(function (r) { try { var t = JSON.parse(r.text); t.id = r.key.slice(2); return t; } catch (e) { return null; } })
+    .filter(Boolean).sort(function (a, b) { return String(b.sent_at).localeCompare(String(a.sent_at)); });
+}
+function branchTransferPut_(t) { var c = Object.assign({}, t); delete c.id; branchPut_('t|' + t.id, Date.now(), JSON.stringify(c)); }
+function branchTransfersList_(p, user) {
+  if (!branchesOn_()) return { on: false, transfers: [] };
+  var mine = branchFixed_(user);
+  return { on: true, current: _branch, transfers: branchTransfers_().filter(function (t) { return !mine || t.from === mine || t.to === mine; }).slice(0, 500).map(function (t) {
+    return Object.assign(t, { from_name: branchName_(t.from), to_name: branchName_(t.to) }); }) };
+}
+function branchTransferSend_(p, user) {
+  if (!branchesOn_()) fail_('Add branches first');
+  var from = _branch, to = String(p.to || '');
+  if (!branchActive_(to)) fail_('Choose the branch to send to');
+  if (to === from) fail_('Choose another branch than this one');
+  var pmap = indexBy_(all_('Products')), sidx = {}, lines = [], seen = {};
+  all_('SerialItems').forEach(function (s) { if (s.status === 'in_stock') sidx[s.product_id + '|' + String(s.serial).toLowerCase()] = s; });
+  (p.items || []).forEach(function (it) {
+    var pr = pmap[it.product_id]; if (!pr || isService_(pr)) fail_('A product in the transfer is not a stock product');
+    if (seen[pr.id]) fail_(pr.name + ' is listed twice'); seen[pr.id] = 1;
+    var line = { product_id: pr.id, name: pr.name, unit: pr.unit || '', qty: 0, serials: [], serial_ids: [] };
+    if (isSerialProduct_(pr)) {
+      splitSerials_(it.serials).forEach(function (sn) {
+        var s = sidx[pr.id + '|' + String(sn).toLowerCase()]; if (!s) fail_('Serial ' + sn + ' of ' + pr.name + ' is not in stock');
+        if (serialBranch_(s.id) !== from) fail_('Serial ' + sn + ' is in ' + branchName_(serialBranch_(s.id)) + ', not in this branch');
+        if (line.serial_ids.indexOf(s.id) >= 0) fail_('Serial ' + sn + ' is listed twice');
+        line.serials.push(s.serial); line.serial_ids.push(s.id);
+      });
+      line.qty = line.serials.length;
+    } else {
+      line.qty = inventoryQuantity_(it.qty, pr.name);
+      if (!isDecimalUnit_(pr.unit) && line.qty % 1 !== 0) fail_('Quantity of ' + pr.name + ' must be a whole number');
+    }
+    if (!(line.qty > 0)) fail_('Write how many ' + pr.name + ' to send');
+    lines.push(line);
+  });
+  if (!lines.length) fail_('Add at least one product');
+  lines.forEach(function (l) {
+    branchMove_(l.product_id, from, -l.qty, l.name); branchMove_(l.product_id, BRANCH_TRANSIT, l.qty, l.name);
+    l.serial_ids.forEach(function (sid) { branchPut_('n|' + sid, 0, BRANCH_TRANSIT); });
+  });
+  var t = { id: uid_(), no: nextNo_('seq_branch_transfer', 'BT-'), from: from, to: to, items: lines, note: String(p.note || '').trim().slice(0, 300), status: 'in_transit', sent_at: now_(), sent_by: user.name };
+  branchTransferPut_(t);
+  audit_(user, 'branch_transfer_send', { no: t.no, from: branchName_(from), to: branchName_(to), items: lines.length });
+  return Object.assign(t, { from_name: branchName_(from), to_name: branchName_(to) });
+}
+function branchTransferFinish_(p, user, receive) {
+  var t = branchTransfers_().filter(function (x) { return x.id === p.id; })[0]; if (!t) fail_('Transfer not found');
+  if (t.status !== 'in_transit') fail_('This transfer is already ' + t.status);
+  var mine = branchFixed_(user), dest = receive ? t.to : t.from;
+  if (mine && mine !== dest) fail_(receive ? 'Only ' + branchName_(t.to) + ' can take this transfer in' : 'Only ' + branchName_(t.from) + ' can cancel this transfer');
+  t.items.forEach(function (l) {
+    branchMove_(l.product_id, BRANCH_TRANSIT, -l.qty, l.name); branchMove_(l.product_id, dest, l.qty, l.name);
+    (l.serial_ids || []).forEach(function (sid) { branchPut_('n|' + sid, 0, dest); });
+  });
+  t.status = receive ? 'received' : 'cancelled'; t.done_at = now_(); t.done_by = user.name; t.done_note = String(p.note || '').trim().slice(0, 300);
+  branchTransferPut_(t);
+  audit_(user, receive ? 'branch_transfer_receive' : 'branch_transfer_cancel', { no: t.no });
+  return Object.assign(t, { from_name: branchName_(t.from), to_name: branchName_(t.to) });
+}
+
+/* ---- All branches side by side: sales, returns, purchases, expenses, profit, stock and cash. */
+function branchReport_(p, user) {
+  if (!branchesOn_()) fail_('Add branches first (Settings → Branches)');
+  var t = today_(), from = String(p.from || t.slice(0, 8) + '01').slice(0, 10), to = String(p.to || t).slice(0, 10);
+  if (!isDate_(from) || !isDate_(to)) fail_('Choose valid dates');
+  var ids = branchesAll_().map(function (b) { return b.id; }), out = {}, showCost = can_(user, 'cost');
+  var blank = function () { return { sales: 0, sales_count: 0, paid: 0, due: 0, profit: 0, returns: 0, purchases: 0, purchase_count: 0, expenses: 0, stock_qty: 0, stock_value: 0, cash: 0 }; };
+  ids.concat(['all']).forEach(function (id) { out[id] = blank(); });
+  var add = function (id, k, v) { if (!out[id]) out[id] = blank(); out[id][k] = round_(out[id][k] + v); out.all[k] = round_(out.all[k] + v); };
+  var inRange = function (r) { var d = String(r.date).slice(0, 10); return d >= from && d <= to && r.status !== 'cancelled'; };
+  all_('Sales').filter(inRange).forEach(function (s) { var b = docBranch_('Sales', s.id); add(b, 'sales', num_(s.total)); add(b, 'sales_count', 1); add(b, 'paid', num_(s.paid)); add(b, 'due', num_(s.due)); add(b, 'profit', num_(s.profit)); });
+  all_('SalesReturns').filter(inRange).forEach(function (r) { add(docBranch_('SalesReturns', r.id), 'returns', num_(r.total)); });
+  all_('Purchases').filter(inRange).forEach(function (r) { var b = docBranch_('Purchases', r.id); add(b, 'purchases', num_(r.total)); add(b, 'purchase_count', 1); });
+  all_('Expenses').filter(inRange).forEach(function (r) { add(docBranch_('Expenses', r.id), 'expenses', num_(r.amount)); });
+  var pmap = indexBy_(all_('Products')), transit = { qty: 0, value: 0 };
+  branchRows_().rows.forEach(function (r) {
+    if (r.key.indexOf('s|') !== 0 || !r.num) return;
+    var k = r.key.split('|'), pr = pmap[k[1]]; if (!pr) return;
+    var v = r.num * num_(pr.cost_price);
+    if (k[2] === BRANCH_TRANSIT) { transit.qty = round_(transit.qty + r.num, 4); transit.value = round_(transit.value + v); return; }
+    add(k[2], 'stock_qty', r.num); add(k[2], 'stock_value', v);
+  });
+  var ab = accountBranches_(), unassigned = 0;
+  accountsList_().filter(function (a) { return a.active; }).forEach(function (a) { if (ab[a.id]) add(ab[a.id], 'cash', num_(a.balance)); else unassigned = round_(unassigned + num_(a.balance)); });
+  out.all.cash = round_(out.all.cash + unassigned);
+  var rows = branchesAll_().map(function (b) { return Object.assign({ id: b.id, name: b.name, active: b.active }, out[b.id]); });
+  if (!showCost) rows.concat([out.all]).forEach(function (r) { delete r.profit; delete r.stock_value; });
+  return { from: from, to: to, branches: rows, all: out.all, transit: showCost ? transit : { qty: transit.qty }, shared_cash: unassigned };
+}
+
 /* ---- Owner's money: deposits (capital in) and withdrawals (drawings). They move an account balance
  * but are never sales, expenses or profit. Cash-count corrections from Day close are not the owner's money. */
 function isCashCount_(t) { return /^(Deposit|Withdrawal) — cash count (extra|shortage) on \d{4}-\d{2}-\d{2} — /.test(String(t.note || '')); }
@@ -2375,6 +2627,7 @@ function databaseInfo_(p, user) {
   var tables = Object.keys(SCHEMA).map(function (name) { return { name: name, rows: name === 'Settings' ? tableRows_(name).length : all_(name).length }; });
   tables.push({ name: 'SavedQuotes', rows: savedQuoteRows_().rows.length });
   tables.push({ name: 'OnlineOrders', rows: orderRows_().rows.length });
+  if (branchesOn_() || branchRows_().rows.length) tables.push({ name: 'BranchRows', rows: branchRows_().rows.length });
   return {
     tables: tables, total: sum_(tables, function (t) { return t.rows; }),
     last_backup: getSetting_('last_backup_at', ''), last_restore: getSetting_('last_restore_at', ''),
@@ -2399,6 +2652,8 @@ function databaseExport_(p, user) {
   out.saved_quotes = quotes; out.quotes_checksum = quotesDigest_(quotes); counts.SavedQuotes = quotes.length;
   var orders = backupJsonRows_(orderRows_());
   out.online_orders = orders; out.orders_checksum = hash_('karvio-orders-v1', JSON.stringify(orders)); counts.OnlineOrders = orders.length;
+  var brows = branchRows_().rows.map(function (r) { return [r.key, r.num, r.text]; });
+  out.branch_rows = brows; out.branch_checksum = hash_('karvio-branches-v1', JSON.stringify(brows)); counts.BranchRows = brows.length;
   setSetting_('last_backup_at', created); // straight to the sheet: this route is not journaled
   audit_(user, 'database_backup', { rows: sum_(Object.keys(counts), function (k) { return counts[k]; }) });
   flush_();
@@ -2422,6 +2677,16 @@ function checkBackupJsonRows_(rows, checksum, salt, what) {
     seen[r[0]] = 1;
   });
   return rows;
+}
+function checkBackupBranchRows_(b) {
+  if (b.branch_rows === undefined) return null;
+  if (!Array.isArray(b.branch_rows) || hash_('karvio-branches-v1', JSON.stringify(b.branch_rows)) !== b.branch_checksum) fail_('The branch data in the backup is damaged or was edited — nothing was restored');
+  var seen = {};
+  b.branch_rows.forEach(function (r) {
+    if (!Array.isArray(r) || r.length !== 3 || typeof r[0] !== 'string' || !/^[sndt]\|/.test(r[0]) || typeof r[1] !== 'number' || !isFinite(r[1]) || typeof r[2] !== 'string') fail_('The branch data in the backup is damaged');
+    if (seen[r[0]]) fail_('The branch data in the backup is damaged'); seen[r[0]] = 1;
+  });
+  return b.branch_rows;
 }
 function writeJsonRows_(sheet, rows) {
   var sh = privateSheet_(sheet), last = sh.getLastRow();
@@ -2481,11 +2746,12 @@ function checkBackup_(b) {
   return plan;
 }
 function databaseRestore_(p, user) {
+  _branch = ''; // restored rows bring their own branch data; nothing here is a new stock movement
   if (!isOwner_(user)) fail_('Only the Administrator account can restore the database');
   if (!pwCheck_(user, p.password)) fail_('Incorrect password — nothing was restored');
   if (String(p.confirm || '').trim() !== RESTORE_WORD) fail_('Type RESTORE to confirm — nothing was restored');
   var b; try { b = JSON.parse(String(p.backup_text || '')); } catch (e) { fail_('This is not a Karvio database backup file'); }
-  var plan = checkBackup_(b), quotes = checkBackupQuotes_(b), orders = checkBackupJsonRows_(b.online_orders, b.orders_checksum, 'karvio-orders-v1', 'online orders');
+  var plan = checkBackup_(b), quotes = checkBackupQuotes_(b), orders = checkBackupJsonRows_(b.online_orders, b.orders_checksum, 'karvio-orders-v1', 'online orders'), branchRows = checkBackupBranchRows_(b);
   var ss = ss_(), stamp = now_().replace('T', ' ');
   var safety = driveCopy_(ss, 'Karvio backup before restore ' + stamp);
   return withMaintenance_(function () {
@@ -2500,6 +2766,7 @@ function databaseRestore_(p, user) {
   });
   if (quotes) writeBackupQuotes_(quotes); // a backup made before quotations were backed up keeps today's list
   if (orders) writeJsonRows_(ORDER_SHEET, orders); // the same for online orders
+  if (branchRows) { writeJsonRows_(BRANCH_SHEET, branchRows); delete _mem.__branchRows; }
   flush_();
   _mem = { __ss: ss };
   setupDatabase(); // only fills what is missing (settings added after this backup was made)
@@ -2513,6 +2780,7 @@ function databaseRestore_(p, user) {
   var counts = {}; Object.keys(plan).forEach(function (k) { counts[k] = plan[k].length; });
   if (quotes) counts.SavedQuotes = quotes.length;
   if (orders) counts.OnlineOrders = orders.length;
+  if (branchRows) counts.BranchRows = branchRows.length;
   return { safety: safety, backup_created_at: b.created_at, shop_name: b.shop_name, counts: counts, signed_out: !stillSignedIn, restored_at: restoredAt };
   });
 }
@@ -2557,6 +2825,7 @@ function backupSchedule_(p, user) {
   return { enabled: on, keep_days: keep, folder: BACKUP_FOLDER, last: getSetting_('last_daily_backup_at', '') };
 }
 function databaseReset_(p, user) {
+  _branch = '';
   if (!isOwner_(user)) fail_('Only the Administrator account can reset the database');
   if (!pwCheck_(user, p.password)) fail_('Incorrect password — nothing was reset');
   if (String(p.confirm || '').trim() !== RESET_WORD) fail_('Type RESET to confirm — nothing was reset');
@@ -2573,6 +2842,7 @@ function databaseReset_(p, user) {
   var settings = keepSettings ? Object.keys(sm).filter(function (k) { return k.indexOf('seq_') !== 0; }).map(function (k) { return [k, sm[k]]; }) : [];
 
   wipeAll_(ss);
+  writeJsonRows_(BRANCH_SHEET, []); delete _mem.__branchRows; // stock per branch means nothing once the stock is gone
 
   insertMany_('Users', users);
   if (settings.length) writeRows_('Settings', 2, 1, settings);
@@ -3610,6 +3880,8 @@ function serviceCancel_(p, user) {
 function bootstrap_(p, user) {
   var settings = settingsGet_({}, user);
   var accounts = ['accounts', 'pos', 'expenses', 'purchase', 'suppliers', 'customers'].some(function (perm) { return can_(user, perm); }) ? accountsList_().filter(function (a) { return a.active; }) : [];
+  var fixedB = branchFixed_(user), ab = fixedB ? accountBranches_() : {};
+  if (fixedB) accounts = accounts.filter(function (a) { return !ab[a.id] || ab[a.id] === fixedB; });
   if (!can_(user, 'accounts')) accounts = accounts.map(function (a) { return { id: a.id, name: a.name, type: a.type, active: a.active }; });
   var cats = all_('Categories').map(function (c) { return { id: c.id, name: c.name, parent_id: c.parent_id }; });
   return {
@@ -3622,7 +3894,7 @@ function bootstrap_(p, user) {
     products: productsList_(user),
     customers: visibleCustomers_(user).filter(function (c) { return c.active; }),
     suppliers: can_(user, 'purchase') || can_(user, 'suppliers') ? visibleSuppliers_(user).filter(function (s) { return s.active; }) : [],
-    serverTime: now_(), serverToday: today_()
+    serverTime: now_(), serverToday: today_(), branches: branchesInfo_(user)
   };
 }
 /* ============================================================================
@@ -3900,6 +4172,7 @@ function purchasesList_(p) {
   var q = String(p.q || '').toLowerCase(), items = {};
   all_('PurchaseItems').forEach(function (i) { (items[i.purchase_id] = items[i.purchase_id] || []).push(i.name + ' x' + i.qty); });
   var rows = all_('Purchases').filter(function (x) {
+    if (!branchSees_('Purchases', x.id)) return false;
     if (!inRange_(x.date, p.from, p.to)) return false;
     if (p.status && x.status !== p.status) return false;
     if (p.supplier_id && x.supplier_id !== p.supplier_id) return false;
@@ -4057,6 +4330,7 @@ function salesList_(p, user) {
   var own = !can_(user, 'sales.all'), dueNow = saleOpenDues_();
   var rows = all_('Sales').filter(function (x) {
     if (own && x.user_id !== user.id) return false;
+    if (!branchSees_('Sales', x.id)) return false;
     if (!inRange_(x.date, p.from, p.to)) return false;
     if (p.status && x.status !== p.status) return false;
     if (p.customer_id && x.customer_id !== p.customer_id) return false;
@@ -4259,6 +4533,7 @@ function sreturnsList_(p, user, allRows) {
   var q = String(p.q || '').toLowerCase(), items = {}, sales = indexBy_(all_('Sales'));
   all_('SalesReturnItems').forEach(function (i) { (items[i.return_id] = items[i.return_id] || []).push(i.name + ' x' + i.qty); });
   return all_('SalesReturns').filter(function (r) {
+    if (!branchSees_('SalesReturns', r.id)) return false;
     if (!can_(user, 'sales.all') && (!sales[r.sale_id] || sales[r.sale_id].user_id !== user.id)) return false;
     return inRange_(r.date, p.from, p.to) && (!p.status || r.status === p.status) && (!q || (r.return_no + ' ' + r.invoice_no + ' ' + r.customer_name).toLowerCase().indexOf(q) >= 0);
   }).sort(function (a, b) { return b._row - a._row; }).map(function (r) {
@@ -4830,7 +5105,7 @@ function expenseUpdate_(p, user) {
 }
 function expensesList_(p, user, allRows) {
   var accs = indexBy_(all_('Accounts'));
-  return all_('Expenses').filter(function (e) { return inRange_(e.date, p.from, p.to) && (!p.category || e.category === p.category) && (!p.status || e.status === p.status); })
+  return all_('Expenses').filter(function (e) { return branchSees_('Expenses', e.id) && inRange_(e.date, p.from, p.to) && (!p.category || e.category === p.category) && (!p.status || e.status === p.status); })
     .sort(function (a, b) { return b._row - a._row; })
     .map(function (e) { var o = Object.assign({}, e); delete o._row; o.account_name = accs[e.account_id] ? accs[e.account_id].name : ''; return o; });
 }
@@ -6587,6 +6862,14 @@ var ROUTES = {
   'supplier.prices':  r_(null, supplierPrices_),
   'dayclose.get':     r_('accounts', dayCloseGet_),
   'shifts.list':      r_(null, shiftsList_),
+  'branches.get':     r_(null, branchesGet_),
+  'branch.save':      r_('settings', branchSave_, true),
+  'branch.assign':    r_('settings', branchAssign_, true),
+  'branch.transfers': r_('products', branchTransfersList_),
+  'branch.transfer.send':    r_('products', branchTransferSend_, true),
+  'branch.transfer.receive': r_('products', function (p, u) { return branchTransferFinish_(p, u, true); }, true),
+  'branch.transfer.cancel':  r_('products', function (p, u) { return branchTransferFinish_(p, u, false); }, true),
+  'branch.report':    r_('reports', branchReport_),
   daybook:            r_('accounts', daybook_),
   'shift.mine':       r_(null, shiftMine_),
   'shift.open':       r_(null, shiftOpen_, true),
@@ -6743,7 +7026,8 @@ function doPost(e) {
     if (!route) fail_('Unknown action: ' + req.action);
     var user = null, info = null;
     var run = function () {
-      if (!route.public) { user = authUser_(req.token); need_(user, route.perm); }
+      _branch = ''; _reqUser = null;
+      if (!route.public) { user = authUser_(req.token); need_(user, route.perm); _reqUser = user; _branch = branchFor_(user, req.branch); }
       if (route.write) {
         info = requestInfo_(req, user);
         var saved = info && findReceipt_(info.key);
@@ -6752,7 +7036,9 @@ function doPost(e) {
           return saved.data;
         }
       }
-      return route.fn(req.payload || {}, user, req.token);
+      var result = route.fn(req.payload || {}, user, req.token);
+      branchFlush_();
+      return result;
     };
     var data;
     if (route.noLock) data = run();

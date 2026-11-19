@@ -50,6 +50,7 @@ export const NAV = [
   { to: '/prices', label: 'Price manager', perm: 'products' },
   { to: '/barcodes', label: 'Barcode labels' },
   { to: '/stock-count', label: 'Stock count', perm: 'products' },
+  { to: '/branch-transfer', label: 'Branch transfer', perm: 'products', branches: true },
   { group: 'Service & Warranty' },
   { to: '/repairs', label: 'Repairs', perm: 'repairs' },
   { to: '/service', label: 'Service', perm: 'service' },
@@ -63,6 +64,7 @@ export const NAV = [
   { to: '/accounts', label: 'Cash, bank & MFS', perm: 'accounts' },
   { to: '/shifts', label: 'Shift & day close', perm: { any: ['pos', 'accounts'] } },
   { to: '/daybook', label: 'Day book', perm: 'accounts' },
+  { to: '/branch-report', label: 'Branch report', perm: 'reports', branches: true },
   { to: '/expenses', label: 'Expenses', perm: 'expenses' },
   { to: '/profit', label: 'Profit', perm: ['reports', 'cost'] },
   { to: '/reports', label: 'Reports hub', perm: 'reports', key: '9' },
@@ -117,7 +119,8 @@ export default function Layout() {
     return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); window.removeEventListener('blur', off); };
   }, []);
 
-  const items = NAV.filter((n) => n.group || !n.perm || can(n.perm));
+  const branchesOn = useStore((s) => !!s.branches?.on);
+  const items = NAV.filter((n) => (n.group || !n.perm || can(n.perm)) && (!n.branches || branchesOn));
   // drop empty groups, then bundle each group with its links so every group is its own card
   const visible = items.filter((n, i) => !n.group || (items[i + 1] && !items[i + 1].group));
   const groups = [];
@@ -134,6 +137,7 @@ export default function Layout() {
             <button type="button" className="door-btn" onClick={() => (open ? setOpen(false) : toggleHidden())} title="Hide the menu" aria-label="Hide the menu"><DoorIcon open size={16} /></button>
           </div>
           <small className="brand-sub">{isOffline() ? 'Offline · saved on this PC' : 'Karvio · Shop management & POS'}</small>
+          <BranchPicker />
         </div>
         <nav className="nav">
           {groups.map((g) => {
@@ -166,5 +170,25 @@ export default function Layout() {
         <main className="content"><Suspense fallback={<Loading />}><Outlet /></Suspense></main>
       </div>
     </div>
+  );
+}
+
+/** The branch this device works in: a picker for admins and unassigned staff, a label for staff fixed to a branch. */
+function BranchPicker() {
+  const b = useStore((s) => s.branches);
+  if (!b?.on) return null;
+  const active = (b.list || []).filter((x) => x.active);
+  const name = (id) => (b.list.find((x) => x.id === id) || {}).name || '';
+  if (!b.can_switch) return <div className="branch-pick fixed" title="Your branch"><span>Branch</span><b>{name(b.current)}</b></div>;
+  const change = async (id) => {
+    try { localStorage.setItem('karvio_branch', id); } catch { /* storage blocked */ }
+    await useStore.getState().boot();
+    useStore.getState().toast(`Working in ${name(id)}`);
+  };
+  return (
+    <label className="branch-pick" title="The branch you are working in">
+      <span>Branch</span>
+      <select value={b.current} onChange={(e) => change(e.target.value)} aria-label="Working branch">{active.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
+    </label>
   );
 }

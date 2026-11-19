@@ -21,7 +21,7 @@ export default function Settings() {
   const admin = useStore((s) => s.user?.role === 'admin');
   const owner = useStore((s) => s.user?.owner === true); // the Administrator account only — not every admin
   const [tab, setTab] = useState(can('settings') ? 'shop' : offline ? 'me' : 'api');
-  const tabs = [...(can('settings') ? [['shop', 'Shop'], ['invoice', 'Invoice'], ['dashboard', 'Dashboard'], ...(!offline ? [['sms', 'SMS gateway']] : [])] : []), ...(offline ? admin ? [['local', 'Offline data & backup']] : [] : [['api', 'API connection']]), ...(admin && can('settings') ? [['shifts', 'Shift'], ['courier', 'Courier'], ['books', 'Close books']] : []), ['me', 'My password'], ...(owner ? [['database', 'Database']] : [])];
+  const tabs = [...(can('settings') ? [['shop', 'Shop'], ['invoice', 'Invoice'], ['dashboard', 'Dashboard'], ...(!offline ? [['sms', 'SMS gateway']] : [])] : []), ...(offline ? admin ? [['local', 'Offline data & backup']] : [] : [['api', 'API connection']]), ...(admin && can('settings') ? [['branches', 'Branches'], ['shifts', 'Shift'], ['courier', 'Courier'], ['books', 'Close books']] : []), ['me', 'My password'], ...(owner ? [['database', 'Database']] : [])];
   return (
     <>
       <PageHead title="Settings"><Tabs tabs={tabs} value={tab} onChange={setTab} /></PageHead>
@@ -31,6 +31,7 @@ export default function Settings() {
       {tab === 'sms' && <SmsSettings />}
       {tab === 'api' && <ApiSettings />}
       {tab === 'local' && <OfflineSettings />}
+      {tab === 'branches' && admin && <BranchSettings />}
       {tab === 'shifts' && admin && <ShiftSettings />}
       {tab === 'courier' && admin && <CourierSettings />}
       {tab === 'books' && admin && <BooksSettings />}
@@ -137,6 +138,59 @@ function LogoPicker({ value, onChange }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/* ---------------- Branches: add branches, who works where, which account belongs to which branch ---------------- */
+function BranchSettings() {
+  const q = useApi('branches.get', {}, []);
+  const [edit, setEdit] = useState(null);
+  const [ub, setUb] = useState(null);
+  const [ab, setAb] = useState(null);
+  const [busy, run] = useAction();
+  const d = q.data;
+  useEffect(() => { if (d) { setUb(d.user_branches); setAb(d.account_branches); } }, [d]);
+  const saveBranch = async () => {
+    const r = await run(() => api('branch.save', edit), edit.id ? 'Branch saved' : `Branch ${edit.name} added`);
+    if (r) { setEdit(null); q.reload(); useStore.getState().boot(); }
+  };
+  const saveAssign = async () => { const r = await run(() => api('branch.assign', { users: ub, accounts: ab }), 'Saved'); if (r) { q.reload(); useStore.getState().boot(); } };
+  if (!d) return <div className="card">{q.error ? q.error : 'Loading…'}</div>;
+  const open = d.list.filter((b) => b.active);
+  return (
+    <>
+      <section className="card">
+        <div className="card-head"><h2>Branches</h2><Btn kind="primary" onClick={() => setEdit({ name: '', address: '', phone: '', active: true })}>+ Add branch</Btn></div>
+        {!d.on && <p className="muted">Branches are off. The first branch you add takes all the stock the shop has today; then add the others and move stock with Branch transfer.</p>}
+        {d.list.length > 0 && <table className="dc-hist"><thead><tr><th>Branch</th><th>Address</th><th>Phone</th><th className="r">Stock (units)</th><th /></tr></thead>
+          <tbody>{d.list.map((b) => <tr key={b.id}><td><b>{b.name}</b>{!b.active && <Badge tone="muted">closed</Badge>}</td><td>{b.address}</td><td>{b.phone}</td><td className="r num">{d.stock_units[b.id] || 0}</td>
+            <td className="r"><Btn size="sm" onClick={() => setEdit({ ...b })}>Edit</Btn></td></tr>)}</tbody></table>}
+      </section>
+      {d.on && ub && ab && <div className="dc-grid" style={{ marginTop: 12 }}>
+        <section className="card">
+          <div className="card-head"><h2>Who works where</h2></div>
+          <p className="muted" style={{ marginTop: 0 }}>A user fixed to a branch sells its stock, uses its accounts and sees only its invoices. "Any branch" users pick the branch at the top of the menu.</p>
+          <table className="dc-hist"><tbody>{d.users.map((u) => <tr key={u.id}><td>{u.name} <small className="muted">{u.role}</small></td>
+            <td><select value={ub[u.id] || ''} onChange={(e) => setUb({ ...ub, [u.id]: e.target.value })} aria-label={`Branch of ${u.name}`}><option value="">Any branch</option>{open.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></td></tr>)}</tbody></table>
+        </section>
+        <section className="card">
+          <div className="card-head"><h2>Accounts of each branch</h2></div>
+          <p className="muted" style={{ marginTop: 0 }}>Each branch's cash drawer and accounts. "Shared" accounts (e.g. the main bank) can be used by every branch.</p>
+          <table className="dc-hist"><tbody>{d.accounts.map((a) => <tr key={a.id}><td>{a.name} <small className="muted">{a.type}</small></td>
+            <td><select value={ab[a.id] || ''} onChange={(e) => setAb({ ...ab, [a.id]: e.target.value })} aria-label={`Branch of ${a.name}`}><option value="">Shared</option>{open.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></td></tr>)}</tbody></table>
+        </section>
+        <div className="row end" style={{ gridColumn: '1 / -1' }}><Btn kind="primary" busy={busy} onClick={saveAssign}>Save users & accounts</Btn></div>
+      </div>}
+      {edit && <Modal open size="sm" title={edit.id ? `Edit ${edit.name}` : 'Add a branch'} onClose={() => setEdit(null)}
+        footer={<><Btn onClick={() => setEdit(null)}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={saveBranch} disabled={!edit.name.trim()}>Save branch</Btn></>}>
+        <div className="form">
+          <Field label="Branch name" wide><input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} maxLength={80} aria-label="Branch name" /></Field>
+          <Field label="Address" wide><input value={edit.address || ''} onChange={(e) => setEdit({ ...edit, address: e.target.value })} aria-label="Branch address" /></Field>
+          <Field label="Phone" wide><input value={edit.phone || ''} onChange={(e) => setEdit({ ...edit, phone: e.target.value })} aria-label="Branch phone" /></Field>
+          {edit.id && <label className="check wide"><input type="checkbox" checked={edit.active} onChange={(e) => setEdit({ ...edit, active: e.target.checked })} /> Open (a branch with stock cannot be closed)</label>}
+        </div>
+      </Modal>}
+    </>
   );
 }
 

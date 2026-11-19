@@ -1,7 +1,7 @@
 import fs from 'node:fs';import assert from 'node:assert/strict';import {PGlite} from '../../frontend/node_modules/@electric-sql/pglite/dist/index.js';import {createHandler} from '../../supabase/functions/karvio-api/handler.mjs';import {hash} from '../../supabase/functions/karvio-api/runtime.mjs';
 import {exportBackupLines,restoreStreamBackup,inspectStreamingBackup} from '../../frontend/src/lib/backupStream.js';
 const db=new PGlite();await db.exec('create role anon;create role authenticated;create role service_role bypassrls;create schema cron;create function cron.schedule(text,text,text) returns bigint language sql as $$ select 1::bigint $$;');
-for(const f of ['20261111071516_karvio_fresh_schema.sql','20261111072742_karvio_scoped_table_replacement.sql','20261114133852_karvio_row_deltas_and_status.sql','20261114134523_karvio_backup_retention_and_references.sql','20261114151019_karvio_bounded_transfers.sql','20261114185716_karvio_request_scoped_snapshots.sql','20261114202706_karvio_table_scoped_reads.sql','20261114204617_karvio_private_rows.sql','20261114210842_karvio_read_cache.sql','20261118052545_karvio_backup_saved_quotes.sql','20261119120000_karvio_backup_online_orders.sql'])await db.exec(fs.readFileSync(new URL('../../supabase/migrations/'+f,import.meta.url),'utf8'));
+for(const f of ['20261111071516_karvio_fresh_schema.sql','20261111072742_karvio_scoped_table_replacement.sql','20261114133852_karvio_row_deltas_and_status.sql','20261114134523_karvio_backup_retention_and_references.sql','20261114151019_karvio_bounded_transfers.sql','20261114185716_karvio_request_scoped_snapshots.sql','20261114202706_karvio_table_scoped_reads.sql','20261114204617_karvio_private_rows.sql','20261114210842_karvio_read_cache.sql','20261118052545_karvio_backup_saved_quotes.sql','20261119120000_karvio_backup_online_orders.sql','20261119150000_karvio_backup_branch_rows.sql'])await db.exec(fs.readFileSync(new URL('../../supabase/migrations/'+f,import.meta.url),'utf8'));
 await db.query('update karvio_private.runtime set setup_hash=$1',[hash('test-key')]);
 const calls=[];let maxBytes=0;
 async function rpc(name,p){calls.push(name);maxBytes=Math.max(maxBytes,Buffer.byteLength(JSON.stringify(p)));return(await db.query('select public.'+name+'('+Object.keys(p).map((k,i)=>k+' => $'+(i+1)).join(',')+') as r',Object.values(p))).rows[0].r;}
@@ -49,16 +49,20 @@ await db.query("insert into karvio_private.private_sheets(name,columns) values('
 await db.query(`insert into karvio_private.private_rows(sheet,position,cells) values('__KarvioOnlineOrders',1,'["o-1",1763000000000,"{\\"no\\":\\"OO-000001\\"}"]') on conflict do nothing`);
 const ordersSql="select coalesce(jsonb_agg(cells order by position),'[]') as q from karvio_private.private_rows where sheet='__KarvioOnlineOrders'";
 const ordersBefore=(await db.query(ordersSql)).rows[0].q;assert.equal(ordersBefore.length,1);
+await db.query("insert into karvio_private.private_sheets(name,columns) values('__KarvioBranchRows',3) on conflict do nothing");
+await db.query(`insert into karvio_private.private_rows(sheet,position,cells) values('__KarvioBranchRows',1,'["s|p1|b1",2.5,""]'),('__KarvioBranchRows',2,'["n|x1",0,"b1"]') on conflict do nothing`);
+const branchSql="select coalesce(jsonb_agg(cells order by position),'[]') as q from karvio_private.private_rows where sheet='__KarvioBranchRows'";
+const branchBefore=(await db.query(branchSql)).rows[0].q;assert.equal(branchBefore.length,2);
 await db.query(`insert into karvio_private.private_rows(sheet,position,cells) values('__KarvioSavedQuotes',1,'["q-1",1763000000000,"{\\"kind\\":\\"pc\\",\\"meta\\":{\\"customer\\":\\"Rahim\\"}}"]'),('__KarvioSavedQuotes',3,'["q-2",1763000005000,"{\\"kind\\":\\"cctv\\"}"]')`);
 const quotesBefore=(await db.query(quotesSql)).rows[0].q;assert.equal(quotesBefore.length,2);
 const qLines=[];let qDone;for await(const line of exportBackupLines({call:(a,p)=>q(a,p),pace:0,onComplete:x=>qDone=x}))qLines.push(line);
 await q('database.transfer.export.close',{job_id:qDone.job_id});
-const qHead=JSON.parse(qLines[0]);assert.deepEqual(qHead.tables.slice(-2),[{name:'SavedQuotes',rows:2},{name:'OnlineOrders',rows:1}],'saved quotations and online orders are listed in the backup');
+const qHead=JSON.parse(qLines[0]);assert.deepEqual(qHead.tables.slice(-3),[{name:'SavedQuotes',rows:2},{name:'OnlineOrders',rows:1},{name:'BranchRows',rows:2}],'saved quotations, online orders and branch rows are listed in the backup');
 assert.ok(qLines.some(l=>l.includes('"table":"SavedQuotes"')),'saved quotation rows are in the file');
 // An older backup (no SavedQuotes section) still restores and keeps today's quotations.
-const oldHead={...qHead,tables:qHead.tables.slice(0,-2),total_rows:qHead.total_rows-3};
+const oldHead={...qHead,tables:qHead.tables.slice(0,-3),total_rows:qHead.total_rows-5};
 const oldLines=[JSON.stringify(oldHead)];let oldDigest=hash(oldLines[0]),oldSeq=0,oldRows=0;
-for(const l of qLines.slice(1,-1)){const part=JSON.parse(l);if(part.table==='SavedQuotes'||part.table==='OnlineOrders')continue;part.seq=oldSeq;oldDigest=hash(oldDigest+'|'+oldSeq+'|'+part.table+'|'+part.sha256);oldSeq++;oldRows+=JSON.parse(part.payload).length;oldLines.push(JSON.stringify(part));}
+for(const l of qLines.slice(1,-1)){const part=JSON.parse(l);if(part.table==='SavedQuotes'||part.table==='OnlineOrders'||part.table==='BranchRows')continue;part.seq=oldSeq;oldDigest=hash(oldDigest+'|'+oldSeq+'|'+part.table+'|'+part.sha256);oldSeq++;oldRows+=JSON.parse(part.payload).length;oldLines.push(JSON.stringify(part));}
 oldLines.push(JSON.stringify({kind:'end',pages:oldSeq,rows:oldRows,digest:oldDigest}));
 const restoreFile=async(lines,name)=>{const r=await restoreStreamBackup(new File(lines.map(l=>l+'\n'),name,{lastModified:456}),{call:(a,p)=>q(a,p),credentials:{password:'transfer-password-2026',confirm:'RESTORE'},storage,key:'quote-'+name,pace:0,wait:async()=>db.query('select karvio_private.transfer_restore_worker()')});token=(await q('login',{username:'admin',password:'transfer-password-2026'})).token;return r;};
 await db.query("delete from karvio_private.private_rows where sheet='__KarvioSavedQuotes' and position=3");
@@ -66,8 +70,11 @@ const oldResult=await restoreFile(oldLines.map(l=>l.replace(/\n$/,'')),'old.json
 assert.deepEqual((await db.query(quotesSql)).rows[0].q,[quotesBefore[0]],'an older backup keeps the current saved quotations');
 assert.deepEqual((await db.query(ordersSql)).rows[0].q,ordersBefore,'an older backup keeps the current online orders');
 await db.query("delete from karvio_private.private_rows where sheet='__KarvioOnlineOrders'");
+assert.deepEqual((await db.query(branchSql)).rows[0].q,branchBefore,'an older backup keeps the current branch rows');
+await db.query("delete from karvio_private.private_rows where sheet='__KarvioBranchRows'");
 // A new backup replaces them with the quotations in the file.
 const newResult=await restoreFile(qLines.map(l=>l.replace(/\n$/,'')),'new.jsonl');assert.equal(newResult.counts.SavedQuotes,2);
 assert.deepEqual((await db.query(quotesSql)).rows[0].q,quotesBefore.map(c=>[c[0],c[1],c[2]]),'saved quotations come back from the backup');
 assert.deepEqual((await db.query(ordersSql)).rows[0].q,ordersBefore,'online orders come back from the backup');
+assert.deepEqual((await db.query(branchSql)).rows[0].q,branchBefore,'branch rows (with decimals) come back from the backup');
 console.log(JSON.stringify({fixtureRows:count,pages:seq,maxRpcBytes:maxBytes,atomicRestore:true,readback:true,noFullSnapshot:true,safetyCopy:true}));await db.close();

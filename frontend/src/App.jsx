@@ -43,6 +43,8 @@ const Shifts = page(() => import('./pages/Shifts'));
 const DayBook = page(() => import('./pages/DayBook'));
 const StockCount = page(() => import('./pages/StockCount'));
 const OnlineOrders = page(() => import('./pages/OnlineOrders'));
+const BranchTransfer = page(() => import('./pages/BranchTransfer'));
+const BranchReport = page(() => import('./pages/BranchReport'));
 const Expenses = page(() => import('./pages/Expenses'));
 const Profit = page(() => import('./pages/Profit'));
 const Reports = page(() => import('./pages/Reports'));
@@ -140,6 +142,8 @@ export default function App() {
               <Route path="service/:id" element={<Guard perm="service"><Service /></Guard>} />
               <Route path="history" element={<History />} />
               <Route path="accounts" element={<Guard perm="accounts"><Accounts /></Guard>} />
+              <Route path="branch-transfer" element={<Guard perm="products"><BranchTransfer /></Guard>} />
+              <Route path="branch-report" element={<Guard perm="reports"><BranchReport /></Guard>} />
               <Route path="online-orders" element={<Guard perm="pos"><OnlineOrders /></Guard>} />
               <Route path="stock-count" element={<Guard perm="products"><StockCount /></Guard>} />
               <Route path="daybook" element={<Guard perm="accounts"><DayBook /></Guard>} />

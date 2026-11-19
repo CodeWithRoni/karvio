@@ -1655,3 +1655,12 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
 .courier-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
 .courier-grid > .card { margin: 0; }
 @media (max-width: 900px) { .oo-cols, .oo-cols.two, .oo-cols.three, .oo-cols.four, .oo-view, .courier-grid { grid-template-columns: 1fr; } }
+
+/* Branches */
+.branch-pick { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 10px; font-size: 12.5px; }
+.branch-pick span { color: var(--muted); font-weight: 700; text-transform: uppercase; font-size: 11px; letter-spacing: .04em; }
+.branch-pick select { flex: 1; min-width: 0; padding: 4px 6px; }
+.branch-pick.fixed b { color: var(--fiber); }
+.br-table td, .br-table th { white-space: nowrap; }
+.br-table tr.all td { font-weight: 800; border-top: 2px solid var(--line); }
+.bt-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 12px; } .bt-list > .card { margin: 0; }
