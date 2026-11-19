@@ -281,22 +281,30 @@ export default function POS() {
                       {isSerial(p) && (l.serials.length
                         ? <div><button className="serial-ok" onClick={() => setSerialFor(i)}>S/N: {l.serials.join(', ')}</button></div>
                         : <div><button className="serial-need" onClick={() => setSerialFor(i)}>Pick serial numbers{l.want ? ` (${l.want} planned)` : ''}</button></div>)}
-                      {(p.has_warranty || Number(l.warranty_days) > 0) && (
-                        <div className="w">Warranty&nbsp;
-                          {(() => {
-                            const opts = [...new Set([Number(p.warranty_days), ...warrantyPeriods.map((w) => Number(w.days)), 0])].sort((a, b) => a - b);
-                            const custom = l.w_custom || !opts.includes(Number(l.warranty_days));
-                            return <>
-                              <select value={custom ? 'custom' : l.warranty_days} onChange={(e) => upd(i, e.target.value === 'custom' ? { w_custom: true } : { w_custom: false, warranty_days: e.target.value })} style={{ width: 'auto', minHeight: 24, padding: '0 4px', fontSize: 12 }} aria-label="Warranty period">
+                      {(p.has_warranty || Number(l.warranty_days) > 0) && (() => {
+                        const opts = [...new Set([Number(p.warranty_days), ...warrantyPeriods.map((w) => Number(w.days)), 0])].sort((a, b) => a - b);
+                        const custom = l.w_custom || !opts.includes(Number(l.warranty_days));
+                        const days = Number(l.warranty_days) || 0;
+                        const till = days > 0 ? (() => { const d = new Date(shopDay() + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); })() : '';
+                        const span = days >= 365 ? `${+(days / 365).toFixed(1)} yr` : days >= 30 ? `${Math.round(days / 30)} mo` : days ? `${days} d` : '';
+                        const tone = !days ? 'none' : days >= 365 ? 'long' : 'mid';
+                        return (
+                          <div className={`wchip w-${tone}`}>
+                            <span className="wc-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6z" />{days > 0 && <path d="M9 12l2 2 4-4" />}</svg></span>
+                            <span className="wc-label">Warranty</span>
+                            <span className="wc-sel">
+                              <select value={custom ? 'custom' : l.warranty_days} onChange={(e) => upd(i, e.target.value === 'custom' ? { w_custom: true } : { w_custom: false, warranty_days: e.target.value })} aria-label="Warranty period">
                                 {opts.map((d) => <option key={d} value={d}>{d ? `${d} days` : 'No warranty'}</option>)}
                                 <option value="custom">Custom days…</option>
                               </select>
-                              {custom && <span className="w-custom">&nbsp;<input type="number" min="0" max="36500" step="1" value={l.warranty_days} onChange={(e) => upd(i, { warranty_days: e.target.value === '' ? '' : String(Math.max(0, Math.round(Number(e.target.value) || 0))) })} placeholder="Days" aria-label="Custom warranty days for this invoice" style={{ width: 70, minHeight: 24, padding: '0 6px', fontSize: 12 }} /> days <span className="muted">(this invoice only)</span></span>}
-                            </>;
-                          })()}
-                          {p.warranty_type === 'invoice' && ' (invoice-based)'}
-                        </div>
-                      )}
+                              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+                            </span>
+                            {custom && <span className="wc-custom"><input type="number" min="0" max="36500" step="1" value={l.warranty_days} onChange={(e) => upd(i, { warranty_days: e.target.value === '' ? '' : String(Math.max(0, Math.round(Number(e.target.value) || 0))) })} placeholder="Days" aria-label="Custom warranty days for this invoice" />days</span>}
+                            {days > 0 && <span className="wc-till" title={`Warranty ends ${fdate(till)}${custom ? ' (this invoice only)' : ''}`}>{span} · till {fdate(till)}</span>}
+                            <span className={`wc-type ${p.warranty_type === 'serial' && !p.service ? 'serial' : 'invoice'}`}>{p.warranty_type === 'serial' && !p.service ? 'Serial' : 'Invoice'}</span>
+                          </div>
+                        );
+                      })()}
                     </td>
                     {canCost && <td className="cost-col" data-label="Cost">{(costShown[p.id]
                       ? <span className="cost-peek">{(() => {

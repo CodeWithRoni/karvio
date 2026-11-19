@@ -221,12 +221,14 @@ test('price manager filters products and saves retail and wholesale prices', asy
   expect([after.sale_price, after.wholesale_price]).toEqual([12345, 11000]);
 });
 
-test('door button hides and shows the side menu without losing the page', async ({ page }) => {
+test('menu button narrows the side menu to icons and back without losing the page', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.goto('/#/');
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
   await page.getByLabel('Hide the menu').click();
-  await expect(page.locator('.rail')).toBeHidden();
+  // the menu narrows to icons (it stays reachable), the page gets the room
+  await expect.poll(async () => (await page.locator('.rail').boundingBox()).width).toBeLessThan(90);
+  await expect(page.getByRole('link', { name: /Point Of Sale/ })).toBeVisible();
   // the page must still fill the window and show its content
   const box = await page.locator('.main').boundingBox();
   expect(box.width).toBeGreaterThan(1300);
@@ -242,7 +244,7 @@ test('door button hides and shows the side menu without losing the page', async 
   await expect(page.getByPlaceholder(/Search product by serial/)).toBeVisible();
   await page.getByLabel('Show the menu').click();
   await expect(page.locator('.rail')).toBeVisible();
-  expect((await page.locator('.rail').boundingBox()).width).toBeGreaterThan(200);
+  await expect.poll(async () => (await page.locator('.rail').boundingBox()).width).toBeGreaterThan(200);
   await expect(page.getByRole('link', { name: /Point Of Sale/ })).toBeVisible();
 });
 

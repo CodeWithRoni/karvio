@@ -130,12 +130,12 @@ export default function Layout() {
 
   return (
     <div className={`shell ${open ? 'nav-open' : ''} ${hidden ? 'nav-hidden' : ''} ${showKeys ? 'show-keys' : ''}`} onClick={(e) => open && e.target === e.currentTarget && setOpen(false)}>
-      <aside className="rail" aria-hidden={hidden ? 'true' : undefined}>
+      <aside className="rail">
         <div className="brand">
           <div className="brand-top">
             {/^data:image\//.test(settings.shop_logo || '') ? <img className="brand-logo" src={settings.shop_logo} alt="" /> : <Logo size={24} />}
             <b className="brand-name" title={settings.shop_name || 'Karvio'} style={{ fontSize: nameSize(settings.shop_name || 'Karvio') }}>{settings.shop_name || 'Karvio'}</b>
-            <button type="button" className="door-btn" onClick={() => (open ? setOpen(false) : toggleHidden())} title="Hide the menu" aria-label="Hide the menu"><DoorIcon open size={16} /></button>
+            <button type="button" className="door-btn door-mobile" onClick={() => setOpen(false)} title="Close the menu" aria-label="Close the menu"><DoorIcon open size={16} /></button>
           </div>
           <small className="brand-sub">{isOffline() ? 'Offline · saved on this PC' : 'Karvio · Shop management & POS'}</small>
           <BranchPicker />
@@ -144,7 +144,7 @@ export default function Layout() {
           {groups.map((g) => {
             // The group holding the open page never folds away.
             const here = g.links.some((n) => (n.end ? loc.pathname === n.to : loc.pathname === n.to || loc.pathname.startsWith(n.to + '/')));
-            const shut = closed.includes(g.title) && !here;
+            const shut = closed.includes(g.title) && !here && !hidden; // the slim icon menu always shows every page
             return (
               <section className={`nav-card ${tone[g.title] || ''} ${shut ? 'closed' : ''}`} key={g.title}>
                 <button type="button" className="nav-group" aria-expanded={!shut} aria-label={`${g.title} menu group`} onClick={() => toggleGroup(g.title)} title={shut ? `Show ${g.title}` : `Fold ${g.title}`}>
@@ -161,8 +161,11 @@ export default function Layout() {
           <Btn size="sm" onClick={logout}>Sign out</Btn>
         </div>
       </aside>
+      {/* Sits on the line between the menu and the page; slides with the menu as it narrows to icons and back. */}
+      <button type="button" className="rail-toggle" onClick={toggleHidden} title={hidden ? 'Show the menu' : 'Hide the menu'} aria-label={hidden ? 'Show the menu' : 'Hide the menu'} aria-expanded={!hidden}>
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3" /><path d="M9 4v16" /><path className="rt-arrow" d="M15.5 10l-2 2 2 2" /></svg>
+      </button>
       <div className="main">
-        {hidden && <button type="button" className="door-btn door-float" onClick={toggleHidden} title="Show the menu" aria-label="Show the menu"><DoorIcon open={false} size={16} /></button>}
         <div className="topbar">
           <button onClick={() => setOpen(true)} aria-label="Open menu"><DoorIcon open={false} size={18} /></button>
           <span>{settings.shop_name || 'Karvio'}</span>
