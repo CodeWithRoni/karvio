@@ -162,9 +162,9 @@ function BranchSettings() {
     <>
       <section className="card">
         <div className="card-head"><h2>Branches</h2><Btn kind="primary" onClick={() => setEdit({ name: '', address: '', phone: '', active: true })}>+ Add branch</Btn></div>
-        {!d.on && <p className="muted">Branches are off. The first branch you add takes all the stock the shop has today; then add the others and move stock with Branch transfer.</p>}
+        {!d.on && <p className="muted">Branches are off. When you add the first branch, your shop as it is today becomes the <b>Main Branch</b> (with all its stock) and the new branch is added beside it. Then move stock with Branch transfer.</p>}
         {d.list.length > 0 && <table className="dc-hist"><thead><tr><th>Branch</th><th>Address</th><th>Phone</th><th className="r">Stock (units)</th><th /></tr></thead>
-          <tbody>{d.list.map((b) => <tr key={b.id}><td><b>{b.name}</b>{!b.active && <Badge tone="muted">closed</Badge>}</td><td>{b.address}</td><td>{b.phone}</td><td className="r num">{d.stock_units[b.id] || 0}</td>
+          <tbody>{d.list.map((b) => <tr key={b.id}><td><b>{b.name}</b> {b.main && <Badge tone="ok">Main</Badge>}{!b.active && <Badge tone="muted">closed</Badge>}</td><td>{b.address}</td><td>{b.phone}</td><td className="r num">{d.stock_units[b.id] || 0}</td>
             <td className="r"><Btn size="sm" onClick={() => setEdit({ ...b })}>Edit</Btn></td></tr>)}</tbody></table>}
       </section>
       {d.on && ub && ab && <div className="dc-grid" style={{ marginTop: 12 }}>
@@ -188,7 +188,8 @@ function BranchSettings() {
           <Field label="Branch name" wide><input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} maxLength={80} aria-label="Branch name" /></Field>
           <Field label="Address" wide><input value={edit.address || ''} onChange={(e) => setEdit({ ...edit, address: e.target.value })} aria-label="Branch address" /></Field>
           <Field label="Phone" wide><input value={edit.phone || ''} onChange={(e) => setEdit({ ...edit, phone: e.target.value })} aria-label="Branch phone" /></Field>
-          {edit.id && <label className="check wide"><input type="checkbox" checked={edit.active} onChange={(e) => setEdit({ ...edit, active: e.target.checked })} /> Open (a branch with stock cannot be closed)</label>}
+          {edit.id && !edit.main && <label className="check wide"><input type="checkbox" checked={edit.active} onChange={(e) => setEdit({ ...edit, active: e.target.checked })} /> Open (a branch with stock cannot be closed)</label>}
+          {edit.main && <p className="muted wide" style={{ margin: 0 }}>This is the <b>Main Branch</b> — your shop's own stock and history. It can be renamed but not closed.</p>}
         </div>
       </Modal>}
     </>

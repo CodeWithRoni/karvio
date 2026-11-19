@@ -27,6 +27,8 @@ test('add branches, work in one, send stock to the other and see every branch in
     await page.getByRole('dialog').getByRole('button', { name: 'Save branch' }).click();
     await expect(page.locator('.dc-hist').first()).toContainText(name);
   }
+  await expect(page.locator('.dc-hist').first().locator('tr', { hasText: 'Main branch' })).toContainText('Main');
+  await page.screenshot({ path: '/tmp/branches-main.png' });
   // the menu now has the picker and the branch pages
   await expect(page.getByLabel('Working branch')).toHaveValue(/.+/);
   await expect(page.locator('.nav-card', { hasText: 'Stock' }).getByRole('link', { name: /Branch Transfer/ })).toBeVisible();

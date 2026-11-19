@@ -2244,11 +2244,18 @@ var BRANCH_SHEET = '__KarvioBranchRows', BRANCH_TRANSIT = '__transit';
 var BRANCH_DOC_TABLES = ['Sales', 'Purchases', 'SalesReturns', 'PurchaseReturns', 'Expenses'];
 var _branch = '', _reqUser = null;
 function jsonSetting_(k, def) { var v = null; try { v = JSON.parse(getSetting_(k, '')); } catch (e) {} return v && typeof v === 'object' ? v : def; }
-function branchesAll_() { var a = jsonSetting_('branches', []); return Array.isArray(a) ? a : []; }
+/** All branches, the Main Branch first. The Main Branch is the shop as it was before branches (the first one made). */
+function branchesAll_() {
+  var a = jsonSetting_('branches', []); if (!Array.isArray(a)) return [];
+  var m = a.filter(function (b) { return b.main; })[0] || a[0];
+  a.forEach(function (b) { b.main = b === m; });
+  return m ? [m].concat(a.filter(function (b) { return b !== m; })) : a;
+}
+var MAIN_BRANCH = 'Main Branch';
 function branchesOn_() { return branchesAll_().some(function (b) { return b.active; }); }
 function branchActive_(id) { return branchesAll_().some(function (b) { return b.id === id && b.active; }); }
 function branchName_(id) { if (id === BRANCH_TRANSIT) return 'in transit'; var b = branchesAll_().filter(function (x) { return x.id === id; })[0]; return b ? b.name : 'another branch'; }
-function branchDefault_() { var b = branchesAll_().filter(function (x) { return x.active; })[0]; return b ? b.id : ''; }
+function branchDefault_() { var b = branchesAll_().filter(function (x) { return x.active; })[0]; return b ? b.id : ''; } // the Main Branch
 function userBranches_() { return jsonSetting_('user_branches', {}); }
 function accountBranches_() { return jsonSetting_('account_branches', {}); }
 /** The branch a request works in: the user's own branch, or the one they chose, or the first branch. */
@@ -2339,6 +2346,7 @@ function branchSave_(p, user) {
   var b;
   if (p.id) {
     b = list.filter(function (x) { return x.id === p.id; })[0]; if (!b) fail_('Branch not found');
+    if (b.main && !row.active) fail_('The Main Branch cannot be closed. You can rename it');
     if (b.active && !row.active) {
       var left = 0; branchRows_().rows.forEach(function (r) { if (r.key.indexOf('s|') === 0 && r.key.split('|')[2] === b.id) left += Math.abs(r.num); });
       if (left > 1e-9) fail_(b.name + ' still has stock. Move it to another branch first');
@@ -2347,7 +2355,10 @@ function branchSave_(p, user) {
     }
     Object.assign(b, row);
   } else {
-    b = Object.assign({ id: 'b' + uid_().slice(0, 10), created_at: now_() }, row);
+    // The very first branch: the shop as it is today becomes the Main Branch (with all its stock), then this one is added.
+    if (!list.length && nameKey_(name) !== nameKey_(MAIN_BRANCH)) list.push({ id: 'b' + uid_().slice(0, 10), created_at: now_(), name: MAIN_BRANCH, address: '', phone: '', active: true, main: true });
+    b = Object.assign({ id: 'b' + uid_().slice(0, 10), created_at: now_() }, row, { main: !list.length });
+    if (!list.length) b.active = true;
     list.push(b);
   }
   setSetting_('branches', JSON.stringify(list));

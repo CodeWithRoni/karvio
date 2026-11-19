@@ -64,7 +64,16 @@ note('Notes: an empty note is refused', !emptyN.ok);
 
 // ---- Users: a branch chosen when creating / editing a user, the same as Settings → Branches
 const br = await q('branch.save', {name: 'Mirpur'});
-const brId = br.id || (br.list || br.branches || []).find?.((b) => b.name === 'Mirpur')?.id;
+const brId = br.list.find((b) => b.name === 'Mirpur').id;
+// the first branch added: the shop as it is today becomes the Main Branch with all the stock
+const mainB = br.list[0];
+note('Branches: the first branch makes a Main Branch first', mainB.name === 'Main Branch' && mainB.main === true && br.list.length === 2 && br.list[1].name === 'Mirpur', JSON.stringify(br.list.map((b) => [b.name, b.main])));
+note('Branches: the Main Branch holds the existing stock', (br.stock_units[mainB.id] || 0) > 0 && !(br.stock_units[brId] > 0), JSON.stringify(br.stock_units));
+const closeMain = await raw('branch.save', {...mainB, active: false});
+note('Branches: the Main Branch cannot be closed', !closeMain.ok && /Main Branch cannot be closed/.test(closeMain.error), closeMain.error);
+const ren = await q('branch.save', {...mainB, name: 'Head Office'});
+note('Branches: the Main Branch can be renamed and stays main', ren.list[0].name === 'Head Office' && ren.list[0].main);
+await q('branch.save', {...ren.list[0], name: 'Main Branch'});
 const u1 = await q('user.save', {name: 'Rafi', username: 'rafi', password: 'long-password-123', role: 'sales', branch_id: brId});
 let ub = (await q('branches.get')).user_branches;
 note('Users: branch given when the user is created', ub[u1.id] === brId, JSON.stringify(ub));
@@ -86,7 +95,7 @@ for (const un of ['karim', 'KARIM', 'Karim']) { const r = await raw('login', {us
 
 // ---- Sign in to a branch
 const lb = await raw('login.branches', {});
-note('Sign-in screen lists the open branches', lb.ok && lb.data.on && lb.data.list.some((b) => b.id === brId), JSON.stringify(lb));
+note('Sign-in screen lists the open branches, Main first', lb.ok && lb.data.on && lb.data.list[0].name === 'Main Branch' && lb.data.list.some((b) => b.id === brId), JSON.stringify(lb));
 const second = await q('branch.save', {name: 'Showroom - 2'});
 const s2id = second.id || (await q('branches.get')).list.find((b) => b.name === 'Showroom - 2').id;
 const anyU = await q('user.save', {name: 'Any', username: 'anyone', password: 'long-password-123', role: 'sales', branch_id: ''});

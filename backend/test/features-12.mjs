@@ -17,8 +17,9 @@ const sup = await q('supplier.save', {name: 'Wholesaler'});
 await q('purchase.create', {supplier_id: sup.id, items: [{product_id: tea.id, qty: 50, cost: 60, sale_price: 100}, {product_id: phone.id, qty: 3, cost: 7000, sale_price: 9000, serials: ['P-1', 'P-2', 'P-3']}], payments: []});
 eq(boot.branches.on, false, 'branches are off until the first one is added');
 
-// ---- Turn on: the first branch takes everything
-let b = await q('branch.save', {name: 'Mirpur'});
+// ---- Turn on: the first branch (the Main Branch) takes everything; here it is renamed Mirpur
+let b = await q('branch.save', {name: 'Main Branch'});
+b = await q('branch.save', {...b.list[0], name: 'Mirpur'});
 const mirpur = b.list[0].id;
 b = await q('branch.save', {name: 'Uttara', address: 'Sector 7'});
 const uttara = b.list.find((x) => x.name === 'Uttara').id;

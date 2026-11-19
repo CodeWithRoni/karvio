@@ -1,3 +1,9 @@
+# 19 November 2026 (6) — Main Branch
+
+- Adding the first branch turns the shop as it is today into the "Main Branch" (with all its stock and history) and adds the new branch beside it.
+- The Main Branch is marked "Main", always listed first (menu picker, sign-in, reports) and cannot be closed; it can be renamed.
+- Live shop: the existing branch "Showroom - 1" was renamed "Main Branch" (address and phone kept).
+
 # 19 November 2026 (5) — Branch in the user form
 
 - Sign-in screen: when branches are on, pick the branch to work in (list from Settings → Branches; the first is the main branch). Staff fixed to a branch can only sign in to their own branch.
