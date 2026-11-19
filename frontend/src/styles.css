@@ -1795,3 +1795,13 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
 .note-pop-title { display: block; margin-top: 8px; }
 .note-pop .note-body { margin: 6px 0 10px; }
 @media (max-width: 600px) { .ne-keys { display: none; } }
+.ne-area { position: relative; text-align: left; }
+.ne-area.empty::before { left: 14px; top: 12px; text-align: left; }
+.when-in { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.when-in .dinput { width: 170px; }
+.when-time { display: flex; align-items: center; gap: 6px; }
+.when-time select { width: 70px; padding-right: 22px; }
+.when-ampm { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-left: 4px; }
+.when-ampm button { border: 0; background: transparent; color: var(--text); padding: 8px 12px; font: 700 12.5px var(--font); cursor: pointer; }
+.when-ampm button.on { background: var(--ok); color: #fff; }
+.note-pick { flex-wrap: wrap; align-items: center; }

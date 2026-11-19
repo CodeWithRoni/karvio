@@ -40,7 +40,13 @@ test('dashboard shows sales below cost and a note reminder pops up with its butt
   await page.keyboard.type('ask about the price');
   await ed.getByRole('radio', { name: 'Urgent' }).click();
   await ed.locator('.ne-remind .tgl').click();
-  await ed.getByLabel('Remind me at').fill('2026-01-01T09:00');
+  await ed.getByLabel('Remind me at — date').fill('2026-01-01');
+  await ed.getByLabel('Remind me at — date').press('Enter');
+  await ed.getByLabel('Remind me at — hour').selectOption('9');
+  await ed.getByLabel('Remind me at — minute').selectOption('0');
+  await ed.getByRole('radio', { name: 'AM' }).click();
+  await expect(ed.locator('.ne-remind-t small')).toContainText('1 Jan, 9:00 am');
+  await expect(ed.locator('input[type="datetime-local"]')).toHaveCount(0);
   await ed.getByRole('button', { name: '✓ Save note' }).click();
   await expect(ed).toHaveCount(0);
   const item = page.locator('.note-item', { hasText: `Call the cable supplier ${stamp}` });

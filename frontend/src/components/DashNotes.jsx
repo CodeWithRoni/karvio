@@ -38,6 +38,27 @@ export function cleanHtml(html) {
 const bodyOf = (n) => (n.body !== undefined && n.body !== '' ? n.body : esc(n.text));
 const plain = (n) => n.text || '';
 
+/** Reminder date and time in the ERP's own style: the ERP calendar for the day, then hour, minute and AM / PM. */
+export function WhenInput({ value, onChange, label = 'Remind me at' }) {
+  const v = value || plus(60), day = v.slice(0, 10), h24 = Number(v.slice(11, 13)) || 0, min = Number(v.slice(14, 16)) || 0;
+  const pm = h24 >= 12, h12 = h24 % 12 || 12;
+  const put = (d, h, m, p) => { const hh = (h % 12) + (p ? 12 : 0); onChange(`${d}T${pad(hh)}:${pad(m)}`); };
+  const mins = [...new Set([...Array.from({ length: 12 }, (_, i) => i * 5), min])].sort((a, b) => a - b);
+  return (
+    <div className="when-in" role="group" aria-label={label}>
+      <DateInput value={day} onChange={(e) => e.target.value && put(e.target.value, h12, min, pm)} aria-label={`${label} — date`} />
+      <div className="when-time">
+        <select value={h12} onChange={(e) => put(day, Number(e.target.value), min, pm)} aria-label={`${label} — hour`}>{Array.from({ length: 12 }, (_, i) => i + 1).map((h) => <option key={h} value={h}>{pad(h)}</option>)}</select>
+        <b>:</b>
+        <select value={min} onChange={(e) => put(day, h12, Number(e.target.value), pm)} aria-label={`${label} — minute`}>{mins.map((m) => <option key={m} value={m}>{pad(m)}</option>)}</select>
+        <div className="when-ampm" role="radiogroup" aria-label={`${label} — AM or PM`}>
+          {[['AM', false], ['PM', true]].map(([l, p]) => <button key={l} type="button" role="radio" aria-checked={pm === p} className={pm === p ? 'on' : ''} onClick={() => put(day, h12, min, p)}>{l}</button>)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Notes with reminders: the button for the dashboard header, its panel, and the reminder pop-ups. */
 export function useNotes() {
   const [list, setList] = useState(null);
@@ -157,7 +178,7 @@ export function NoteEditor({ initial, onSaved, onClose }) {
             <div className="ne-remind-t"><b>Reminder</b><small>{remind ? `On — a popup at ${nice(when)}` : 'Off — turn on to get a popup at the time you choose'}</small></div>
             <label className="tgl" title={remind ? 'On' : 'Off'}><input type="checkbox" checked={remind} onChange={(e) => setRemind(e.target.checked)} aria-label="Reminder on" /><span /></label>
             {remind && <div className="ne-remind-pick">
-              <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} aria-label="Remind me at" />
+              <WhenInput value={when} onChange={setWhen} />
               <div className="note-quick">{QUICK.map(([l, f]) => <button key={l} type="button" className="chip" onClick={() => setWhen(f())}>{l}</button>)}</div>
             </div>}
           </div>
@@ -222,6 +243,7 @@ export function NoteReminders({ notes }) {
   const [now, setNow] = useState(() => local(new Date()));
   const [hidden, setHidden] = useState({});
   const [picking, setPicking] = useState(null);
+  const [pickAt, setPickAt] = useState('');
   const [editing, setEditing] = useState(null);
   const [busy, run] = useAction();
   useEffect(() => { const t = setInterval(() => setNow(local(new Date())), 30000); return () => clearInterval(t); }, []);
@@ -235,13 +257,13 @@ export function NoteReminders({ notes }) {
           <div className="note-pop-head"><b>⏰ Reminder</b><small>{nice(n.remind_at)}</small><button type="button" className="note-x" onClick={() => setHidden({ ...hidden, [n.id]: n.remind_at })} aria-label="Hide for now">×</button></div>
           {n.title && <b className="note-pop-title">{n.title}</b>}
           <div className="note-body" dangerouslySetInnerHTML={{ __html: cleanHtml(bodyOf(n)) }} />
-          {picking === n.id && <div className="note-pick"><input type="datetime-local" defaultValue={plus(60)} id={`pick-${n.id}`} aria-label="New reminder date" />
-            <Btn size="sm" kind="primary" busy={busy} onClick={() => save(n, { remind_at: document.getElementById(`pick-${n.id}`).value }, 'Reminder moved')}>Set</Btn></div>}
+          {picking === n.id && <div className="note-pick"><WhenInput value={pickAt} onChange={setPickAt} label="New reminder date" />
+            <Btn size="sm" kind="primary" busy={busy} onClick={() => save(n, { remind_at: pickAt }, 'Reminder moved')}>Set</Btn></div>}
           <div className="note-pop-actions">
             <Btn size="sm" kind="primary" busy={busy} onClick={() => save(n, { status: 'done' }, 'Done')}>✓ Done</Btn>
             <Btn size="sm" busy={busy} onClick={() => save(n, { remind_at: plus(60) }, 'Reminder in 1 hour')}>1 hour later</Btn>
             <Btn size="sm" busy={busy} onClick={() => save(n, { remind_at: at(10, 1) }, 'Reminder tomorrow')}>Tomorrow</Btn>
-            <Btn size="sm" onClick={() => setPicking(picking === n.id ? null : n.id)}>New date</Btn>
+            <Btn size="sm" onClick={() => { setPickAt(plus(60)); setPicking(picking === n.id ? null : n.id); }}>New date</Btn>
             <Btn size="sm" onClick={() => setEditing(n)}>Edit</Btn>
             <Btn size="sm" busy={busy} onClick={() => save(n, { remind_at: '' }, 'Reminder dismissed — the note stays')}>Dismiss</Btn>
           </div>
