@@ -1913,3 +1913,8 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
   .shell.nav-hidden .rail .branch-badge { box-shadow: none; border-color: var(--line); background: linear-gradient(160deg, color-mix(in srgb, var(--ok) 9%, var(--panel)) 0%, var(--panel) 55%); }
   .shell.nav-hidden .rail .branch-badge::after { display: none; }
 }
+/* menu column: the brand block lines up with the menu cards (8px sides); logo and branch icon on the 32px centre line */
+.rail .brand { padding-left: 8px; padding-right: 8px; }
+.rail .brand-top { padding-left: 12px; }
+.rail .branch-badge { padding-left: 8px; }
+.rail .brand-sub { padding-left: 4px; }
