@@ -62,4 +62,21 @@ note('Notes: older plain notes still work', old1.some((n) => n.text === 'Old sty
 const emptyN = await raw('note.save', {title: '', body: '<p> </p>'});
 note('Notes: an empty note is refused', !emptyN.ok);
 
+// ---- Users: a branch chosen when creating / editing a user, the same as Settings → Branches
+const br = await q('branch.save', {name: 'Mirpur'});
+const brId = br.id || (br.list || br.branches || []).find?.((b) => b.name === 'Mirpur')?.id;
+const u1 = await q('user.save', {name: 'Rafi', username: 'rafi', password: 'long-password-123', role: 'sales', branch_id: brId});
+let ub = (await q('branches.get')).user_branches;
+note('Users: branch given when the user is created', ub[u1.id] === brId, JSON.stringify(ub));
+note('Users: list shows the branch', (await q('users.list')).find((u) => u.id === u1.id).branch_id === brId);
+await q('user.save', {...u1, password: '', branch_id: ''});
+ub = (await q('branches.get')).user_branches;
+note('Users: set back to Any branch from the user form', !ub[u1.id]);
+await q('branch.assign', {users: {[u1.id]: brId}});
+note('Users: Settings → Branches still assigns, and the user list sees it', (await q('users.list')).find((u) => u.id === u1.id).branch_id === brId);
+await q('user.save', {...u1, password: '', name: 'Rafi Ahmed'});
+note('Users: saving without a branch field keeps the branch', (await q('branches.get')).user_branches[u1.id] === brId);
+const badBr = await raw('user.save', {...u1, password: '', branch_id: 'nope'});
+note('Users: an unknown branch is refused', !badBr.ok);
+
 console.log(`features-15: ${checks} checks passed`);

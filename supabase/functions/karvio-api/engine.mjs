@@ -2504,7 +2504,7 @@ function accountLedger_(p) {
 /* ============================================================================
  *  9. USERS & SETTINGS
  * ========================================================================== */
-function usersList_() { return all_('Users').map(pubUser_); }
+function usersList_() { var ub = userBranches_(); return all_('Users').map(function (u) { var o = pubUser_(u); o.branch_id = ub[u.id] || ''; return o; }); }
 function userSave_(p, user) {
   var username = String(p.username || '').trim().toLowerCase();
   if (!username || !String(p.name || '').trim()) fail_('Name and username are required');
@@ -2536,15 +2536,23 @@ function userSave_(p, user) {
     if (!days.length) fail_('Choose at least one working day');
     row.access_limit = true; row.access_from = from.length === 4 ? '0' + from : from; row.access_to = to.length === 4 ? '0' + to : to; row.access_days = days.join(',');
   } else { row.access_limit = false; row.access_from = ''; row.access_to = ''; row.access_days = ''; }
+  // Branch (admins only, when branches are on): the same setting as Settings → Branches, so both places agree.
+  var setBranch = p.branch_id !== undefined && user.role === 'admin' && branchesOn_(), bid = String(p.branch_id || '');
+  if (setBranch && bid && !branchActive_(bid)) fail_('Choose an open branch');
+  var keepBranch = function (u) {
+    if (!setBranch) return u;
+    var ub = userBranches_(); if (bid) ub[u.id] = bid; else delete ub[u.id];
+    setSetting_('user_branches', JSON.stringify(ub)); u.branch_id = bid; return u;
+  };
   if (p.id) {
     if (p.id === user.id && !row.active) fail_('You cannot disable your own account');
     if (p.id === user.id && user.role === 'admin' && row.role !== 'admin') fail_('You cannot demote your own account');
     if (p.password) { requirePassword_(p.password); row.salt = uid_(); row.password_hash = pwHash_(row.salt, p.password); }
-    return pubUser_(update_('Users', p.id, row));
+    return keepBranch(pubUser_(update_('Users', p.id, row)));
   }
   requirePassword_(p.password);
   row.salt = uid_(); row.password_hash = pwHash_(row.salt, p.password); row.created_at = now_();
-  return pubUser_(insert_('Users', row));
+  return keepBranch(pubUser_(insert_('Users', row)));
 }
 function rolePermsSave_(p, user) {
   if (user.role !== 'admin') fail_('Only an admin can change what each role may do');

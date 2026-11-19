@@ -1,3 +1,9 @@
+# 19 November 2026 (5) — Branch in the user form
+
+- Users & roles: when branches are on, an admin chooses the branch (or Any branch) while adding or editing a user; the user list has a Branch column. Settings → Branches still assigns users too — both places change the same setting.
+- Notes: the reminder date and time use the ERP calendar and time picker; the "Write your note" hint starts at the left.
+- Dashboard: leaderboard, top sellers, low stock and sales below cost cards at one shorter fixed height.
+
 # 19 November 2026 (4) — Notes editor, purchase edit, product form, layout
 
 - Dashboard notes: a new editor with a title, a formatting toolbar (bold, italic, underline, strike, heading, lists, quote, link, clear, undo, redo), date, Open / Closed status, Normal / Important / Urgent priority and a reminder switch; Ctrl + Enter saves, Esc closes. Each note has Edit, Close / Open again and Delete (with a confirm). Only simple formatting is kept; older plain notes still work.

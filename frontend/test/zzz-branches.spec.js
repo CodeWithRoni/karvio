@@ -52,4 +52,26 @@ test('add branches, work in one, send stock to the other and see every branch in
   await page.goto('/#/branch-report');
   await expect(page.locator('.br-table')).toContainText('Second branch');
   await expect(page.locator('.br-table tr.all')).toContainText('All branches');
+
+  // a new employee gets a branch from the user form; Settings → Branches shows (and can change) the same
+  await page.goto('/#/users');
+  await page.getByRole('button', { name: 'Add user' }).click();
+  const uf = page.getByRole('dialog', { name: 'Add user' });
+  await uf.getByLabel('Full name').fill(`Branch staff ${stamp}`);
+  await uf.getByLabel('Username').fill(`bstaff${stamp}`);
+  await uf.getByLabel('Password').fill('long-password-123');
+  await uf.getByRole('combobox', { name: 'Branch' }).selectOption(second);
+  await page.screenshot({ path: '/tmp/user-branch.png' });
+  await uf.getByRole('button', { name: 'Save user' }).click();
+  await expect(uf).toHaveCount(0);
+  await expect(page.locator('tr', { hasText: `Branch staff ${stamp}` })).toContainText('Second branch');
+  await page.goto('/#/settings');
+  await page.getByRole('tab', { name: 'Branches' }).click();
+  const sel = page.getByLabel(`Branch of Branch staff ${stamp}`);
+  await expect(sel).toHaveValue(second);
+  await sel.selectOption('');
+  await page.getByRole('button', { name: 'Save users & accounts' }).click();
+  await expect(page.getByText('Saved').first()).toBeVisible();
+  await page.goto('/#/users');
+  await expect(page.locator('tr', { hasText: `Branch staff ${stamp}` })).toContainText('Any branch');
 });
