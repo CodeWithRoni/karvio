@@ -30,7 +30,8 @@ test('add branches, work in one, send stock to the other and see every branch in
   await expect(page.locator('.dc-hist').first().locator('tr', { hasText: 'Main branch' })).toContainText('Main');
   await page.screenshot({ path: '/tmp/branches-main.png' });
   // the menu now has the picker and the branch pages
-  await expect(page.getByLabel('Working branch')).toHaveValue(/.+/);
+  await expect(page.getByRole('status', { name: 'Working branch' })).toContainText('Main branch');
+  await expect(page.getByRole('combobox', { name: 'Working branch' })).toHaveCount(0);
   await expect(page.locator('.nav-card', { hasText: 'Stock' }).getByRole('link', { name: /Branch Transfer/ })).toBeVisible();
 
   // send 2 fans from the main branch to the second branch
@@ -44,8 +45,10 @@ test('add branches, work in one, send stock to the other and see every branch in
   await expect(page.locator('.bt-list')).toContainText('On the way');
   // switch to the second branch and take it in
   const second = (await call(request, 'branches.get')).list.find((b) => b.name === 'Second branch').id;
-  await page.getByLabel('Working branch').selectOption(second);
-  await expect(page.getByText('Working in Second branch')).toBeVisible();
+  // the branch is chosen at sign-in; here the device's saved branch is changed and the app reloaded
+  await page.evaluate((id) => localStorage.setItem('karvio_branch', id), second);
+  await page.reload();
+  await expect(page.getByRole('status', { name: 'Working branch' })).toContainText('Second branch');
   await page.getByRole('button', { name: '✓ Take it in' }).click();
   await page.getByRole('tab', { name: 'Done' }).click();
   await expect(page.locator('.bt-list')).toContainText('Received');
@@ -89,6 +92,7 @@ test('add branches, work in one, send stock to the other and see every branch in
   await pick.selectOption({ label: 'Second branch' });
   await fresh.screenshot({ path: '/tmp/login-branch.png' });
   await fresh.getByRole('button', { name: 'Sign in' }).click();
-  await expect(fresh.getByLabel('Working branch')).toHaveValue(second);
+  await expect(fresh.getByRole('status', { name: 'Working branch' })).toHaveAttribute('data-branch', second);
+  await fresh.locator('.branch-badge').screenshot({ path: '/tmp/branch-badge.png' });
   await fresh.close();
 });
