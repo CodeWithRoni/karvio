@@ -139,7 +139,7 @@ export default function Layout() {
           <div className="brand-top">
             {/^data:image\//.test(settings.shop_logo || '') ? <img className="brand-logo" src={settings.shop_logo} alt="" /> : <Logo size={24} />}
             <b className="brand-name" title={settings.shop_name || 'Karvio'} style={{ fontSize: nameSize(settings.shop_name || 'Karvio') }}>{settings.shop_name || 'Karvio'}</b>
-            <button type="button" className="door-btn door-mobile" onClick={() => setOpen(false)} title="Close the menu" aria-label="Close the menu"><DoorIcon open size={16} /></button>
+            <button type="button" className="round-toggle door-mobile" onClick={() => setOpen(false)} title="Close the menu" aria-label="Close the menu"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14.5 6l-6 6 6 6" /></svg></button>
           </div>
           <small className="brand-sub">{isOffline() ? 'Offline · saved on this PC' : 'Karvio · Shop management & POS'}</small>
           <BranchPicker />
@@ -173,7 +173,7 @@ export default function Layout() {
       {hidden && tip && <div className="rail-tip" style={{ top: tip.top, left: tip.left }} role="tooltip">{tip.text}</div>}
       <div className="main">
         <div className="topbar">
-          <button onClick={() => setOpen(true)} aria-label="Open menu"><DoorIcon open={false} size={18} /></button>
+          <button type="button" className="round-toggle" onClick={() => setOpen(true)} aria-label="Open menu"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9.5 6l6 6-6 6" /></svg></button>
           <span>{settings.shop_name || 'Karvio'}</span>
         </div>
         {/* A page whose file is still loading shows its placeholder here only: the menu never leaves the screen. */}

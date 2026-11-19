@@ -1958,3 +1958,10 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
   @keyframes tip-in { from { opacity: 0; transform: translate(-4px, -50%); } to { opacity: 1; transform: translateY(-50%); } }
 }
 @media (prefers-reduced-motion: reduce) { .shell .rail, .shell .main, .rail-toggle { transition: none !important; } }
+/* phones: the same round chevron button as the desktop menu toggle (opens / closes the drawer) */
+.round-toggle { display: grid; place-items: center; width: 32px !important; height: 32px !important; padding: 0; flex: none; border-radius: 50% !important; cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--fiber) 35%, var(--line)) !important; color: var(--fiber) !important;
+  background: radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--fiber) 22%, var(--panel)), var(--panel) 70%) !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .35); transition: transform .18s, box-shadow .18s; }
+.round-toggle:active { transform: scale(.94); }
+.round-toggle:hover { box-shadow: 0 4px 16px color-mix(in srgb, var(--fiber) 40%, transparent); }
