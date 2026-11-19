@@ -1889,3 +1889,6 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
 }
 .cart .cn > small { display: block; }
 .wchip { margin-top: 8px; }
+/* "Cost" heading straight above its Show / Hide buttons */
+.cart th.cost-col, .cart td.cost-col { text-align: center; padding-left: 4px; padding-right: 4px; }
+.cart td.cost-col .cost-peek { margin: 0 auto; }
