@@ -1805,3 +1805,7 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
 .when-ampm button { border: 0; background: transparent; color: var(--text); padding: 8px 12px; font: 700 12.5px var(--font); cursor: pointer; }
 .when-ampm button.on { background: var(--ok); color: #fff; }
 .note-pick { flex-wrap: wrap; align-items: center; }
+/* Leaderboard, top sellers, low stock and sales below cost: one fixed, shorter height; the list scrolls inside. */
+.dash-trio { grid-auto-rows: 460px; }
+.dash-trio > .card { height: 100%; min-height: 0; overflow: hidden; }
+.dash-trio .trio-body { max-height: none; flex: 1 1 auto; min-height: 0; overflow: auto; }
