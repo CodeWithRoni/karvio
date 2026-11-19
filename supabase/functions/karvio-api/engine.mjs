@@ -4392,7 +4392,13 @@ function saleDetail_(p, user) {
   var retQty = {}, retValue = {};
   var retIds = {}; returns.forEach(function (r) { if (r.status === 'active') retIds[r.id] = 1; });
   all_('SalesReturnItems').forEach(function (x) { if (retIds[x.return_id]) { retQty[x.sale_item_id] = (retQty[x.sale_item_id] || 0) + x.qty; retValue[x.sale_item_id] = (retValue[x.sale_item_id] || 0) + x.total; } });
-  var itemsOut = items.map(function (i) { var o = Object.assign({}, i); delete o._row; o.returned_qty = retQty[i.id] || 0; o.returned_value = round_(retValue[i.id] || 0); o.net_total = invoiceLineNet_(i, items, s); return o; });
+  var sidxD = items.some(function (i) { return i.serials; }) ? serialIndex_() : null;
+  var itemsOut = items.map(function (i) {
+    var o = Object.assign({}, i); delete o._row; o.returned_qty = retQty[i.id] || 0; o.returned_value = round_(retValue[i.id] || 0); o.net_total = invoiceLineNet_(i, items, s);
+    // serials still with the customer on this invoice (the ones a return can take back)
+    if (i.serials && sidxD) o.serials_left = parseList_(i.serials).filter(function (sn) { var r = sidxD[i.product_id + '|' + sn]; return r && r.status === 'sold' && r.sale_id === s.id; });
+    return o;
+  });
   s = Object.assign({}, s, { due_now: saleOpenDues_()[s.id] || 0 }); // copy: rows come from the shared per-request cache
   var out = { sale: s, items: itemsOut, customer: customer, returns: returns };
   if (customer) { out.customer = Object.assign({}, customer); out.customer.balance = customerBalances_()[customer.id] || 0; }

@@ -62,3 +62,30 @@ test('cash sales show Cash and offer no customer link; customer sales keep the l
  dialog=page.getByRole('dialog');
  await expect(dialog.getByRole('button',{name:'Customer link',exact:true})).toBeVisible();
 });
+
+test('exchange serial items by typing the quantity: serials are picked, the dialog closes and the rest becomes customer credit',async({page,request})=>{
+ const st=Date.now();
+ const cust=await call(request,'customer.save',{name:`Credit customer ${st}`,phones:'017'+String(st).slice(-8)});
+ const rt=await call(request,'product.save',{name:`XCH Router AX15 ${st}`,sale_price:5500,has_warranty:true,warranty_type:'serial',warranty_days:365});
+ const ms=await call(request,'product.save',{name:`XCH Mouse OP ${st}`,sale_price:550});
+ const sers=[1,2,3].map(n=>`XR${st}-${n}`);
+ await call(request,'purchase.create',{items:[{product_id:rt.id,qty:3,cost:5000,serials:sers.join(',')},{product_id:ms.id,qty:20,cost:425}],payments:[{account_id:cash,amount:23500}]});
+ const sale=await call(request,'sale.create',{customer_id:cust.id,items:[{product_id:rt.id,qty:3,price:5500,serials:sers.join(',')}],payments:[{account_id:cash,amount:16500}],send_sms:false});
+ await page.setViewportSize({width:1600,height:950});
+ await page.goto('/#/sales/'+sale.sale.id);
+ await page.getByRole('button',{name:'Return / exchange',exact:true}).click();
+ const dialog=page.getByRole('dialog',{name:/^Return items/});
+ await dialog.getByRole('tab',{name:'Exchange',exact:true}).click();
+ await dialog.getByLabel(`Return quantity for ${rt.name}`).fill('3');
+ for(const s of sers) await expect(dialog.getByRole('button',{name:new RegExp(s)})).toHaveClass(/on/);
+ await dialog.getByPlaceholder('Search the replacement product (name, model, brand, barcode)').fill(ms.name);
+ await dialog.getByText(ms.name,{exact:false}).last().click();
+ await dialog.getByLabel(`Quantity of ${ms.name}`).fill('10');
+ await expect(dialog).toContainText('11,000');
+ await page.screenshot({path:'/tmp/xch-serial.png'});
+ await dialog.getByRole('button',{name:'Record exchange',exact:true}).click();
+ await expect(dialog).toHaveCount(0);
+ await expect(page.getByText(/Exchanged: SR-\d+ → /)).toBeVisible();
+ const c=(await call(request,'customers.list')).find(x=>x.id===cust.id);
+ expect(Number(c.balance)).toBe(-11000);
+});

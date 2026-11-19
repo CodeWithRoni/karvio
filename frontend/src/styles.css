@@ -1894,3 +1894,4 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
 .cart td.cost-col .cost-peek { margin: 0 auto; }
 /* smaller Show / Hide pill */
 .cost-btn { font-size: 11px; padding: 0 8px; line-height: 1.6; min-height: 0; height: 20px; }
+.serial-grid .sg-all { background: transparent; border-style: dashed; color: var(--fiber); }

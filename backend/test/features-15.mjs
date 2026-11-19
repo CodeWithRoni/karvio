@@ -108,4 +108,22 @@ note('Sign in: a fixed user in their own branch', lf2.ok && lf2.data.branch === 
 const lbad = await raw('login', {username: 'anyone', password: 'long-password-123', branch: 'nope'});
 note('Sign in: an unknown branch is refused', !lbad.ok);
 
+// ---- Exchange: 3 serial routers back, a cheaper product out, the rest kept as customer credit
+{
+  const cust = await q('customer.save', {name: 'Exchange customer', phones: '01799999999'});
+  const rt = await q('product.save', {name: 'Router AX15 exch', sale_price: 5500, has_warranty: true, warranty_type: 'serial', warranty_days: 365});
+  const ms = await q('product.save', {name: 'Mouse exch', sale_price: 550});
+  await q('purchase.create', {items: [{product_id: rt.id, qty: 3, cost: 5000, serials: 'EX-1,EX-2,EX-3'}, {product_id: ms.id, qty: 20, cost: 425}], payments: [{account_id: cash, amount: 23500}]});
+  const sold = await q('sale.create', {customer_id: cust.id, items: [{product_id: rt.id, qty: 3, price: 5500, serials: 'EX-1,EX-2,EX-3'}], payments: [{account_id: cash, amount: 16500}]});
+  const det = await q('sale.detail', {id: sold.sale.id});
+  note('Sale detail lists the serials still returnable', JSON.stringify(det.items[0].serials_left) === JSON.stringify(['EX-1', 'EX-2', 'EX-3']), JSON.stringify(det.items[0].serials_left));
+  const bal = async () => Number((await q('customers.list')).find((c) => c.id === cust.id).balance);
+  const ex = await raw('sale.exchange', {sale_id: sold.sale.id, note: 'Not Need', expected_return_value: 16500, expected_total: 5500, expected_credit: 5500,
+    items: [{sale_item_id: det.items[0].id, qty: 3, serials: ['EX-1', 'EX-2', 'EX-3']}], replacement: [{product_id: ms.id, qty: 10, price: 550, serials: []}], payments: [], next_payment_date: ''});
+  note('Exchange with surplus: recorded', ex.ok, ex.error);
+  note('Exchange with surplus: 11,000 kept as customer credit', (await bal()) === -11000, String(await bal()));
+  const det2 = await q('sale.detail', {id: sold.sale.id});
+  note('Returned serials are no longer returnable', det2.items[0].serials_left.length === 0, JSON.stringify(det2.items[0].serials_left));
+}
+
 console.log(`features-15: ${checks} checks passed`);

@@ -264,6 +264,8 @@ function ReturnForm({ detail, onClose, onDone }) {
   const setRepLine = (i, patch) => setRepl((r) => r.map((l, j) => (j === i ? { ...l, ...patch } : l)));
 
   const problems = [];
+  // a serial line must name exactly as many serials as it returns
+  items.forEach((it, i) => { const q = Number(lines[i].qty) || 0; if (it.serials && q > 0 && lines[i].serials.length !== q) problems.push(`Tick ${q} serial number(s) coming back for ${it.name}`); });
   if (exchanging) {
     if (!value) problems.push('Select the item(s) the customer is returning');
     repl.forEach((l) => {
@@ -296,6 +298,7 @@ function ReturnForm({ detail, onClose, onDone }) {
       refresh('products', 'customers');
       return onDone();
     }
+    if (problems.length) return toast(problems[0], 'err');
     await run(() => api('sreturn.create', {
       sale_id: sale.id, type, note,
       items: lines.map((l) => ({ sale_item_id: l.id, qty: Number(l.qty) || 0, serials: l.serials })).filter((l) => l.qty > 0),
@@ -309,7 +312,7 @@ function ReturnForm({ detail, onClose, onDone }) {
     <Modal open onClose={onClose} title={`Return items — ${sale.invoice_no}`} size="lg"
       footer={<><Btn onClick={onClose}>Cancel</Btn>
         {exchanging && <Btn busy={busy} disabled={!lines.some(l => Number(l.qty) > 0) || problems.length > 0} onClick={() => submit(true)}>Exchange &amp; print invoice</Btn>}
-        <Btn kind="primary" busy={busy} disabled={!lines.some(l => Number(l.qty) > 0) || (exchanging && problems.length > 0)} onClick={() => submit(false)}>Record {type}</Btn></>}>
+        <Btn kind="primary" busy={busy} disabled={!lines.some(l => Number(l.qty) > 0) || problems.length > 0} onClick={() => submit(false)}>Record {type}</Btn></>}>
       <div className="row" style={{ marginBottom: 12 }}>
         <Tabs tabs={[['return', 'Return'], ['exchange', 'Exchange']]} value={type} onChange={setType} />
         {type === 'exchange' && <span className="muted">{can('pos') ? 'Pick what comes back, then add the product the customer takes instead. Stock, cash and profit follow both products.' : 'The returned value becomes customer credit; then sell the replacement in POS and tick “Use customer advance”.'}</span>}
@@ -319,13 +322,15 @@ function ReturnForm({ detail, onClose, onDone }) {
         <thead><tr><th>Item</th><th className="r">Sold</th><th className="r">Returnable</th><th style={{ width: 110 }} className="r">Return qty</th><th>Serials returned</th></tr></thead>
         <tbody>{items.map((it, i) => {
           const left = Math.max(0, Math.round((it.qty - (it.returned_qty || 0)) * 10000) / 10000);
-          const sers = splitList(it.serials);
+          const sers = it.serials_left || splitList(it.serials);
+          // typing a quantity picks that many serials (the ones already ticked first); the chips can still be changed
+          const pickFor = (q) => { const n = Math.max(0, Math.floor(Number(q) || 0)); const cur = lines[i].serials.filter((x) => sers.includes(x)); return [...cur, ...sers.filter((x) => !cur.includes(x))].slice(0, n); };
           return (
             <tr key={it.id}>
               <td>{it.name}</td><td className="r num">{fqty(it.qty, it.unit)}</td><td className="r num">{fqty(left, it.unit)}</td>
               <td><input type="number" min="0" max={left} step={isDecimalUnit(it.unit) ? 'any' : 1} value={lines[i].qty} disabled={left <= 0}
-                onChange={(e) => set(i, { qty: e.target.value, serials: lines[i].serials.slice(0, Number(e.target.value) || 0) })} onWheel={noWheel} aria-label={`Return quantity for ${it.name}`} /></td>
-              <td>{sers.length > 0 && <div className="serial-grid">{sers.map((sn) => (
+                onChange={(e) => set(i, { qty: e.target.value, serials: sers.length ? pickFor(e.target.value) : lines[i].serials })} onWheel={noWheel} aria-label={`Return quantity for ${it.name}`} /></td>
+              <td>{sers.length > 0 && <div className="serial-grid">{sers.length > 1 && <button type="button" className="sg-all" onClick={() => { const all = lines[i].serials.length === sers.length; set(i, { serials: all ? [] : [...sers], qty: all ? '' : sers.length }); }}>{lines[i].serials.length === sers.length ? 'Clear' : 'All'}</button>}{sers.map((sn) => (
                 <button type="button" key={sn} className={lines[i].serials.includes(sn) ? 'on' : ''}
                   onClick={() => { const cur = lines[i].serials; const next = cur.includes(sn) ? cur.filter((x) => x !== sn) : [...cur, sn]; set(i, { serials: next, qty: next.length || '' }); }}>{sn}</button>
               ))}</div>}</td>
@@ -333,6 +338,7 @@ function ReturnForm({ detail, onClose, onDone }) {
           );
         })}</tbody>
       </table></div></div>
+      {!exchanging && problems.length > 0 && <p style={{ color: 'var(--warn)', margin: '8px 0 0' }} role="alert">{problems[0]}</p>}
 
       {type === 'exchange' && can('pos') && <>
         <h3 className="xch-title">2. Product the customer takes instead</h3>
