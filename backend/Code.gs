@@ -1828,6 +1828,360 @@ function daybook_(p, user) {
     all_accounts: accs.filter(function (a) { return a.active; }).map(function (a) { return { id: a.id, name: a.name }; }), business: business };
 }
 
+/* ---- Online orders: Facebook / website / phone orders are written down here, confirmed into a normal
+ * sale (stock leaves, the customer owes the cash-on-delivery amount), handed to a courier (by API for
+ * Steadfast, Pathao and RedX, or by hand), and closed when the courier pays (customer payment + courier
+ * charge as an expense) or the parcel comes back (full return to stock). Orders live in a private sheet:
+ * one row per order [id, last change (ms), order JSON]. */
+var ORDER_SHEET = '__KarvioOnlineOrders', ORDER_MAX = 20000;
+var ORDER_SOURCES = ['Facebook', 'Website', 'WhatsApp', 'Instagram', 'Phone', 'Other'];
+var ORDER_STATUSES = ['new', 'confirmed', 'shipped', 'delivered', 'settled', 'returned', 'cancelled'];
+var COURIERS = { steadfast: 'Steadfast', pathao: 'Pathao', redx: 'RedX', other: 'Other courier' };
+var COURIER_EXPENSE = 'Courier charge', DELIVERY_PRODUCT = 'Delivery charge';
+function orderRows_() {
+  var sh = privateSheet_(ORDER_SHEET), last = sh.getLastRow(), rows = [];
+  if (last) sh.getRange(1, 1, last, 3).getValues().forEach(function (r, i) { if (r[0]) rows.push({ pos: i + 1, id: String(r[0]), cells: r }); });
+  return { sh: sh, rows: rows };
+}
+function orderParse_(r) { try { var o = JSON.parse(r.cells[2]); o.id = r.id; return o; } catch (e) { return null; } }
+function orderFind_(id) {
+  var all = orderRows_(), row = all.rows.filter(function (r) { return r.id === String(id || ''); })[0];
+  if (!row) fail_('Order not found');
+  var o = orderParse_(row); if (!o) fail_('This order is damaged and cannot be opened');
+  return { all: all, row: row, o: o };
+}
+function orderWrite_(all, row, o) {
+  var copy = Object.assign({}, o); delete copy.id; delete copy.sale_status; delete copy.due_now;
+  var json = JSON.stringify(copy);
+  if (row) all.sh.getRange(row.pos, 1, 1, 3).setValues([[row.id, Date.now(), json]]);
+  else {
+    if (all.rows.length >= ORDER_MAX) fail_('There are ' + ORDER_MAX + ' online orders. Contact support to archive old ones');
+    var pos = all.sh.getLastRow() + 1; ensureRows_(all.sh, pos);
+    all.sh.getRange(pos, 1, 1, 3).setValues([[o.id, Date.now(), json]]);
+  }
+  flush_();
+}
+function orderLog_(o, user, status, note) {
+  o.status = status; o.updated_at = now_(); o.updated_by = user.name;
+  o.history = (o.history || []).concat([{ at: o.updated_at, by: user.name, status: status, note: String(note || '').slice(0, 300) }]).slice(-80);
+}
+function orderPhone_(v) {
+  var d = String(v || '').replace(/\D/g, '');
+  if (/^8801\d{9}$/.test(d)) d = d.slice(2);
+  if (!/^01\d{9}$/.test(d)) fail_('Write the customer\'s mobile number (01XXXXXXXXX)');
+  return d;
+}
+/** Checks an order form and works out the totals. */
+function orderClean_(p) {
+  var c = p.customer || {}, name = String(c.name || '').trim().slice(0, 120), address = String(c.address || '').trim().slice(0, 400);
+  if (!name) fail_('Write the customer name');
+  var phone = orderPhone_(c.phone);
+  if (address.length < 5) fail_('Write the delivery address');
+  var source = ORDER_SOURCES.indexOf(p.source) >= 0 ? p.source : 'Other';
+  var pmap = indexBy_(all_('Products')), items = [], seen = {}, subtotal = 0;
+  (p.items || []).forEach(function (it) {
+    var pr = pmap[it.product_id]; if (!pr || !pr.active) fail_('A product in the order is not available');
+    if (seen[pr.id]) fail_(pr.name + ' is in the order twice'); seen[pr.id] = 1;
+    var qty = inventoryQuantity_(it.qty, pr.name); if (!(qty > 0)) fail_('Write the quantity of ' + pr.name);
+    if (!isDecimalUnit_(pr.unit) && qty % 1 !== 0) fail_('Quantity of ' + pr.name + ' must be a whole number');
+    var price = Number(it.price); if (!isFinite(price) || price < 0) fail_('Write the price of ' + pr.name);
+    price = round_(price); subtotal += qty * price;
+    items.push({ product_id: pr.id, name: pr.name, unit: pr.unit || '', qty: qty, price: price, serial: isSerialProduct_(pr) });
+  });
+  if (!items.length) fail_('Add at least one product');
+  var money = function (v, label) { var n = v === '' || v === undefined || v === null ? 0 : Number(v); if (!isFinite(n) || n < 0) fail_(label + ' must be 0 or more'); return round_(n); };
+  var delivery = money(p.delivery_charge, 'Delivery charge'), discount = money(p.discount, 'Discount'), advance = money(p.advance, 'Advance');
+  subtotal = round_(subtotal);
+  var total = round_(subtotal + delivery - discount);
+  if (total < 0) fail_('The discount is more than the order');
+  if (advance > total + 0.005) fail_('The advance is more than the order total (' + total + ')');
+  var accId = '';
+  if (advance > 0) {
+    accId = String(p.advance_account_id || '');
+    if (!all_('Accounts').some(function (a) { return a.id === accId && a.active; })) fail_('Select the account the advance was paid into');
+  }
+  var courier = COURIERS[p.courier] ? p.courier : '';
+  return { source: source, customer: { name: name, phone: phone, address: address, area: String(c.area || '').trim().slice(0, 120) }, items: items,
+    subtotal: subtotal, delivery_charge: delivery, discount: discount, total: total, advance: advance, advance_account_id: accId, cod: round_(total - advance),
+    note: String(p.note || '').trim().slice(0, 500), courier_choice: courier, weight: Math.min(Math.max(Number(p.weight) || 0.5, 0.1), 50) };
+}
+function orderSave_(p, user) {
+  var clean = orderClean_(p), o, found = null;
+  if (p.id) {
+    found = orderFind_(p.id); o = found.o;
+    if (o.status !== 'new') fail_('Only a new order can be changed. This one is ' + o.status);
+    Object.assign(o, clean); o.updated_at = now_(); o.updated_by = user.name;
+  } else {
+    o = Object.assign({ id: uid_(), no: nextNo_('seq_online_order', 'OO-'), date: today_(), created_at: now_(), created_by: user.name, history: [] }, clean);
+    orderLog_(o, user, 'new', 'Order taken from ' + clean.source);
+    found = { all: orderRows_(), row: null };
+  }
+  orderWrite_(found.all, found.row, o);
+  audit_(user, p.id ? 'order_update' : 'order_create', { no: o.no, customer: o.customer.name, total: o.total });
+  return orderView_(o);
+}
+/** A service product for the delivery charge on the invoice (created the first time it is needed). */
+function deliveryProduct_(user) {
+  var pr = all_('Products').filter(function (x) { return nameKey_(x.name) === nameKey_(DELIVERY_PRODUCT); })[0];
+  if (pr) { if (!isService_(pr)) fail_('A stock product is named "' + DELIVERY_PRODUCT + '". Rename it so the delivery charge can be added'); if (!pr.active) update_('Products', pr.id, { active: true }); return pr; }
+  return productSave_({ name: DELIVERY_PRODUCT, service: true, sale_price: 0 }, user);
+}
+function orderConfirm_(p, user) {
+  var f = orderFind_(p.id), o = f.o;
+  if (o.status !== 'new') fail_('This order is already ' + o.status);
+  var customer = customerByPhone_(o.customer.phone);
+  if (!customer) customer = customerSave_({ name: o.customer.name, phones: o.customer.phone, addresses: o.customer.address, note: 'Online order ' + o.no }, user);
+  var serials = p.serials || {}, items = o.items.map(function (it) {
+    var line = { product_id: it.product_id, qty: it.qty, price: it.price };
+    if (it.serial) line.serials = serials[it.product_id] || '';
+    return line;
+  });
+  if (o.delivery_charge > 0) items.push({ product_id: deliveryProduct_(user).id, qty: 1, price: o.delivery_charge });
+  var detail = saleCreate_({ customer_id: customer.id, items: items, discount: o.discount, payments: o.advance > 0 ? [{ account_id: o.advance_account_id, amount: o.advance }] : [],
+    note: 'Online order ' + o.no + ' (' + o.source + ')' + (o.note ? ' — ' + o.note : ''), send_sms: p.send_sms === true }, user);
+  o.customer_id = customer.id; o.sale_id = detail.sale.id; o.invoice_no = detail.sale.invoice_no; o.confirmed_at = now_();
+  orderLog_(o, user, 'confirmed', 'Invoice ' + o.invoice_no);
+  orderWrite_(f.all, f.row, o);
+  return orderView_(o);
+}
+function orderShip_(p, user) {
+  var f = orderFind_(p.id), o = f.o;
+  if (o.status !== 'confirmed') fail_(o.status === 'new' ? 'Confirm the order first (it makes the invoice)' : 'This order is already ' + o.status);
+  var courier = COURIERS[p.courier] ? p.courier : ''; if (!courier) fail_('Choose the courier');
+  var tracking = String(p.tracking || '').trim().slice(0, 80); if (!tracking) fail_('Write the tracking or consignment number');
+  o.courier = { name: courier, label: courier === 'other' ? String(p.courier_name || '').trim().slice(0, 60) || COURIERS.other : COURIERS[courier], consignment_id: tracking, tracking: tracking,
+    booked_at: now_(), booked_by: user.name, by_api: false, status: '', charge: Math.max(round_(num_(p.charge)), 0) };
+  orderLog_(o, user, 'shipped', o.courier.label + ' ' + tracking);
+  orderWrite_(f.all, f.row, o);
+  return orderView_(o);
+}
+function orderDeliver_(p, user) {
+  var f = orderFind_(p.id), o = f.o;
+  if (o.status !== 'shipped') fail_('Only a shipped order can be marked delivered');
+  orderLog_(o, user, 'delivered', p.note || 'Delivered to the customer');
+  orderWrite_(f.all, f.row, o);
+  return orderView_(o);
+}
+/** The courier paid: the customer's cash-on-delivery is collected into the account, the courier's charge is an expense. */
+function orderSettle_(p, user) {
+  var f = orderFind_(p.id), o = f.o;
+  if (o.status !== 'shipped' && o.status !== 'delivered') fail_('Only a shipped or delivered order can be settled');
+  var acc = all_('Accounts').filter(function (a) { return a.id === p.account_id && a.active; })[0]; if (!acc) fail_('Select the account the courier paid into');
+  var charge = Number(p.charge); if (!isFinite(charge) || charge < 0) fail_('Write the courier charge (0 or more)');
+  charge = round_(charge);
+  var collected = p.collected === undefined || p.collected === '' ? o.cod : round_(Number(p.collected));
+  if (!isFinite(collected) || collected < 0 || collected > o.cod + 0.005) fail_('The collected amount must be between 0 and ' + o.cod);
+  var date = bookDate_(p.date, 'courier payment');
+  if (collected > 0) customerPayment_({ customer_id: o.customer_id, amount: collected, account_id: acc.id, date: date, note: 'COD ' + o.no + ' via ' + (o.courier ? o.courier.label : 'courier') }, user);
+  if (charge > 0) {
+    var cats = []; try { cats = JSON.parse(getSetting_('expense_categories', '[]')); } catch (e) {}
+    if (!Array.isArray(cats)) cats = [];
+    if (!cats.some(function (c) { return nameKey_(c) === nameKey_(COURIER_EXPENSE); })) setSetting_('expense_categories', JSON.stringify(cats.concat([COURIER_EXPENSE])));
+    expenseCreate_({ date: date, category: COURIER_EXPENSE, amount: charge, account_id: acc.id, note: o.no + ' — ' + (o.courier ? o.courier.label + ' ' + o.courier.tracking : 'courier') }, user);
+  }
+  o.settlement = { date: date, collected: collected, charge: charge, received: round_(collected - charge), account_id: acc.id, account_name: acc.name, at: now_(), by: user.name };
+  orderLog_(o, user, 'settled', 'Courier paid ' + round_(collected - charge) + ' (COD ' + collected + ' − charge ' + charge + ') into ' + acc.name);
+  orderWrite_(f.all, f.row, o);
+  return orderView_(o);
+}
+/** The parcel came back: everything on the invoice returns to stock; the due is cleared (an advance stays as the customer's credit). */
+function orderReturn_(p, user) {
+  var f = orderFind_(p.id), o = f.o;
+  if (['confirmed', 'shipped', 'delivered'].indexOf(o.status) < 0) fail_('Only a confirmed, shipped or delivered order can come back');
+  var d = saleDetail_({ id: o.sale_id }, null);
+  if (d.sale.status !== 'active') fail_('The invoice of this order is cancelled');
+  var items = d.items.filter(function (i) { return i.qty - (i.returned_qty || 0) > 1e-9; }).map(function (i) {
+    var left = round_(i.qty - (i.returned_qty || 0), 4), line = { sale_item_id: i.id, qty: left };
+    if (i.serials) line.serials = parseList_(i.serials).slice(0, left).join(',');
+    return line;
+  });
+  var ret = null;
+  if (items.length) ret = sreturnCreate_({ sale_id: o.sale_id, items: items, refund: { mode: 'adjust' }, note: 'Online order ' + o.no + ' returned' + (p.note ? ' — ' + p.note : '') }, user);
+  var charge = Math.max(round_(num_(p.charge)), 0);
+  if (charge > 0) {
+    var acc = all_('Accounts').filter(function (a) { return a.id === p.account_id && a.active; })[0]; if (!acc) fail_('Select the account the return charge was paid from');
+    var cats = []; try { cats = JSON.parse(getSetting_('expense_categories', '[]')); } catch (e) {}
+    if (!Array.isArray(cats)) cats = [];
+    if (!cats.some(function (c) { return nameKey_(c) === nameKey_(COURIER_EXPENSE); })) setSetting_('expense_categories', JSON.stringify(cats.concat([COURIER_EXPENSE])));
+    expenseCreate_({ category: COURIER_EXPENSE, amount: charge, account_id: acc.id, note: o.no + ' returned — ' + (o.courier ? o.courier.label : 'courier') }, user);
+  }
+  o.return_id = ret ? (ret.id || (ret.return && ret.return.id) || '') : ''; o.return_charge = charge;
+  orderLog_(o, user, 'returned', (p.note || 'Parcel came back') + (charge ? ' · return charge ' + charge : ''));
+  orderWrite_(f.all, f.row, o);
+  return orderView_(o);
+}
+function orderCancel_(p, user) {
+  var f = orderFind_(p.id), o = f.o;
+  if (o.status !== 'new') fail_('A confirmed order has an invoice: cancel the invoice from Sales & returns, or use "Parcel came back"');
+  orderLog_(o, user, 'cancelled', p.reason || 'Cancelled');
+  orderWrite_(f.all, f.row, o);
+  return orderView_(o);
+}
+function orderView_(o, sales) {
+  var v = Object.assign({}, o);
+  if (o.sale_id) {
+    var s = sales ? sales[o.sale_id] : all_('Sales').filter(function (x) { return x.id === o.sale_id; })[0];
+    v.sale_status = s ? s.status : 'missing';
+  }
+  v.courier_label = o.courier ? o.courier.label : (o.courier_choice ? COURIERS[o.courier_choice] : '');
+  return v;
+}
+function ordersList_(p, user) {
+  var sales = indexBy_(all_('Sales'));
+  var list = orderRows_().rows.map(orderParse_).filter(Boolean).map(function (o) { return orderView_(o, sales); })
+    .sort(function (a, b) { return String(b.created_at).localeCompare(String(a.created_at)); });
+  var counts = {}; ORDER_STATUSES.forEach(function (s) { counts[s] = 0; });
+  var withCourier = 0, toSettle = 0;
+  list.forEach(function (o) {
+    counts[o.status] = (counts[o.status] || 0) + 1;
+    if (o.status === 'shipped' || o.status === 'delivered') { withCourier += o.cod; if (o.status === 'delivered') toSettle += o.cod; }
+  });
+  var from = String(p.from || '').slice(0, 10), to = String(p.to || '').slice(0, 10);
+  if (from || to) list = list.filter(function (o) { return (!from || o.date >= from) && (!to || o.date <= to); });
+  return { orders: list.slice(0, 2000), counts: counts, cod_with_courier: round_(withCourier), cod_delivered: round_(toSettle),
+    sources: ORDER_SOURCES, couriers: Object.keys(COURIERS).map(function (k) { return { id: k, name: COURIERS[k], api: k !== 'other' && courierReady_(k) }; }) };
+}
+
+/* ---- Courier APIs. Requests are described here and sent by the server: Apps Script sends them itself; the
+ * Supabase gateway asks for the description (courier.prepare), sends it, and hands the reply back
+ * (courier.finish). The courier keys never reach the browser of a user without the settings permission. */
+function courierReady_(k) {
+  if (k === 'steadfast') return !!(getSetting_('courier_steadfast_key') && getSetting_('courier_steadfast_secret'));
+  if (k === 'pathao') return !!(getSetting_('courier_pathao_client_id') && getSetting_('courier_pathao_client_secret') && getSetting_('courier_pathao_username') && getSetting_('courier_pathao_password') && getSetting_('courier_pathao_store_id'));
+  if (k === 'redx') return !!getSetting_('courier_redx_token');
+  return false;
+}
+function courierBase_(k) {
+  if (k === 'steadfast') return 'https://portal.packzy.com/api/v1';
+  if (k === 'pathao') return getSetting_('courier_pathao_sandbox') === 'true' ? 'https://courier-api-sandbox.pathao.com' : 'https://api-hermes.pathao.com';
+  return getSetting_('courier_redx_sandbox') === 'true' ? 'https://sandbox.redx.com.bd/v1.0.0-beta' : 'https://openapi.redx.com.bd/v1.0.0-beta';
+}
+function courierHeaders_(k) {
+  if (k === 'steadfast') return { 'Api-Key': getSetting_('courier_steadfast_key'), 'Secret-Key': getSetting_('courier_steadfast_secret'), 'Content-Type': 'application/json', Accept: 'application/json' };
+  if (k === 'pathao') return { Authorization: 'Bearer {{token}}', 'Content-Type': 'application/json', Accept: 'application/json' };
+  return { 'API-ACCESS-TOKEN': 'Bearer ' + getSetting_('courier_redx_token'), 'Content-Type': 'application/json', Accept: 'application/json' };
+}
+function courierReq_(k, method, path, body) {
+  var spec = { courier: k, method: method, url: courierBase_(k) + path, headers: courierHeaders_(k), payload: body ? JSON.stringify(body) : '' };
+  if (k === 'pathao') spec.pre = { method: 'POST', url: courierBase_(k) + '/aladdin/api/v1/issue-token', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, take: 'access_token',
+    payload: JSON.stringify({ client_id: getSetting_('courier_pathao_client_id'), client_secret: getSetting_('courier_pathao_client_secret'), grant_type: 'password', username: getSetting_('courier_pathao_username'), password: getSetting_('courier_pathao_password') }) };
+  return spec;
+}
+var COURIER_OPS = ['book', 'track', 'test', 'cities', 'zones', 'areas'];
+/** What to send. Ops: book (an order), track (an order), test (the keys), cities / zones / areas (address lists). */
+function courierPrepare_(p, user) {
+  var op = COURIER_OPS.indexOf(p.op) >= 0 ? p.op : fail_('Unknown courier request');
+  var k = p.courier;
+  if (op === 'test' && !can_(user, 'settings')) fail_('Permission denied: Settings');
+  if (op !== 'test' && !can_(user, 'pos')) fail_('Permission denied: ' + (PERMS.pos || 'pos'));
+  var o = null;
+  if (op === 'book' || op === 'track') {
+    o = orderFind_(p.id).o;
+    if (op === 'track') { if (!o.courier || !o.courier.by_api) fail_('This order was not booked through a courier API'); k = o.courier.name; }
+    if (op === 'book') {
+      if (o.status !== 'confirmed') fail_(o.status === 'new' ? 'Confirm the order first (it makes the invoice)' : 'This order is already ' + o.status);
+      if (o.courier) fail_('This order is already booked with ' + o.courier.label);
+    }
+  }
+  if (!COURIERS[k] || k === 'other') fail_('Choose Steadfast, Pathao or RedX');
+  if (!courierReady_(k)) fail_(COURIERS[k] + ' is not set up. An admin can add its API keys in Settings → Courier');
+  var qty = o ? o.items.reduce(function (s, it) { return s + Math.ceil(it.qty); }, 0) : 0;
+  var desc = o ? o.items.map(function (it) { return it.name + ' x' + it.qty; }).join(', ').slice(0, 200) : '';
+  if (k === 'steadfast') {
+    if (op === 'book') return courierReq_(k, 'POST', '/create_order', { invoice: o.no, recipient_name: o.customer.name, recipient_phone: o.customer.phone, recipient_address: o.customer.address.slice(0, 250), cod_amount: Math.round(o.cod), note: (o.note || desc).slice(0, 200) });
+    if (op === 'track') return courierReq_(k, 'GET', '/status_by_cid/' + encodeURIComponent(o.courier.consignment_id));
+    if (op === 'test') return courierReq_(k, 'GET', '/get_balance');
+    fail_('Steadfast needs no area list — the address is enough');
+  }
+  if (k === 'pathao') {
+    if (op === 'book') {
+      var city = Number(p.city_id), zone = Number(p.zone_id), area = Number(p.area_id);
+      if (!(city > 0) || !(zone > 0)) fail_('Choose the city and zone for Pathao');
+      var body = { store_id: Number(getSetting_('courier_pathao_store_id')), merchant_order_id: o.no, recipient_name: o.customer.name, recipient_phone: o.customer.phone, recipient_address: o.customer.address,
+        recipient_city: city, recipient_zone: zone, delivery_type: 48, item_type: 2, special_instruction: o.note || '', item_quantity: Math.max(qty, 1), item_weight: o.weight || 0.5, amount_to_collect: Math.round(o.cod), item_description: desc };
+      if (area > 0) body.recipient_area = area;
+      return courierReq_(k, 'POST', '/aladdin/api/v1/orders', body);
+    }
+    if (op === 'track') return courierReq_(k, 'GET', '/aladdin/api/v1/orders/' + encodeURIComponent(o.courier.consignment_id) + '/info');
+    if (op === 'test' || op === 'cities') return courierReq_(k, 'GET', '/aladdin/api/v1/city-list');
+    if (op === 'zones') return courierReq_(k, 'GET', '/aladdin/api/v1/cities/' + Number(p.city_id) + '/zone-list');
+    return courierReq_(k, 'GET', '/aladdin/api/v1/zones/' + Number(p.zone_id) + '/area-list');
+  }
+  if (op === 'book') {
+    var areaId = Number(p.area_id); if (!(areaId > 0)) fail_('Choose the delivery area for RedX');
+    return courierReq_(k, 'POST', '/parcel', { customer_name: o.customer.name, customer_phone: o.customer.phone, delivery_area: String(p.area_name || '').slice(0, 100), delivery_area_id: areaId,
+      customer_address: o.customer.address, merchant_invoice_id: o.no, cash_collection_amount: String(Math.round(o.cod)), parcel_weight: Math.round((o.weight || 0.5) * 1000), instruction: o.note || '', value: Math.round(o.total) });
+  }
+  if (op === 'track') return courierReq_(k, 'GET', '/parcel/info/' + encodeURIComponent(o.courier.consignment_id));
+  if (op === 'test' || op === 'areas') return courierReq_(k, 'GET', '/areas');
+  fail_('RedX uses delivery areas — choose the area');
+}
+function courierJson_(res) {
+  var data = null; try { data = JSON.parse(res.text || ''); } catch (e) {}
+  var msg = data && (data.message || data.error || (data.errors && JSON.stringify(data.errors)));
+  if (!(res.code >= 200 && res.code < 300) || !data) fail_('The courier answered: ' + (msg || ('HTTP ' + res.code)).toString().slice(0, 300));
+  return data;
+}
+/** What the courier answered: stored on the order (book, track) or handed back (lists, test). */
+function courierFinish_(p, user, res) {
+  if (!res || typeof res.code !== 'number') fail_('The courier could not be reached. Try again');
+  var op = p.op, data = courierJson_(res);
+  if (op === 'test') return { ok: true, courier: p.courier, balance: data.current_balance !== undefined ? data.current_balance : null };
+  if (op === 'cities') return ((data.data && data.data.data) || []).map(function (c) { return { id: c.city_id, name: c.city_name }; });
+  if (op === 'zones') return ((data.data && data.data.data) || []).map(function (c) { return { id: c.zone_id, name: c.zone_name }; });
+  if (op === 'areas') {
+    if (p.courier === 'redx') return (data.areas || []).map(function (a) { return { id: a.id, name: a.name + (a.post_code ? ' (' + a.post_code + ')' : ''), raw: a.name }; });
+    return ((data.data && data.data.data) || []).map(function (c) { return { id: c.area_id, name: c.area_name }; });
+  }
+  var f = orderFind_(p.id), o = f.o;
+  if (op === 'book') {
+    if (o.status !== 'confirmed' || o.courier) fail_('This order changed while booking — open it again');
+    var k = p.courier, cid = '', track = '', fee = 0, st = '';
+    if (k === 'steadfast') {
+      if (data.status !== 200 && data.status !== '200' || !data.consignment) fail_('Steadfast did not book the parcel: ' + String(data.message || JSON.stringify(data.errors || '')).slice(0, 300));
+      cid = String(data.consignment.consignment_id); track = String(data.consignment.tracking_code || cid); st = String(data.consignment.status || '');
+    } else if (k === 'pathao') {
+      var d = data.data || {}; if (!d.consignment_id) fail_('Pathao did not book the parcel: ' + String(data.message || '').slice(0, 300));
+      cid = String(d.consignment_id); track = cid; fee = num_(d.delivery_fee); st = String(d.order_status || '');
+    } else {
+      if (!data.tracking_id) fail_('RedX did not book the parcel: ' + String(data.message || '').slice(0, 300));
+      cid = String(data.tracking_id); track = cid;
+    }
+    o.courier = { name: k, label: COURIERS[k], consignment_id: cid, tracking: track, booked_at: now_(), booked_by: user.name, by_api: true, status: st, checked_at: now_(), charge: round_(fee),
+      city_id: p.city_id || '', zone_id: p.zone_id || '', area_id: p.area_id || '', area_name: p.area_name || '' };
+    orderLog_(o, user, 'shipped', COURIERS[k] + ' booked · ' + track);
+  } else {
+    var status = '';
+    if (o.courier.name === 'steadfast') status = String(data.delivery_status || '');
+    else if (o.courier.name === 'pathao') status = String((data.data && (data.data.order_status || data.data.order_status_slug)) || '');
+    else status = String((data.parcel && data.parcel.status) || '');
+    o.courier.status = status; o.courier.checked_at = now_();
+    var s = status.toLowerCase();
+    if (o.status === 'shipped' && /deliver/.test(s) && !/pending|partial|return/.test(s)) orderLog_(o, user, 'delivered', o.courier.label + ': ' + status);
+    else { o.updated_at = now_(); }
+  }
+  orderWrite_(f.all, f.row, o);
+  return orderView_(o);
+}
+/** Apps Script: send the request here. (The Supabase gateway does this step itself — see handler.mjs.) */
+function courierSend_(spec) {
+  var go = function (r, token) {
+    var h = {}; Object.keys(r.headers || {}).forEach(function (k) { h[k] = String(r.headers[k]).replace('{{token}}', token || ''); });
+    var opt = { method: r.method.toLowerCase(), headers: h, muteHttpExceptions: true };
+    if (r.payload) { opt.payload = r.payload; opt.contentType = 'application/json'; }
+    var res = UrlFetchApp.fetch(r.url, opt);
+    return { code: res.getResponseCode(), text: res.getContentText() };
+  };
+  var token = '';
+  if (spec.pre) {
+    var a = go(spec.pre, ''), data = null; try { data = JSON.parse(a.text); } catch (e) {}
+    if (a.code < 200 || a.code >= 300 || !data || !data[spec.pre.take]) return a;
+    token = data[spec.pre.take];
+  }
+  return go(spec, token);
+}
+function courierCall_(p, user) { return courierFinish_(p, user, courierSend_(courierPrepare_(p, user))); }
+
 /* ---- Owner's money: deposits (capital in) and withdrawals (drawings). They move an account balance
  * but are never sales, expenses or profit. Cash-count corrections from Day close are not the owner's money. */
 function isCashCount_(t) { return /^(Deposit|Withdrawal) — cash count (extra|shortage) on \d{4}-\d{2}-\d{2} — /.test(String(t.note || '')); }
@@ -2020,6 +2374,7 @@ function databaseInfo_(p, user) {
   if (!isOwner_(user)) fail_('Only the Administrator account can see this');
   var tables = Object.keys(SCHEMA).map(function (name) { return { name: name, rows: name === 'Settings' ? tableRows_(name).length : all_(name).length }; });
   tables.push({ name: 'SavedQuotes', rows: savedQuoteRows_().rows.length });
+  tables.push({ name: 'OnlineOrders', rows: orderRows_().rows.length });
   return {
     tables: tables, total: sum_(tables, function (t) { return t.rows; }),
     last_backup: getSetting_('last_backup_at', ''), last_restore: getSetting_('last_restore_at', ''),
@@ -2042,6 +2397,8 @@ function databaseExport_(p, user) {
   // so an older Karvio still restores this file (it ignores the extra field).
   var quotes = backupQuoteRows_();
   out.saved_quotes = quotes; out.quotes_checksum = quotesDigest_(quotes); counts.SavedQuotes = quotes.length;
+  var orders = backupJsonRows_(orderRows_());
+  out.online_orders = orders; out.orders_checksum = hash_('karvio-orders-v1', JSON.stringify(orders)); counts.OnlineOrders = orders.length;
   setSetting_('last_backup_at', created); // straight to the sheet: this route is not journaled
   audit_(user, 'database_backup', { rows: sum_(Object.keys(counts), function (k) { return counts[k]; }) });
   flush_();
@@ -2049,8 +2406,27 @@ function databaseExport_(p, user) {
 }
 function quotesDigest_(rows) { return hash_('karvio-quotes-v1', JSON.stringify(rows)); }
 /** Saved quotations as [id, last change (ms), quotation JSON] rows, oldest sheet row first. */
-function backupQuoteRows_() {
-  return savedQuoteRows_().rows.map(function (r) { return [r.id, num_(r.cells[1]), String(r.cells[2] === null || r.cells[2] === undefined ? '' : r.cells[2])]; });
+function backupQuoteRows_() { return backupJsonRows_(savedQuoteRows_()); }
+function backupJsonRows_(all) {
+  return all.rows.map(function (r) { return [r.id, num_(r.cells[1]), String(r.cells[2] === null || r.cells[2] === undefined ? '' : r.cells[2])]; });
+}
+/** The [id, ms, JSON] rows of a backup section, checked; null when the backup does not have the section. */
+function checkBackupJsonRows_(rows, checksum, salt, what) {
+  if (rows === undefined) return null;
+  if (!Array.isArray(rows) || hash_(salt, JSON.stringify(rows)) !== checksum) fail_('The ' + what + ' in the backup are damaged or were edited — nothing was restored');
+  var seen = {};
+  rows.forEach(function (r) {
+    if (!Array.isArray(r) || r.length !== 3 || typeof r[0] !== 'string' || !r[0] || typeof r[1] !== 'number' || typeof r[2] !== 'string') fail_('One of the ' + what + ' in the backup is damaged');
+    try { JSON.parse(r[2]); } catch (e) { fail_('One of the ' + what + ' in the backup is damaged'); }
+    if (seen[r[0]]) fail_('Duplicate in the ' + what + ' of the backup: ' + r[0]);
+    seen[r[0]] = 1;
+  });
+  return rows;
+}
+function writeJsonRows_(sheet, rows) {
+  var sh = privateSheet_(sheet), last = sh.getLastRow();
+  if (last) sh.getRange(1, 1, last, 3).setValues(blankRows_(last, 3));
+  if (rows.length) sh.getRange(1, 1, rows.length, 3).setValues(rows.map(function (r) { return [r[0], r[1], r[2]]; }));
 }
 /** The saved quotations of a backup, checked; null when the backup was made before quotations were backed up. */
 function checkBackupQuotes_(b) {
@@ -2109,7 +2485,7 @@ function databaseRestore_(p, user) {
   if (!pwCheck_(user, p.password)) fail_('Incorrect password — nothing was restored');
   if (String(p.confirm || '').trim() !== RESTORE_WORD) fail_('Type RESTORE to confirm — nothing was restored');
   var b; try { b = JSON.parse(String(p.backup_text || '')); } catch (e) { fail_('This is not a Karvio database backup file'); }
-  var plan = checkBackup_(b), quotes = checkBackupQuotes_(b);
+  var plan = checkBackup_(b), quotes = checkBackupQuotes_(b), orders = checkBackupJsonRows_(b.online_orders, b.orders_checksum, 'karvio-orders-v1', 'online orders');
   var ss = ss_(), stamp = now_().replace('T', ' ');
   var safety = driveCopy_(ss, 'Karvio backup before restore ' + stamp);
   return withMaintenance_(function () {
@@ -2123,6 +2499,7 @@ function databaseRestore_(p, user) {
     }
   });
   if (quotes) writeBackupQuotes_(quotes); // a backup made before quotations were backed up keeps today's list
+  if (orders) writeJsonRows_(ORDER_SHEET, orders); // the same for online orders
   flush_();
   _mem = { __ss: ss };
   setupDatabase(); // only fills what is missing (settings added after this backup was made)
@@ -2135,6 +2512,7 @@ function databaseRestore_(p, user) {
   var stillSignedIn = !!me && me.active && me.salt === user.salt && me.password_hash === user.password_hash && isOwner_(me);
   var counts = {}; Object.keys(plan).forEach(function (k) { counts[k] = plan[k].length; });
   if (quotes) counts.SavedQuotes = quotes.length;
+  if (orders) counts.OnlineOrders = orders.length;
   return { safety: safety, backup_created_at: b.created_at, shop_name: b.shop_name, counts: counts, signed_out: !stillSignedIn, restored_at: restoredAt };
   });
 }
@@ -2207,7 +2585,7 @@ function databaseReset_(p, user) {
   });
 }
 
-var SECRET_KEYS = ['sms_api_key'];
+var SECRET_KEYS = ['sms_api_key', 'courier_steadfast_key', 'courier_steadfast_secret', 'courier_pathao_client_id', 'courier_pathao_client_secret', 'courier_pathao_username', 'courier_pathao_password', 'courier_redx_token'];
 function settingsGet_(p, user) {
   var m = Object.assign({}, settingsMap_());
   Object.keys(m).forEach(function (k) { if (k.indexOf('seq_') === 0) delete m[k]; });
@@ -2241,7 +2619,8 @@ function settingsSave_(p, user) {
   var allowed = ['shop_name', 'shop_phone', 'shop_tel', 'shop_email', 'shop_web', 'shop_social', 'shop_address', 'shop_footer', 'currency', 'invoice_prefix', 'receipt_width', 'low_stock_default', 'expense_categories',
     'sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_repair_template', 'sms_technician_template', 'sms_quote_template', 'sms_due_template', 'sms_headers', 'sms_service_tech_template', 'sms_service_done_template', 'sms_service_done_numbers',
     'dashboard_hidden', 'invoice_template', 'invoice_paper', 'invoice_custom_width', 'invoice_custom_height', 'invoice_note',
-    'sms_invoice_link', 'invoice_link_base', 'books_locked_until', 'shop_logo', 'invoice_qr', 'daily_summary_enabled', 'daily_summary_phones', 'daily_summary_hour', 'day_close_lock', 'whatsapp_template', 'shift_mode', 'shift_required'];
+    'sms_invoice_link', 'invoice_link_base', 'books_locked_until', 'shop_logo', 'invoice_qr', 'daily_summary_enabled', 'daily_summary_phones', 'daily_summary_hour', 'day_close_lock', 'whatsapp_template', 'shift_mode', 'shift_required',
+    'courier_steadfast_key', 'courier_steadfast_secret', 'courier_pathao_client_id', 'courier_pathao_client_secret', 'courier_pathao_username', 'courier_pathao_password', 'courier_pathao_store_id', 'courier_pathao_sandbox', 'courier_redx_token', 'courier_redx_sandbox'];
   var vals = Object.assign({}, p.values || {});
   if (vals.shop_logo !== undefined) {
     var logo = String(vals.shop_logo || '');
@@ -2254,6 +2633,11 @@ function settingsSave_(p, user) {
   if (vals.day_close_lock !== undefined) vals.day_close_lock = String(vals.day_close_lock) === 'false' ? 'false' : 'true';
   if (vals.shift_mode !== undefined) vals.shift_mode = vals.shift_mode === 'shared' ? 'shared' : 'cashier';
   if (vals.shift_required !== undefined) vals.shift_required = String(vals.shift_required) === 'true' ? 'true' : 'false';
+  ['courier_pathao_sandbox', 'courier_redx_sandbox'].forEach(function (k) { if (vals[k] !== undefined) vals[k] = String(vals[k]) === 'true' ? 'true' : 'false'; });
+  ['courier_steadfast_key', 'courier_steadfast_secret', 'courier_pathao_client_id', 'courier_pathao_client_secret', 'courier_pathao_username', 'courier_pathao_password', 'courier_pathao_store_id', 'courier_redx_token'].forEach(function (k) {
+    if (vals[k] !== undefined) { vals[k] = String(vals[k] || '').trim(); if (vals[k].length > 2000) fail_('A courier key is too long'); }
+  });
+  if (vals.courier_pathao_store_id && !/^\d{1,12}$/.test(vals.courier_pathao_store_id)) fail_('The Pathao store ID is a number');
   if (vals.whatsapp_template !== undefined) { vals.whatsapp_template = String(vals.whatsapp_template || '').trim(); if (vals.whatsapp_template.length > 700) fail_('The WhatsApp message is too long (700 letters at most)'); }
   if (vals.daily_summary_enabled !== undefined) vals.daily_summary_enabled = String(vals.daily_summary_enabled) === 'true' ? 'true' : 'false';
   if (vals.daily_summary_phones !== undefined) {
@@ -3539,7 +3923,6 @@ function purchasesList_(p) {
  *  13. SALES
  * ========================================================================== */
 function saleCreate_(p, user) {
-  shiftGate_(user);
   var pmap = indexBy_(all_('Products')), items = p.items || [];
   if (!items.length) fail_('Cart is empty');
   var customer = p.customer_id ? all_('Customers').filter(function (c) { return c.id === p.customer_id; })[0] : null;
@@ -6271,7 +6654,16 @@ var ROUTES = {
   'preturn.create':   r_('purchase', preturnCreate_, true),
   'preturns.list':    r_('purchase', preturnsList_),
 
-  'sale.create':      r_('pos', saleCreate_, true),
+  'sale.create':      r_('pos', function (p, u) { shiftGate_(u); return saleCreate_(p, u); }, true),
+  'orders.list':      r_('pos', ordersList_),
+  'order.save':       r_('pos', orderSave_, true),
+  'order.confirm':    r_('pos', orderConfirm_, true),
+  'order.ship':       r_('pos', orderShip_, true),
+  'order.deliver':    r_('pos', orderDeliver_, true),
+  'order.settle':     r_('pos', function (p, u) { need_(u, 'customers'); return orderSettle_(p, u); }, true),
+  'order.return':     r_('pos', orderReturn_, true),
+  'order.cancel':     r_('pos', orderCancel_, true),
+  'courier.call':     r_(null, courierCall_, true),
   'sale.detail':      r_('pos', saleDetail_),
   'sales.details':    r_('pos', function (p, u) { var ids = Array.isArray(p.ids) ? p.ids : []; if (ids.length > 200) fail_('Export at most 200 invoices per request; use batched export'); if (!ids.length) fail_('Select at least one invoice'); return ids.map(function (id) { return saleDetail_({ id: id }, u); }); }),
   'sales.list':       r_('pos', salesList_),

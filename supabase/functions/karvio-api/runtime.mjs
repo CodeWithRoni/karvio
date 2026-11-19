@@ -11,7 +11,7 @@ function formatDate(date, timezone = 'Asia/Dhaka', format = 'yyyy-MM-dd') {
   const day = `${p.year}-${p.month}-${p.day}`;
   return format === 'yyyy-MM-dd' ? day : `${day}T${p.hour}:${p.minute}:${p.second}`;
 }
-export function createRuntime(snapshot, {deltaOnly=false}={}) {
+export function createRuntime(snapshot, {deltaOnly=false,internal=false}={}) {
   const state = {sheets:{},properties:clone(snapshot.metadata.properties || {})};
   const cache = clone(snapshot.metadata.cache || {});
   const now = Date.now(); for (const k of Object.keys(cache)) if (cache[k].until <= now) delete cache[k];
@@ -128,6 +128,7 @@ export function createRuntime(snapshot, {deltaOnly=false}={}) {
     insertSheet(name){if(Object.hasOwn(state.sheets,name)||['__proto__','constructor','prototype'].includes(name))throw new Error('Invalid table');if(privateRows&&!Object.hasOwn(schema,name)){if(privateNames.has(name))throw new Error('Invalid table');privateCreated.add(name);}state.sheets[name]={rows:[],columns:1};return new Sheet(name);},
     getSheets:()=>{if(loaded)for(const n of Object.keys(schema))if(!loaded.has(n))missing.add(n);for(const n of Object.keys(schema))touched.add(n);return Object.keys(state.sheets).map(n=>new Sheet(n));},deleteSheet:sheet=>{delete state.sheets[sheet.name];},setSpreadsheetTimeZone(){}};
   const security={
+    internalCall:()=>internal===true,
     backupCapabilities:boundedBackup,
     readMetrics:snapshot.readMetrics,
     textBytes:text=>Buffer.byteLength(text,'utf8'),

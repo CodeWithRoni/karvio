@@ -81,9 +81,9 @@ function snapshotCall(plan,body,protocol,state){
 }
 // Heavy read-only screens whose answers are reused until the shop changes (karvio_cached_read).
 export const CACHED_READS=new Set(['dashboard','reports','profit.report']);
-export function createHandler({rpc,dispatch=()=>{},protocol=2,scopedReads=true,narrowReads=true,readCache=true,allowRequest=async()=>true,log=logNotable,retryDelay=attempt=>attempt*(25+Math.random()*50),recheckMs=60000}) {
+export function createHandler({rpc,dispatch=()=>{},protocol=2,scopedReads=true,narrowReads=true,readCache=true,allowRequest=async()=>true,log=logNotable,retryDelay=attempt=>attempt*(25+Math.random()*50),recheckMs=60000,courierFetch=globalThis.fetch}) {
  const scopeState=newScopeState(recheckMs);
- return async request=>{
+ const handle=async(request,internal=false)=>{
   if(request.method==='OPTIONS')return new Response(null,{status:204,headers});
   if(request.method!=='POST')return reply({ok:false,error:'Use POST'},405);
   const started=clock();
@@ -104,7 +104,10 @@ export function createHandler({rpc,dispatch=()=>{},protocol=2,scopedReads=true,n
    let body;try{body=JSON.parse(new TextDecoder().decode(bytes));}catch{return reply({ok:false,error:'Invalid JSON body'},400);}
    if(!body||typeof body.action!=='string'||body.action.length>100)return reply({ok:false,error:'Invalid action'},400);
    m.action=body.action;
-   if(!await allowRequest(body))return finish(reply({ok:false,error:'Too many requests. Try again in a minute.'},429),'limited');
+   if(!internal&&!await allowRequest(body))return finish(reply({ok:false,error:'Too many requests. Try again in a minute.'},429),'limited');
+   // The two halves of a courier request run only inside the gateway step below, never from a browser.
+   if(!internal&&(body.action==='courier.prepare'||body.action==='courier.finish'))return finish(reply({ok:false,error:'Unknown action: '+body.action}),'rejected');
+   if(protocol===2&&body.action==='courier.call'&&!internal){const data=await courierGateway(body,b=>handle(new Request('http://internal/',{method:'POST',body:JSON.stringify(b)}),true).then(r=>r.json()),courierFetch);return finish(reply(data),data.ok?'ok':'rejected');}
    // The daily-summary scheduler (pg_cron) must hand over a one-time code the database minted for this call.
    if(body.action==='summary.tick'){let ok=false;try{ok=await call('karvio_cron_claim',{nonce:String(body.payload?.nonce||'')})===true;}catch{}if(!ok)return finish(reply({ok:false,error:'Not allowed'},403),'rejected');}
    if(protocol===2&&body.action.startsWith('database.transfer.')){const data=await transferRequest(body,call);return finish(reply(data),data.ok?'ok':'rejected');}
@@ -147,7 +150,7 @@ export function createHandler({rpc,dispatch=()=>{},protocol=2,scopedReads=true,n
     if(snapshot.requiresSetup&&!initializing)return finish(reply({ok:false,error:'The owner must initialize this fresh database first.'}),'rejected');
     if(initializing&&!snapshot.requiresSetup)return finish(reply({ok:false,error:'The owner account is already initialized.'}),'rejected');
     const engineStarted=clock();
-    const runtime=createRuntime(snapshot,{deltaOnly:protocol===2});
+    const runtime=createRuntime(snapshot,{deltaOnly:protocol===2,internal});
     const result=initializing?runtime.initialize(body.payload||{}):runtime.execute(body);
     m.engineMs+=clock()-engineStarted;
     globalThis.__karvioTrace?.(hintKey(body.action,body.payload),result.touched,snapshot.loadedTables,result.missing,result.read,result.unread);
@@ -191,4 +194,27 @@ export function createHandler({rpc,dispatch=()=>{},protocol=2,scopedReads=true,n
    return finish(reply({ok:false,error:'The database response could not be confirmed. Retry the same request ID.',retryable:true,uncertain:true},503),'error');
   }
  };
+ return request=>handle(request,false);
+}
+
+/** courier.call: ask the engine what to send (courier.prepare), send it from here, give the engine the answer
+ * (courier.finish). A courier that does not answer in 20 s counts as not reached; nothing is stored then. */
+export async function courierGateway(body,run,fetchImpl){
+ const payload=body.payload||{};
+ const prep=await run({action:'courier.prepare',payload,token:body.token});
+ if(!prep.ok)return prep;
+ const spec=prep.data;
+ const send=async(r,token)=>{
+  const headers=Object.fromEntries(Object.entries(r.headers||{}).map(([k,v])=>[k,String(v).replace('{{token}}',token||'')]));
+  const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),20000);
+  try{const res=await fetchImpl(r.url,{method:r.method,headers,body:r.payload||undefined,signal:ctl.signal});return {code:res.status,text:(await res.text()).slice(0,500000)};}
+  finally{clearTimeout(timer);}
+ };
+ let res;
+ try{
+  let token='';
+  if(spec.pre){const a=await send(spec.pre,'');let d=null;try{d=JSON.parse(a.text);}catch{}if(a.code<200||a.code>=300||!d||!d[spec.pre.take])res=a;else token=d[spec.pre.take];}
+  if(!res)res=await send(spec,token);
+ }catch{return {ok:false,error:'The courier could not be reached. Check the internet connection and try again.'};}
+ return run({action:'courier.finish',payload:{...payload,__response:res},token:body.token,request_id:body.request_id});
 }

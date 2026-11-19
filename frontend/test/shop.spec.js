@@ -354,7 +354,7 @@ test('side menu cards: Home, Sales, Purchase, Stock, Service & Warranty, Party L
   expect((await cards.locator('.nav-group').allInnerTexts()).map((t) => t.trim().toLowerCase())).toEqual(['home', 'sales', 'purchase', 'stock', 'service & warranty', 'party ledger', 'money & reports', 'admin']);
   const links = async (title) => (await page.locator('.nav-card', { has: page.locator('.nav-group', { hasText: new RegExp(`^${title}$`, 'i') }) }).getByRole('link').allInnerTexts()).map((t) => t.split('\n')[0].trim());
   expect(await links('Home')).toEqual(['Dashboard', 'Advanced search']);
-  expect(await links('Sales')).toEqual(['Point of sale', 'Sales & returns', 'Quotation', 'Customers', 'Collection']);
+  expect(await links('Sales')).toEqual(['Point of sale', 'Sales & returns', 'Online orders', 'Quotation', 'Customers', 'Collection']);
   expect(await links('Purchase')).toEqual(['Purchases & returns', 'Suppliers', 'Payment']);
   expect(await links('Stock')).toEqual(['Products & stock', 'Price manager', 'Barcode labels', 'Stock count']);
   expect(await links('Service & Warranty')).toEqual(['Repairs', 'Service', 'Warranty claims']);

@@ -143,3 +143,10 @@ if(security.readMetrics){
  if(readMetrics.productUsage)productUsageIndex_=function(){return readMetrics.productUsage;};
  if(readMetrics.reservations)repairReservations_=function(){return {qty:readMetrics.reservations,serial:{}};};
 }
+
+// Courier APIs: the engine cannot wait for the network, so the Edge gateway runs courier.call as
+// courier.prepare (what to send, with the keys) → send → courier.finish (store the answer). Both halves
+// run only inside that gateway step (security.internalCall); a browser calling them directly is refused.
+ROUTES['courier.call'].fn = function () { fail_('Courier requests go through the server gateway'); };
+ROUTES['courier.prepare'] = { perm: null, write: false, fn: function (p, user) { if (!security.internalCall || !security.internalCall()) fail_('Not allowed'); return courierPrepare_(p, user); } };
+ROUTES['courier.finish'] = { perm: null, write: true, fn: function (p, user) { if (!security.internalCall || !security.internalCall()) fail_('Not allowed'); return courierFinish_(p, user, p.__response); } };

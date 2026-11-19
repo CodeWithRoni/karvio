@@ -21,7 +21,7 @@ export default function Settings() {
   const admin = useStore((s) => s.user?.role === 'admin');
   const owner = useStore((s) => s.user?.owner === true); // the Administrator account only — not every admin
   const [tab, setTab] = useState(can('settings') ? 'shop' : offline ? 'me' : 'api');
-  const tabs = [...(can('settings') ? [['shop', 'Shop'], ['invoice', 'Invoice'], ['dashboard', 'Dashboard'], ...(!offline ? [['sms', 'SMS gateway']] : [])] : []), ...(offline ? admin ? [['local', 'Offline data & backup']] : [] : [['api', 'API connection']]), ...(admin && can('settings') ? [['shifts', 'Shift'], ['books', 'Close books']] : []), ['me', 'My password'], ...(owner ? [['database', 'Database']] : [])];
+  const tabs = [...(can('settings') ? [['shop', 'Shop'], ['invoice', 'Invoice'], ['dashboard', 'Dashboard'], ...(!offline ? [['sms', 'SMS gateway']] : [])] : []), ...(offline ? admin ? [['local', 'Offline data & backup']] : [] : [['api', 'API connection']]), ...(admin && can('settings') ? [['shifts', 'Shift'], ['courier', 'Courier'], ['books', 'Close books']] : []), ['me', 'My password'], ...(owner ? [['database', 'Database']] : [])];
   return (
     <>
       <PageHead title="Settings"><Tabs tabs={tabs} value={tab} onChange={setTab} /></PageHead>
@@ -32,6 +32,7 @@ export default function Settings() {
       {tab === 'api' && <ApiSettings />}
       {tab === 'local' && <OfflineSettings />}
       {tab === 'shifts' && admin && <ShiftSettings />}
+      {tab === 'courier' && admin && <CourierSettings />}
       {tab === 'books' && admin && <BooksSettings />}
       {tab === 'me' && <MyPassword />}
       {tab === 'database' && owner && <DatabaseTab Reset={DatabaseReset} />}
@@ -136,6 +137,43 @@ function LogoPicker({ value, onChange }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/* ---------------- Courier: API keys for Steadfast, Pathao and RedX (online orders) ---------------- */
+const COURIER_FIELDS = {
+  steadfast: [['courier_steadfast_key', 'API key'], ['courier_steadfast_secret', 'Secret key', true]],
+  pathao: [['courier_pathao_client_id', 'Client ID'], ['courier_pathao_client_secret', 'Client secret', true], ['courier_pathao_username', 'Merchant email'], ['courier_pathao_password', 'Merchant password', true], ['courier_pathao_store_id', 'Store ID']],
+  redx: [['courier_redx_token', 'API access token', true]]
+};
+function CourierSettings() {
+  const keys = [...Object.values(COURIER_FIELDS).flat().map((x) => x[0]), 'courier_pathao_sandbox', 'courier_redx_sandbox'];
+  const { f, setF, save, busy } = useSettingsForm(keys);
+  const [testing, setTesting] = useState('');
+  const test = async (courier) => {
+    setTesting(courier);
+    try { const r = await api('courier.call', { op: 'test', courier }); useStore.getState().toast(`${courier === 'steadfast' ? 'Steadfast' : courier === 'pathao' ? 'Pathao' : 'RedX'} keys work${r.balance !== null && r.balance !== undefined ? ` · balance Tk ${r.balance}` : ''}`); }
+    catch (e) { useStore.getState().toast(e.message, 'err'); }
+    finally { setTesting(''); }
+  };
+  const block = (id, title, hint, sandbox) => (
+    <section className="card form courier-card" key={id}>
+      <div className="card-head wide"><h2>{title}</h2><Btn size="sm" busy={testing === id} onClick={() => test(id)}>Test the keys</Btn></div>
+      <p className="muted wide" style={{ margin: 0 }}>{hint}</p>
+      {COURIER_FIELDS[id].map(([k, label, secret]) => <Field key={k} label={label}><input type={secret ? 'password' : 'text'} autoComplete="off" value={f[k] || ''} onChange={(e) => setF({ ...f, [k]: e.target.value })} aria-label={`${title} ${label}`} /></Field>)}
+      {sandbox && <label className="check wide"><input type="checkbox" checked={f[sandbox] === 'true'} onChange={(e) => setF({ ...f, [sandbox]: String(e.target.checked) })} /> Sandbox (test account — no real parcels)</label>}
+    </section>
+  );
+  return (
+    <>
+      <p className="muted">With the keys here, online orders are booked with the courier from Karvio and their status is checked from here. Save first, then test. Staff never see these keys.</p>
+      <div className="courier-grid">
+        {block('steadfast', 'Steadfast', 'Steadfast merchant panel → API: the API key and secret key.')}
+        {block('pathao', 'Pathao', 'Pathao merchant panel → Developers API: client ID and secret, your merchant login and the store ID.', 'courier_pathao_sandbox')}
+        {block('redx', 'RedX', 'RedX merchant panel → Developer API: the access token.', 'courier_redx_sandbox')}
+      </div>
+      <div className="row end" style={{ marginTop: 12 }}><Btn kind="primary" busy={busy} onClick={save}>Save courier keys</Btn></div>
+    </>
   );
 }
 
