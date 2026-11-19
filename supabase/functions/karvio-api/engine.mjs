@@ -1607,6 +1607,170 @@ function dayCloseSave_(p, user) {
   dayLocksRebuild_();
   return Object.assign(rec, { id: row && row.id, closed_at: row && row.ts, closed_by: user.name });
 }
+/* ---- Shifts: a cashier opens a shift with the cash counted in the drawer and closes it by counting again.
+ * Expected = opening + money in − money out in that drawer since the shift opened (with "each cashier opens
+ * their own shift", only that cashier's own entries). Open shifts live in Settings 'open_shifts' (small, read
+ * on every sale when shifts are required); every open and close is also kept in the audit log, which is the
+ * shift history. Cash-count corrections are book entries, not cash moving, so they never count in a shift. */
+var SHIFT_PREFIX = 'SH-';
+function shiftMode_() { return getSetting_('shift_mode', 'cashier') === 'shared' ? 'shared' : 'cashier'; }
+function shiftRequired_() { return getSetting_('shift_required', 'false') === 'true'; }
+function openShifts_() { var a = null; try { a = JSON.parse(getSetting_('open_shifts', '[]')); } catch (e) {} return Array.isArray(a) ? a : []; }
+function saveOpenShifts_(list) { setSetting_('open_shifts', JSON.stringify(list)); }
+function shiftCanAll_(user) { return can_(user, 'accounts'); }
+function shiftNeed_(user) { if (!can_(user, 'pos') && !can_(user, 'accounts')) fail_('Permission denied: ' + (PERMS.pos || 'pos')); }
+/** Notes and coins → { notes, total, has }; fails on anything but whole counts. */
+function cashNotes_(raw) {
+  var notes = {}, total = 0, has = false;
+  Object.keys(raw || {}).forEach(function (k) {
+    var face = Number(k), n = Number(raw[k]);
+    if (!(face > 0) || !isFinite(n) || n < 0 || Math.floor(n) !== n) fail_('Note and coin counts must be whole numbers, 0 or more');
+    if (n) { notes[k] = n; total += face * n; has = true; }
+  });
+  return { notes: notes, total: round_(total), has: has };
+}
+function cashCounted_(p, what) {
+  var c = cashNotes_(p.notes);
+  var v = p.counted === '' || p.counted === undefined || p.counted === null ? NaN : Number(p.counted);
+  if (!isFinite(v) || v < 0) fail_('Enter the ' + what + ' (0 or more)');
+  v = round_(v);
+  if (c.has && Math.abs(c.total - v) > 0.005) fail_('The ' + what + ' does not match the notes and coins (' + c.total + ')');
+  return { counted: v, notes: c.notes };
+}
+function acctLastRow_() { var m = 0; all_('AccountTxns').forEach(function (t) { if (t._row > m) m = t._row; }); return m; }
+function shiftFigures_(s, endRow) {
+  var lines = {}, totIn = 0, totOut = 0;
+  all_('AccountTxns').forEach(function (t) {
+    if (t.account_id !== s.account_id || t.voided || t._row <= s.start_row || (endRow && t._row > endRow) || isCashCount_(t)) return;
+    if (s.mode !== 'shared' && t.user !== s.user) return;
+    var a = num_(t.amount), key = (DAY_CLOSE_GROUPS[t.ref_type] ? t.ref_type : 'other') + ':' + t.direction;
+    var l = lines[key] = lines[key] || { type: t.ref_type || 'other', label: DAY_CLOSE_GROUPS[t.ref_type] || 'Other', direction: t.direction, amount: 0, count: 0 };
+    l.amount = round_(l.amount + a); l.count++;
+    if (t.direction === 'in') totIn += a; else totOut += a;
+  });
+  var list = Object.keys(lines).map(function (k) { return lines[k]; }).sort(function (a, b) { return (a.direction === b.direction ? 0 : a.direction === 'in' ? -1 : 1) || b.amount - a.amount; });
+  return { in: round_(totIn), out: round_(totOut), expected: round_(num_(s.opening) + totIn - totOut), lines: list };
+}
+function shiftHistory_() {
+  return all_('AuditLog').filter(function (r) { return r.action === 'shift_close'; }).map(function (r) {
+    var d = {}; try { d = JSON.parse(r.detail || '{}'); } catch (e) {} return d;
+  }).filter(function (d) { return d.id && d.no; }).sort(function (a, b) { return String(b.closed_at).localeCompare(String(a.closed_at)); });
+}
+/** The open shift a sale by this user belongs to (null when none). */
+function shiftFor_(user) {
+  var open = openShifts_();
+  if (!open.length) return null;
+  return shiftMode_() === 'shared' ? open[0] : open.filter(function (s) { return s.mode === 'shared' || s.user_id === user.id; })[0] || null;
+}
+/** With "Open a shift before selling" on, selling needs an open shift (own shift, or any shift when shared). */
+function shiftGate_(user) {
+  if (!shiftRequired_() || shiftFor_(user)) return;
+  fail_(shiftMode_() === 'shared' ? 'Open a shift before selling — no cash drawer shift is open' : 'Open your shift before selling — count the cash in your drawer and open your shift');
+}
+/** Active accounts, cash drawers first, with what the last closed shift of each left in it. */
+function shiftAccounts_() {
+  var last = {};
+  shiftHistory_().forEach(function (h) { if (last[h.account_id] === undefined) last[h.account_id] = num_(h.counted); });
+  return all_('Accounts').filter(function (a) { return a.active; }).sort(function (a, b) { return (a.type === 'cash' ? 0 : 1) - (b.type === 'cash' ? 0 : 1); })
+    .map(function (a) { return { id: a.id, name: a.name, type: a.type, last_counted: last[a.id] === undefined ? null : last[a.id] }; });
+}
+function shiftView_(s) { return Object.assign({}, s, shiftFigures_(s)); }
+function shiftMine_(p, user) {
+  shiftNeed_(user);
+  var mine = shiftFor_(user);
+  return { mode: shiftMode_(), required: shiftRequired_(), shift: mine ? shiftView_(mine) : null, can_sell: !shiftRequired_() || !!mine, accounts: shiftAccounts_() };
+}
+function shiftsList_(p, user) {
+  shiftNeed_(user);
+  var all = shiftCanAll_(user), today = today_();
+  var open = openShifts_().filter(function (s) { return all || s.user_id === user.id || s.mode === 'shared'; }).map(shiftView_);
+  var hist = shiftHistory_().filter(function (h) { return all || h.user_id === user.id || h.closed_by === user.name; });
+  var closedToday = hist.filter(function (h) { return String(h.closed_at).slice(0, 10) === today; });
+  return { mode: shiftMode_(), required: shiftRequired_(), can_all: all, today: today, accounts: shiftAccounts_(),
+    open: open, history: hist.slice(0, 300),
+    stats: { open: open.length, in_drawers: round_(open.reduce(function (t, s) { return t + s.expected; }, 0)), closed_today: closedToday.length,
+      difference_today: round_(closedToday.reduce(function (t, h) { return t + num_(h.difference); }, 0)) },
+    mine: (function () { var m = shiftFor_(user); return m ? m.id : ''; })() };
+}
+function shiftOpen_(p, user) {
+  shiftNeed_(user);
+  var acc = all_('Accounts').filter(function (a) { return a.id === p.account_id && a.active; })[0]; if (!acc) fail_('Select an active cash drawer');
+  var mode = shiftMode_(), open = openShifts_();
+  if (mode === 'shared' && open.some(function (s) { return s.account_id === acc.id; })) fail_('A shift is already open on ' + acc.name);
+  if (mode === 'cashier' && open.some(function (s) { return s.user_id === user.id; })) fail_('You already have an open shift — close it first');
+  var c = cashCounted_({ counted: p.opening, notes: p.notes }, 'opening cash');
+  var prev = shiftHistory_().filter(function (h) { return h.account_id === acc.id; })[0];
+  var s = { id: uid_(), no: nextNo_('seq_shift', SHIFT_PREFIX), mode: mode, user: user.name, user_id: user.id, account_id: acc.id, account_name: acc.name,
+    opened_at: now_(), date: today_(), opening: c.counted, opening_notes: c.notes, open_note: String(p.note || '').trim().slice(0, 300),
+    start_row: acctLastRow_(), previous_counted: prev ? num_(prev.counted) : null };
+  insert_('AuditLog', { ts: s.opened_at, user: user.name, action: 'shift_open', detail: JSON.stringify(s) });
+  saveOpenShifts_(open.concat([s]));
+  return shiftView_(s);
+}
+function shiftClose_(p, user) {
+  shiftNeed_(user);
+  var open = openShifts_(), s = open.filter(function (x) { return x.id === p.id; })[0];
+  if (!s) fail_('That shift is not open (it may have been closed already)');
+  if (s.user_id !== user.id && s.mode !== 'shared' && !shiftCanAll_(user)) fail_('Only ' + s.user + ' or a manager can close this shift');
+  var c = cashCounted_(p, 'counted total'), endRow = acctLastRow_(), f = shiftFigures_(s, endRow);
+  var diff = round_(c.counted - f.expected), note = String(p.note || '').trim().slice(0, 300), date = today_();
+  if (Math.abs(diff) > 0.005 && !note) fail_('Write a note explaining the ' + (diff < 0 ? 'shortage' : 'extra cash'));
+  var adjustment = '';
+  if (p.adjust && Math.abs(diff) > 0.005) {
+    var t = acctTxn_(s.account_id, diff > 0 ? 'in' : 'out', Math.abs(diff), 'manual', uid_(), (diff > 0 ? 'Deposit' : 'Withdrawal') + ' — cash count ' + (diff > 0 ? 'extra' : 'shortage') + ' on ' + date + ' — ' + s.no + ': ' + note, user);
+    adjustment = t && t.id ? t.id : '';
+  }
+  var rec = Object.assign({}, s, { closed_at: now_(), closed_by: user.name, end_row: endRow, in: f.in, out: f.out, expected: f.expected, counted: c.counted,
+    notes: c.notes, difference: diff, note: note, adjusted: !!adjustment, adjustment_id: adjustment, lines: f.lines });
+  // Not audit_(): that one swallows errors, and a close that was not saved must not look saved.
+  insert_('AuditLog', { ts: rec.closed_at, user: user.name, action: 'shift_close', detail: JSON.stringify(rec) });
+  saveOpenShifts_(open.filter(function (x) { return x.id !== s.id; }));
+  return rec;
+}
+
+/* ---- Day book: every money entry of every account for the chosen days, with opening and closing balances,
+ * and the business done on those days (sales, purchases, returns, expenses) — the shop's daily khata. */
+var DAYBOOK_MAX = 5000;
+function daybook_(p, user) {
+  var t = today_(), from = String(p.from || t).slice(0, 10), to = String(p.to || from).slice(0, 10);
+  if (!isDate_(from) || !isDate_(to)) fail_('Choose valid dates');
+  if (from > to) { var x = from; from = to; to = x; }
+  var accs = all_('Accounts'), accIdx = indexBy_(accs), only = p.account_id ? accIdx[p.account_id] : null;
+  if (p.account_id && !only) fail_('Account not found');
+  var per = {};
+  accs.forEach(function (a) { if (!only || a.id === only.id) per[a.id] = { id: a.id, name: a.name, type: a.type, active: !!a.active, opening: num_(a.opening_balance), in: 0, out: 0 }; });
+  var entries = [];
+  all_('AccountTxns').filter(function (r) { return !r.voided && per[r.account_id]; })
+    .sort(function (a, b) { return String(a.date).localeCompare(String(b.date)) || a._row - b._row; })
+    .forEach(function (r) {
+      var d = String(r.date).slice(0, 10), a = num_(r.amount), acc = per[r.account_id];
+      if (d > to) return;
+      if (d < from) { acc.opening += r.direction === 'in' ? a : -a; return; }
+      if (r.direction === 'in') acc.in += a; else acc.out += a;
+      entries.push({ id: r.id, date: d, account_id: r.account_id, account_name: acc.name, direction: r.direction, amount: round_(a),
+        type: r.ref_type || 'other', label: DAY_CLOSE_GROUPS[r.ref_type] || 'Other', note: r.note || '', user: r.user || '' });
+    });
+  var list = Object.keys(per).map(function (k) { var a = per[k]; a.opening = round_(a.opening); a.in = round_(a.in); a.out = round_(a.out); a.closing = round_(a.opening + a.in - a.out); return a; })
+    .filter(function (a) { return a.active || a.opening || a.in || a.out; });
+  var opening = round_(list.reduce(function (s, a) { return s + a.opening; }, 0)), run = opening;
+  entries.forEach(function (e) { run = round_(run + (e.direction === 'in' ? e.amount : -e.amount)); e.balance = run; });
+  var tin = round_(list.reduce(function (s, a) { return s + a.in; }, 0)), tout = round_(list.reduce(function (s, a) { return s + a.out; }, 0));
+  var inRange = function (r) { var d = String(r.date).slice(0, 10); return d >= from && d <= to && r.status !== 'cancelled'; };
+  var sum = function (rows, keys) { var o = { count: rows.length }; keys.forEach(function (k) { o[k] = round_(rows.reduce(function (s, r) { return s + num_(r[k]); }, 0)); }); return o; };
+  var sales = all_('Sales').filter(inRange), purchases = all_('Purchases').filter(inRange);
+  var business = only ? null : {
+    sales: sum(sales, ['total', 'paid', 'due']), sales_returns: sum(all_('SalesReturns').filter(inRange), ['total', 'refund']),
+    purchases: sum(purchases, ['total', 'paid', 'due']), purchase_returns: sum(all_('PurchaseReturns').filter(inRange), ['total', 'received']),
+    expenses: sum(all_('Expenses').filter(inRange), ['amount']),
+    collections: round_(entries.filter(function (e) { return e.type === 'cpay' && e.direction === 'in'; }).reduce(function (s, e) { return s + e.amount; }, 0)),
+    supplier_payments: round_(entries.filter(function (e) { return e.type === 'spay' && e.direction === 'out'; }).reduce(function (s, e) { return s + e.amount; }, 0)),
+    profit: can_(user, 'cost') ? round_(sales.reduce(function (s, r) { return s + num_(r.profit); }, 0)) : null
+  };
+  return { from: from, to: to, account_id: only ? only.id : '', accounts: list, opening: opening, in: tin, out: tout, closing: round_(opening + tin - tout),
+    entries: entries.length > DAYBOOK_MAX ? entries.slice(entries.length - DAYBOOK_MAX) : entries, truncated: entries.length > DAYBOOK_MAX,
+    all_accounts: accs.filter(function (a) { return a.active; }).map(function (a) { return { id: a.id, name: a.name }; }), business: business };
+}
+
 /* ---- Owner's money: deposits (capital in) and withdrawals (drawings). They move an account balance
  * but are never sales, expenses or profit. Cash-count corrections from Day close are not the owner's money. */
 function isCashCount_(t) { return /^(Deposit|Withdrawal) — cash count (extra|shortage) on \d{4}-\d{2}-\d{2} — /.test(String(t.note || '')); }
@@ -2020,7 +2184,7 @@ function settingsSave_(p, user) {
   var allowed = ['shop_name', 'shop_phone', 'shop_tel', 'shop_email', 'shop_web', 'shop_social', 'shop_address', 'shop_footer', 'currency', 'invoice_prefix', 'receipt_width', 'low_stock_default', 'expense_categories',
     'sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_repair_template', 'sms_technician_template', 'sms_quote_template', 'sms_due_template', 'sms_headers', 'sms_service_tech_template', 'sms_service_done_template', 'sms_service_done_numbers',
     'dashboard_hidden', 'invoice_template', 'invoice_paper', 'invoice_custom_width', 'invoice_custom_height', 'invoice_note',
-    'sms_invoice_link', 'invoice_link_base', 'books_locked_until', 'shop_logo', 'invoice_qr', 'daily_summary_enabled', 'daily_summary_phones', 'daily_summary_hour', 'day_close_lock', 'whatsapp_template'];
+    'sms_invoice_link', 'invoice_link_base', 'books_locked_until', 'shop_logo', 'invoice_qr', 'daily_summary_enabled', 'daily_summary_phones', 'daily_summary_hour', 'day_close_lock', 'whatsapp_template', 'shift_mode', 'shift_required'];
   var vals = Object.assign({}, p.values || {});
   if (vals.shop_logo !== undefined) {
     var logo = String(vals.shop_logo || '');
@@ -2031,6 +2195,8 @@ function settingsSave_(p, user) {
   }
   if (vals.invoice_qr !== undefined) vals.invoice_qr = String(vals.invoice_qr) === 'false' ? 'false' : 'true';
   if (vals.day_close_lock !== undefined) vals.day_close_lock = String(vals.day_close_lock) === 'false' ? 'false' : 'true';
+  if (vals.shift_mode !== undefined) vals.shift_mode = vals.shift_mode === 'shared' ? 'shared' : 'cashier';
+  if (vals.shift_required !== undefined) vals.shift_required = String(vals.shift_required) === 'true' ? 'true' : 'false';
   if (vals.whatsapp_template !== undefined) { vals.whatsapp_template = String(vals.whatsapp_template || '').trim(); if (vals.whatsapp_template.length > 700) fail_('The WhatsApp message is too long (700 letters at most)'); }
   if (vals.daily_summary_enabled !== undefined) vals.daily_summary_enabled = String(vals.daily_summary_enabled) === 'true' ? 'true' : 'false';
   if (vals.daily_summary_phones !== undefined) {
@@ -3316,6 +3482,7 @@ function purchasesList_(p) {
  *  13. SALES
  * ========================================================================== */
 function saleCreate_(p, user) {
+  shiftGate_(user);
   var pmap = indexBy_(all_('Products')), items = p.items || [];
   if (!items.length) fail_('Cart is empty');
   var customer = p.customer_id ? all_('Customers').filter(function (c) { return c.id === p.customer_id; })[0] : null;
@@ -5979,6 +6146,11 @@ var ROUTES = {
   'audit.list':       r_('users', auditList_),
   'supplier.prices':  r_(null, supplierPrices_),
   'dayclose.get':     r_('accounts', dayCloseGet_),
+  'shifts.list':      r_(null, shiftsList_),
+  daybook:            r_('accounts', daybook_),
+  'shift.mine':       r_(null, shiftMine_),
+  'shift.open':       r_(null, shiftOpen_, true),
+  'shift.close':      r_(null, shiftClose_, true),
   'dayclose.save':    r_('accounts', dayCloseSave_, true),
   'dayclose.reopen':  r_('accounts', dayCloseReopen_, true),
   'owner.money':      r_('accounts', ownerMoney_),

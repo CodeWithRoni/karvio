@@ -59,6 +59,8 @@ export const NAV = [
   { to: '/supplier-ledger-adjustment', label: 'Supplier Ledger Adjust', perm: '*' },
   { group: 'Money & Reports' },
   { to: '/accounts', label: 'Cash, bank & MFS', perm: 'accounts' },
+  { to: '/shifts', label: 'Shift & day close', perm: { any: ['pos', 'accounts'] } },
+  { to: '/daybook', label: 'Day book', perm: 'accounts' },
   { to: '/expenses', label: 'Expenses', perm: 'expenses' },
   { to: '/profit', label: 'Profit', perm: ['reports', 'cost'] },
   { to: '/reports', label: 'Reports hub', perm: 'reports', key: '9' },

@@ -4,7 +4,9 @@ import { useStore, shopDay } from '../lib/store';
 import { api } from '../lib/api';
 import { money, qty as fqty, round2, isDecimalUnit, fdate, fdatetime } from '../lib/format';
 import { printReceipt, printInvoice, printPreviousDueReceipt } from '../lib/receipt';
-import { Btn, Modal, Field, Tabs, useAction, useHotkeys, useConfirm, noWheel } from '../components/ui';
+import { Btn, Modal, Field, Tabs, useAction, useHotkeys, useConfirm, noWheel, useApi, Badge } from '../components/ui';
+import { Link } from 'react-router-dom';
+import { OpenShift } from './Shifts';
 import { ProductSearch, PaymentSplit, defaultPay, cleanPays, QuickCustomer, CustomerPicker, SerialChooser } from '../components/widgets';
 import { loadPosDraft, savePosDraft, loadHolds, saveHolds } from '../lib/posDraft';
 import DateInput from '../components/DateInput';
@@ -16,6 +18,8 @@ const inDays = (n) => shopDay(n);
 export default function POS() {
   const { products, customers, warrantyPeriods, settings, refresh, toast } = useStore();
   const draft = loadPosDraft();
+  const shiftQ = useApi('shift.mine', {}, []);
+  const [openingShift, setOpeningShift] = useState(false);
   const [cart, setCart] = useState(draft?.cart || []);
   const [customerId, setCustomerId] = useState(draft?.customerId || '');
   const [discount, setDiscount] = useState(draft?.discount || '');
@@ -226,10 +230,27 @@ export default function POS() {
     'mod+delete': async () => { if (cart.length && await ask({ title: 'Clear the cart?', message: 'All items, the customer and payments on this screen will be removed.' })) reset(); }
   }, [cart, pays, customerId, discount, useCredit, note, sendSms, busy, tier, nextPay, holds]);
 
+  const sh = shiftQ.data;
+  const shiftModal = openingShift && sh && <OpenShift accounts={sh.accounts} mode={sh.mode} onClose={() => setOpeningShift(false)} onDone={shiftQ.reload} />;
+  // Admin's "Open a shift before selling": no open shift → no selling until one is opened.
+  if (sh && !sh.can_sell) return (
+    <>
+      <section className="card sh-lock">
+        <div className="sh-lock-icon" aria-hidden="true">🔒</div>
+        <h2>{sh.mode === 'shared' ? 'Open the drawer shift to start selling' : 'Open a shift to start selling'}</h2>
+        <p className="muted">Count the cash in {sh.mode === 'shared' ? 'the' : 'your'} drawer and open {sh.mode === 'shared' ? 'the' : 'your'} shift. Selling needs an open shift.</p>
+        <Btn kind="primary" onClick={() => setOpeningShift(true)}>▶ Open shift</Btn>
+      </section>
+      {shiftModal}
+    </>
+  );
+
   return (
     <div className="pos">
+      {shiftModal}
       <div className="pos-left">
         <div className="row">
+          {sh?.shift && <Link to="/shifts" className="sh-pos-badge" title="Shift & day close"><Badge tone="ok">Shift open · {sh.shift.user} · since {fdatetime(sh.shift.opened_at)}</Badge></Link>}
           <div style={{ flex: 1 }}><ProductSearch camera onPick={(p) => add(p)} onCode={addBySerial} placeholder="Search product by serial, name, model or brand (F2)" inputRef={searchRef} autoFocus /></div>
           <Tabs tabs={[['retail', 'Retail'], ['wholesale', 'Wholesale']]} value={tier} onChange={setTier} />
           <Btn onClick={hold} disabled={!cart.length} title="Put this sale aside and serve the next customer (F7)">Hold</Btn>

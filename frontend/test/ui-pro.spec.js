@@ -76,7 +76,7 @@ test('POS quick add: best sellers, recent products and favourites', async ({ pag
 
 test('day close: count the drawer, explain a shortage, then the day shows as closed', async ({ page, request }) => {
   const acc = await call(request, 'account.save', { name: `Drawer ${Date.now()}`, type: 'cash', opening_balance: 1000 });
-  await page.goto('/#/accounts');
+  await page.goto('/#/shifts');
   await page.getByRole('tab', { name: 'Day close' }).click();
   await page.getByLabel('Account to close').selectOption(acc.id);
   await expect(page.locator('.dc-big').first()).toContainText('Tk 1,000');
@@ -145,8 +145,8 @@ test('empty and loading states are shaped, not blank', async ({ page }) => {
 test('browser tab title is the open page name in capitals', async ({ page }) => {
   await page.goto('/#/barcodes');
   await expect(page).toHaveTitle('BARCODE LABELS');
-  await page.goto('/#/accounts?tab=dayclose');
-  await expect(page).toHaveTitle('CASH, BANK & MFS');
+  await page.goto('/#/accounts?tab=dayclose'); // Day close moved to Shift & day close
+  await expect(page).toHaveTitle('SHIFT & DAY CLOSE');
   await page.goto('/#/');
   await expect(page).toHaveTitle('DASHBOARD');
 });

@@ -21,7 +21,7 @@ export default function Settings() {
   const admin = useStore((s) => s.user?.role === 'admin');
   const owner = useStore((s) => s.user?.owner === true); // the Administrator account only — not every admin
   const [tab, setTab] = useState(can('settings') ? 'shop' : offline ? 'me' : 'api');
-  const tabs = [...(can('settings') ? [['shop', 'Shop'], ['invoice', 'Invoice'], ['dashboard', 'Dashboard'], ...(!offline ? [['sms', 'SMS gateway']] : [])] : []), ...(offline ? admin ? [['local', 'Offline data & backup']] : [] : [['api', 'API connection']]), ...(admin && can('settings') ? [['books', 'Close books']] : []), ['me', 'My password'], ...(owner ? [['database', 'Database']] : [])];
+  const tabs = [...(can('settings') ? [['shop', 'Shop'], ['invoice', 'Invoice'], ['dashboard', 'Dashboard'], ...(!offline ? [['sms', 'SMS gateway']] : [])] : []), ...(offline ? admin ? [['local', 'Offline data & backup']] : [] : [['api', 'API connection']]), ...(admin && can('settings') ? [['shifts', 'Shift'], ['books', 'Close books']] : []), ['me', 'My password'], ...(owner ? [['database', 'Database']] : [])];
   return (
     <>
       <PageHead title="Settings"><Tabs tabs={tabs} value={tab} onChange={setTab} /></PageHead>
@@ -31,6 +31,7 @@ export default function Settings() {
       {tab === 'sms' && <SmsSettings />}
       {tab === 'api' && <ApiSettings />}
       {tab === 'local' && <OfflineSettings />}
+      {tab === 'shifts' && admin && <ShiftSettings />}
       {tab === 'books' && admin && <BooksSettings />}
       {tab === 'me' && <MyPassword />}
       {tab === 'database' && owner && <DatabaseTab Reset={DatabaseReset} />}
@@ -134,6 +135,30 @@ function LogoPicker({ value, onChange }) {
           </small>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ---------------- Shift: how cashiers open and close the cash drawer ---------------- */
+function ShiftSettings() {
+  const { f, setF, save, busy } = useSettingsForm(['shift_mode', 'shift_required']);
+  const mode = f.shift_mode === 'shared' ? 'shared' : 'cashier';
+  const options = [['cashier', 'Each cashier opens their own shift', 'Every cashier counts their own cash. Short or over is shown per cashier.'],
+    ['shared', 'One shared shift per drawer', 'Everyone sells from the same drawer. One person opens and closes it.']];
+  return (
+    <div className="card form">
+      <Field label="How shifts work" wide hint="Shifts that are already open finish the way they were opened.">
+        <div className="sh-modes" role="radiogroup" aria-label="How shifts work">
+          {options.map(([v, t, d]) => (
+            <label key={v} className={`sh-mode ${mode === v ? 'on' : ''}`}>
+              <input type="radio" name="shift_mode" value={v} checked={mode === v} onChange={() => setF({ ...f, shift_mode: v })} />
+              <span><b>{t}</b><small>{d}</small></span>
+            </label>
+          ))}
+        </div>
+      </Field>
+      <label className="check wide"><input type="checkbox" checked={f.shift_required === 'true'} onChange={(e) => setF({ ...f, shift_required: String(e.target.checked) })} /> <span><b>Open a shift before selling</b> — Point of sale stays locked until a shift is open. Turn off to make shifts optional.</span></label>
+      <div className="wide row end"><Btn kind="primary" busy={busy} onClick={save}>Save</Btn></div>
     </div>
   );
 }

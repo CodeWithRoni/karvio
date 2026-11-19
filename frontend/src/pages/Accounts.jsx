@@ -3,9 +3,8 @@ import { useStore } from '../lib/store';
 import { api } from '../lib/api';
 import { money, monthStart, today } from '../lib/format';
 import DataTable from '../components/DataTable';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Navigate } from 'react-router-dom';
 import { useApi, PageHead, Modal, Btn, Field, useAction, Select, DateRange, ErrorBox, Badge, Tabs, useConfirm } from '../components/ui';
-import DayClose from './DayClose';
 import { ReverseDialog } from '../components/widgets';
 import DateInput from '../components/DateInput';
 import OwnerMoney from '../components/OwnerMoney';
@@ -20,7 +19,7 @@ export default function Accounts() {
   const accs = list.data || [];
   const active = accs.filter((a) => a.active);
   const [params, setParams] = useSearchParams();
-  const tab = ['dayclose', 'owner'].includes(params.get('tab')) ? params.get('tab') : 'accounts';
+  const tab = ['owner'].includes(params.get('tab')) ? params.get('tab') : 'accounts';
   const [ownerVersion, setOwnerVersion] = useState(0);
   const [confirmUI, ask] = useConfirm();
   const [, runDelete] = useAction();
@@ -32,19 +31,14 @@ export default function Accounts() {
     await runDelete(() => api('account.delete', { ids: picked.map((a) => a.id) }), picked.length === 1 ? 'Account deleted' : `${picked.length} accounts deleted`);
     clear?.(); setEdit(null); list.reload(); useStore.getState().boot();
   };
-  const tabs = <Tabs tabs={[['accounts', 'Accounts'], ['dayclose', 'Day close'], ['owner', "Owner's money"]]} value={tab} onChange={(v) => setParams(v === 'accounts' ? {} : { tab: v }, { replace: true })} />;
+  const tabs = <Tabs tabs={[['accounts', 'Accounts'], ['owner', "Owner's money"]]} value={tab} onChange={(v) => setParams(v === 'accounts' ? {} : { tab: v }, { replace: true })} />;
 
+  if (params.get('tab') === 'dayclose') return <Navigate to="/shifts?tab=dayclose" replace />; // Day close moved to Shift & day close
   if (tab === 'owner') return (
     <>
       <PageHead title="Cash, bank & MFS" sub="What the owner has put into the shop and taken out — kept apart from sales and expenses.">{tabs}</PageHead>
       <OwnerMoney version={ownerVersion} onEntry={(kind) => setEntry({ kind, owner: true })} />
       {entry && <EntryForm initial={entry} accounts={active} onClose={() => setEntry(null)} onDone={() => { list.reload(); setOwnerVersion((n) => n + 1); }} />}
-    </>
-  );
-  if (tab === 'dayclose') return (
-    <>
-      <PageHead title="Cash, bank & MFS" sub="Count the cash at the end of the day and compare it with the books.">{tabs}</PageHead>
-      <DayClose />
     </>
   );
   return (
