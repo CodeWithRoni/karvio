@@ -1918,3 +1918,12 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
 .rail .brand-top { padding-left: 12px; }
 .rail .branch-badge { padding-left: 8px; }
 .rail .brand-sub { padding-left: 4px; }
+/* Branch: a plain menu row like Dashboard / Advanced Search — icon and name, no box or glow */
+.rail .branch-badge, .shell.nav-hidden .rail .branch-badge { margin: 8px 6px 0; padding: 8px; gap: 8px; border: 0; border-radius: 7px; background: none; box-shadow: none; }
+.rail .branch-badge::after { display: none; }
+.rail .branch-badge.can-pick:hover { background: var(--panel-2); transform: none; }
+.rail .bb-ico { width: 18px; height: 18px; border-radius: 0; background: none; color: var(--ok); }
+.rail .bb-ico svg { width: 18px; height: 18px; }
+.rail .bb-text small { display: none; }
+.rail .bb-text b { font-size: 14px; font-weight: 600; }
+.rail .bb-tag { padding: 0 7px; font-size: 10px; }
