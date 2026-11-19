@@ -285,8 +285,6 @@ export default function POS() {
                         const opts = [...new Set([Number(p.warranty_days), ...warrantyPeriods.map((w) => Number(w.days)), 0])].sort((a, b) => a - b);
                         const custom = l.w_custom || !opts.includes(Number(l.warranty_days));
                         const days = Number(l.warranty_days) || 0;
-                        const till = days > 0 ? (() => { const d = new Date(shopDay() + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); })() : '';
-                        const span = days >= 365 ? `${+(days / 365).toFixed(1)} yr` : days >= 30 ? `${Math.round(days / 30)} mo` : days ? `${days} d` : '';
                         const tone = !days ? 'none' : days >= 365 ? 'long' : 'mid';
                         return (
                           <div className={`wchip w-${tone}`}>
@@ -300,8 +298,7 @@ export default function POS() {
                               <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
                             </span>
                             {custom && <span className="wc-custom"><input type="number" min="0" max="36500" step="1" value={l.warranty_days} onChange={(e) => upd(i, { warranty_days: e.target.value === '' ? '' : String(Math.max(0, Math.round(Number(e.target.value) || 0))) })} placeholder="Days" aria-label="Custom warranty days for this invoice" />days</span>}
-                            {days > 0 && <span className="wc-till" title={`Warranty ends ${fdate(till)}${custom ? ' (this invoice only)' : ''}`}>{span} · till {fdate(till)}</span>}
-                            <span className={`wc-type ${p.warranty_type === 'serial' && !p.service ? 'serial' : 'invoice'}`}>{p.warranty_type === 'serial' && !p.service ? 'Serial' : 'Invoice'}</span>
+                            <span className={`wc-type ${p.warranty_type === 'serial' && !p.service ? 'serial' : 'invoice'}`}>{p.warranty_type === 'serial' && !p.service ? 'Serial' : 'Invoiced'}</span>
                           </div>
                         );
                       })()}

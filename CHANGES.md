@@ -1,6 +1,6 @@
 # 19 November 2026 (7) — POS cost peek, warranty chip, slim menu
 
-- POS warranty: one chip per line — shield (green for a year or more, violet for less, grey for none), the period picker, how long and until when (e.g. "10 mo · till 15 Sep 2027"), and INVOICE / SERIAL.
+- POS warranty: one chip per line — shield (green for a year or more, violet for less, grey for none), the period picker and INVOICED / SERIAL (no end-date text); the chip sits on its own line under the stock.
 - Side menu: the hide button sits on the line between the menu and the page; it narrows the menu to icons (names on hover) with a sliding animation, and widens it back. Remembered per browser; phones keep the drawer.
 - POS: the tick box beside "Cost" is gone. Each line shows "Show" under Cost; it opens that product's cost with "Hide" under it. Works the same on phones (COST label, then Show / Hide).
 

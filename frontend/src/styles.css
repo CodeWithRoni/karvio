@@ -1887,3 +1887,5 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
   .shell.nav-hidden .rail .nav a, .shell.nav-hidden .rail .nav-group { gap: 0; }
   .shell.nav-hidden .rail .nav-card { gap: 2px; }
 }
+.cart .cn > small { display: block; }
+.wchip { margin-top: 8px; }
