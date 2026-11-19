@@ -1,6 +1,6 @@
 // Sales invoices and warranty claims as full A4 documents: print, PDF (one per page) and Excel.
 import { useStore } from './store';
-import { unitPrice, money, qty, fdate, fdatetime, splitList, today } from './format';
+import { unitPrice, money, qty, fdate, fdatetime, splitList, today, cap1 } from './format';
 import { printHtml, esc, shopContacts } from './export';
 import { pdfPages } from './purchaseDocs';
 import { invoiceQr, logoImg } from './qr';
@@ -116,7 +116,7 @@ function businessInvoiceHtml(d) {
   const recorded = snapshot && Number.isFinite(Number(snapshot.previous)) && Number.isFinite(Number(snapshot.outstanding));
   const outstanding = s.live_invoice ? Number(s.due_now ?? s.due) || 0 : recorded ? Number(snapshot.outstanding) : !s.customer_id ? Number(s.due) || 0 : null;
   const prev = recorded ? Number(snapshot.previous) : !s.customer_id ? 0 : null;
-  const user = esc(s.user_name || '');
+  const user = esc(cap1(s.user_name || ''));
   const phone = c.phones ? esc(splitList(c.phones).join(', ')) : '';
   const walkIn = !s.customer_id || !s.customer_name || /^walk-?in/i.test(String(s.customer_name).trim());
   const now = new Date();

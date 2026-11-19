@@ -1,5 +1,6 @@
 # 19 November 2026 (5) — Branch in the user form
 
+- Names and usernames are shown with a capital first letter (user list, menu, sales list, invoice and receipt "Served by"); new and edited user names are saved that way. Sign-in ignores capital letters in the username (as before).
 - Users & roles: when branches are on, an admin chooses the branch (or Any branch) while adding or editing a user; the user list has a Branch column. Settings → Branches still assigns users too — both places change the same setting.
 - Notes: the reminder date and time use the ERP calendar and time picker; the "Write your note" hint starts at the left.
 - Dashboard: leaderboard, top sellers, low stock and sales below cost cards at one shorter fixed height.

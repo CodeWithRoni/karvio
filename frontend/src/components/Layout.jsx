@@ -5,6 +5,7 @@ import { Btn, Loading } from './ui';
 import { isOffline, endpoint } from '../lib/api';
 import { saveBrand } from '../lib/brand';
 import NavIcon from './NavIcon';
+import { cap1 } from '../lib/format';
 
 // Karvio app mark (files in public/, so they work on GitHub Pages, desktop and mobile builds).
 export const Logo = ({ size = 28 }) => (
@@ -155,7 +156,7 @@ export default function Layout() {
           })}
         </nav>
         <div className="rail-foot">
-          <div className="who"><b>{user?.name}</b><span className="muted">{{ sales: 'Sales staff', manager: 'Manager', technician: 'Technician', admin: 'Admin' }[user?.role] || user?.role || 'Staff'}</span></div>
+          <div className="who"><b>{cap1(user?.name)}</b><span className="muted">{{ sales: 'Sales staff', manager: 'Manager', technician: 'Technician', admin: 'Admin' }[user?.role] || user?.role || 'Staff'}</span></div>
           <Btn size="sm" onClick={toggleTheme} title="Switch light / dark mode">{theme === 'dark' ? 'Light' : 'Dark'}</Btn>
           <Btn size="sm" onClick={logout}>Sign out</Btn>
         </div>

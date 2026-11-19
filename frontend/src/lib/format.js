@@ -1,5 +1,7 @@
 import { useStore, shopDay } from './store';
 
+/** A person's name or username for display: the first letter always in capitals ("admin" → "Admin"). */
+export const cap1 = (v) => { const t = String(v ?? ''); return t ? t.charAt(0).toUpperCase() + t.slice(1) : t; };
 export const cur = () => useStore.getState().settings.currency || 'Tk';
 
 export function money(n, withCur = true, precision = 2) {

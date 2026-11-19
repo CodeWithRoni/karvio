@@ -2522,7 +2522,8 @@ function userSave_(p, user) {
     if (!isOwner_(user)) fail_('Only the Administrator can change the Administrator account');
     if (username !== OWNER_USERNAME) fail_('The Administrator account keeps the username "admin"');
   } else if (username === OWNER_USERNAME) fail_('The username "admin" is reserved for the Administrator account');
-  var row = { name: String(p.name).trim(), username: username, role: p.role, active: p.active === undefined ? true : (p.active === true || p.active === 'true'), phone: String(p.phone || '').trim() };
+  var shown = String(p.name).trim(); shown = shown.charAt(0).toUpperCase() + shown.slice(1); // names start with a capital letter
+  var row = { name: shown, username: username, role: p.role, active: p.active === undefined ? true : (p.active === true || p.active === 'true'), phone: String(p.phone || '').trim() };
   // A technician gets repair jobs by SMS, so the number is needed.
   if (row.role === 'technician' && phoneKey_(row.phone).length < 10) fail_('Enter the technician\'s mobile number (it gets the repair job SMS)');
   // working hours (staff only; admins are never limited)

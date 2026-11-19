@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { api } from '../lib/api';
-import { unitPrice, money, qty as fqty, fdate, fdatetime, monthStart, today, splitList, round2, isDecimalUnit } from '../lib/format';
+import { unitPrice, money, qty as fqty, fdate, fdatetime, monthStart, today, splitList, round2, isDecimalUnit, cap1 } from '../lib/format';
 import { printReceipt, printInvoice } from '../lib/receipt';
 import DataTable from '../components/DataTable';
 import { excelSales, pdfSales, printSales } from '../lib/salesDocs';
@@ -50,7 +50,7 @@ export default function Sales() {
               { key: 'paid', label: 'Paid', type: 'money', sum: true },
               { key: 'due_now', label: 'Due now', type: 'money', sum: true, value: (r) => r.due_now ?? r.due },
               ...(can('cost') ? [{ key: 'profit', label: 'Profit', type: 'money', sum: true }] : []),
-              { key: 'user_name', label: 'Staff' },
+              { key: 'user_name', label: 'Staff', value: (r) => cap1(r.user_name) },
               { key: 'status', label: 'Status', render: (r) => <Badge tone={statusTone(r.status)}>{r.status}</Badge> }
             ]} />
         </>
@@ -131,7 +131,7 @@ function SaleDetail({ id, onClose, onChanged }) {
           <div className="kv">
             <div><span>Date</span><b>{fdatetime(s.created_at)}</b></div>
             <div><span>Customer</span><b>{s.customer_name}</b></div>
-            <div><span>Served by</span><b>{s.user_name}</b></div>
+            <div><span>Served by</span><b>{cap1(s.user_name)}</b></div>
             <div><span>Total</span><b>{money(s.total)}</b></div>
             <div><span>Paid</span><b>{money(s.paid)}{pays.length ? ` (${pays.map((p) => p.account_name).join(', ')})` : ''}</b></div>
             <div><span>Due at sale</span><b>{money(s.due)}</b></div>

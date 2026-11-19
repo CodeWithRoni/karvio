@@ -79,4 +79,9 @@ note('Users: saving without a branch field keeps the branch', (await q('branches
 const badBr = await raw('user.save', {...u1, password: '', branch_id: 'nope'});
 note('Users: an unknown branch is refused', !badBr.ok);
 
+// ---- Names start with a capital; sign-in ignores capital letters in the username
+const lu = await q('user.save', {name: 'karim', username: 'Karim', password: 'long-password-123', role: 'sales'});
+note('Users: name saved with a capital first letter', lu.name === 'Karim' && lu.username === 'karim', JSON.stringify(lu));
+for (const un of ['karim', 'KARIM', 'Karim']) { const r = await raw('login', {username: un, password: 'long-password-123'}); note('Login with username ' + un, r.ok, r.error); }
+
 console.log(`features-15: ${checks} checks passed`);

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../lib/store';
 import { api } from '../lib/api';
+import { cap1 } from '../lib/format';
 import DataTable from '../components/DataTable';
 import { useApi, PageHead, Modal, Btn, Field, useAction, Badge, ErrorBox, Tabs } from '../components/ui';
 import Sessions from '../components/Sessions';
@@ -25,7 +26,7 @@ export default function Users() {
           <ErrorBox error={list.error} onRetry={list.reload} />
           <DataTable title="Users" loading={list.loading} rows={list.data || []} onRowClick={(u) => setEdit({ ...u, password: '' })} exportable={false}
             columns={[
-              { key: 'name', label: 'Name' }, { key: 'username', label: 'Username' },
+              { key: 'name', label: 'Name', value: (r) => cap1(r.name) }, { key: 'username', label: 'Username', value: (r) => cap1(r.username) },
               { key: 'role', label: 'Role', value: (r) => ROLE[r.role] || r.role },
               { key: 'phone', label: 'Phone' },
               ...(branches?.on ? [{ key: 'branch_id', label: 'Branch', value: (r) => bName(r.branch_id) || 'Any branch' }] : []),

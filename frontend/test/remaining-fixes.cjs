@@ -72,7 +72,7 @@ drafts.savePosDraft({cart:['A']}); state={user:{id:'B'}};eq(drafts.loadPosDraft(
 drafts.savePosDraft({cart:['B']});state={user:{id:'A'}};eq(drafts.loadPosDraft(),{cart:['A']});
 target='shop2';eq(drafts.loadPosDraft(),null);
 // Printing must use the frozen invoice balance and the shop day, not current debt or UTC date.
-const format={money:n=>String(n),qty:n=>String(n),fdate:n=>String(n),fdatetime:n=>String(n),splitList:s=>String(s||'').split(',').filter(Boolean),today:()=> '2026-11-11'};
+const format={money:n=>String(n),qty:n=>String(n),fdate:n=>String(n),fdatetime:n=>String(n),splitList:s=>String(s||'').split(',').filter(Boolean),today:()=> '2026-11-11',cap1:s=>{const t=String(s??'');return t?t[0].toUpperCase()+t.slice(1):t;}};
 const settings={getState:()=>({settings:{invoice_template:'business'}})};
 let printed='';
 const imports={'./store':{useStore:settings},'./format':format,'./export':{esc:s=>String(s??''),shopContacts:()=>'',printHtml:html=>{printed=html;}},'./purchaseDocs':{pdfPages:()=>{}},'./qr':{invoiceQr:()=>'',logoImg:()=>'',qrSvg:()=>''}};

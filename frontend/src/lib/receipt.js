@@ -2,7 +2,7 @@ import { quotationTotals, quotationPrice } from './quotationTotals';
 import { qrSvg, logoImg } from './qr';
 // Thermal receipts (58mm / 80mm), A4 quotation and ledger statements.
 import { useStore } from './store';
-import { unitPrice, money, qty, fdate, fdatetime, splitList, today } from './format';
+import { unitPrice, money, qty, fdate, fdatetime, splitList, today, cap1 } from './format';
 import { printHtml, esc, shopContacts } from './export';
 
 function shopHead(s) {
@@ -75,7 +75,7 @@ export function receiptHtml(detail, widthOverride, height = 0) {
   <div>Invoice: <b>${esc(sale.invoice_no)}</b></div>
   <div>Date: ${esc(fdatetime(sale.created_at || sale.date))}</div>
   <div>Customer: ${esc(sale.customer_name)}${customer && customer.phones ? ' (' + esc(splitList(customer.phones)[0]) + ')' : ''}</div>
-  <div>Served by: ${esc(sale.user_name || '')}</div>
+  <div>Served by: ${esc(cap1(sale.user_name || ''))}</div>
   ${sale.status === 'cancelled' ? '<div class="c"><b>*** CANCELLED ***</b></div>' : ''}
   <hr>
   <table>${lines}</table>
