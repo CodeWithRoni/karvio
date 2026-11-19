@@ -119,11 +119,18 @@ function ProductForm({ initial, onClose }) {
   const tops = categories.filter((c) => !c.parent_id);
   const subs = categories.filter((c) => c.parent_id && c.parent_id === f.category_id);
   const isNew = !f.id;
+  // A new stock product needs every part of its full name: group, category, brand, model and unit.
+  const need = isNew && !f.service;
+  const [tried, setTried] = useState(false);
+  const missing = need ? [['category_id', 'Product group'], ['subcategory_id', 'Category'], ['brand_id', 'Brand'], ['sku', 'SKU / model'], ['unit', 'Selling unit']].filter(([k]) => !String(f[k] || '').trim()) : [];
+  const miss = (k) => tried && missing.some(([x]) => x === k) ? 'Required' : undefined;
+  const req = (label) => need ? <>{label} <span className="req" aria-hidden="true">*</span></> : label;
   const save = async () => {
     if (dup) return useStore.getState().toast(`"${dup.name}" already exists`, 'err');
+    if (missing.length) { setTried(true); return useStore.getState().toast(`Fill in ${missing.map(([, l]) => l).join(', ')} before adding the product`, 'err'); }
     // Prices are not part of the product form: cost comes from purchases, retail / wholesale from the Price manager.
     const { cost_price, sale_price, wholesale_price, ...data } = f;
-    await run(() => api('product.save', data), isNew ? 'Product added — set its price when you purchase it, or in Price manager' : 'Product updated');
+    await run(() => api('product.save', need ? { ...data, full_name_check: true } : data), isNew ? 'Product added — set its price when you purchase it, or in Price manager' : 'Product updated');
     await refresh('products'); onClose();
   };
   const remove = async () => {
@@ -141,11 +148,11 @@ function ProductForm({ initial, onClose }) {
           hint={dup ? undefined : auto ? 'Fills in automatically: brand, group, category, model, then # short description. Type here to write your own name.' : <>Custom name. <button type="button" className="link" onClick={() => { setAuto(true); setF({ ...f, name: autoName(f) }); }}>Use automatic name</button></>}>
           <input value={f.name} onChange={(e) => { setAuto(false); setF({ ...f, name: e.target.value }); }} placeholder="Select group, category, brand and model — or type a name" aria-label="Product name" aria-invalid={!!dup} autoFocus />
         </Field>
-        <Field label="Product group"><Select value={f.category_id} onChange={(v) => setPart({ category_id: v, subcategory_id: '' })} options={tops} placeholder="Select a group" /></Field>
-        <Field label="Category"><Select value={f.subcategory_id} onChange={(v) => setPart({ subcategory_id: v })} options={subs} placeholder={f.category_id ? 'Select a category' : 'Select a group first'} /></Field>
-        <Field label="Brand"><Select value={f.brand_id} onChange={(v) => setPart({ brand_id: v })} options={brands} /></Field>
-        <Field label="SKU / model"><input value={f.sku} onChange={(e) => setPart({ sku: e.target.value })} placeholder="e.g. Archer C6" /></Field>
-        {!f.service && <Field label="Selling unit" hint={isDecimalUnit(f.unit) ? 'Sold in fractions too, e.g. 1.5 — good for cable from bulk rolls.' : 'Add more units under Categories, brands & warranty → Selling units.'}>
+        <Field label={req('Product group')} error={miss('category_id')}><Select value={f.category_id} onChange={(v) => setPart({ category_id: v, subcategory_id: '' })} options={tops} placeholder="Select a group" /></Field>
+        <Field label={req('Category')} error={miss('subcategory_id')}><Select value={f.subcategory_id} onChange={(v) => setPart({ subcategory_id: v })} options={subs} placeholder={f.category_id ? 'Select a category' : 'Select a group first'} /></Field>
+        <Field label={req('Brand')} error={miss('brand_id')}><Select value={f.brand_id} onChange={(v) => setPart({ brand_id: v })} options={brands} /></Field>
+        <Field label={req('SKU / model')} error={miss('sku')}><input value={f.sku} onChange={(e) => setPart({ sku: e.target.value })} placeholder="e.g. Archer C6" /></Field>
+        {!f.service && <Field label={req('Selling unit')} error={miss('unit')} hint={isDecimalUnit(f.unit) ? 'Sold in fractions too, e.g. 1.5 — good for cable from bulk rolls.' : 'Add more units under Categories, brands & warranty → Selling units.'}>
           <select value={f.unit} onChange={(e) => setF({ ...f, unit: e.target.value, warranty_type: isDecimalUnit(e.target.value) ? 'invoice' : f.warranty_type })}>
             {(units.some((u) => u.name === f.unit) || !f.unit ? units : [...units, { name: f.unit, label: f.unit }]).map((u) => <option key={u.name} value={u.name}>{u.label}{u.label.toLowerCase() !== u.name ? ` (${u.name})` : ''}</option>)}
           </select>

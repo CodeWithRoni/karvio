@@ -1,3 +1,12 @@
+# 19 November 2026 (4) — Notes editor, purchase edit, product form, layout
+
+- Dashboard notes: a new editor with a title, a formatting toolbar (bold, italic, underline, strike, heading, lists, quote, link, clear, undo, redo), date, Open / Closed status, Normal / Important / Urgent priority and a reminder switch; Ctrl + Enter saves, Esc closes. Each note has Edit, Close / Open again and Delete (with a confirm). Only simple formatting is kept; older plain notes still work.
+- Purchases: a yellow Edit button beside Cancel purchase. The purchase keeps its number, date and entry user; items, quantities, costs, serials, supplier warranty dates, supplier, supplier invoice, discount and payments can change. Stock, serials, payments and the supplier's due are corrected; the old version stays as <number>-E1 (cancelled). Same rules as cancelling: admin password, no return to the supplier, and its stock not yet sold, returned or adjusted.
+- Purchase view: "Set supplier warranty" shows only on lines that have no supplier warranty yet.
+- Add product: Product group, Category, Brand, SKU / model and Selling unit are required (red *) for a stock product, so a product can no longer be added with only its group name. Services, edits and imports are unchanged.
+- Side menu names in Title Case; SMS settings and Courier settings cards are one fixed size.
+- Tests: backend features-15, browser purchase-edit.
+
 # 19 November 2026 (3) — Bug fixes from the full check
 
 - An invoice cancelled from Sales also cancels its online order (no "courier paid" or return afterwards; old stuck orders show as cancelled).

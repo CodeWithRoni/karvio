@@ -407,6 +407,7 @@ export function PurchaseDetail({ id, onClose, onChanged }) {
   const [ret, setRet] = useState(false);
   const [rev, setRev] = useState(false);
   const [warranty, setWarranty] = useState(null);
+  const [editing, setEditing] = useState(false);
   const p = data?.purchase;
   return (
     <Modal open onClose={onClose} size="lg" title={p ? `Purchase ${p.invoice_no}` : 'Purchase'}
@@ -418,7 +419,7 @@ export function PurchaseDetail({ id, onClose, onChanged }) {
         </div>
         {p.status === 'active' && <Link className="btn btn-ghost" to={`/barcodes?purchase=${p.id}`}>Print barcode labels</Link>}
         <span className="spacer" />
-        {p.status === 'active' && <>{can('cancel') && <Btn kind="danger" onClick={() => setRev(true)}>Cancel purchase</Btn>}<Btn onClick={() => setRet(true)}>Return to supplier</Btn></>}
+        {p.status === 'active' && <>{can('cancel') && <Btn kind="danger" onClick={() => setRev(true)}>Cancel purchase</Btn>}{can('cancel') && can('purchase') && <Btn kind="primary" onClick={() => setEditing(true)} title="Change items, costs, payments or the supplier — the purchase keeps its number">✎ Edit</Btn>}<Btn onClick={() => setRet(true)}>Return to supplier</Btn></>}
       </>}>
       {loading && <Loading />}<ErrorBox error={error} onRetry={reload} />
       {p && <>
@@ -440,7 +441,7 @@ export function PurchaseDetail({ id, onClose, onChanged }) {
               <Fragment key={i.id}>
                 <tr className={serials.length ? 'pd-has-sn' : ''}>
                   <td className="pd-name"><b>{i.name}</b>{i.description && i.description !== i.name && <div className="muted pd-desc">{i.description}</div>}
-                    <div className="pd-warranty"><span className="muted">Supplier warranty: {i.supplier_warranty_expiry ? fdate(i.supplier_warranty_expiry) : 'Not set'}</span>{p.status === 'active' && can('purchase') && <button className="link" onClick={() => setWarranty(i)}>Set supplier warranty</button>}</div>
+                    <div className="pd-warranty"><span className="muted">Supplier warranty: {i.supplier_warranty_expiry ? fdate(i.supplier_warranty_expiry) : 'Not set'}</span>{p.status === 'active' && can('purchase') && !i.supplier_warranty_expiry && <button className="link" onClick={() => setWarranty(i)}>Set supplier warranty</button>}</div>
                   </td>
                   <td>{i.unit}</td><td className="r num">{fqty(i.qty, i.unit)}</td><td className="r num">{money(i.cost, false)}</td><td className="r num">{money(i.total, false)}</td>
                 </tr>
@@ -458,8 +459,78 @@ export function PurchaseDetail({ id, onClose, onChanged }) {
         {data.returns.length > 0 && <p className="muted">Returns: {data.returns.map((r) => `${r.return_no} (${money(r.total, false)}, ${r.status})`).join(', ')}</p>}
       </>}
       {ret && <PReturnForm detail={data} onClose={() => setRet(false)} onDone={() => { setRet(false); reload(); onChanged(); }} />}
+      {editing && <EditPurchase detail={data} onClose={() => setEditing(false)} onDone={() => { setEditing(false); onClose(); onChanged(); }} />}
       {warranty && <SupplierWarrantyForm item={warranty} onClose={()=>setWarranty(null)} onDone={()=>{setWarranty(null);reload();onChanged();}}/>}
       <ReverseDialog open={rev} type="purchase" id={p?.id} label={`purchase ${p?.invoice_no}`} onClose={() => setRev(false)} onDone={() => { reload(); onChanged(); }} />
+    </Modal>
+  );
+}
+
+/** Edit a purchase: same number, date and entry user; stock, serials, payments and the supplier's due are corrected. */
+function EditPurchase({ detail, onClose, onDone }) {
+  const { suppliers, products, user } = useStore();
+  const p = detail.purchase;
+  const pays0 = (Array.isArray(p.payments) ? p.payments : (() => { try { return JSON.parse(p.payments); } catch { return []; } })()).map((x) => ({ account_id: x.account_id, amount: String(x.amount) }));
+  const isSerial = (pr) => !!pr && !pr.service && pr.has_warranty && pr.warranty_type === 'serial';
+  const [supplier, setSupplier] = useState(p.supplier_id || '');
+  const [supInv, setSupInv] = useState(p.supplier_invoice || '');
+  const [lines, setLines] = useState(() => detail.items.map((i) => ({ product_id: i.product_id, name: i.name, unit: i.unit, qty: String(i.qty), cost: String(i.cost), serials: String(i.serials || '').replace(/\n/g, ','), serial: !!i.serials, expiry: i.supplier_warranty_expiry || '' })));
+  const [discount, setDiscount] = useState(String(p.discount || 0));
+  const [pays, setPays] = useState(pays0);
+  const [note, setNote] = useState(p.note || '');
+  const [reason, setReason] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, run] = useAction();
+  const [confirmUI, ask] = useConfirm();
+  const add = (pr) => {
+    if (lines.some((l) => l.product_id === pr.id)) return setLines(lines.map((l) => (l.product_id === pr.id && !l.serial ? { ...l, qty: String(round2((Number(l.qty) || 0) + 1)) } : l)));
+    setLines([...lines, { product_id: pr.id, name: pr.name, unit: pr.unit, qty: '1', cost: String(pr.cost_price || ''), serials: '', serial: isSerial(pr), expiry: '' }]);
+  };
+  const set = (i, patch) => setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  const count = (l) => (l.serial ? splitList(l.serials).length : Number(l.qty) || 0);
+  const subtotal = round2(lines.reduce((t, l) => t + count(l) * (Number(l.cost) || 0), 0));
+  const total = round2(subtotal - (Number(discount) || 0));
+  const paid = round2(pays.reduce((t, x) => t + (Number(x.amount) || 0), 0));
+  const due = round2(total - paid);
+  const body = (dupOk) => ({ id: p.id, password, reason, supplier_id: supplier, supplier_invoice: supInv.trim(), discount: Number(discount) || 0, note, payments: cleanPays(pays), allow_duplicate_invoice: dupOk,
+    items: lines.map((l) => ({ product_id: l.product_id, qty: count(l), cost: Number(l.cost), sale_price: '', ...(l.serial ? { serials: l.serials } : {}), supplier_warranty_expiry: l.expiry || '' })) });
+  const save = async () => {
+    try {
+      const r = await api('purchase.edit', body(false));
+      useStore.getState().toast(`Purchase ${p.invoice_no} updated`); onDone(r);
+    } catch (e) {
+      if (!/^DUPLICATE_SUPPLIER_INVOICE/.test(e.message || '')) return useStore.getState().toast(e.message, 'err');
+      if (!(await ask({ title: 'Supplier invoice already entered', message: `${e.message.replace(/^DUPLICATE_SUPPLIER_INVOICE:\s*/, '')} Save anyway?`, confirmLabel: 'Save anyway' }))) return;
+      try { const r = await api('purchase.edit', body(true)); useStore.getState().toast(`Purchase ${p.invoice_no} updated`); onDone(r); } catch (e2) { useStore.getState().toast(e2.message, 'err'); }
+    }
+  };
+  return (
+    <Modal open size="lg" title={`Edit purchase ${p.invoice_no}`} onClose={onClose}
+      footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={() => run(save)} disabled={!lines.length || !password || (!supplier && due > 0.004) || total < 0}>Save changes</Btn></>}>
+      <div className="form inv-edit">
+        <p className="muted wide" style={{ margin: 0 }}>The purchase keeps its number ({p.invoice_no}), date ({fdate(p.date)}) and entry user ({p.user}). Stock, serials, payments and the supplier's due are corrected; the old version stays as {p.invoice_no}-E1 (cancelled) and in the activity log.</p>
+        <Field label="Supplier"><select value={supplier} onChange={(e) => setSupplier(e.target.value)} aria-label="Supplier">
+          <option value="">No supplier (paid in full)</option>{(p.supplier_id && !suppliers.some((x) => x.id === p.supplier_id) ? [{ id: p.supplier_id, name: p.supplier_name }, ...suppliers] : suppliers).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+        </select></Field>
+        <Field label="Supplier invoice"><input value={supInv} onChange={(e) => setSupInv(e.target.value)} maxLength={60} aria-label="Supplier invoice" /></Field>
+        <div className="wide"><ProductSearch onPick={add} noServices placeholder="Add a product: search or scan" /></div>
+        <table className="dc-hist wide"><thead><tr><th>Product</th><th className="r">Qty</th><th className="r">Unit cost</th><th className="r">Amount</th><th /></tr></thead>
+          <tbody>{lines.map((l, i) => (
+            <tr key={l.product_id + i}><td>{l.name}{l.serial && <input className="inv-ser" value={l.serials} onChange={(e) => set(i, { serials: e.target.value })} placeholder="Serial numbers, separated by commas" aria-label={`Serials of ${l.name}`} />}
+              <label className="pe-exp"><span className="muted">Supplier warranty</span><DateInput value={l.expiry} onChange={(e) => set(i, { expiry: e.target.value })} aria-label={`Supplier warranty expiry for ${l.name}`} /></label></td>
+              <td className="r">{l.serial ? count(l) : <input className="sc-in" type="number" min="0" step="any" value={l.qty} onChange={(e) => set(i, { qty: e.target.value })} onWheel={noWheel} aria-label={`Quantity of ${l.name}`} />}</td>
+              <td className="r"><input className="sc-in" type="number" min="0" step="any" value={l.cost} onChange={(e) => set(i, { cost: e.target.value })} onWheel={noWheel} aria-label={`Unit cost of ${l.name}`} /></td>
+              <td className="r num">{money(count(l) * (Number(l.cost) || 0), false)}</td>
+              <td className="r"><Btn size="sm" kind="danger" onClick={() => setLines(lines.filter((_, j) => j !== i))} aria-label={`Remove ${l.name}`}>×</Btn></td></tr>))}</tbody></table>
+        <Field label="Discount"><input type="number" min="0" step="any" value={discount} onChange={(e) => setDiscount(e.target.value)} onWheel={noWheel} aria-label="Discount" /></Field>
+        <Field label="Note"><input value={note} onChange={(e) => setNote(e.target.value)} aria-label="Purchase note" /></Field>
+        <div className="wide"><PaymentSplit value={pays} onChange={setPays} total={total} label="Paid to the supplier on this purchase" /></div>
+        <div className="wide oo-totals"><span>Subtotal {money(subtotal, false)}</span><span>− Discount {money(Number(discount) || 0, false)}</span><b>Total {money(total)}</b><span>Paid {money(paid, false)}</span><b className="cod">{due > 0.004 ? `Due ${money(due)}` : due < -0.004 ? `Overpaid ${money(-due)}` : 'Fully paid'}</b></div>
+        {!supplier && due > 0.004 && <p className="wide sms-warn">Without a supplier the purchase must be paid in full — choose the supplier or add the payment.</p>}
+        <Field label="Why (optional)"><input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. wrong cost entered" aria-label="Reason for the edit" /></Field>
+        <Field label={user?.role === 'admin' ? 'Your password' : 'Admin password'}><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" aria-label="Admin password" /></Field>
+      </div>
+      {confirmUI}
     </Modal>
   );
 }

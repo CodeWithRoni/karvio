@@ -1053,6 +1053,17 @@ function productsList_(user) {
   });
   return stripCost_(list, user);
 }
+/** Adding a stock product from the product form (it sends full_name_check): the full name needs group, category, brand, model and unit. */
+var PRODUCT_NEEDS = [['category_id', 'Product group'], ['subcategory_id', 'Category'], ['brand_id', 'Brand'], ['sku', 'SKU / model'], ['unit', 'Selling unit']];
+function productAdd_(p, user) {
+  var service = p.service === true || p.service === 'true';
+  if (!p.id && !service && p.full_name_check === true) {
+    var missing = PRODUCT_NEEDS.filter(function (x) { return !String(p[x[0]] || '').trim(); }).map(function (x) { return x[1]; });
+    if (missing.length) fail_('Fill in ' + missing.join(', ') + ' before adding the product');
+    if (!all_('Brands').some(function (b) { return b.id === p.brand_id; })) fail_('Select a valid brand');
+  }
+  return productSave_(p, user);
+}
 function productSave_(p, user) {
   var name = String(p.name || ''); if (!name.trim()) fail_('Product name is required');
   var service = p.service === true || p.service === 'true';
@@ -4022,7 +4033,8 @@ function laterInventoryChange_(productId, refType, refId, serial) {
   });
 }
 
-function purchaseCreate_(p, user) {
+function purchaseCreate_(p, user, keep) {
+  keep = keep || {}; // an edit keeps the purchase number, entry user and time
   var pmap = indexBy_(all_('Products')), items = p.items || [];
   if (!items.length) fail_('Add at least one item');
   var supplier = p.supplier_id ? all_('Suppliers').filter(function (s) { return s.id === p.supplier_id; })[0] : null;
@@ -4104,11 +4116,11 @@ function purchaseCreate_(p, user) {
       fail_('Supplier balance changed. Refresh the supplier balance and check the previous due payment before saving');
     if (previousBalance <= 0 || previousPaid > previousBalance + 0.005) fail_('Previous due payment cannot exceed the current previous due (' + Math.max(previousBalance, 0) + ')');
   }
-  var inv = nextNo_('seq_purchase', 'PUR-');
+  var inv = keep.invoice_no || nextNo_('seq_purchase', 'PUR-');
   var pur = insert_('Purchases', {
     invoice_no: inv, date: date, supplier_id: supplier ? supplier.id : '', supplier_name: supplier ? supplier.name : '',
     subtotal: subtotal, discount: discount, total: total, paid: paid, due: due, note: p.note || '', status: 'active',
-    user: user.name, created_at: now_(), payments: pays, supplier_invoice: supInv
+    user: keep.user || user.name, created_at: keep.created_at || now_(), payments: pays, supplier_invoice: supInv
   });
   var rows = insertMany_('PurchaseItems', lines.map(function (l) {
     return { purchase_id: pur.id, product_id: l.pr.id, name: l.pr.name, unit: l.pr.unit, qty: l.qty, cost: l.cost, total: l.total, serials: l.serials.join(',') };
@@ -4144,7 +4156,7 @@ function purchaseCreate_(p, user) {
   var previousReceipts = previousPays.map(function(x) {
     return supplierPayment_({supplier_id:supplier.id,account_id:x.account_id,amount:x.amount,date:date,note:'Previous due paid while entering purchase ' + inv},user);
   });
-  audit_(user, 'purchase_create', inv);
+  if (!keep.invoice_no) audit_(user, 'purchase_create', inv);
   var detail = purchaseDetail_({ id: pur.id });
   if (previousPaid > 0) detail.previous_due_payment = {amount:previousPaid,previous_balance:previousBalance,receipts:previousReceipts};
   return detail;
@@ -5262,6 +5274,35 @@ function saleEditIn_(s, p, user, reason) {
   });
   var brief = function (d) { return { customer: d.sale.customer_name, total: d.sale.total, paid: d.sale.paid, due: d.sale.due, items: d.items.map(function (i) { return i.name + ' x' + i.qty + ' @' + i.price + (i.serials ? ' [' + i.serials + ']' : ''); }) }; };
   audit_(user, 'sale_edit', { invoice: s.invoice_no, old_copy: s.invoice_no + '-E' + n, reason: reason, before: brief(before), after: brief(detail) });
+  return detail;
+}
+/* ---- Edit a purchase: like editing an invoice. The old version is cancelled (stock, serials, payments and the
+ * supplier ledger go back) and the corrected one is saved under the same number, date and entry user. The old
+ * version stays as "<number>-E1" (cancelled). Same rules as cancelling: the cancel permission, an admin password,
+ * no returns or rebates, and stock from it not yet sold, returned or adjusted. */
+function purchaseEdit_(p, user) {
+  need_(user, 'cancel');
+  confirmAdmin_(user, p.password);
+  var pur = all_('Purchases').filter(function (x) { return x.id === p.id; })[0];
+  if (!pur || pur.status !== 'active') fail_('Purchase not found or already cancelled');
+  lockCheck_(pur.date, 'a purchase');
+  if (all_('PurchaseReturns').some(function (r) { return r.purchase_id === pur.id && r.status === 'active'; })) fail_('This purchase has a return to the supplier. Cancel the return first');
+  var reason = String(p.reason || '').trim().slice(0, 200);
+  pur = Object.assign({}, pur);
+  var hereBranch = _branch; if (_branch) _branch = docBranch_('Purchases', pur.id); // the purchase stays in its own branch
+  try { return purchaseEditIn_(pur, p, user, reason); } finally { _branch = hereBranch; }
+}
+function purchaseEditIn_(pur, p, user, reason) {
+  var before = purchaseDetail_({ id: pur.id }), n = 1;
+  while (all_('Purchases').some(function (x) { return x.invoice_no === pur.invoice_no + '-E' + n; })) n++;
+  try { reversePurchase_({ id: pur.id }, user, 'Edited — corrected purchase saved as ' + pur.invoice_no + (reason ? ': ' + reason : '')); }
+  catch (e) { throw new Error(String(e && e.message || e).replace(/^Cannot cancel/, 'Cannot edit')); }
+  update_('Purchases', pur.id, { invoice_no: pur.invoice_no + '-E' + n });
+  var detail = purchaseCreate_({ supplier_id: p.supplier_id === undefined ? pur.supplier_id : p.supplier_id, items: p.items, discount: p.discount, payments: p.payments,
+    note: p.note === undefined ? pur.note : p.note, supplier_invoice: p.supplier_invoice === undefined ? pur.supplier_invoice : p.supplier_invoice, allow_duplicate_invoice: p.allow_duplicate_invoice,
+    date: String(pur.date).slice(0, 10) }, user, { invoice_no: pur.invoice_no, user: pur.user, created_at: pur.created_at });
+  var brief = function (d) { return { supplier: d.purchase.supplier_name, total: d.purchase.total, paid: d.purchase.paid, due: d.purchase.due, items: d.items.map(function (i) { return i.name + ' x' + i.qty + ' @' + i.cost + (i.serials ? ' [' + i.serials + ']' : ''); }) }; };
+  audit_(user, 'purchase_edit', { purchase: pur.invoice_no, old_copy: pur.invoice_no + '-E' + n, reason: reason, before: brief(before), after: brief(detail) });
   return detail;
 }
 function reversePurchase_(p, user, reason) {
@@ -6776,18 +6817,41 @@ function notesOf_(user) { var a = jsonSetting_(notesKey_(user), []); return Arra
 function notesList_(p, user) {
   return notesOf_(user).sort(function (a, b) { return (a.status === 'done') - (b.status === 'done') || String(a.remind_at || '9999').localeCompare(String(b.remind_at || '9999')) || String(b.created_at).localeCompare(String(a.created_at)); });
 }
+/** A note body is a little formatted text (bold, lists, links …). Anything else is taken out before it is kept. */
+function noteHtml_(v) {
+  var h = String(v || '').slice(0, 6000);
+  h = h.replace(/<(script|style|iframe|object|embed|svg|math|template)[\s\S]*?<\/\1\s*>/gi, '').replace(/<\/?(script|style|iframe|object|embed|svg|math|template)[^>]*>/gi, '');
+  h = h.replace(/<\/?([a-z0-9]+)([^>]*)>/gi, function (m, tag, attrs) {
+    tag = tag.toLowerCase();
+    if (['b', 'strong', 'i', 'em', 'u', 's', 'strike', 'h3', 'ul', 'ol', 'li', 'blockquote', 'a', 'br', 'p', 'div'].indexOf(tag) < 0) return '';
+    if (m.charAt(1) === '/') return '</' + tag + '>';
+    if (tag !== 'a') return '<' + tag + '>';
+    var href = (attrs.match(/href\s*=\s*"([^"]*)"/i) || attrs.match(/href\s*=\s*'([^']*)'/i) || [])[1] || '';
+    return /^(https?:|mailto:|tel:)/i.test(href.trim()) ? '<a href="' + href.trim().replace(/"/g, '&quot;') + '" target="_blank" rel="noopener noreferrer">' : '<a>';
+  });
+  return h;
+}
+function noteText_(html) { return String(html || '').replace(/<(br|\/p|\/div|\/li|\/h3|\/blockquote)[^>]*>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&').replace(/\n{3,}/g, '\n\n').trim(); }
 function noteSave_(p, user) {
-  var list = notesOf_(user), text = String(p.text || '').trim().slice(0, 600);
-  if (!text) fail_('Write the note');
+  var list = notesOf_(user), title = String(p.title || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+  var body = p.body !== undefined ? noteHtml_(p.body) : '', text = p.body !== undefined ? noteText_(body).slice(0, 2000) : String(p.text || '').trim().slice(0, 600);
+  if (p.body === undefined && text) body = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+  if (!title && !text) fail_('Write the note');
   var at = String(p.remind_at || '').trim();
   if (at && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(at)) fail_('Choose the reminder date and time');
   if (at && !isDate_(at.slice(0, 10))) fail_('Choose a valid reminder date');
+  var date = String(p.date || '').slice(0, 10);
+  if (date && !isDate_(date)) fail_('Choose a valid note date');
   var color = ['yellow', 'blue', 'green', 'pink', 'violet'].indexOf(p.color) >= 0 ? p.color : 'yellow';
+  var priority = ['normal', 'important', 'urgent'].indexOf(p.priority) >= 0 ? p.priority : 'normal';
   var n = p.id ? list.filter(function (x) { return x.id === p.id; })[0] : null;
   if (p.id && !n) fail_('Note not found');
   if (!n) { if (list.length >= NOTE_MAX) fail_('You have ' + NOTE_MAX + ' notes. Delete some old ones first'); n = { id: uid_(), created_at: now_() }; list.push(n); }
-  n.text = text; n.remind_at = at; n.color = color; n.status = p.status === 'done' ? 'done' : 'open'; n.updated_at = now_();
-  setSetting_(notesKey_(user), JSON.stringify(list));
+  n.title = title; n.body = body; n.text = text; n.date = date || n.date || today_(); n.priority = priority;
+  n.remind_at = at; n.color = color; n.status = p.status === 'done' ? 'done' : 'open'; n.updated_at = now_();
+  var json = JSON.stringify(list);
+  if (json.length > 45000) fail_('Your notes are full. Shorten this note or delete some old ones first');
+  setSetting_(notesKey_(user), json);
   return notesList_(p, user);
 }
 function noteDelete_(p, user) {
@@ -7008,7 +7072,7 @@ var ROUTES = {
   bootstrap:          r_(null, bootstrap_),
 
   'products.list':    r_(null, function (p, u) { return productsList_(u); }),
-  'product.save':     r_('products', productSave_, true),
+  'product.save':     r_('products', productAdd_, true),
   'product.delete':   r_('products', productDelete_, true),
   'product.barcodes': r_('products', productBarcodes_, true),
   'serials.list':     r_(null, serialsList_),
@@ -7095,6 +7159,7 @@ var ROUTES = {
   'purchase.create':  r_('purchase', purchaseCreate_, true),
   'purchase.detail':  r_('purchase', purchaseDetail_),
   'purchase.warranty': r_('purchase', purchaseWarranty_, true),
+  'purchase.edit':    r_('purchase', purchaseEdit_, true),
   'purchases.list':   r_('purchase', purchasesList_),
   'purchases.details': r_('purchase', purchasesDetails_),
   'preturn.create':   r_('purchase', preturnCreate_, true),

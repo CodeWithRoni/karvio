@@ -137,6 +137,7 @@ test('long Bengali PDF reports paginate with repeated table headings', async ({ 
 });
 
 test('product groups contain categories across master data, products, stock filters and PC builder', async ({ page, request }) => {
+  const testBrand = await call(request, 'master.save', { kind: 'brand', name: `INTEL TEST ${Date.now()}` });
   await page.setViewportSize({ width: 1920, height: 1000 });
   await page.goto('/#/stock');
   await page.getByRole('tab', { name: 'Categories, brands & warranty' }).click();
@@ -173,6 +174,12 @@ test('product groups contain categories across master data, products, stock filt
   await form.getByRole('combobox', { name: 'Category', exact: true }).selectOption(intel.id);
   await expect(form.getByRole('combobox', { name: 'Category', exact: true }).locator('option')).toHaveCount(3);
   await expect(form.getByLabel('Cost price')).toHaveCount(0);
+  // a new stock product needs its brand and model too
+  await form.getByRole('button', { name: 'Add product', exact: true }).click();
+  await expect(form.locator('.field-error').first()).toHaveText('Required');
+  await form.getByRole('combobox', { name: /^Brand/ }).selectOption(testBrand.id);
+  await form.getByLabel('SKU / model').fill('i5-TEST');
+  await form.getByLabel('Product name', { exact: true }).fill('Core i5 Test');
   await form.getByRole('button', { name: 'Add product', exact: true }).click();
   await expect(form).toHaveCount(0);
   await page.getByRole('tab', { name: 'Stock explorer' }).click();

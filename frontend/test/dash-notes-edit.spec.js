@@ -32,11 +32,28 @@ test('dashboard shows sales below cost and a note reminder pops up with its butt
   // notes: add one with a reminder already due → it pops up
   await page.getByRole('button', { name: /Notes/ }).click();
   const dlg = page.getByRole('dialog');
-  await dlg.getByLabel('Note').fill(`Call the cable supplier ${stamp}`);
-  await dlg.getByLabel('Remind me at').fill('2026-01-01T09:00');
-  await dlg.getByRole('button', { name: 'Add note' }).click();
-  await expect(dlg.locator('.note-item')).toContainText(`Call the cable supplier ${stamp}`);
-  await dlg.getByRole('button', { name: 'Close' }).last().click();
+  await dlg.first().getByRole('button', { name: '+ New note' }).click();
+  const ed = page.getByRole('dialog', { name: 'New note' });
+  await ed.getByLabel('Note title').fill(`Call the cable supplier ${stamp}`);
+  await ed.getByRole('textbox', { name: 'Note', exact: true }).click();
+  await ed.getByRole('button', { name: 'Bold' }).click();
+  await page.keyboard.type('ask about the price');
+  await ed.getByRole('radio', { name: 'Urgent' }).click();
+  await ed.locator('.ne-remind .tgl').click();
+  await ed.getByLabel('Remind me at').fill('2026-01-01T09:00');
+  await ed.getByRole('button', { name: '✓ Save note' }).click();
+  await expect(ed).toHaveCount(0);
+  const item = page.locator('.note-item', { hasText: `Call the cable supplier ${stamp}` });
+  await expect(item.locator('.note-body b')).toHaveText('ask about the price');
+  await expect(item.locator('.note-pr')).toHaveText('Urgent');
+  // edit the title, then the panel closes
+  await item.getByRole('button', { name: '✎ Edit' }).click();
+  const ed2 = page.getByRole('dialog', { name: 'Edit note' });
+  await ed2.getByLabel('Note title').fill(`Call the cable supplier ${stamp} today`);
+  await ed2.getByRole('button', { name: '✓ Save note' }).click();
+  await expect(page.locator('.note-item', { hasText: `Call the cable supplier ${stamp} today` })).toBeVisible();
+  await page.screenshot({ path: '/tmp/notes-list.png' });
+  await page.getByRole('dialog', { name: 'Notes & reminders' }).getByRole('button', { name: 'Close' }).last().click();
   const pop = page.locator('.note-pop', { hasText: `Call the cable supplier ${stamp}` });
   await expect(pop).toBeVisible();
   for (const b of ['✓ Done', '1 hour later', 'Tomorrow', 'New date', 'Edit', 'Dismiss']) await expect(pop.getByRole('button', { name: b })).toBeVisible();
