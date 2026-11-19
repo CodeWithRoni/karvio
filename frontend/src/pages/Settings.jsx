@@ -21,7 +21,7 @@ export default function Settings() {
   const admin = useStore((s) => s.user?.role === 'admin');
   const owner = useStore((s) => s.user?.owner === true); // the Administrator account only — not every admin
   const [tab, setTab] = useState(can('settings') ? 'shop' : offline ? 'me' : 'api');
-  const tabs = [...(can('settings') ? [['shop', 'Shop'], ['invoice', 'Invoice'], ['dashboard', 'Dashboard'], ...(!offline ? [['sms', 'SMS gateway']] : [])] : []), ...(offline ? admin ? [['local', 'Offline data & backup']] : [] : [['api', 'API connection']]), ...(admin && can('settings') ? [['branches', 'Branches'], ['shifts', 'Shift'], ['courier', 'Courier'], ['books', 'Close books']] : []), ['me', 'My password'], ...(owner ? [['database', 'Database']] : [])];
+  const tabs = [...(can('settings') ? [['shop', 'Shop'], ['invoice', 'Invoice'], ['dashboard', 'Dashboard'], ...(!offline ? [['sms', 'SMS gateway'], ['smsfeatures', 'SMS settings']] : [])] : []), ...(offline ? admin ? [['local', 'Offline data & backup']] : [] : [['api', 'API connection']]), ...(admin && can('settings') ? [['branches', 'Branches'], ['shifts', 'Shift'], ['courier', 'Courier'], ['books', 'Close books']] : []), ['me', 'My password'], ...(owner ? [['database', 'Database']] : [])];
   return (
     <>
       <PageHead title="Settings"><Tabs tabs={tabs} value={tab} onChange={setTab} /></PageHead>
@@ -29,6 +29,7 @@ export default function Settings() {
       {tab === 'invoice' && <InvoiceSettings />}
       {tab === 'dashboard' && <DashboardSettings />}
       {tab === 'sms' && <SmsSettings />}
+      {tab === 'smsfeatures' && <SmsFeatures />}
       {tab === 'api' && <ApiSettings />}
       {tab === 'local' && <OfflineSettings />}
       {tab === 'branches' && admin && <BranchSettings />}
@@ -370,31 +371,23 @@ export function smsParts(text) {
 
 const DEFAULT_QUOTE_SMS = 'Dear {name}, your quotation from {shop}: {title}, total {total}. View it here (valid {days} days): {link}';
 function SmsSettings() {
-  const { f, setF, bind, save, busy } = useSettingsForm(['sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_service_tech_template', 'sms_service_done_template', 'sms_service_done_numbers', 'sms_repair_template', 'sms_technician_template', 'sms_quote_template', 'whatsapp_template', 'sms_headers', 'sms_invoice_link', 'invoice_link_base']);
+  const { f, setF, bind, save, busy } = useSettingsForm(['sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_headers']);
   const [builderVersion, setBuilderVersion] = useState(0);
   const [showKey, setShowKey] = useState(false);
   const [testResult, setTestResult] = useState(null);
-  const [preview, setPreview] = useState('sms_template');
   const saved = useStore(s=>s.settings);
   const dirty = Object.keys(f).some(k=>String(f[k]||'')!==String(saved[k]||''));
   const [mappingError, setMappingError] = useState('');
   const configError = mappingError || gatewayError(f);
-  const linkOn = f.sms_invoice_link !== 'false'; // on unless switched off
   const [phone, setPhone] = useState('');
   const preset = matchPreset(f);
   const [tbusy, run] = useAction();
   const log = useApi('sms.log', {}, [], {refreshMs:5000});
-  const sampleLink = `${linkBaseOf(f.invoice_link_base)}#/i/Ab12Cd34Ef56Gh78Ij90Kl`;
-  const quotePreview = preview === 'sms_quote_template';
-  let sample = (f[preview] || (quotePreview ? DEFAULT_QUOTE_SMS : '')).replace(/\{(\w+)\}/g, (m, k) => (quotePreview && k === 'link' ? `${linkBaseOf(f.invoice_link_base)}#/q/Ab12Cd34Ef56Gh78Ij90Kl` : quotePreview && k === 'title' ? 'Gaming PC — Ryzen 5' : quotePreview && k === 'days' ? '3' : m)).replace(/\{(\w+)\}/g, (m, k) => ({ name: 'Rahim', shop: useStore.getState().settings.shop_name, items: 'Kingston 512GB SSD x1, Cat6 Cable x15', invoice: 'INV-000123', total: '5,250', paid: '5,000', due: '250', device:'Laptop', job:'REP-000123', advance:'500', technician:'Karim', problem:'No display', phone:'01700000000', date: new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Dhaka'}).format(new Date()), link: linkOn ? sampleLink : '' }[k] ?? m));
-  if (preview==='sms_template' && linkOn && !/\{link\}/.test(f.sms_template || '')) sample += ` Invoice: ${sampleLink}`;
-  if (!linkOn && !quotePreview) sample = sample.replace(/\s*(View|Invoice|Link):?\s*$/i, '');
-  const parts = smsParts(sample);
   return (
     <div className="split">
       <div className="card form">
-        <label className="check wide"><input type="checkbox" checked={f.sms_enabled === 'true'} onChange={(e) => setF({ ...f, sms_enabled: String(e.target.checked) })} /> Send an SMS after every sale that has a named customer</label>
-        <p className="muted wide" style={{ margin: 0 }}>Cash sales (no customer selected) never trigger an SMS. Gateway credentials stay in your shop backend and are hidden from users without Settings permission.</p>
+        <label className="check wide"><input type="checkbox" checked={f.sms_enabled === 'true'} onChange={(e) => setF({ ...f, sms_enabled: String(e.target.checked) })} /> <b>SMS gateway on</b> — the main switch: when it is off, no SMS is sent at all</label>
+        <p className="muted wide" style={{ margin: 0 }}>Which SMS go out (sale, repair, service, quotation, due reminder, daily summary) and their messages are in the <b>SMS settings</b> tab. Gateway credentials stay in your shop backend and are hidden from users without Settings permission.</p>
         <Field label="1. Choose your gateway" wide>
           {/* The list shows only real providers. "Choose…" / "Custom" are status labels for the closed box,
               added (hidden) only while they are the current state, so they never appear as dead rows in the list. */}
@@ -423,31 +416,9 @@ function SmsSettings() {
           </div>
         </details>
         {configError&&<p className="wide sms-warn" role="status">{configError}</p>}
-        <Field label="3. Sale message template" wide hint="Placeholders: {name} {shop} {items} {invoice} {total} {paid} {due} {date} {link}"><textarea {...bind('sms_template')} /></Field>
-        <Field label="Repair completed message" wide hint="Sent to the customer when a repair job is marked Completed. Placeholders: {name} {device} {job} {shop} {total} {advance} {due}"><textarea {...bind('sms_repair_template')} /></Field>
-        <Field label="Technician job message" wide hint="Sent to the technician when a repair job is given to them. Placeholders: {technician} {job} {device} {problem} {name} {phone} {shop}"><textarea {...bind('sms_technician_template')} /></Field>
-        <Field label="Service job message (to the technician)" wide hint="Sent when a service job is given to a technician. Placeholders: {technician} {job} {service} {details} {name} {phone} {address} {shop}"><textarea {...bind('sms_service_tech_template')} placeholder="{technician}, new service job {job}: {service}. {details}. Customer {name} {phone}. Address: {address}. {shop}" /></Field>
-        <Field label="Service done message" wide hint="Sent when the technician presses Work done. Placeholders: {job} {service} {name} {phone} {address} {technician} {note} {shop}"><textarea {...bind('sms_service_done_template')} placeholder="Service {job} is done: {service} for {name} {phone} by {technician}. {note}" /></Field>
-        <Field label="Service done SMS goes to" wide hint="Admin / manager mobile numbers, separated by commas."><input {...bind('sms_service_done_numbers')} placeholder="01XXXXXXXXX, 01XXXXXXXXX" inputMode="tel" aria-label="Service done SMS numbers" /></Field>
-        <Field label="Quotation message" wide hint="Sent from PC builder → Send to customer. The link works for 3 days. Placeholders: {name} {shop} {title} {total} {days} {link}"><textarea {...bind('sms_quote_template')} placeholder={DEFAULT_QUOTE_SMS} /></Field>
-        <Field label="WhatsApp invoice message" wide hint="Used by Send on WhatsApp (no SMS cost: it opens WhatsApp with the message filled in). Placeholders: {name} {shop} {invoice} {total} {paid} {due} {link} {shop_phone}"><textarea rows={5} {...bind('whatsapp_template')} placeholder={DEFAULT_WHATSAPP} /></Field>
-        <div className="wide sms-link">
-          <label className="check"><input type="checkbox" checked={linkOn} onChange={(e) => setF({ ...f, sms_invoice_link: String(e.target.checked) })} /> <b>Add a link to the invoice</b></label>
-          <p className="muted" style={{ margin: '4px 0 0', fontSize: 12.5 }}>The customer taps it to see (and download) only their own invoice. Each link works for <b>15 days</b>, then it expires. Put <code>{'{link}'}</code> in the template to choose where it goes — otherwise it is added at the end.</p>
-          {linkOn && (
-            <details style={{ marginTop: 6 }}>
-              <summary className="muted" style={{ cursor: 'pointer', fontSize: 12.5 }}>Web address of the invoice page</summary>
-              <input {...bind('invoice_link_base')} placeholder={DEFAULT_LINK_BASE} aria-label="Invoice page web address" style={{ marginTop: 6, width: '100%' }} />
-              <p className="muted" style={{ margin: '4px 0 0', fontSize: 12 }}>Leave empty to use {DEFAULT_LINK_BASE}. Change it only if Karvio runs on your own domain.</p>
-            </details>
-          )}
-        </div>
-        <Field label="Preview message" wide><select aria-label="Preview message" value={preview} onChange={e=>setPreview(e.target.value)}><option value="sms_template">Sale invoice</option><option value="sms_repair_template">Repair completed</option><option value="sms_technician_template">Technician assignment</option><option value="sms_quote_template">Quotation (PC builder)</option></select></Field>
-        <div className="wide note sms-preview">Preview ({[...sample].length} characters · estimated {parts.count} SMS{parts.unicode ? ' · Bangla / Unicode' : ''}): {sample}</div>
         <div className="wide row end"><span className="muted">{dirty?'Unsaved changes':'Settings saved'}</span><Btn kind="primary" disabled={!!configError || !dirty} busy={busy} onClick={()=>save().catch(()=>{})}>Save SMS settings</Btn></div>
       </div>
       <div className="grid">
-        <DailySummary />
         <div className="card">
           <h2 style={{ marginBottom: 10 }}>Send a test SMS</h2>
           <p className="muted">{dirty?'Save your changes before testing.':'Send one real SMS using your saved settings. Provider charges may apply.'}</p>
@@ -463,6 +434,74 @@ function SmsSettings() {
 }
 
 /** Daily summary SMS: today's sales, profit, expenses, dues and cash, sent to the owner every evening. */
+/* ---------------- SMS settings: one card per SMS the ERP can send, each with its own switch and message ---------------- */
+const DEFAULT_DUE_SMS = 'Dear {name}, your due at {shop} is Tk {due}. Please pay at your earliest convenience. Thank you. {shop_phone}';
+const SMS_SAMPLE = { name: 'Rahim', shop: 'Your Shop', items: 'Router x1', invoice: 'INV-000123', total: '2,500', paid: '2,000', due: '500', date: '19 Nov 2026', link: 'https://…/#/i/Ab12Cd',
+  device: 'Laptop', job: 'JOB-000045', advance: '500', technician: 'Karim', problem: 'No display', phone: '01712345678', service: 'CC Camera Installation', details: '4 cameras', address: 'Mirpur 10',
+  note: 'Done', title: 'Gaming PC', days: '3', shop_phone: '01812345678' };
+const SMS_CARDS = [
+  { on: 'sms_on_sale', tpl: 'sms_template', title: 'Sale invoice SMS', who: 'To the customer after every sale with a named customer (cash sales never get one).', vars: '{name} {shop} {items} {invoice} {total} {paid} {due} {date} {link}', link: true },
+  { on: 'sms_on_due_reminder', tpl: 'sms_due_template', title: 'Due reminder SMS', who: 'Sent from Collection → Remind, to the customers you tick.', vars: '{name} {due} {shop} {shop_phone}', def: DEFAULT_DUE_SMS },
+  { on: 'sms_on_quote', tpl: 'sms_quote_template', title: 'Quotation SMS', who: 'Quotation → Send to customer. The link works for 3 days.', vars: '{name} {shop} {title} {total} {days} {link}', def: DEFAULT_QUOTE_SMS },
+  { on: 'sms_on_repair_done', tpl: 'sms_repair_template', title: 'Repair completed SMS', who: 'To the customer when a repair job is marked Completed.', vars: '{name} {device} {job} {shop} {total} {advance} {due}' },
+  { on: 'sms_on_repair_tech', tpl: 'sms_technician_template', title: 'Repair — technician assigned', who: 'To the technician when a repair job is given to them.', vars: '{technician} {job} {device} {problem} {name} {phone} {shop}' },
+  { on: 'sms_on_service_tech', tpl: 'sms_service_tech_template', title: 'Service — technician assigned', who: 'To the technician when a service job is given to them.', vars: '{technician} {job} {service} {details} {name} {phone} {address} {shop}' },
+  { on: 'sms_on_service_done', tpl: 'sms_service_done_template', title: 'Service done — to admin / manager', who: 'When the technician presses Work done.', vars: '{job} {service} {name} {phone} {address} {technician} {note} {shop}', numbers: 'sms_service_done_numbers' }
+];
+function SmsFeatures() {
+  const gateway = useStore((s) => s.settings.sms_enabled === 'true');
+  return (
+    <>
+      {!gateway && <p className="sms-warn" role="status">The SMS gateway is off, so nothing is sent. Turn it on in the <b>SMS gateway</b> tab.</p>}
+      <div className="smsf-grid">
+        {SMS_CARDS.map((c) => <SmsCard key={c.on} c={c} gateway={gateway} />)}
+        <div className="smsf-daily"><DailySummary /></div>
+        <WhatsAppCard />
+      </div>
+    </>
+  );
+}
+function SmsCard({ c, gateway }) {
+  const keys = [c.on, c.tpl, ...(c.numbers ? [c.numbers] : []), ...(c.link ? ['sms_invoice_link', 'invoice_link_base'] : [])];
+  const { f, setF, bind, save, busy } = useSettingsForm(keys);
+  const saved = useStore((s) => s.settings);
+  const dirty = keys.some((k) => String(f[k] || '') !== String(saved[k] || ''));
+  const on = f[c.on] !== 'false';
+  const linkOn = f.sms_invoice_link !== 'false';
+  let sample = String(f[c.tpl] || c.def || '').replace(/\{(\w+)\}/g, (m, k) => SMS_SAMPLE[k] ?? m);
+  if (c.link && linkOn && !/\{link\}/.test(f[c.tpl] || '')) sample += ' Invoice: ' + SMS_SAMPLE.link;
+  const parts = smsParts(sample);
+  return (
+    <section className={`card smsf-card ${on ? 'on' : 'off'}`}>
+      <div className="smsf-head">
+        <div><h2>{c.title}</h2><p className="muted">{c.who}</p></div>
+        <label className="switch" title={on ? 'On' : 'Off'}><input type="checkbox" checked={on} onChange={(e) => setF({ ...f, [c.on]: String(e.target.checked) })} aria-label={`${c.title} on`} /><span /></label>
+      </div>
+      <Field label="Message" wide hint={`Placeholders: ${c.vars}`}><textarea rows={3} {...bind(c.tpl)} placeholder={c.def || ''} aria-label={`${c.title} message`} disabled={!on} /></Field>
+      {c.numbers && <Field label="Send to" wide hint="Admin / manager mobile numbers, separated by commas."><input {...bind(c.numbers)} placeholder="01XXXXXXXXX, 01XXXXXXXXX" inputMode="tel" aria-label={`${c.title} numbers`} disabled={!on} /></Field>}
+      {c.link && <div className="sms-link">
+        <label className="check"><input type="checkbox" checked={linkOn} onChange={(e) => setF({ ...f, sms_invoice_link: String(e.target.checked) })} disabled={!on} /> Add a link to the invoice (works 15 days)</label>
+        {linkOn && <details style={{ marginTop: 6 }}><summary className="muted" style={{ cursor: 'pointer', fontSize: 12.5 }}>Web address of the invoice page</summary>
+          <input {...bind('invoice_link_base')} placeholder={DEFAULT_LINK_BASE} aria-label="Invoice page web address" style={{ marginTop: 6, width: '100%' }} /></details>}
+      </div>}
+      {sample && <div className="note sms-preview">Preview ({[...sample].length} characters · {parts.count} SMS{parts.unicode ? ' · Bangla' : ''}): {sample}</div>}
+      <div className="row end smsf-foot"><Badge tone={on && gateway ? 'ok' : on ? 'warn' : 'muted'}>{on ? (gateway ? 'Sending' : 'On — gateway off') : 'Off'}</Badge><span className="spacer" />
+        <Btn kind="primary" size="sm" disabled={!dirty} busy={busy} onClick={() => save().catch(() => {})}>{dirty ? 'Save' : 'Saved'}</Btn></div>
+    </section>
+  );
+}
+function WhatsAppCard() {
+  const { bind, save, busy, f } = useSettingsForm(['whatsapp_template']);
+  const saved = useStore((s) => s.settings);
+  return (
+    <section className="card smsf-card on">
+      <div className="smsf-head"><div><h2>WhatsApp invoice message</h2><p className="muted">Send on WhatsApp opens WhatsApp with this message filled in — no SMS cost.</p></div></div>
+      <Field label="Message" wide hint="Placeholders: {name} {shop} {invoice} {total} {paid} {due} {link} {shop_phone}"><textarea rows={5} {...bind('whatsapp_template')} aria-label="WhatsApp invoice message" /></Field>
+      <div className="row end smsf-foot"><span className="spacer" /><Btn kind="primary" size="sm" disabled={String(f.whatsapp_template || '') === String(saved.whatsapp_template || '')} busy={busy} onClick={() => save().catch(() => {})}>Save</Btn></div>
+    </section>
+  );
+}
+
 function DailySummary() {
   const { f, setF, save, busy } = useSettingsForm(['daily_summary_enabled', 'daily_summary_phones', 'daily_summary_hour']);
   const gateway = useStore((st) => st.settings.sms_enabled === 'true');

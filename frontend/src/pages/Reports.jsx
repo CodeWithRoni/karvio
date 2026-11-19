@@ -31,9 +31,9 @@ export default function Reports() {
   const { customers, suppliers, accounts, categories, brands, products, can, settings } = useStore();
   const [params] = useSearchParams();
   const canStatements = can('cost');
-  const list = canStatements ? [...REPORTS, ['slow_stock', 'Slow-moving stock'], ['supplier_prices', 'Supplier prices'], ['supplier_rebates', 'Supplier rebates'], ...Object.entries(STATEMENTS).map(([k, v]) => [k, v[1]])] : REPORTS;
+  const list = canStatements ? [...REPORTS, ['slow_stock', 'Slow-moving stock'], ['supplier_prices', 'Supplier prices'], ['supplier_rebates', 'Supplier rebates'], ['below_cost', 'Sales below cost'], ...Object.entries(STATEMENTS).map(([k, v]) => [k, v[1]])] : REPORTS;
   const start = params.get('type');
-  const [type, setType] = useState(start === 'stock_summary' || (canStatements && (STATEMENTS[start] || start === 'supplier_prices' || start === 'supplier_rebates' || start === 'slow_stock')) ? start : 'sales');
+  const [type, setType] = useState(start === 'stock_summary' || (canStatements && (STATEMENTS[start] || start === 'supplier_prices' || start === 'supplier_rebates' || start === 'slow_stock' || start === 'below_cost')) ? start : 'sales');
   const [lots, setLots] = useState(null);
   const [purchase, setPurchase] = useState(null);
   const toast = useStore((x) => x.toast);
@@ -42,8 +42,9 @@ export default function Reports() {
   const slow = type === 'slow_stock';
   const [sf, setSf] = useState({ stock_filter:params.get('filter') || 'all', group_id:'', category_id:'', brand_id:'', product_id:'', include_inactive:false });
   const [group, setGroup] = useState('invoice');
-  const [range, setRange] = useState(PRESETS[2][2]());
-  const [preset, setPreset] = useState('month');
+  const linked = /^\d{4}-\d{2}-\d{2}$/.test(params.get('from') || '') && /^\d{4}-\d{2}-\d{2}$/.test(params.get('to') || '');
+  const [range, setRange] = useState(linked ? { from: params.get('from'), to: params.get('to') } : PRESETS[2][2]());
+  const [preset, setPreset] = useState(linked ? '' : 'month');
   const [status, setStatus] = useState('active');
   const [party, setParty] = useState('');
   const [wst, setWst] = useState('all');
@@ -97,6 +98,12 @@ export default function Reports() {
           <div className="card"><span>Money tied up</span><b className="warn">{money(r.slow.tied)}</b><small>at purchase cost</small></div>
           <div className="card"><span>Products</span><b>{r.slow.products}</b><small>not sold in the last {r.slow.days} days</small></div>
           <div className="card"><span>Share of stock value</span><b>{r.slow.share}%</b><small>of {money(r.slow.stock_value)} total stock</small></div>
+        </div>
+      )}
+      {r?.below_cost && (
+        <div className="om-kpis">
+          <div className="card"><span>Lines sold below cost</span><b className="bad">{r.below_cost.lines}</b><small>on {r.below_cost.invoices} invoice{r.below_cost.invoices === 1 ? '' : 's'}</small></div>
+          <div className="card"><span>Money lost against cost</span><b className="bad">{money(r.below_cost.loss)}</b><small>cost − what the customer paid</small></div>
         </div>
       )}
       {r?.rebates && (

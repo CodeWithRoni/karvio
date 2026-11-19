@@ -19,8 +19,10 @@ test('custom SMS setup maps fields, saves, and reports queued delivery honestly'
  await expect(page.getByRole('button',{name:'Send test',exact:true})).toBeEnabled();
  await page.getByRole('button',{name:'Send test',exact:true}).click();
  await expect(page.getByText('Queued for delivery. Check the SMS log for the final result.')).toBeVisible();expect(tests).toBe(1);
- await page.getByLabel('Preview message').selectOption('sms_repair_template');
- await expect(page.locator('.sms-preview')).toContainText('Laptop');
+ // messages live in SMS settings: one card per SMS, each with its own preview
+ await page.getByRole('tab',{name:'SMS settings',exact:true}).click();
+ await expect(page.locator('.smsf-card',{hasText:'Repair completed SMS'}).locator('.sms-preview')).toContainText('Laptop');
+ await page.getByRole('tab',{name:'SMS gateway',exact:true}).click();
  await page.screenshot({path:'../verification/sms-gateway-review.png',fullPage:true});
  await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
  await page.reload();await page.getByRole('tab',{name:'SMS gateway',exact:true}).click();

@@ -32,7 +32,7 @@ const rejects = async (r, pattern, message) => { const res = await r; ok(!res.ok
 const quote = {customer:'Rahim', phone:'01711-222333', title:'Gaming PC', valid_days:7, discount:500, note:'Assembly free',
   lines:[{group:'Processor', name:'Ryzen 5 5600', warranty:'1095 days', qty:1, price:15000}, {group:'RAM', name:'16GB DDR4', warranty:'', qty:2, price:3500}]};
 
-await rejects(R('quote.send', quote), /SMS is turned off/, 'needs SMS turned on');
+await rejects(R('quote.send', quote), /Turn on the SMS gateway first/, 'needs SMS turned on');
 await Q('settings.save', {values:{sms_enabled:'true', sms_url:'https://sms.example.com/send?to={number}&text={message}', sms_method:'GET'}});
 await rejects(R('quote.send', {...quote, phone:'12345'}), /mobile number/, 'needs a real mobile number');
 await rejects(R('quote.send', {...quote, lines:[]}), /1 to 60 parts/, 'needs parts');

@@ -8,6 +8,7 @@ import LiveClock from '../components/LiveClock';
 import { useCardOn } from '../lib/dashboardCards';
 import { CollectionReminders, RepairAlerts, InventoryHealth, TopProducts } from '../components/DashboardExtras';
 import SalesChart from '../components/SalesChart';
+import { useNotes, NotesButton, NoteReminders } from '../components/DashNotes';
 
 // History tabs after "Sales": [field, tab label, counted thing, colour, link]
 const HISTORY = [
@@ -82,6 +83,7 @@ export default function Dashboard() {
   const [scope, setScopeState] = useState(readScope);
   const [hist, setHist] = useState('sales');
   const setScope = (v) => { setScopeState(v); try { localStorage.setItem(SCOPE_KEY, v); } catch { /* private mode */ } };
+  const notes = useNotes();
 
   if (loading && !d) return <DashboardSkeleton />;
   if (error && !d) return <ErrorBox error={error} onRetry={reload} />;
@@ -114,6 +116,7 @@ export default function Dashboard() {
     <>
       <PageHead title={d.limited ? `Hello, ${d.user}` : 'Dashboard'}
         sub={<span className="dash-when">{fdate(d.date)}{d.limited ? ' — your own sales' : ''}<LiveClock compact /></span>}>
+        <NotesButton notes={notes} />
         <Btn onClick={reload} busy={loading}>Refresh</Btn>
         {can('repairs') && <Link to="/service" className="btn">New service</Link>}
         {can('repairs') && <Link to="/repairs?new=1" className="btn">New repair</Link>}
@@ -259,7 +262,7 @@ export default function Dashboard() {
       )}
 
       {/* Leaderboard, best sellers and low stock side by side: three equal cards per row (stacks on small screens). */}
-      {(on('leaderboard') || (on('top_products') && d.top_products) || on('low_stock')) && <div className="dash-trio">
+      {(on('leaderboard') || (on('top_products') && d.top_products) || on('low_stock') || (on('below_cost') && can('cost') && !d.limited)) && <div className={`dash-trio ${on('below_cost') && can('cost') && !d.limited ? 'quad' : ''}`}>
         {!on('leaderboard') ? null : d.leaderboard ? (
           <div className="card">
             <div className="card-head"><h2>Staff leaderboard</h2><Tabs tabs={[['today', 'Today'], ['month', 'Month'], ['total', 'All']]} value={lb} onChange={setLb} /></div>
@@ -304,11 +307,45 @@ export default function Dashboard() {
             </div>
           ) : <Empty compact icon="ok" title="Stock levels look healthy" />}
         </div>}
+
+        {on('below_cost') && can('cost') && !d.limited && <BelowCost />}
       </div>}
 
       {!d.limited && (on('stock_summary') || on('product_summary')) && (
         <InventoryHealth stock={on('stock_summary') ? d.stock_summary : null} product={on('product_summary') ? d.product_summary : null} />
       )}
+      <NoteReminders notes={notes} />
     </>
+  );
+}
+
+/** Sales below cost: invoice lines sold for less than the goods cost (after the invoice discount). */
+const BC_PERIODS = [['today', 'Today'], ['week', '1 week'], ['month', '1 month'], ['six_months', '6 months']];
+function BelowCost() {
+  const [period, setPeriod] = useState(() => { try { return localStorage.getItem('karvio_below_cost') || 'today'; } catch { return 'today'; } });
+  const q = useApi('dashboard.below_cost', { period }, [period]);
+  const pick = (v) => { setPeriod(v); try { localStorage.setItem('karvio_below_cost', v); } catch { /* storage blocked */ } };
+  const d = q.data;
+  const from = d ? d.from : '';
+  return (
+    <div className="card below-cost">
+      <div className="card-head"><h2>Sales below cost</h2><Link to={`/reports?type=below_cost${from ? `&from=${from}&to=${d.to}` : ''}`} className="link">Full report</Link></div>
+      <Tabs tabs={BC_PERIODS} value={period} onChange={pick} />
+      {d && <div className={`bc-sum ${d.count ? 'bad' : 'ok'}`}><span>{d.count ? `${d.count} line${d.count === 1 ? '' : 's'} on ${d.invoices} invoice${d.invoices === 1 ? '' : 's'}` : 'Nothing sold below cost'}</span><b className="num">{d.count ? `− ${money(d.loss, false)}` : '✓'}</b></div>}
+      {q.error && <ErrorBox error={q.error} onRetry={q.reload} />}
+      {d && (d.rows.length ? (
+        <div className="trio-body rank-list low">
+          {d.rows.map((r, i) => (
+            <Link to={`/sales/${r.sale_id}`} className="rank-row bc-row" key={r.sale_id + r.product_id + i}>
+              <span className="rank-n out" aria-hidden="true">↓</span>
+              <div className="rank-main">
+                <div className="rank-top"><span>{r.product}</span><b className="num down">−{money(r.loss, false)}</b></div>
+                <small>{r.invoice_no} · {fdate(r.date)} · {qty(r.qty)} × {money(r.unit_price, false)} (cost {money(r.unit_cost, false)}){r.by ? ` · ${r.by}` : ''}</small>
+              </div>
+            </Link>
+          ))}
+        </div>
+      ) : <Empty compact icon="ok" title="Every sale covered its cost" />)}
+    </div>
   );
 }

@@ -2859,7 +2859,7 @@ function databaseReset_(p, user) {
 var SECRET_KEYS = ['sms_api_key', 'courier_steadfast_key', 'courier_steadfast_secret', 'courier_pathao_client_id', 'courier_pathao_client_secret', 'courier_pathao_username', 'courier_pathao_password', 'courier_redx_token'];
 function settingsGet_(p, user) {
   var m = Object.assign({}, settingsMap_());
-  Object.keys(m).forEach(function (k) { if (k.indexOf('seq_') === 0) delete m[k]; });
+  Object.keys(m).forEach(function (k) { if (k.indexOf('seq_') === 0 || k.indexOf('notes_') === 0 || k === 'open_shifts') delete m[k]; });
   if (!can_(user, 'settings')) SECRET_KEYS.concat(['sms_url', 'sms_body', 'sms_sender_id', 'sms_headers']).forEach(function (k) { delete m[k]; });
   return m;
 }
@@ -2891,7 +2891,8 @@ function settingsSave_(p, user) {
     'sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_template', 'sms_repair_template', 'sms_technician_template', 'sms_quote_template', 'sms_due_template', 'sms_headers', 'sms_service_tech_template', 'sms_service_done_template', 'sms_service_done_numbers',
     'dashboard_hidden', 'invoice_template', 'invoice_paper', 'invoice_custom_width', 'invoice_custom_height', 'invoice_note',
     'sms_invoice_link', 'invoice_link_base', 'books_locked_until', 'shop_logo', 'invoice_qr', 'daily_summary_enabled', 'daily_summary_phones', 'daily_summary_hour', 'day_close_lock', 'whatsapp_template', 'shift_mode', 'shift_required',
-    'courier_steadfast_key', 'courier_steadfast_secret', 'courier_pathao_client_id', 'courier_pathao_client_secret', 'courier_pathao_username', 'courier_pathao_password', 'courier_pathao_store_id', 'courier_pathao_sandbox', 'courier_redx_token', 'courier_redx_sandbox'];
+    'courier_steadfast_key', 'courier_steadfast_secret', 'courier_pathao_client_id', 'courier_pathao_client_secret', 'courier_pathao_username', 'courier_pathao_password', 'courier_pathao_store_id', 'courier_pathao_sandbox', 'courier_redx_token', 'courier_redx_sandbox',
+    'sms_on_sale', 'sms_on_due_reminder', 'sms_on_quote', 'sms_on_repair_done', 'sms_on_repair_tech', 'sms_on_service_tech', 'sms_on_service_done', 'sms_due_template'];
   var vals = Object.assign({}, p.values || {});
   if (vals.shop_logo !== undefined) {
     var logo = String(vals.shop_logo || '');
@@ -2904,6 +2905,8 @@ function settingsSave_(p, user) {
   if (vals.day_close_lock !== undefined) vals.day_close_lock = String(vals.day_close_lock) === 'false' ? 'false' : 'true';
   if (vals.shift_mode !== undefined) vals.shift_mode = vals.shift_mode === 'shared' ? 'shared' : 'cashier';
   if (vals.shift_required !== undefined) vals.shift_required = String(vals.shift_required) === 'true' ? 'true' : 'false';
+  ['sms_on_sale', 'sms_on_due_reminder', 'sms_on_quote', 'sms_on_repair_done', 'sms_on_repair_tech', 'sms_on_service_tech', 'sms_on_service_done'].forEach(function (k) { if (vals[k] !== undefined) vals[k] = String(vals[k]) === 'false' ? 'false' : 'true'; });
+  if (vals.sms_due_template !== undefined) { vals.sms_due_template = String(vals.sms_due_template || '').trim(); if (vals.sms_due_template.length > 480) fail_('The due reminder message is too long (keep it under 480 letters)'); }
   ['courier_pathao_sandbox', 'courier_redx_sandbox'].forEach(function (k) { if (vals[k] !== undefined) vals[k] = String(vals[k]) === 'true' ? 'true' : 'false'; });
   ['courier_steadfast_key', 'courier_steadfast_secret', 'courier_pathao_client_id', 'courier_pathao_client_secret', 'courier_pathao_username', 'courier_pathao_password', 'courier_pathao_store_id', 'courier_redx_token'].forEach(function (k) {
     if (vals[k] !== undefined) { vals[k] = String(vals[k] || '').trim(); if (vals[k].length > 2000) fail_('A courier key is too long'); }
@@ -3029,8 +3032,16 @@ function itemsSummary_(lines) {
 /** Taka amounts in SMS use Bangladeshi grouping: 125000 -> 1,25,000 (paisa kept when present). */
 function smsAmt_(v) { return (Math.round(num_(v) * 100) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 }); }
 function smsMessage_(tplKey, vars) { return fillTpl_(getSetting_(tplKey), vars, 'raw'); }
+/** SMS features (Settings → SMS settings): each one can be turned off; all need the gateway switched on. */
+var SMS_FEATURES = { sale: 'Sale invoice SMS', due_reminder: 'Due reminder SMS', quote: 'Quotation SMS', repair_done: 'Repair completed SMS', repair_tech: 'Repair technician SMS',
+  service_tech: 'Service technician SMS', service_done: 'Service done SMS', daily_summary: 'Daily summary SMS' };
+function smsOn_(feature) { return getSetting_('sms_enabled', 'false') === 'true' && getSetting_('sms_on_' + feature, 'true') !== 'false'; }
+function smsNeed_(feature) {
+  if (getSetting_('sms_enabled', 'false') !== 'true') fail_('Turn on the SMS gateway first (Settings → SMS gateway)');
+  if (!smsOn_(feature)) fail_(SMS_FEATURES[feature] + ' is turned off (Settings → SMS settings)');
+}
 function sendSaleSms_(sale, lines, customer) {
-  if (getSetting_('sms_enabled', 'false') !== 'true' || !customer) return null;
+  if (!smsOn_('sale') || !customer) return null;
   var phone = parseList_(customer.phones)[0]; if (!phone) return null;
   // a private link to this invoice, valid for LINK_DAYS days (deleted afterwards)
   var link = getSetting_('sms_invoice_link', 'true') === 'true' ? invoiceLinkCreate_(sale.id) : null;
@@ -3230,7 +3241,7 @@ function quoteDelete_(p, user) {
   return true;
 }
 function quoteSend_(p, user) {
-  if (getSetting_('sms_enabled', 'false') !== 'true') fail_('SMS is turned off. Turn it on in Settings → SMS before sending a quotation');
+  smsNeed_('quote');
   var digits = String(p.phone || '').replace(/\D/g, '');
   if (!/^(?:01\d{9}|8801\d{9})$/.test(digits)) fail_('Enter the customer\'s mobile number (01XXXXXXXXX) to send the quotation');
   var lines = Array.isArray(p.lines) ? p.lines : [];
@@ -3340,7 +3351,7 @@ function dailySummaryTick_() {
  * Customers with nothing due or without a phone number are skipped. The wording used is kept for next time.
  */
 function dueReminder_(p, user) {
-  if (getSetting_('sms_enabled') !== 'true') fail_('Turn on the SMS gateway first (Settings → SMS)');
+  smsNeed_('due_reminder');
   var ids = (Array.isArray(p.ids) ? p.ids : []).map(String).filter(Boolean);
   if (!ids.length) fail_('Tick the customers to remind');
   if (ids.length > 200) fail_('Send to at most 200 customers at a time');
@@ -3464,7 +3475,7 @@ function repairTechnician_(id, keepId) {
 }
 /** SMS to the technician who was just given the job (if SMS is on and the technician has a number). */
 function repairTechSms_(r, tech) {
-  if (!tech || getSetting_('sms_enabled', 'false') !== 'true') return null;
+  if (!tech || !smsOn_('repair_tech')) return null;
   if (!tech.phone) return { ok: false, status: 'skipped', response: tech.name + ' has no phone number (Users & Roles)' };
   var msg = smsMessage_('sms_technician_template', { technician: tech.name, job: r.job_no, device: r.device, problem: r.problem, name: r.customer_name, phone: r.phone, shop: getSetting_('shop_name') });
   if (!String(msg).trim()) return null;
@@ -3575,7 +3586,7 @@ function repairStatus_(p, user) {
   var upd = update_('Repairs', r.id, patch);
   audit_(user, 'repair_' + to.toLowerCase(), r.job_no);
   var out = repairOut_(upd), sms = null;
-  if (to === 'Completed' && p.send_sms !== false && getSetting_('sms_enabled', 'false') === 'true' && r.phone) {
+  if (to === 'Completed' && p.send_sms !== false && smsOn_('repair_done') && r.phone) {
     var msg = smsMessage_('sms_repair_template', { name: r.customer_name, device: r.device, job: r.job_no, shop: getSetting_('shop_name'), total: smsAmt_(out.total), advance: smsAmt_(r.advance), due: smsAmt_(out.due) });
     if (String(msg).trim()) { try { sms = sendSms_(r.phone, msg); } catch (e) { sms = { ok: false, status: 'failed', response: String(e.message || e) }; } }
   }
@@ -3751,7 +3762,7 @@ function serviceCustomer_(p) {
 }
 /** SMS to the technician given the job: what to do, the customer, number and address. */
 function serviceTechSms_(r, tech) {
-  if (!tech || getSetting_('sms_enabled', 'false') !== 'true') return null;
+  if (!tech || !smsOn_('service_tech')) return null;
   if (!tech.phone) return { ok: false, status: 'skipped', response: tech.name + ' has no phone number (Users & Roles)' };
   var msg = fillTpl_(getSetting_('sms_service_tech_template') || DEFAULT_SERVICE_TECH_SMS, { technician: tech.name, job: r.job_no, service: r.device, details: r.problem,
     name: r.customer_name, phone: r.phone, address: r.accessories, shop: getSetting_('shop_name') }, 'raw');
@@ -3816,7 +3827,7 @@ function serviceStatus_(p, user) {
   return out;
 }
 function serviceDoneSms_(r, note) {
-  if (getSetting_('sms_enabled', 'false') !== 'true') return null;
+  if (!smsOn_('service_done')) return null;
   var numbers = String(getSetting_('sms_service_done_numbers', '') || '').split(/[,;\s]+/).map(function (x) { return x.trim(); }).filter(function (x) { return phoneKey_(x).length >= 10; });
   if (!numbers.length) return { ok: false, status: 'skipped', response: 'No number for "service done" SMS in Settings → SMS' };
   var msg = fillTpl_(getSetting_('sms_service_done_template') || DEFAULT_SERVICE_DONE_SMS, { job: r.job_no, service: r.device, name: r.customer_name, phone: r.phone,
@@ -4196,12 +4207,13 @@ function purchasesList_(p) {
 /* ============================================================================
  *  13. SALES
  * ========================================================================== */
-function saleCreate_(p, user) {
+function saleCreate_(p, user, edit) {
+  // edit (from saleEdit_ only, never from the browser): keep the invoice number, date and seller of the invoice being corrected
   var pmap = indexBy_(all_('Products')), items = p.items || [];
   if (!items.length) fail_('Cart is empty');
   var customer = p.customer_id ? all_('Customers').filter(function (c) { return c.id === p.customer_id; })[0] : null;
   if (p.customer_id && !customer) fail_('Customer not found');
-  var date = today_(), sidx = serialIndex_(), used = {}, need = {}, lines = [], subtotal = 0, costTotal = 0;
+  var date = edit ? edit.date : today_(), sidx = serialIndex_(), used = {}, need = {}, lines = [], subtotal = 0, costTotal = 0;
 
   items.forEach(function (it) {
     var pr = pmap[it.product_id]; if (!pr || !pr.active) fail_('Product is not available');
@@ -4264,7 +4276,7 @@ function saleCreate_(p, user) {
     if (!isFinite(Number(p.expected_previous_due)) || Math.abs(Number(p.expected_previous_due) - oldBalance) > 0.005) fail_('Customer balance changed. Refresh the customer balance and check the previous due payment before saving');
     if (oldBalance <= 0 || oldPaid > oldBalance + 0.005) fail_('Previous due payment cannot exceed the current previous due (' + Math.max(oldBalance, 0) + ')');
   }
-  var inv = nextNo_('seq_sale', getSetting_('invoice_prefix', 'INV-'));
+  var inv = edit ? edit.invoice_no : nextNo_('seq_sale', getSetting_('invoice_prefix', 'INV-'));
   // Separate CP receipts precede the sale: cancellation/return of the sale never voids them.
   var oldReceipts = oldPays.map(function(x) { return customerPayment_({customer_id:customer.id,account_id:x.account_id,amount:x.amount,date:date,note:'Previous due collected while entering sale ' + inv},user); });
   var previousBalance = customer ? (customerBalances_()[customer.id] || 0) : 0;
@@ -4272,7 +4284,7 @@ function saleCreate_(p, user) {
   var sale = insert_('Sales', {
     invoice_no: inv, date: date, customer_id: customer ? customer.id : '', customer_name: customer ? customer.name : CASH_SALE_NAME,
     subtotal: subtotal, discount: discount, total: total, paid: paid, credit_used: creditUsed, due: due, cost: round_(costTotal), profit: profit,
-    note: p.note || '', status: 'active', user_id: user.id, user_name: user.name, created_at: now_(), payments: pays, next_payment_date: nextPay,
+    note: p.note || '', status: 'active', user_id: edit ? edit.user_id : user.id, user_name: edit ? edit.user_name : user.name, created_at: edit ? edit.created_at : now_(), payments: pays, next_payment_date: nextPay,
     balance_snapshot: { previous: round_(previousBalance), outstanding: round_(previousBalance + total - cashPaid) }
   });
   var rows = insertMany_('SaleItems', lines.map(function (l) {
@@ -4295,7 +4307,7 @@ function saleCreate_(p, user) {
   audit_(user, 'sale_create', inv);
 
   var detail = saleDetail_({ id: sale.id }, user), sms = null;
-  if (customer && p.send_sms !== false) {
+  if (customer && p.send_sms !== false && !edit) {
     try { sms = sendSaleSms_(sale, lines.map(function (l) { return { name: l.pr.name, qty: l.qty }; }), customer); } catch (e) { sms = { ok: false, status: 'failed', response: String(e.message || e) }; }
   }
   detail.sms = sms;
@@ -4332,6 +4344,7 @@ function salesList_(p, user) {
   var rows = all_('Sales').filter(function (x) {
     if (own && x.user_id !== user.id) return false;
     if (!branchSees_('Sales', x.id)) return false;
+    if (!p.include_edited && x.status === 'cancelled' && /^Edited — /.test(String(x.cancel_reason || ''))) return false;
     if (!inRange_(x.date, p.from, p.to)) return false;
     if (p.status && x.status !== p.status) return false;
     if (p.customer_id && x.customer_id !== p.customer_id) return false;
@@ -5168,6 +5181,39 @@ function reverseSale_(p, user, reason) {
   });
   evBatch_(user, events);
   return true;
+}
+/* ---- Edit an invoice: the old version is cancelled (stock, serials, money and the customer ledger all go back)
+ * and the corrected one is saved under the same invoice number, date and seller. The old version stays in the
+ * history as "<number>-E1" (cancelled, reason "Edited — …") and the activity log keeps both. Same rules as
+ * cancelling: the cancel permission and an admin password; no returns, claims or job links on the invoice. */
+function saleEdit_(p, user) {
+  need_(user, 'cancel');
+  confirmAdmin_(user, p.password);
+  var s = all_('Sales').filter(function (x) { return x.id === p.id; })[0];
+  if (!s || s.status !== 'active') fail_('Invoice not found or already cancelled');
+  if (!can_(user, 'sales.all') && s.user_id !== user.id) fail_('Permission denied: this invoice belongs to another user');
+  lockCheck_(s.date, 'an invoice');
+  if (all_('SalesReturns').some(function (r) { return r.sale_id === s.id && r.status === 'active'; })) fail_('This invoice has a return. Cancel the return first, or make another return / exchange');
+  if (all_('WarrantyClaims').some(function (c) { return c.sale_id === s.id; })) fail_('This invoice has warranty claims, so it cannot be edited');
+  if (all_('Repairs').some(function (j) { return j.sale_id === s.id; })) fail_('This invoice belongs to a repair or service job. Cancel it and complete the job again');
+  var reason = String(p.reason || '').trim().slice(0, 200);
+  s = Object.assign({}, s); // a copy: the row itself gets the old-copy number below
+  var before = saleDetail_({ id: s.id }, user), n = 1;
+  while (all_('Sales').some(function (x) { return x.invoice_no === s.invoice_no + '-E' + n; })) n++;
+  reverseSale_({ id: s.id }, user, 'Edited — corrected invoice saved as ' + s.invoice_no + (reason ? ': ' + reason : ''));
+  update_('Sales', s.id, { invoice_no: s.invoice_no + '-E' + n });
+  var next = s.next_payment_date && String(s.next_payment_date) >= today_() ? s.next_payment_date : '';
+  var detail = saleCreate_({ customer_id: p.customer_id === undefined ? s.customer_id : p.customer_id, items: p.items, discount: p.discount, payments: p.payments, credit_used: p.credit_used,
+    note: p.note === undefined ? s.note : p.note, next_payment_date: p.next_payment_date === undefined ? next : p.next_payment_date, send_sms: false }, user,
+    { invoice_no: s.invoice_no, date: String(s.date).slice(0, 10), user_id: s.user_id, user_name: s.user_name, created_at: s.created_at });
+  var newId = detail.sale.id;
+  // Links to the invoice follow the corrected version.
+  all_('InvoiceLinks').filter(function (l) { return l.sale_id === s.id; }).forEach(function (l) { update_('InvoiceLinks', l.id, { sale_id: newId }); });
+  var orders = orderRows_();
+  orders.rows.forEach(function (r) { var o = orderParse_(r); if (o && o.sale_id === s.id) { o.sale_id = newId; orderWrite_(orders, r, o); } });
+  var brief = function (d) { return { customer: d.sale.customer_name, total: d.sale.total, paid: d.sale.paid, due: d.sale.due, items: d.items.map(function (i) { return i.name + ' x' + i.qty + ' @' + i.price + (i.serials ? ' [' + i.serials + ']' : ''); }) }; };
+  audit_(user, 'sale_edit', { invoice: s.invoice_no, old_copy: s.invoice_no + '-E' + n, reason: reason, before: brief(before), after: brief(detail) });
+  return detail;
 }
 function reversePurchase_(p, user, reason) {
   var pur = all_('Purchases').filter(function (x) { return x.id === p.id; })[0];
@@ -6646,6 +6692,62 @@ function supplierPrices_(p, user) {
   return supplierPricesData_(p);
 }
 
+/* ---- Sales below cost: invoice lines whose selling value (after the invoice discount) is under what the goods
+ * cost. Services have no cost and are left out; cancelled invoices too. Needs "See cost price & profit margins". */
+function belowCostRows_(from, to, user) {
+  var own = !can_(user, 'sales.all'), sales = {}, items = {};
+  all_('Sales').forEach(function (s) { if (s.status === 'active' && inRange_(s.date, from, to) && (!own || s.user_id === user.id) && branchSees_('Sales', s.id)) sales[s.id] = s; });
+  all_('SaleItems').forEach(function (i) { if (sales[i.sale_id]) (items[i.sale_id] = items[i.sale_id] || []).push(i); });
+  var rows = [];
+  Object.keys(items).forEach(function (sid) {
+    var s = sales[sid], lines = items[sid];
+    lines.forEach(function (i) {
+      var cost = num_(i.cost), net = invoiceLineNet_(i, lines, s);
+      if (!(cost > 0) || net >= cost - 0.005) return;
+      var q = num_(i.qty) || 1;
+      rows.push({ date: String(s.date).slice(0, 10), invoice_no: s.invoice_no, sale_id: s.id, customer: s.customer_name || 'Walk-in', product: i.name, product_id: i.product_id,
+        qty: i.qty, unit_price: round_(net / q), unit_cost: round_(cost / q), sold_for: round_(net), cost: round_(cost), loss: round_(cost - net), by: s.user_name || '' });
+    });
+  });
+  return rows.sort(function (a, b) { return b.date.localeCompare(a.date) || b.loss - a.loss; });
+}
+var BELOW_COST_PERIODS = { today: 0, week: 6, month: 29, six_months: 182 };
+function belowCostCard_(p, user) {
+  if (!can_(user, 'cost')) fail_('Permission denied: ' + PERMS.cost);
+  var period = BELOW_COST_PERIODS.hasOwnProperty(p.period) ? p.period : 'today', to = today_(), from = addDays_(to, -BELOW_COST_PERIODS[period]);
+  var rows = belowCostRows_(from, to, user);
+  return { period: period, from: from, to: to, count: rows.length, loss: round_(sum_(rows, function (r) { return r.loss; })), invoices: Object.keys(indexBy_(rows, 'sale_id')).length, rows: rows.slice(0, 100) };
+}
+
+/* ---- Dashboard notes: each user's own notes with an optional reminder (date and time, shop time). Kept in
+ * Settings as 'notes_<user id>' (small, travels in every backup) and never sent to anyone else. */
+var NOTE_MAX = 60;
+function notesKey_(user) { return 'notes_' + user.id; }
+function notesOf_(user) { var a = jsonSetting_(notesKey_(user), []); return Array.isArray(a) ? a : []; }
+function notesList_(p, user) {
+  return notesOf_(user).sort(function (a, b) { return (a.status === 'done') - (b.status === 'done') || String(a.remind_at || '9999').localeCompare(String(b.remind_at || '9999')) || String(b.created_at).localeCompare(String(a.created_at)); });
+}
+function noteSave_(p, user) {
+  var list = notesOf_(user), text = String(p.text || '').trim().slice(0, 600);
+  if (!text) fail_('Write the note');
+  var at = String(p.remind_at || '').trim();
+  if (at && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(at)) fail_('Choose the reminder date and time');
+  if (at && !isDate_(at.slice(0, 10))) fail_('Choose a valid reminder date');
+  var color = ['yellow', 'blue', 'green', 'pink', 'violet'].indexOf(p.color) >= 0 ? p.color : 'yellow';
+  var n = p.id ? list.filter(function (x) { return x.id === p.id; })[0] : null;
+  if (p.id && !n) fail_('Note not found');
+  if (!n) { if (list.length >= NOTE_MAX) fail_('You have ' + NOTE_MAX + ' notes. Delete some old ones first'); n = { id: uid_(), created_at: now_() }; list.push(n); }
+  n.text = text; n.remind_at = at; n.color = color; n.status = p.status === 'done' ? 'done' : 'open'; n.updated_at = now_();
+  setSetting_(notesKey_(user), JSON.stringify(list));
+  return notesList_(p, user);
+}
+function noteDelete_(p, user) {
+  var list = notesOf_(user), left = list.filter(function (x) { return x.id !== p.id; });
+  if (left.length === list.length) fail_('Note not found');
+  setSetting_(notesKey_(user), JSON.stringify(left));
+  return notesList_(p, user);
+}
+
 function reportsRaw_(p, user) {
   var from = p.from || '', to = p.to || '', group = p.group || 'invoice', cost = can_(user, 'cost');
   // Without "View sales made by other staff", every report shows only the user's own sales (and their returns).
@@ -6684,6 +6786,13 @@ function reportsRaw_(p, user) {
     return finishReport_('Slow-moving stock — not sold in the last ' + sdays + ' days', [col_('product', 'Product'), col_('category', 'Category'), col_('brand', 'Brand'), col_('last_sold', 'Last sold'),
       col_('idle_days', 'Days without a sale', 'num'), col_('stock', 'In stock', 'num'), col_('cost_price', 'Unit cost', 'money'), col_('value', 'Value at cost', 'money', true), col_('supplier', 'Last supplier')], slow,
       { slow: { days: sdays, tied: tied, products: slow.length, stock_value: round_(allValue), share: allValue > 0 ? round_(tied / allValue * 100, 1) : 0 } });
+  }
+  if (T === 'below_cost') {
+    if (!cost) fail_('Permission denied: the below-cost report needs "See cost price & profit margins"');
+    var bc = belowCostRows_(from, to, user);
+    return finishReport_('Sales below cost' + period, [col_('date', 'Date', 'date'), col_('invoice_no', 'Invoice'), col_('customer', 'Customer'), col_('product', 'Product'), col_('qty', 'Qty', 'num', true),
+      col_('unit_price', 'Sold at (each)', 'money'), col_('unit_cost', 'Cost (each)', 'money'), col_('sold_for', 'Sold for', 'money', true), col_('cost', 'Cost', 'money', true), col_('loss', 'Loss', 'money', true), col_('by', 'Sold by')], bc,
+      { below_cost: { lines: bc.length, invoices: Object.keys(indexBy_(bc, 'sale_id')).length, loss: round_(sum_(bc, function (r) { return r.loss; })) } });
   }
   if (T === 'supplier_rebates') {
     if (!can_(user, 'suppliers')) fail_('Permission denied: the rebate report needs the Suppliers permission');
@@ -6872,6 +6981,10 @@ var ROUTES = {
   'branch.transfer.cancel':  r_('products', function (p, u) { return branchTransferFinish_(p, u, false); }, true),
   'branch.report':    r_('reports', branchReport_),
   daybook:            r_('accounts', daybook_),
+  'dashboard.below_cost': r_(null, belowCostCard_),
+  'notes.list':       r_(null, notesList_),
+  'note.save':        r_(null, noteSave_, true),
+  'note.delete':      r_(null, noteDelete_, true),
   'shift.mine':       r_(null, shiftMine_),
   'shift.open':       r_(null, shiftOpen_, true),
   'shift.close':      r_(null, shiftClose_, true),
@@ -6949,6 +7062,7 @@ var ROUTES = {
   'order.cancel':     r_('pos', orderCancel_, true),
   'courier.call':     r_(null, courierCall_, true),
   'sale.detail':      r_('pos', saleDetail_),
+  'sale.edit':        r_('pos', function (p, u) { return stripCost_(saleEdit_(p, u), u); }, true),
   'sales.details':    r_('pos', function (p, u) { var ids = Array.isArray(p.ids) ? p.ids : []; if (ids.length > 200) fail_('Export at most 200 invoices per request; use batched export'); if (!ids.length) fail_('Select at least one invoice'); return ids.map(function (id) { return saleDetail_({ id: id }, u); }); }),
   'sales.list':       r_('pos', salesList_),
   'sreturn.create':   r_('sales.return', function (p, u) { return stripCost_(sreturnCreate_(p, u), u); }, true),

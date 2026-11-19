@@ -102,7 +102,7 @@ test('supplier prices report marks the cheapest supplier; settings preview the d
   await expect(page.getByRole('combobox', { name: 'Report' })).toHaveValue('supplier_prices');
   await expect(page.getByRole('columnheader', { name: 'Last unit cost' })).toBeVisible();
   await page.goto('/#/settings');
-  await page.getByRole('tab', { name: /SMS/ }).click();
+  await page.getByRole('tab', { name: 'SMS settings' }).click();
   const card = page.locator('.ds-card');
   await expect(card.getByRole('heading', { name: 'Daily summary to the owner' })).toBeVisible();
   await expect(card.locator('.ds-preview')).toContainText('Sales');

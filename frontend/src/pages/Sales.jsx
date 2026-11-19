@@ -9,7 +9,7 @@ import { excelSales, pdfSales, printSales } from '../lib/salesDocs';
 // Full invoices for ticked rows (fetched in one call).
 const saleDocs = { excel: async (rows) => excelSales(await salesDetails(rows), `invoices-${rows.length}.xlsx`), pdf: async (rows) => pdfSales(await salesDetails(rows), `invoices-${rows.length}.pdf`), print: async (rows) => printSales(await salesDetails(rows)) };
 import { useApi, PageHead, Tabs, DateRange, Badge, statusTone, Modal, Btn, Field, Loading, ErrorBox, useAction, Select, noWheel } from '../components/ui';
-import { ReverseDialog, ProductSearch, SerialChooser, PaymentSplit, defaultPay, cleanPays } from '../components/widgets';
+import { ReverseDialog, ProductSearch, SerialChooser, PaymentSplit, defaultPay, cleanPays, CustomerPicker } from '../components/widgets';
 import { salesDetails } from '../lib/salesDetails';
 import { returnValue } from '../lib/returnValue';
 import DateInput from '../components/DateInput';
@@ -84,6 +84,7 @@ function SaleDetail({ id, onClose, onChanged }) {
   const { data, loading, error, reload } = useApi('sale.detail', { id });
   const [ret, setRet] = useState(false);
   const [rev, setRev] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [link, setLink] = useState(null); // { url, expires_at } — a customer link made for this invoice
   const [linkBusy, setLinkBusy] = useState(false);
   const toast = useStore((st) => st.toast);
@@ -102,6 +103,7 @@ function SaleDetail({ id, onClose, onChanged }) {
     <Modal open onClose={onClose} size="lg" title={s ? `Invoice ${s.invoice_no}` : 'Invoice'}
       footer={s && <>
         {can('cancel') && s.status === 'active' && <Btn kind="danger" onClick={() => setRev(true)}>Cancel invoice</Btn>}
+        {can('cancel') && s.status === 'active' && <Btn kind="primary" onClick={() => setEditing(true)} title="Change items, prices, payments or the customer — the invoice keeps its number">✎ Edit</Btn>}
         {can('sales.return') && s.status === 'active' && <Btn onClick={() => setRet(true)}>Return / exchange</Btn>}
         {can('pos') && s.customer_id && <Btn busy={linkBusy} onClick={makeLink} title="A private link to this invoice for the customer (WhatsApp, Messenger…). Works for 15 days.">Customer link</Btn>}
         {can('pos') && <WhatsAppBtn data={data} link={link} onLink={setLink} />}
@@ -146,6 +148,7 @@ function SaleDetail({ id, onClose, onChanged }) {
           {data.returns.length > 0 && <p className="muted" style={{ marginTop: 10 }}>Returns: {data.returns.map((r) => `${r.return_no} (${money(r.total, false)}, ${r.status})`).join(', ')}</p>}
         </>
       )}
+      {editing && <EditInvoice detail={data} onClose={() => setEditing(false)} onDone={() => { setEditing(false); onClose(); onChanged(); }} />}
       {ret && <ReturnForm detail={data} onClose={() => setRet(false)} onDone={() => { setRet(false); reload(); onChanged(); }} />}
       <ReverseDialog open={rev} type="sale" id={s?.id} label={`invoice ${s?.invoice_no}`} onClose={() => setRev(false)} onDone={() => { reload(); onChanged(); }} />
     </Modal>
@@ -153,6 +156,60 @@ function SaleDetail({ id, onClose, onChanged }) {
 }
 
 const isSerialProduct = (p) => !p.service && p.has_warranty && p.warranty_type === 'serial';
+
+/** Edit an invoice: same number, date and seller; stock, payments and the customer's due are corrected. */
+function EditInvoice({ detail, onClose, onDone }) {
+  const { products, accounts, user } = useStore();
+  const s = detail.sale;
+  const pays0 = (Array.isArray(s.payments) ? s.payments : (() => { try { return JSON.parse(s.payments); } catch { return []; } })()).map((p) => ({ account_id: p.account_id, amount: String(p.amount) }));
+  const [customer, setCustomer] = useState(s.customer_id || '');
+  const [lines, setLines] = useState(() => detail.items.map((i) => ({ product_id: i.product_id, name: i.name, unit: i.unit, qty: String(i.qty), price: String(i.price), serials: i.serials || '', serial: !!i.serials })));
+  const [discount, setDiscount] = useState(String(s.discount || 0));
+  const [pays, setPays] = useState(pays0.length ? pays0 : []);
+  const [note, setNote] = useState(s.note || '');
+  const [reason, setReason] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, run] = useAction();
+  const add = (p) => {
+    if (lines.some((l) => l.product_id === p.id)) return setLines(lines.map((l) => (l.product_id === p.id && !l.serial ? { ...l, qty: String(round2((Number(l.qty) || 0) + 1)) } : l)));
+    setLines([...lines, { product_id: p.id, name: p.name, unit: p.unit, qty: '1', price: String(p.sale_price || 0), serials: '', serial: isSerialProduct(p) }]);
+  };
+  const set = (i, patch) => setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  const count = (l) => (l.serial ? splitList(l.serials).length : Number(l.qty) || 0);
+  const subtotal = round2(lines.reduce((t, l) => t + count(l) * (Number(l.price) || 0), 0));
+  const total = round2(subtotal - (Number(discount) || 0));
+  const paid = round2(pays.reduce((t, p) => t + (Number(p.amount) || 0), 0) + (Number(s.credit_used) || 0));
+  const due = round2(total - paid);
+  const save = async () => {
+    const r = await run(() => api('sale.edit', { id: s.id, password, reason, customer_id: customer, discount: Number(discount) || 0, note, credit_used: Number(s.credit_used) || 0,
+      payments: cleanPays(pays), items: lines.map((l) => ({ product_id: l.product_id, qty: l.serial ? splitList(l.serials).length : l.qty, price: l.price, ...(l.serial ? { serials: l.serials } : {}) })) }), `Invoice ${s.invoice_no} updated`);
+    if (r) onDone(r);
+  };
+  return (
+    <Modal open size="lg" title={`Edit invoice ${s.invoice_no}`} onClose={onClose}
+      footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={save} disabled={!lines.length || !password || (!customer && due > 0.004) || total < 0}>Save changes</Btn></>}>
+      <div className="form inv-edit">
+        <p className="muted wide" style={{ margin: 0 }}>The invoice keeps its number ({s.invoice_no}), date ({fdate(s.date)}) and seller ({s.user_name}). Stock, serials, payments and the customer's due are corrected; the old version stays in the activity log.</p>
+        <Field label="Customer" wide><CustomerPicker value={customer} onChange={setCustomer} /></Field>
+        <div className="wide"><ProductSearch onPick={add} placeholder="Add a product: search or scan" /></div>
+        <table className="dc-hist wide"><thead><tr><th>Product</th><th className="r">Qty</th><th className="r">Price</th><th className="r">Amount</th><th /></tr></thead>
+          <tbody>{lines.map((l, i) => (
+            <tr key={l.product_id + i}><td>{l.name}{l.serial && <input className="inv-ser" value={l.serials} onChange={(e) => set(i, { serials: e.target.value })} placeholder="Serial numbers, separated by commas" aria-label={`Serials of ${l.name}`} />}</td>
+              <td className="r">{l.serial ? count(l) : <input className="sc-in" type="number" min="0" step="any" value={l.qty} onChange={(e) => set(i, { qty: e.target.value })} onWheel={noWheel} aria-label={`Quantity of ${l.name}`} />}</td>
+              <td className="r"><input className="sc-in" type="number" min="0" step="any" value={l.price} onChange={(e) => set(i, { price: e.target.value })} onWheel={noWheel} aria-label={`Price of ${l.name}`} /></td>
+              <td className="r num">{money(count(l) * (Number(l.price) || 0), false)}</td>
+              <td className="r"><Btn size="sm" kind="danger" onClick={() => setLines(lines.filter((_, j) => j !== i))} aria-label={`Remove ${l.name}`}>×</Btn></td></tr>))}</tbody></table>
+        <Field label="Discount"><input type="number" min="0" step="any" value={discount} onChange={(e) => setDiscount(e.target.value)} onWheel={noWheel} aria-label="Discount" /></Field>
+        <Field label="Note"><input value={note} onChange={(e) => setNote(e.target.value)} aria-label="Invoice note" /></Field>
+        <div className="wide"><PaymentSplit value={pays} onChange={setPays} total={round2(total - (Number(s.credit_used) || 0))} label="Paid on this invoice" /></div>
+        <div className="wide oo-totals"><span>Subtotal {money(subtotal, false)}</span><span>− Discount {money(Number(discount) || 0, false)}</span><b>Total {money(total)}</b><span>Paid {money(paid, false)}{Number(s.credit_used) ? ` (incl. advance ${money(s.credit_used, false)})` : ''}</span><b className="cod">{due > 0.004 ? `Due ${money(due)}` : due < -0.004 ? `Overpaid ${money(-due)}` : 'Fully paid'}</b></div>
+        {!customer && due > 0.004 && <p className="wide sms-warn">A walk-in (cash) sale must be paid in full — choose the customer or add the payment.</p>}
+        <Field label="Why (optional)"><input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. wrong price entered" aria-label="Reason for the edit" /></Field>
+        <Field label={user?.role === 'admin' ? 'Your password' : 'Admin password'}><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" aria-label="Admin password" /></Field>
+      </div>
+    </Modal>
+  );
+}
 
 function ReturnForm({ detail, onClose, onDone }) {
   const { accounts, refresh, can, toast } = useStore();

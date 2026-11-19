@@ -1664,3 +1664,66 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
 .br-table td, .br-table th { white-space: nowrap; }
 .br-table tr.all td { font-weight: 800; border-top: 2px solid var(--line); }
 .bt-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 12px; } .bt-list > .card { margin: 0; }
+
+/* Dashboard: four cards in the leaderboard row; sales below cost */
+.dash-trio.quad { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 1500px) { .dash-trio.quad { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .dash-trio.quad { grid-template-columns: 1fr; } }
+.below-cost .tabs { margin-bottom: 10px; align-self: flex-start; }
+.bc-sum { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-radius: 10px; margin-bottom: 8px; font-weight: 700; }
+.bc-sum.bad { color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, transparent); border: 1px solid color-mix(in srgb, var(--bad) 35%, transparent); }
+.bc-sum.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, transparent); border: 1px solid color-mix(in srgb, var(--ok) 30%, transparent); }
+.bc-row { text-decoration: none; color: inherit; }
+.bc-row:hover .rank-top span { text-decoration: underline; }
+
+/* Dashboard notes & reminders */
+.btn.note-btn { display: inline-flex; align-items: center; gap: 7px; color: #fff; border: 0; font-weight: 700;
+  background: linear-gradient(135deg, #7c3aed, #0ea5e9); box-shadow: 0 4px 14px rgba(124, 58, 237, .35); transition: transform .12s, box-shadow .2s, filter .2s; }
+.btn.note-btn:hover { transform: translateY(-1px); filter: brightness(1.08); box-shadow: 0 6px 20px rgba(14, 165, 233, .4); }
+.note-count { background: rgba(255,255,255,.22); border-radius: 999px; padding: 0 7px; font-size: 11.5px; line-height: 18px; }
+.note-count.due { background: #f43f5e; animation: note-pulse 1.6s infinite; }
+@keyframes note-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, .6); } 50% { box-shadow: 0 0 0 5px rgba(244, 63, 94, 0); } }
+.nc-yellow { --nc: #f2c230; } .nc-blue { --nc: #38bdf8; } .nc-green { --nc: #4ade80; } .nc-pink { --nc: #f472b6; } .nc-violet { --nc: #a78bfa; }
+.note-form { border: 1px solid var(--line); border-left: 4px solid var(--nc); border-radius: 12px; padding: 10px 12px; display: grid; gap: 8px; margin-bottom: 12px; background: color-mix(in srgb, var(--nc) 6%, transparent); }
+.note-form textarea { width: 100%; resize: vertical; }
+.note-form-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.note-form-row.end { align-items: center; }
+.note-quick { display: flex; gap: 6px; flex-wrap: wrap; padding-bottom: 4px; }
+.note-quick .chip { border: 1px solid var(--line); background: transparent; color: var(--text); border-radius: 999px; padding: 4px 10px; font: 600 12px var(--font); cursor: pointer; }
+.note-quick .chip:hover { border-color: var(--nc); }
+.note-colors { display: flex; gap: 6px; }
+.note-dot { width: 20px; height: 20px; border-radius: 50%; border: 2px solid transparent; background: var(--nc); cursor: pointer; padding: 0; }
+.note-dot.on { border-color: var(--text); }
+.note-list { display: grid; gap: 8px; }
+.note-h { margin: 8px 0 0; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.note-item { border: 1px solid var(--line); border-left: 4px solid var(--nc); border-radius: 10px; padding: 8px 12px; }
+.note-item p { margin: 0 0 6px; white-space: pre-wrap; }
+.note-item.done { opacity: .6; } .note-item.done p { text-decoration: line-through; }
+.note-meta { display: flex; gap: 6px; align-items: center; font-size: 12.5px; flex-wrap: wrap; }
+.note-when.due { color: #f43f5e; font-weight: 700; }
+.note-pops { position: fixed; right: 18px; bottom: 18px; z-index: 60; display: grid; gap: 10px; width: min(420px, calc(100vw - 36px)); }
+.note-pop { background: var(--panel); border: 1px solid color-mix(in srgb, var(--nc) 55%, var(--line)); border-top: 4px solid var(--nc); border-radius: 14px; padding: 12px 14px; box-shadow: var(--shadow); animation: note-in .25s ease-out; }
+@keyframes note-in { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
+.note-pop-head { display: flex; align-items: center; gap: 8px; } .note-pop-head small { color: var(--muted); } .note-pop-head .note-x { margin-left: auto; background: none; border: 0; color: var(--muted); font-size: 20px; cursor: pointer; line-height: 1; }
+.note-pop p { margin: 8px 0 10px; white-space: pre-wrap; font-size: 14.5px; }
+.note-pop-actions { display: flex; flex-wrap: wrap; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px; }
+.note-pick { display: flex; gap: 6px; margin-bottom: 8px; } .note-pick input { flex: 1; }
+.note-more { text-align: right; font-size: 12.5px; color: var(--muted); }
+
+/* Settings → SMS settings: one card per SMS */
+.smsf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 12px; align-items: start; }
+.smsf-grid > .card, .smsf-daily > .card { margin: 0; }
+.smsf-card { display: grid; gap: 10px; border-top: 3px solid var(--line); }
+.smsf-card.on { border-top-color: var(--ok); } .smsf-card.off { opacity: .85; }
+.smsf-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.smsf-head h2 { margin: 0 0 4px; font-size: 16px; } .smsf-head p { margin: 0; font-size: 12.5px; }
+.smsf-foot { align-items: center; }
+.switch { position: relative; display: inline-block; width: 44px; height: 24px; flex: none; cursor: pointer; }
+.switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+.switch span { position: absolute; inset: 0; border-radius: 999px; background: var(--line); transition: background .2s; }
+.switch span::before { content: ''; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px; border-radius: 50%; background: #fff; transition: transform .2s; }
+.switch input:checked + span { background: var(--ok); }
+.switch input:checked + span::before { transform: translateX(20px); }
+.switch input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.inv-edit .inv-ser { display: block; width: 100%; margin-top: 4px; font-size: 12.5px; }
