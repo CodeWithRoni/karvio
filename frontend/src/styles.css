@@ -1907,3 +1907,9 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
 .rail::-webkit-scrollbar { width: 6px; }
 .rail::-webkit-scrollbar-thumb { background: transparent; border-width: 1px; }
 .rail:hover::-webkit-scrollbar-thumb { background: var(--sb-thumb); background-clip: padding-box; }
+/* slim menu: the branch badge looks like the menu cards below it (no green side light) */
+@media (min-width: 861px) {
+  .branch-badge { transition: box-shadow .2s, border-color .2s, background .2s; }
+  .shell.nav-hidden .rail .branch-badge { box-shadow: none; border-color: var(--line); background: linear-gradient(160deg, color-mix(in srgb, var(--ok) 9%, var(--panel)) 0%, var(--panel) 55%); }
+  .shell.nav-hidden .rail .branch-badge::after { display: none; }
+}
