@@ -131,7 +131,7 @@ export const PRIVATE_HINTS = {
   'rolePerms.save': ['__KarvioRequestReceipts'],
   'sale.create': ['__KarvioBranchRows', '__KarvioRequestReceipts'],
   'sale.edit': ['__KarvioBranchRows', '__KarvioOnlineOrders', '__KarvioRequestReceipts'],
-  'sale.exchange': ['__KarvioRequestReceipts'],
+  'sale.exchange': ['__KarvioBranchRows', '__KarvioRequestReceipts'],
   'sale.link': ['__KarvioRequestReceipts'],
   'sale.promise': ['__KarvioRequestReceipts'],
   'service.cancel': ['__KarvioRequestReceipts'],

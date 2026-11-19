@@ -20,7 +20,9 @@ const ed = await q('purchase.edit', {id: pur.purchase.id, password: pw, reason: 
 note('Purchase edit: keeps the number', ed.purchase.invoice_no === no && ed.purchase.date === pur.purchase.date, `${ed.purchase.invoice_no} ${ed.purchase.date}`);
 note('Purchase edit: new total', ed.purchase.total === 8 * 55 + 3 * 2100, String(ed.purchase.total));
 note('Purchase edit: stock follows', (await stock(cable.id)) === 8 && (await stock(router.id)) === 3, `cable ${await stock(cable.id)}, router ${await stock(router.id)}`);
-const pl = await q('purchases.list', {q: no + '-E1'}); const old = (Array.isArray(pl) ? pl : pl.rows || pl.purchases || []).find((r) => r.invoice_no === no + '-E1');
+const pl = await q('purchases.list', {q: no + '-E1', include_edited: true});
+const plHidden = await q('purchases.list', {q: no});
+note('Purchase edit: the old copy is hidden from the purchase list', !(plHidden.rows || plHidden).some((r) => r.invoice_no === no + '-E1')); const old = (Array.isArray(pl) ? pl : pl.rows || pl.purchases || []).find((r) => r.invoice_no === no + '-E1');
 note('Purchase edit: old copy kept as -E1, cancelled', old && old.status === 'cancelled', JSON.stringify(old && {no: old.invoice_no, st: old.status}));
 const balAfter = await supBal(sup.id);
 note('Purchase edit: supplier due corrected', Math.abs((balAfter - balBefore) - ((8 * 55 + 3 * 2100 - 500) - (10 * 50 + 2 * 2000 - 1000))) < 0.01, `before ${balBefore}, after ${balAfter}`);

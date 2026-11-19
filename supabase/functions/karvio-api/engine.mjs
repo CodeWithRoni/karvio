@@ -4248,6 +4248,8 @@ function purchasesList_(p) {
   all_('PurchaseItems').forEach(function (i) { (items[i.purchase_id] = items[i.purchase_id] || []).push(i.name + ' x' + i.qty); });
   var rows = all_('Purchases').filter(function (x) {
     if (!branchSees_('Purchases', x.id)) return false;
+    // the old copy of an edited purchase (<number>-E1) stays out of the list, like edited invoices
+    if (!p.include_edited && x.status === 'cancelled' && /^Edited — /.test(String(x.cancel_reason || ''))) return false;
     if (!inRange_(x.date, p.from, p.to)) return false;
     if (p.status && x.status !== p.status) return false;
     if (p.supplier_id && x.supplier_id !== p.supplier_id) return false;
@@ -4392,11 +4394,13 @@ function saleDetail_(p, user) {
   var retQty = {}, retValue = {};
   var retIds = {}; returns.forEach(function (r) { if (r.status === 'active') retIds[r.id] = 1; });
   all_('SalesReturnItems').forEach(function (x) { if (retIds[x.return_id]) { retQty[x.sale_item_id] = (retQty[x.sale_item_id] || 0) + x.qty; retValue[x.sale_item_id] = (retValue[x.sale_item_id] || 0) + x.total; } });
-  var sidxD = items.some(function (i) { return i.serials; }) ? serialIndex_() : null;
+  // serials already taken back by an active return (from the rows this screen loads anyway; no serial table read)
+  var retSers = {};
+  all_('SalesReturnItems').forEach(function (x) { if (retIds[x.return_id] && x.serials) parseList_(x.serials).forEach(function (sn) { retSers[x.sale_item_id + '|' + String(sn).toLowerCase()] = 1; }); });
   var itemsOut = items.map(function (i) {
     var o = Object.assign({}, i); delete o._row; o.returned_qty = retQty[i.id] || 0; o.returned_value = round_(retValue[i.id] || 0); o.net_total = invoiceLineNet_(i, items, s);
     // serials still with the customer on this invoice (the ones a return can take back)
-    if (i.serials && sidxD) o.serials_left = parseList_(i.serials).filter(function (sn) { var r = sidxD[i.product_id + '|' + sn]; return r && r.status === 'sold' && r.sale_id === s.id; });
+    if (i.serials) o.serials_left = parseList_(i.serials).filter(function (sn) { return !retSers[i.id + '|' + String(sn).toLowerCase()]; });
     return o;
   });
   s = Object.assign({}, s, { due_now: saleOpenDues_()[s.id] || 0 }); // copy: rows come from the shared per-request cache

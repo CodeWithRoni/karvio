@@ -2,7 +2,8 @@
 
 - Typing a return quantity for a serial item now ticks that many of its serials (the ones still with the customer); "All" / "Clear" pick every serial at once; the chips can still be changed by hand. Before, the serials stayed unticked, the server refused the exchange ("Select 3 serial number(s)…"), the dialog stayed open and no customer credit was made.
 - The dialog says which serials are missing before saving, for returns and exchanges.
-- Sale detail lists the serials still returnable on each line (serials_left).
+- Sale detail lists the serials still returnable on each line (serials_left), worked out from the active returns it already reads (no extra serial-table read on Supabase).
+- Purchases list hides the old copy of an edited purchase (<number>-E1), like edited invoices.
 - Tests: backend features-15 (exchange with surplus kept as credit), browser sale-exchange.
 
 # 19 November 2026 (7) — POS cost peek, warranty chip, slim menu
