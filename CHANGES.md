@@ -1,3 +1,7 @@
+# 19 November 2026 (7) — POS cost peek
+
+- POS: the tick box beside "Cost" is gone. Each line shows "Show" under Cost; it opens that product's cost with "Hide" under it. Works the same on phones (COST label, then Show / Hide).
+
 # 19 November 2026 (6) — Main Branch
 
 - Side menu: the working branch shows as a "Working in <branch>" badge (Main tag for the Main Branch). Users who may work in any branch change it from a dropdown inside the badge; staff fixed to a branch see only its name.

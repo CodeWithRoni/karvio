@@ -304,10 +304,12 @@ test('POS shows last 3 selling prices, last purchase cost, and prices of an out-
   await hist.getByRole('button', { name: '950' }).click();
   await expect(page.getByLabel('Unit price')).toHaveValue('950');
   // cost peek shows the last purchase price
-  await page.getByLabel('Show cost column').check();
+  await expect(page.getByLabel('Show cost column')).toHaveCount(0); // no tick box: Show / Hide under Cost
   await page.getByRole('button', { name: 'Show cost of History Test Keyboard' }).click();
   await expect(page.locator('.cost-peek')).toContainText('700');
   await expect(page.locator('.cost-peek')).toContainText('last buy');
+  await page.getByRole('button', { name: 'Hide cost of History Test Keyboard' }).click();
+  await expect(page.getByRole('button', { name: 'Show cost of History Test Keyboard' })).toBeVisible();
   // sell the last one, then look it up while out of stock
   await call(request, 'sale.create', { items: [{ product_id: p.id, qty: 1, price: 1000 }], payments: [{ account_id: cash.id, amount: 1000 }] });
   await page.reload();

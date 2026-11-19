@@ -37,9 +37,8 @@ export default function POS() {
   const [serialFor, setSerialFor] = useState(null);
   const [quick, setQuick] = useState(null);
   const [done, setDone] = useState(null);
-  // Cost peek: tick "Cost" in the header, then Show / Hide per item. Screen only — never sent with the sale or printed.
+  // Cost peek: Show / Hide under "Cost" for each item. Screen only — never sent with the sale or printed.
   const canCost = useStore((st) => st.can('cost'));
-  const [costOn, setCostOn] = useState(false);
   const [costShown, setCostShown] = useState({});
   const [nextPay, setNextPay] = useState(''); // promised date for the due on this sale
   const [hist, setHist] = useState({}); // product_id -> { last_sales, last_purchase, avg_cost } (POS price history)
@@ -270,7 +269,7 @@ export default function POS() {
         )}
         <div className="cart">
           <table>
-            <thead><tr><th>Item</th>{canCost && <th style={{ width: 110 }} className="cost-col"><label className="cost-toggle"><input type="checkbox" checked={costOn} onChange={(e) => { setCostOn(e.target.checked); setCostShown({}); }} aria-label="Show cost column" /> Cost</label></th>}<th style={{ width: 100 }} className="r">Qty</th><th style={{ width: 150 }} className="r">Price</th><th style={{ width: 110 }} className="r">Amount</th><th style={{ width: 30 }} /></tr></thead>
+            <thead><tr><th>Item</th>{canCost && <th style={{ width: 110 }} className="cost-col">Cost</th>}<th style={{ width: 100 }} className="r">Qty</th><th style={{ width: 150 }} className="r">Price</th><th style={{ width: 110 }} className="r">Amount</th><th style={{ width: 30 }} /></tr></thead>
             <tbody>
               {cart.map((l, i) => {
                 const p = pmap[l.product_id]; if (!p) return null;
@@ -299,7 +298,7 @@ export default function POS() {
                         </div>
                       )}
                     </td>
-                    {canCost && <td className="cost-col" data-label="Cost" data-empty={costOn ? undefined : ''}>{costOn && (costShown[p.id]
+                    {canCost && <td className="cost-col" data-label="Cost">{(costShown[p.id]
                       ? <span className="cost-peek">{(() => {
                           const h = hist[p.id] || {}, lp = h.last_purchase ? h.last_purchase.cost : null;
                           const shownCost = lp !== null ? lp : p.cost_price;
@@ -307,8 +306,8 @@ export default function POS() {
                             <b className={Number(l.price) < Number(p.cost_price) ? 'loss' : ''} title={h.last_purchase ? `Last purchase ${fdate(h.last_purchase.date)} · ${h.last_purchase.invoice_no}${h.last_purchase.supplier ? ' · ' + h.last_purchase.supplier : ''}` : 'Average cost'}>{shownCost > 0 ? money(shownCost, false) : 'No cost'}</b>
                             {lp !== null && <small>last buy{Math.abs(lp - p.cost_price) > 0.004 ? ` · avg ${money(p.cost_price, false)}` : ''}</small>}
                           </>;
-                        })()}<button type="button" className="link" onClick={() => setCostShown({ ...costShown, [p.id]: false })}>Hide</button></span>
-                      : <button type="button" className="link" onClick={() => setCostShown({ ...costShown, [p.id]: true })} aria-label={`Show cost of ${p.name}`}>Show</button>)}</td>}
+                        })()}<button type="button" className="link cost-btn" onClick={() => setCostShown({ ...costShown, [p.id]: false })} aria-label={`Hide cost of ${p.name}`}>Hide</button></span>
+                      : <span className="cost-peek"><button type="button" className="link cost-btn" onClick={() => setCostShown({ ...costShown, [p.id]: true })} aria-label={`Show cost of ${p.name}`}>Show</button></span>)}</td>}
                     <td data-label="Qty">{isSerial(p)
                       ? <button type="button" className="qty-serial" onClick={() => setSerialFor(i)} aria-label={`Quantity ${l.serials.length} — pick serial numbers of ${p.name}`} title="Quantity = serial numbers picked. Click to add or remove serials.">{l.serials.length}</button>
                       : <input type="number" min="0" step={isDecimalUnit(p.unit) ? 0.5 : 1} value={l.qty} onChange={(e) => upd(i, { qty: e.target.value })} onWheel={noWheel} aria-label="Quantity" />}</td>
