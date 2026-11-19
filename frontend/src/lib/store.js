@@ -52,8 +52,10 @@ export const useStore = create((set, get) => ({
     return !perm || p.includes('*') || p.includes(perm);
   },
 
-  async login(username, password) {
-    const r = await api('login', { username, password, device: deviceLabel() });
+  async login(username, password, branch = '') {
+    const r = await api('login', { username, password, device: deviceLabel(), ...(branch ? { branch } : {}) });
+    // Work in the branch chosen at sign-in (or the user's own branch).
+    try { if (r.branch) localStorage.setItem('karvio_branch', r.branch); } catch { /* storage blocked */ }
     setToken(r.token);
     set({ token: r.token, user: r.user, perms: r.perms });
     await get().boot();

@@ -5,6 +5,7 @@ test('a fresh Supabase shop creates its owner without storing the setup password
  await page.route(endpoint,async route=>{
   const body=JSON.parse(route.request().postData());
   if(body.action==='ping')return route.fulfill({json:{ok:true,data:{app:'Karvio',version:'1.2.0',backend:'supabase',requiresSetup:!initialized}}});
+  if(body.action==='login.branches')return route.fulfill({json:{ok:true,data:{on:false,list:[]}}});
   if(body.action==='owner.initialize'){submitted=body.payload;initialized=true;return route.fulfill({json:{ok:true,data:{initialized:true,username:'admin'}}});}
   throw new Error('Unexpected request '+body.action);
  });

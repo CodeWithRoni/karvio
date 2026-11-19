@@ -14,6 +14,14 @@ export default function Login() {
   const [err, setErr] = useState(() => { const n = useStore.getState().authNote || ''; return /sign in again|please sign in/i.test(n) ? '' : n; });
   useEffect(() => { if (useStore.getState().authNote) useStore.setState({ authNote: '' }); }, []);
   const [ok, setOk] = useState('');
+  // Branches: picked on the sign-in screen (the list comes from Settings → Branches; the first one is the main branch).
+  const [branches, setBranches] = useState([]);
+  const [branch, setBranch] = useState(() => { try { return localStorage.getItem('karvio_branch') || ''; } catch { return ''; } });
+  useEffect(() => {
+    let live = true;
+    if (endpoint() && !showApi) api('login.branches').then((r) => { if (!live || !r?.on) return setBranches([]); setBranches(r.list); setBranch((b) => (r.list.some((x) => x.id === b) ? b : r.list[0]?.id || '')); }).catch(() => {});
+    return () => { live = false; };
+  }, [showApi, cfg.scriptUrl]);
   const [setup, setSetup] = useState(false);
   const [owner, setOwner] = useState({name:'',setup_key:'',password:'',confirm:''});
   useEffect(() => {
@@ -45,7 +53,7 @@ export default function Login() {
   };
   const submit = async (e) => {
     e.preventDefault(); setErr(''); setBusy(true);
-    try { await login(f.username, f.password); } catch (e2) { setErr(e2.message); setBusy(false); }
+    try { await login(f.username, f.password, branches.length ? branch : ''); } catch (e2) { setErr(e2.message); setBusy(false); }
   };
 
   // After the first sign-in on this device, the shop's own name and logo greet staff here.
@@ -96,6 +104,7 @@ export default function Login() {
             <form onSubmit={submit}>
               <Field label="Username"><input value={f.username} onChange={(e) => setF({ ...f, username: e.target.value })} autoComplete="username" autoFocus required /></Field>
               <Field label="Password"><input type="password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} autoComplete="current-password" required /></Field>
+              {branches.length > 0 && <Field label="Branch"><select value={branch} onChange={(e) => setBranch(e.target.value)} aria-label="Sign in to branch">{branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></Field>}
               {err && <div className="errbox">{err}</div>}
               <Btn kind="primary" size="lg" busy={busy} type="submit">Sign in</Btn>
               {!isOffline() && <button type="button" className="link" onClick={() => setShowApi(true)}>Change API connection</button>}

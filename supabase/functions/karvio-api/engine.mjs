@@ -758,13 +758,26 @@ function login_(p) {
   // Older accounts used a single SHA-256; upgrade them on the first correct sign-in.
   if (!/^(?:v2|pbkdf2)\$/.test(String(u.password_hash))) update_('Users', u.id, { password_hash: pwHash_(u.salt, String(p.password || '')) });
   if (!accessAllowed_(u)) fail_(accessDenied_(u)); // checked after the password, so the hours are only shown to the right person
+  // Branch chosen on the sign-in screen: staff fixed to a branch can only sign in to their own one.
+  var branch = '';
+  if (branchesOn_()) {
+    var fixed = userBranches_()[u.id], asked = String(p.branch || '');
+    if (fixed && branchActive_(fixed)) { if (asked && asked !== fixed) fail_('You work in ' + branchName_(fixed) + '. Choose that branch to sign in'); branch = fixed; }
+    else if (asked) { if (!branchActive_(asked)) fail_('Choose an open branch'); branch = asked; }
+    else branch = branchDefault_();
+  }
   var token = Utilities.getUuid() + Utilities.getUuid(), sid = uid_();
   CacheService.getScriptCache().put('tok_' + token, JSON.stringify({ id: u.id, sid: sid, credential: hash_('karvio-session', u.salt + '|' + u.password_hash), refreshed: Date.now() }), SESSION_TTL);
   var sessions = sessionsLive_();
   sessions[sid] = { user_id: u.id, user: u.name, username: u.username, role: u.role, device: device, at: now_(), seen: Date.now() };
   propPut_('karvio_sessions', sessions);
   loginLog_({ ts: now_(), user: u.username, device: device, result: 'ok' });
-  return { token: token, user: pubUser_(u), perms: permsFor_(u.role) };
+  return { token: token, user: pubUser_(u), perms: permsFor_(u.role), branch: branch };
+}
+/** Open branches for the sign-in screen (names only; the first is the main branch). */
+function loginBranches_() {
+  if (!branchesOn_()) return { on: false, list: [] };
+  return { on: true, list: branchesAll_().filter(function (b) { return b.active; }).map(function (b) { return { id: b.id, name: b.name }; }) };
 }
 function logout_(p, user, token) {
   try {
@@ -7077,6 +7090,7 @@ var ROUTES = {
   'quote.save':       r_('pos', quoteSave_, true),
   'quote.delete':     r_('pos', quoteDelete_, true),
   login:              { public: true, lockIfDirty: true, fn: login_, write: false },
+  'login.branches':   { public: true, fn: loginBranches_, write: false },
   logout:             r_(null, logout_),
   'password.change':  r_(null, changePassword_, true),
   bootstrap:          r_(null, bootstrap_),

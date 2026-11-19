@@ -84,4 +84,19 @@ const lu = await q('user.save', {name: 'karim', username: 'Karim', password: 'lo
 note('Users: name saved with a capital first letter', lu.name === 'Karim' && lu.username === 'karim', JSON.stringify(lu));
 for (const un of ['karim', 'KARIM', 'Karim']) { const r = await raw('login', {username: un, password: 'long-password-123'}); note('Login with username ' + un, r.ok, r.error); }
 
+// ---- Sign in to a branch
+const lb = await raw('login.branches', {});
+note('Sign-in screen lists the open branches', lb.ok && lb.data.on && lb.data.list.some((b) => b.id === brId), JSON.stringify(lb));
+const second = await q('branch.save', {name: 'Showroom - 2'});
+const s2id = second.id || (await q('branches.get')).list.find((b) => b.name === 'Showroom - 2').id;
+const anyU = await q('user.save', {name: 'Any', username: 'anyone', password: 'long-password-123', role: 'sales', branch_id: ''});
+const la = await raw('login', {username: 'anyone', password: 'long-password-123', branch: s2id});
+note('Sign in: an any-branch user works in the branch chosen', la.ok && la.data.branch === s2id, JSON.stringify(la.data && la.data.branch));
+const lf = await raw('login', {username: 'rafi', password: 'long-password-123', branch: s2id});
+note('Sign in: a user fixed to another branch is refused', !lf.ok && /You work in Mirpur/.test(lf.error), lf.error);
+const lf2 = await raw('login', {username: 'rafi', password: 'long-password-123', branch: brId});
+note('Sign in: a fixed user in their own branch', lf2.ok && lf2.data.branch === brId);
+const lbad = await raw('login', {username: 'anyone', password: 'long-password-123', branch: 'nope'});
+note('Sign in: an unknown branch is refused', !lbad.ok);
+
 console.log(`features-15: ${checks} checks passed`);

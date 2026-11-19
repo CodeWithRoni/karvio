@@ -74,4 +74,19 @@ test('add branches, work in one, send stock to the other and see every branch in
   await expect(page.getByText('Saved').first()).toBeVisible();
   await page.goto('/#/users');
   await expect(page.locator('tr', { hasText: `Branch staff ${stamp}` })).toContainText('Any branch');
+
+  // sign in: pick the branch on the sign-in screen
+  const fresh = await page.context().browser().newPage();
+  await fresh.addInitScript(({ endpoint }) => { try { localStorage.setItem('erp_api_config', JSON.stringify({ scriptUrl: endpoint })); } catch { /* about:blank */ } }, { endpoint });
+  await fresh.setViewportSize({ width: 1200, height: 900 });
+  await fresh.goto(page.url().replace(/#.*$/, '#/'));
+  const pick = fresh.getByLabel('Sign in to branch');
+  await expect(pick.locator('option')).toHaveText(['Main branch', 'Second branch']);
+  await fresh.getByLabel('Username').fill(`BSTAFF${stamp}`);
+  await fresh.getByLabel('Password').fill('long-password-123');
+  await pick.selectOption({ label: 'Second branch' });
+  await fresh.screenshot({ path: '/tmp/login-branch.png' });
+  await fresh.getByRole('button', { name: 'Sign in' }).click();
+  await expect(fresh.getByLabel('Working branch')).toHaveValue(second);
+  await fresh.close();
 });

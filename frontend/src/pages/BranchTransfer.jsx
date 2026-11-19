@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { api } from '../lib/api';
 import { fdatetime, qty as fqty } from '../lib/format';
@@ -65,7 +66,8 @@ function SendDialog({ b, onClose, onDone }) {
     <Modal open size="lg" title="Send stock to another branch" onClose={onClose}
       footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={send} disabled={!to || !items.length}>➜ Send</Btn></>}>
       <div className="form">
-        <Field label="Send to" wide><select value={to} onChange={(e) => setTo(e.target.value)} aria-label="Send to">{others.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></Field>
+        {others.length ? <Field label="Send to" wide><select value={to} onChange={(e) => setTo(e.target.value)} aria-label="Send to">{others.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></Field>
+          : <div className="wide sms-warn" role="alert">There is no other open branch to send to — you are working in the only branch. Add the other branch (e.g. Main Branch or Showroom - 2) in <Link to="/settings">Settings → Branches</Link>, then send.</div>}
         <div className="wide"><ProductSearch noServices onPick={add} placeholder="Add a product: search or scan" /></div>
         {items.length > 0 && <table className="dc-hist wide"><thead><tr><th>Product</th><th className="r">Here now</th><th>Send</th><th /></tr></thead>
           <tbody>{items.map((i) => <tr key={i.product_id}><td>{i.name}</td><td className="r num">{fqty(here(i.product_id), i.unit)}</td>
