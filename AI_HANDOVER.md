@@ -1,6 +1,6 @@
 # Current state — 15 November 2026
 
-Published: v1.2.6 (main, tag v1.2.6) with everything in CHANGES.md through the Quotation CC Camera tab. Release notes: RELEASE-1.2.6.md.
+Published: v1.2.7 (main, tag v1.2.7) with everything in CHANGES.md through the Main Branch and branch badge. Release notes: RELEASE-1.2.7.md.
 
 Date boxes use components/DateInput.jsx (text field + portal calendar; value yyyy-mm-dd; onChange gets {target:{value}}) — do not add new <input type="date">. Due reminder SMS: action customer.remind, template in Settings 'sms_due_template'. SMS amounts go through smsAmt_ (lakh commas).
 
