@@ -33,7 +33,7 @@ test('take a Facebook order, confirm it, send it with a courier and settle the c
   await expect(dlg.locator('.oo-totals')).toContainText('Cash on delivery Tk 1,900');
   await dlg.getByRole('button', { name: 'Save order' }).click();
 
-  const view = page.getByRole('dialog');
+  const view = page.getByRole('dialog', { name: new RegExp(`Mitu ${stamp}`) });
   await expect(view).toContainText(`Mitu ${stamp}`);
   await view.getByRole('button', { name: '✓ Confirm & make invoice' }).click();
   await expect(view.getByRole('button', { name: '🚚 Send with courier' })).toBeVisible();

@@ -55,11 +55,11 @@ test('SMS settings: one card per SMS with its own switch; gateway tab keeps only
     await expect(page.locator('.smsf-card h2', { hasText: t })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Daily summary to the owner' })).toBeVisible();
   const card = page.locator('.smsf-card', { hasText: 'Quotation SMS' });
-  await card.locator('.switch').click();
+  await card.locator('.tgl').click();
   await expect(card.getByLabel('Quotation SMS on')).not.toBeChecked();
   await card.getByRole('button', { name: 'Save' }).click();
   await expect(card.getByText('Off', { exact: true })).toBeVisible();
-  await card.locator('.switch').click();
+  await card.locator('.tgl').click();
   await card.getByRole('button', { name: 'Save' }).click();
 });
 

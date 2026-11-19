@@ -475,7 +475,7 @@ function SmsCard({ c, gateway }) {
     <section className={`card smsf-card ${on ? 'on' : 'off'}`}>
       <div className="smsf-head">
         <div><h2>{c.title}</h2><p className="muted">{c.who}</p></div>
-        <label className="switch" title={on ? 'On' : 'Off'}><input type="checkbox" checked={on} onChange={(e) => setF({ ...f, [c.on]: String(e.target.checked) })} aria-label={`${c.title} on`} /><span /></label>
+        <label className="tgl" title={on ? 'On' : 'Off'}><input type="checkbox" checked={on} onChange={(e) => setF({ ...f, [c.on]: String(e.target.checked) })} aria-label={`${c.title} on`} /><span /></label>
       </div>
       <Field label="Message" wide hint={`Placeholders: ${c.vars}`}><textarea rows={3} {...bind(c.tpl)} placeholder={c.def || ''} aria-label={`${c.title} message`} disabled={!on} /></Field>
       {c.numbers && <Field label="Send to" wide hint="Admin / manager mobile numbers, separated by commas."><input {...bind(c.numbers)} placeholder="01XXXXXXXXX, 01XXXXXXXXX" inputMode="tel" aria-label={`${c.title} numbers`} disabled={!on} /></Field>}

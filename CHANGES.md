@@ -1,3 +1,11 @@
+# 19 November 2026 (2) — Sales below cost, notes, SMS settings, invoice edit
+
+- **Sales below cost** on the dashboard (4th card in the leaderboard row; Today / 1 week / 1 month / 6 months) and in the Reports hub ("Sales below cost"): invoice lines sold for less than their cost after the invoice discount, with the loss. Needs the cost permission.
+- **Notes** button left of Refresh: each user's own notes with a reminder date/time and colour; due reminders pop up on the dashboard with Done, 1 hour later, Tomorrow, New date, Edit and Dismiss.
+- **SMS settings** tab after SMS gateway: one card per SMS (sale, due reminder, quotation, repair completed, repair technician, service technician, service done, daily summary, WhatsApp message) with its own switch, message and preview. SMS gateway keeps only the gateway (main switch, provider, keys, test, log). Every switch starts on, so nothing changes until turned off.
+- **Invoice edit**: yellow Edit next to Cancel invoice (cancel permission + admin password). Items, quantities, prices, serials, discount, payments, customer and note can change; the invoice keeps its number, date and seller; stock, serials, money and the customer's due follow. The old version is kept cancelled as <number>-E1 (hidden from the sales list) and the activity log has before/after. Not for invoices with returns, warranty claims or repair/service jobs.
+- Tests: backend features-13; browser dash-notes-edit; SMS, dashboard and online-order tests follow the changes.
+
 # 19 November 2026 — Shift & day close, Day book, Stock count, Online orders, Branches
 
 - **Shift & day close** (Money & Reports): open a shift with the counted drawer cash (notes and coins), close it by counting; expected = opening + money in − out of that drawer since opening (per cashier, or one shared shift per drawer — Settings → Shift). Short/over needs a note; the balance can be corrected. X-report / Z-report. "Open a shift before selling" locks the POS until a shift is open. Day close moved here as a tab (old links redirect).
