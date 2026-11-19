@@ -80,7 +80,7 @@ function OrderForm({ initial, sources, couriers, onClose, onSaved }) {
   const stockOf = (id) => products.find((p) => p.id === id);
   return (
     <Modal open size="lg" title={initial.id ? `Edit ${initial.no}` : 'New online order'} onClose={onClose}
-      footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={save} disabled={!f.items.length}>Save order</Btn></>}>
+      footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={save} disabled={!f.items.length || f.items.some((i) => !(Number(i.price) > 0))}>Save order</Btn></>}>
       <div className="oo-form">
         <div className="oo-cols">
           <Field label="Order from"><select value={f.source} onChange={set('source')} aria-label="Order from">{sources.map((s) => <option key={s}>{s}</option>)}</select></Field>
@@ -96,7 +96,7 @@ function OrderForm({ initial, sources, couriers, onClose, onSaved }) {
           <tbody>{f.items.map((i) => { const p = stockOf(i.product_id); return (
             <tr key={i.product_id}><td>{i.name}</td><td className="r muted">{p?.service ? '—' : p?.available ?? p?.stock ?? ''}</td>
               <td className="r"><input className="sc-in" type="number" min="0" step="any" value={i.qty} onChange={(e) => setItem(i.product_id, 'qty', e.target.value)} aria-label={`Quantity of ${i.name}`} /></td>
-              <td className="r"><input className="sc-in" type="number" min="0" step="any" value={i.price} onChange={(e) => setItem(i.product_id, 'price', e.target.value)} aria-label={`Price of ${i.name}`} /></td>
+              <td className="r"><input className={`sc-in ${Number(i.price) > 0 ? '' : 'bad'}`} type="number" min="0" step="any" value={i.price} onChange={(e) => setItem(i.product_id, 'price', e.target.value)} aria-label={`Price of ${i.name}`} title={Number(i.price) > 0 ? '' : 'The price must be more than 0'} /></td>
               <td className="r num">{tk((Number(i.qty) || 0) * (Number(i.price) || 0))}</td>
               <td className="r"><Btn size="sm" kind="danger" onClick={() => setF({ ...f, items: f.items.filter((x) => x.product_id !== i.product_id) })} aria-label={`Remove ${i.name}`}>×</Btn></td></tr>); })}</tbody></table>}
         <div className="oo-cols four">

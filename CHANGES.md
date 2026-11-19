@@ -1,3 +1,13 @@
+# 19 November 2026 (3) — Bug fixes from the full check
+
+- An invoice cancelled from Sales also cancels its online order (no "courier paid" or return afterwards; old stuck orders show as cancelled).
+- Editing an online order's invoice updates the order: products, delivery charge, discount, total and cash on delivery.
+- Cancelling an invoice paid on an earlier day, or before the drawer's open shift began, books a refund today ("Cancelled invoices refunded") instead of erasing the old entry, so the shift, day close and day book match the cash handed back. Money taken today during the shift is voided as before. Invoice edit keeps the old behaviour.
+- Branches: cancelling or editing an invoice from another branch keeps the stock and the invoice in the invoice's own branch.
+- Messages point to the new places (Shift & day close → Day close, SMS gateway, SMS settings).
+- Online orders refuse a product price of 0.
+- Test: backend features-14.
+
 # 19 November 2026 (2) — Sales below cost, notes, SMS settings, invoice edit
 
 - **Sales below cost** on the dashboard (4th card in the leaderboard row; Today / 1 week / 1 month / 6 months) and in the Reports hub ("Sales below cost"): invoice lines sold for less than their cost after the invoice discount, with the loss. Needs the cost permission.

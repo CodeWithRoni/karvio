@@ -864,7 +864,7 @@ function dayLockCheck_(accId, date) {
   var d = String(date || '').slice(0, 10), days = dayLocks_()[accId];
   if (!Array.isArray(days) || days.indexOf(d) < 0) return;
   var acc = all_('Accounts').filter(function (a) { return a.id === accId; })[0];
-  fail_(d + ' is closed for ' + (acc ? acc.name : 'this account') + ', so money dated that day cannot be added, changed or cancelled there. Use another date, or ask an admin to reopen the day (Cash, bank & MFS → Day close).');
+  fail_(d + ' is closed for ' + (acc ? acc.name : 'this account') + ', so money dated that day cannot be added, changed or cancelled there. Use another date, or ask an admin to reopen the day (Shift & day close → Day close).');
 }
 function acctTxn_(accId, dir, amount, refType, refId, note, user, date) {
   dayLockCheck_(accId, date || today_());
@@ -1580,7 +1580,7 @@ function accountEntry_(p, user) { // owner deposit / withdrawal / transfer
 /* ---- Day close: count the cash in an account (usually the drawer) and compare it with the books ----
  * The count is kept as a 'day_close' record in the audit log. A difference can be booked as a normal
  * deposit / withdrawal (ref_type 'manual'), so balances, ledgers and reversal work as for any other entry. */
-var DAY_CLOSE_GROUPS = { sale: 'Sales received', cpay: 'Customer due payments', sreturn: 'Sales refunds', exchange: 'Exchanges', claim: 'Warranty claims',
+var DAY_CLOSE_GROUPS = { sale: 'Sales received', sale_cancel: 'Cancelled invoices refunded', cpay: 'Customer due payments', sreturn: 'Sales refunds', exchange: 'Exchanges', claim: 'Warranty claims',
   expense: 'Expenses paid', purchase: 'Purchase payments', spay: 'Supplier payments', preturn: 'Purchase return refunds', transfer: 'Transfers', manual: 'Deposits & withdrawals' };
 function dayCloses_() {
   // A close that was reopened later (a 'day_reopen' entry after it) stays in the history, marked reopened.
@@ -1892,7 +1892,7 @@ function orderClean_(p) {
     if (seen[pr.id]) fail_(pr.name + ' is in the order twice'); seen[pr.id] = 1;
     var qty = inventoryQuantity_(it.qty, pr.name); if (!(qty > 0)) fail_('Write the quantity of ' + pr.name);
     if (!isDecimalUnit_(pr.unit) && qty % 1 !== 0) fail_('Quantity of ' + pr.name + ' must be a whole number');
-    var price = Number(it.price); if (!isFinite(price) || price < 0) fail_('Write the price of ' + pr.name);
+    var price = Number(it.price); if (!isFinite(price) || price <= 0) fail_('Write the price of ' + pr.name + ' (more than 0)');
     price = round_(price); subtotal += qty * price;
     items.push({ product_id: pr.id, name: pr.name, unit: pr.unit || '', qty: qty, price: price, serial: isSerialProduct_(pr) });
   });
@@ -1954,6 +1954,7 @@ function orderConfirm_(p, user) {
 }
 function orderShip_(p, user) {
   var f = orderFind_(p.id), o = f.o;
+  if (o.sale_id) orderSaleActive_(o);
   if (o.status !== 'confirmed') fail_(o.status === 'new' ? 'Confirm the order first (it makes the invoice)' : 'This order is already ' + o.status);
   var courier = COURIERS[p.courier] ? p.courier : ''; if (!courier) fail_('Choose the courier');
   var tracking = String(p.tracking || '').trim().slice(0, 80); if (!tracking) fail_('Write the tracking or consignment number');
@@ -1965,6 +1966,7 @@ function orderShip_(p, user) {
 }
 function orderDeliver_(p, user) {
   var f = orderFind_(p.id), o = f.o;
+  if (o.sale_id) orderSaleActive_(o);
   if (o.status !== 'shipped') fail_('Only a shipped order can be marked delivered');
   orderLog_(o, user, 'delivered', p.note || 'Delivered to the customer');
   orderWrite_(f.all, f.row, o);
@@ -1973,6 +1975,7 @@ function orderDeliver_(p, user) {
 /** The courier paid: the customer's cash-on-delivery is collected into the account, the courier's charge is an expense. */
 function orderSettle_(p, user) {
   var f = orderFind_(p.id), o = f.o;
+  if (o.sale_id) orderSaleActive_(o);
   if (o.status !== 'shipped' && o.status !== 'delivered') fail_('Only a shipped or delivered order can be settled');
   var acc = all_('Accounts').filter(function (a) { return a.id === p.account_id && a.active; })[0]; if (!acc) fail_('Select the account the courier paid into');
   var charge = Number(p.charge); if (!isFinite(charge) || charge < 0) fail_('Write the courier charge (0 or more)');
@@ -2025,11 +2028,26 @@ function orderCancel_(p, user) {
   orderWrite_(f.all, f.row, o);
   return orderView_(o);
 }
+/** The invoice of an online order was cancelled: the order is cancelled too (no courier payment, no return). */
+function orderSaleCancelled_(saleId, user, reason) {
+  var all = orderRows_();
+  all.rows.forEach(function (r) {
+    var o = orderParse_(r);
+    if (!o || o.sale_id !== saleId || ['confirmed', 'shipped', 'delivered'].indexOf(o.status) < 0) return;
+    orderLog_(o, user, 'cancelled', 'Invoice ' + (o.invoice_no || '') + ' cancelled' + (reason ? ': ' + String(reason).slice(0, 150) : ''));
+    orderWrite_(all, r, o);
+  });
+}
+function orderSaleActive_(o) {
+  var s = o.sale_id ? all_('Sales').filter(function (x) { return x.id === o.sale_id; })[0] : null;
+  if (!s || s.status !== 'active') fail_('The invoice of this order is cancelled');
+}
 function orderView_(o, sales) {
   var v = Object.assign({}, o);
   if (o.sale_id) {
     var s = sales ? sales[o.sale_id] : all_('Sales').filter(function (x) { return x.id === o.sale_id; })[0];
     v.sale_status = s ? s.status : 'missing';
+    if (v.sale_status === 'cancelled' && ['confirmed', 'shipped', 'delivered'].indexOf(v.status) >= 0) v.status = 'cancelled';
   }
   v.courier_label = o.courier ? o.courier.label : (o.courier_choice ? COURIERS[o.courier_choice] : '');
   return v;
@@ -3298,7 +3316,7 @@ function quotePublic_(p) {
   ['shop_name', 'shop_address', 'shop_phone', 'shop_tel', 'shop_email', 'shop_web', 'shop_social', 'shop_footer', 'currency', 'shop_logo'].forEach(function (k) { shop[k] = st[k] || ''; });
   return { quote: quote, shop: shop, expires_at: quote.expires_at };
 }
-/* ---- Daily summary SMS for the owner (Settings → SMS) ---- */
+/* ---- Daily summary SMS for the owner (Settings → SMS settings) ---- */
 function dailySummaryText_(date) {
   var d = date || today_(), m = function (v) { return Math.round(num_(v)).toLocaleString('en-IN'); };
   var x = profitSummary_(d, d);
@@ -3325,7 +3343,7 @@ function summaryPreview_() {
   return { text: dailySummaryText_(), phones: summaryPhones_(), last_sent: getSetting_('daily_summary_last', ''), gateway: getSetting_('sms_enabled') === 'true' };
 }
 function summarySend_(p, user) {
-  if (getSetting_('sms_enabled') !== 'true') fail_('Turn on the SMS gateway first (Settings → SMS)');
+  if (getSetting_('sms_enabled') !== 'true') fail_('Turn on the SMS gateway first (Settings → SMS gateway)');
   var phones = summaryPhones_(); if (!phones.length) fail_('Add the phone number that should receive the daily summary, then save');
   var text = dailySummaryText_(), out = phones.map(function (ph) { return Object.assign({ phone: ph }, sendSms_(ph, text)); });
   audit_(user, 'daily_summary', { phones: phones.length, manual: true });
@@ -3675,7 +3693,7 @@ function repairCancel_(p, user) {
  *  Kept in the Repairs table and told apart by the number (SRV-…), so stock reservations, customer checks and the
  *  invoice work exactly like repair jobs. Columns used: device = service type name, serial = service type id,
  *  problem = work details, accessories = work address, charge = service charge, parts = products the technician took.
- *  Pending → Work done (by the technician; an SMS goes to the numbers in Settings → SMS) → Completed (the admin sets
+ *  Pending → Work done (by the technician; an SMS goes to the numbers in Settings → SMS settings) → Completed (the admin sets
  *  what was used and what came back; an invoice is made) — or Cancelled. Products taken are reserved until then.
  * ========================================================================== */
 var SERVICE_PREFIX = 'SRV-';
@@ -3828,7 +3846,7 @@ function serviceStatus_(p, user) {
 function serviceDoneSms_(r, note) {
   if (!smsOn_('service_done')) return null;
   var numbers = String(getSetting_('sms_service_done_numbers', '') || '').split(/[,;\s]+/).map(function (x) { return x.trim(); }).filter(function (x) { return phoneKey_(x).length >= 10; });
-  if (!numbers.length) return { ok: false, status: 'skipped', response: 'No number for "service done" SMS in Settings → SMS' };
+  if (!numbers.length) return { ok: false, status: 'skipped', response: 'No number for "service done" SMS in Settings → SMS settings' };
   var msg = fillTpl_(getSetting_('sms_service_done_template') || DEFAULT_SERVICE_DONE_SMS, { job: r.job_no, service: r.device, name: r.customer_name, phone: r.phone,
     address: r.accessories, technician: r.technician_name || r.result_by || '', note: note || '', shop: getSetting_('shop_name') }, 'raw');
   var out = { ok: true, status: 'sent', sent: 0 };
@@ -5136,6 +5154,7 @@ function reverse_(p, user) {
   var doc = all_(docTable).filter(function (x) { return x.id === p.id; })[0];
   if (doc && doc.date) lockCheck_(doc.date, 'a transaction');
   var r = fn(p, user, reason);
+  if (p.type === 'sale') orderSaleCancelled_(p.id, user, reason);
   syncSerialCost_(null);
   audit_(user, 'reverse_' + p.type, { id: p.id, reason: reason });
   return r;
@@ -5144,9 +5163,25 @@ function evFor_(rows, event, refType, refId, refNo, party, note, sers) {
   return rows.map(function (x) { return { serial: x.serial || '', product_id: x.product_id, product_name: x.name, event: event, ref_type: refType, ref_id: refId, ref_no: refNo, party: party, qty: x.qty || 1, amount: 0, note: note }; });
 }
 
-function reverseSale_(p, user, reason) {
+function reverseSale_(p, user, reason, opts) {
   var s = all_('Sales').filter(function (x) { return x.id === p.id; })[0];
   if (!s) fail_('Invoice not found'); if (s.status !== 'active') fail_('Invoice is already cancelled');
+  // Stock goes back to the branch that made the invoice, whichever branch the user works in.
+  var hereBranch = _branch; if (_branch) _branch = docBranch_('Sales', s.id);
+  try { return reverseSaleIn_(s, p, user, reason, opts || {}); } finally { _branch = hereBranch; }
+}
+/** Money of a cancelled invoice: taken today after the drawer's open shift began → the entry is voided (as if
+ * never taken). Taken on an earlier day, or before the shift began → it stays where it was and a refund is
+ * booked today, so today's drawer, the open shift and the day close all see the cash handed back. */
+function cancelSaleMoney_(s, user, reason, voidAll) {
+  var today = today_(), open = openShifts_();
+  all_('AccountTxns').filter(function (t) { return t.ref_id === s.id && t.ref_type === 'sale' && !t.voided; }).forEach(function (t) {
+    var earlier = String(t.date).slice(0, 10) < today || open.some(function (sh) { return sh.account_id === t.account_id && t._row <= sh.start_row; });
+    if (voidAll || !earlier) { dayLockCheck_(t.account_id, t.date); update_('AccountTxns', t.id, { voided: true }); return; }
+    acctTxn_(t.account_id, 'out', num_(t.amount), 'sale_cancel', s.id, 'Refund — invoice ' + s.invoice_no + ' cancelled' + (reason ? ': ' + String(reason).slice(0, 120) : ''), user, today);
+  });
+}
+function reverseSaleIn_(s, p, user, reason, opts) {
   if (all_('SalesReturns').some(function (r) { return r.sale_id === s.id && r.status === 'active'; })) fail_('Cancel the return(s) of this invoice first');
   if (all_('WarrantyClaims').some(function (c) { return c.sale_id === s.id && c.status !== 'Delivered' && c.status !== 'Rejected'; })) fail_('This invoice has open warranty claims');
   if (all_('WarrantyClaims').some(function(c) { var rep = valuation_(c.replacement); return c.sale_id === s.id && rep && (rep.kind === 'unit' || rep.kind === 'serial'); }))
@@ -5168,7 +5203,7 @@ function reverseSale_(p, user, reason) {
     });
     if (!i.serials) events.push({ serial: '', product_id: i.product_id, product_name: i.name, event: 'sale_cancelled', ref_type: 'sale', ref_id: s.id, ref_no: s.invoice_no, party: s.customer_name, qty: i.qty, amount: 0, note: 'Invoice cancelled: ' + reason });
   });
-  voidRefs_('AccountTxns', s.id, 'sale'); voidRefs_('CustomerLedger', s.id);
+  cancelSaleMoney_(s, user, reason, opts.voidAll); voidRefs_('CustomerLedger', s.id);
   update_('Sales', s.id, { status: 'cancelled', cancel_reason: reason });
   all_('Repairs').filter(function (job) { return job.sale_id === s.id && isServiceJob_(job) && job.status === 'Completed'; }).forEach(function (job) {
     var log = repairLog_(job); log.push({ ts: now_(), status: 'Work done', user: user.name, note: 'Service invoice cancelled: ' + reason });
@@ -5197,9 +5232,13 @@ function saleEdit_(p, user) {
   if (all_('Repairs').some(function (j) { return j.sale_id === s.id; })) fail_('This invoice belongs to a repair or service job. Cancel it and complete the job again');
   var reason = String(p.reason || '').trim().slice(0, 200);
   s = Object.assign({}, s); // a copy: the row itself gets the old-copy number below
+  var hereBranch = _branch; if (_branch) _branch = docBranch_('Sales', s.id); // the invoice stays in its own branch
+  try { return saleEditIn_(s, p, user, reason); } finally { _branch = hereBranch; }
+}
+function saleEditIn_(s, p, user, reason) {
   var before = saleDetail_({ id: s.id }, user), n = 1;
   while (all_('Sales').some(function (x) { return x.invoice_no === s.invoice_no + '-E' + n; })) n++;
-  reverseSale_({ id: s.id }, user, 'Edited — corrected invoice saved as ' + s.invoice_no + (reason ? ': ' + reason : ''));
+  reverseSale_({ id: s.id }, user, 'Edited — corrected invoice saved as ' + s.invoice_no + (reason ? ': ' + reason : ''), { voidAll: true });
   update_('Sales', s.id, { invoice_no: s.invoice_no + '-E' + n });
   var next = s.next_payment_date && String(s.next_payment_date) >= today_() ? s.next_payment_date : '';
   var detail = saleCreate_({ customer_id: p.customer_id === undefined ? s.customer_id : p.customer_id, items: p.items, discount: p.discount, payments: p.payments, credit_used: p.credit_used,
@@ -5209,7 +5248,18 @@ function saleEdit_(p, user) {
   // Links to the invoice follow the corrected version.
   all_('InvoiceLinks').filter(function (l) { return l.sale_id === s.id; }).forEach(function (l) { update_('InvoiceLinks', l.id, { sale_id: newId }); });
   var orders = orderRows_();
-  orders.rows.forEach(function (r) { var o = orderParse_(r); if (o && o.sale_id === s.id) { o.sale_id = newId; orderWrite_(orders, r, o); } });
+  orders.rows.forEach(function (r) {
+    var o = orderParse_(r); if (!o || o.sale_id !== s.id) return;
+    // The order follows the corrected invoice: products, delivery charge, discount, total and cash on delivery.
+    var dl = detail.items.filter(function (i) { return nameKey_(i.name) === nameKey_(DELIVERY_PRODUCT); });
+    o.sale_id = newId;
+    o.items = detail.items.filter(function (i) { return dl.indexOf(i) < 0; }).map(function (i) { return { product_id: i.product_id, name: i.name, unit: i.unit || '', qty: i.qty, price: i.price, serial: !!i.serials }; });
+    o.delivery_charge = round_(dl.reduce(function (t, i) { return t + num_(i.total); }, 0)); o.discount = num_(detail.sale.discount);
+    o.subtotal = round_(o.items.reduce(function (t, i) { return t + i.qty * i.price; }, 0)); o.total = num_(detail.sale.total);
+    o.advance = round_(num_(detail.sale.paid) + num_(detail.sale.credit_used)); o.cod = round_(Math.max(o.total - o.advance, 0));
+    orderLog_(o, user, o.status, 'Invoice edited: total ' + o.total + ', cash on delivery ' + o.cod);
+    orderWrite_(orders, r, o);
+  });
   var brief = function (d) { return { customer: d.sale.customer_name, total: d.sale.total, paid: d.sale.paid, due: d.sale.due, items: d.items.map(function (i) { return i.name + ' x' + i.qty + ' @' + i.price + (i.serials ? ' [' + i.serials + ']' : ''); }) }; };
   audit_(user, 'sale_edit', { invoice: s.invoice_no, old_copy: s.invoice_no + '-E' + n, reason: reason, before: brief(before), after: brief(detail) });
   return detail;

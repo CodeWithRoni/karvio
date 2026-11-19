@@ -10,7 +10,7 @@ import DateInput from '../components/DateInput';
 const FACES = [1000, 500, 200, 100, 50, 20, 10, 5, 2, 1];
 const sign = (v) => (v > 0 ? '+' : '') + money(v, false);
 
-/** Cash, bank & MFS → Day close: count the drawer, compare with the books, record the difference and print a Z-report. */
+/** Shift & day close → Day close: count the drawer, compare with the books, record the difference and print a Z-report. */
 export default function DayClose() {
   const [accountId, setAccountId] = useState('');
   const [date, setDate] = useState('');

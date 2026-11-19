@@ -1728,3 +1728,4 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
 .tgl input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 .inv-edit .inv-ser { display: block; width: 100%; margin-top: 4px; font-size: 12.5px; }
+.sc-in.bad { border-color: var(--bad); }
