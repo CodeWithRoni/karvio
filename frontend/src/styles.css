@@ -1927,3 +1927,31 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
 .rail .bb-text small { display: none; }
 .rail .bb-text b { font-size: 14px; font-weight: 600; }
 .rail .bb-tag { padding: 0 7px; font-size: 10px; }
+/* ==== Side menu collapse, BikriPro technique ====
+ * The menu is fixed on the left and its WIDTH animates; the page has the same padding-left with the same
+ * timing, so both move together. Names fade, shrink and slide 8px left at the same time. 300ms ease-in-out. */
+@media (min-width: 861px) {
+  .shell { display: block; --speed: 300ms; --ease: cubic-bezier(.4, 0, .2, 1); transition: none; }
+  .shell .rail { position: fixed; top: 0; bottom: 0; left: 0; z-index: 40; width: var(--rw); transition: width var(--speed) var(--ease); will-change: width; }
+  .shell .main { padding-left: var(--rw); transition: padding-left var(--speed) var(--ease); }
+  .rail .nav-item-icon, .rail .nav-section-icon, .rail .bb-ico, .rail .brand-top > :first-child { flex-shrink: 0; }
+  .rail .brand-name, .rail .brand-sub, .rail .nav-group-label, .rail .nav-item-label, .rail .bb-text, .rail .bb-tag, .rail .bb-chev, .rail .nav-chev, .rail .nav-count, .rail .nav kbd, .rail-foot > * {
+    transition: opacity var(--speed) var(--ease), transform var(--speed) var(--ease) !important; }
+  .shell.nav-hidden .rail .brand-name, .shell.nav-hidden .rail .brand-sub, .shell.nav-hidden .rail .nav-group-label, .shell.nav-hidden .rail .nav-item-label,
+  .shell.nav-hidden .rail .bb-text, .shell.nav-hidden .rail .bb-tag, .shell.nav-hidden .rail .bb-chev, .shell.nav-hidden .rail .nav-chev, .shell.nav-hidden .rail .nav-count,
+  .shell.nav-hidden .rail .nav kbd, .shell.nav-hidden .rail-foot > * { opacity: 0 !important; transform: translateX(-8px); transition: opacity var(--speed) var(--ease), transform var(--speed) var(--ease) !important; }
+  /* the round toggle: half outside the menu's right edge */
+  .rail-toggle { position: fixed; top: 4.4rem; left: calc(var(--rw) - 14px); width: 28px; height: 28px; border-radius: 999px; z-index: 45;
+    border: 1px solid var(--line); background: var(--panel); color: var(--muted); box-shadow: 0 4px 10px rgba(0, 0, 0, .3);
+    transition: left var(--speed) var(--ease), transform var(--speed) var(--ease), color var(--speed), border-color var(--speed); }
+  .rail-toggle:hover { transform: scale(1.1); color: var(--fiber); border-color: color-mix(in srgb, var(--fiber) 60%, var(--line)); box-shadow: 0 4px 12px rgba(0, 0, 0, .35); }
+  .rail-toggle svg { transform: none; transition: transform var(--speed) var(--ease); }
+  .shell.nav-hidden .rail-toggle svg { transform: none; }
+  .rail-toggle:hover .rt-close { transform: translateX(-2px); }
+  .rail-toggle:hover .rt-open { transform: translateX(2px); }
+  /* name tip beside a slim-menu icon */
+  .rail-tip { position: fixed; z-index: 70; transform: translateY(-50%); background: #0b1520; color: #fff; font-size: 12px; font-weight: 600; white-space: nowrap;
+    padding: 6px 10px; border-radius: 8px; box-shadow: 0 6px 18px rgba(0, 0, 0, .35); pointer-events: none; animation: tip-in .15s ease-out; }
+  @keyframes tip-in { from { opacity: 0; transform: translate(-4px, -50%); } to { opacity: 1; transform: translateY(-50%); } }
+}
+@media (prefers-reduced-motion: reduce) { .shell .rail, .shell .main, .rail-toggle { transition: none !important; } }

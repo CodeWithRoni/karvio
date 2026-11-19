@@ -82,6 +82,9 @@ export default function Layout() {
   const [closed, setClosed] = useState(readClosed); // menu groups folded away by this user on this browser
   const [showKeys, setShowKeys] = useState(false); // Alt held: every shortcut shows
   const toggleGroup = (title) => setClosed((c) => { const next = c.includes(title) ? c.filter((x) => x !== title) : [...c, title]; try { localStorage.setItem(CLOSED_KEY, JSON.stringify(next)); } catch { /* private mode */ } return next; });
+  const [tip, setTip] = useState(null);
+  const showTip = (e, text) => { if (!hidden) return; const r = e.currentTarget.getBoundingClientRect(); setTip({ text, top: r.top + r.height / 2, left: r.right + 14 }); };
+  const hideTip = () => setTip(null);
   const toggleHidden = () => setHidden((h) => { try { localStorage.setItem(NAV_KEY, h ? '0' : '1'); } catch { /* private mode */ } return !h; });
   const loc = useLocation();
   const nav = useNavigate();
@@ -150,7 +153,7 @@ export default function Layout() {
                 <button type="button" className="nav-group" aria-expanded={!shut} aria-label={`${g.title} menu group`} onClick={() => toggleGroup(g.title)} title={shut ? `Show ${g.title}` : `Fold ${g.title}`}>
                   <NavIcon name={g.title} group /><span className="nav-group-label">{g.title}</span>{shut && <span className="nav-count">{g.links.length}</span>}<Chevron />
                 </button>
-                {!shut && g.links.map((n) => <NavLink key={n.to} to={n.to} end={n.end} title={n.key ? `${n.label} (Alt+${n.key})` : n.label}><NavIcon name={n.to} /><span className="nav-item-label">{n.label}</span>{n.key && <kbd>Alt {n.key}</kbd>}</NavLink>)}
+                {!shut && g.links.map((n) => <NavLink key={n.to} to={n.to} end={n.end} onMouseEnter={(e) => showTip(e, n.label)} onMouseLeave={hideTip} onFocus={(e) => showTip(e, n.label)} onBlur={hideTip} title={hidden ? undefined : n.key ? `${n.label} (Alt+${n.key})` : n.label}><NavIcon name={n.to} /><span className="nav-item-label">{n.label}</span>{n.key && <kbd>Alt {n.key}</kbd>}</NavLink>)}
               </section>
             );
           })}
@@ -163,8 +166,12 @@ export default function Layout() {
       </aside>
       {/* Sits on the line between the menu and the page; slides with the menu as it narrows to icons and back. */}
       <button type="button" className="rail-toggle" onClick={toggleHidden} title={hidden ? 'Show the menu' : 'Hide the menu'} aria-label={hidden ? 'Show the menu' : 'Hide the menu'} aria-expanded={!hidden}>
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14.5 6l-6 6 6 6" /></svg>
+        {hidden
+          ? <svg className="rt-open" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18" /><path d="m14 9 3 3-3 3" /></svg>
+          : <svg className="rt-close" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18" /><path d="m16 15-3-3 3-3" /></svg>}
       </button>
+      {/* Slim menu: the page name in a dark tip beside the hovered icon (fixed, so the menu's scroll area cannot cut it) */}
+      {hidden && tip && <div className="rail-tip" style={{ top: tip.top, left: tip.left }} role="tooltip">{tip.text}</div>}
       <div className="main">
         <div className="topbar">
           <button onClick={() => setOpen(true)} aria-label="Open menu"><DoorIcon open={false} size={18} /></button>
