@@ -55,7 +55,10 @@ export default function POS() {
   const pmap = useMemo(() => Object.fromEntries(products.map((p) => [p.id, p])), [products]);
   const customer = customers.find((c) => c.id === customerId);
   const isSerial = (p) => !p.service && p.has_warranty && p.warranty_type === 'serial';
-  const priceFor = (p) => (tier === 'wholesale' && p.wholesale_price ? p.wholesale_price : p.sale_price);
+  // Wholesale uses the product's wholesale price; none set → empty ("Price Not Set") so it cannot be sold at 0 by mistake.
+  const tierPrice = (p, t) => (t === 'wholesale' ? (Number(p.wholesale_price) > 0 ? p.wholesale_price : '') : p.sale_price);
+  const priceFor = (p) => tierPrice(p, tier);
+  const changeTier = (t) => { setTier(t); setCart((c) => c.map((l) => { const p = pmap[l.product_id]; return p ? { ...l, price: tierPrice(p, t) } : l; })); };
 
   const loadHist = (id, force) => {
     if (!force && hist[id]) return;
@@ -145,6 +148,7 @@ export default function POS() {
   cart.forEach((l) => {
     const p = pmap[l.product_id];
     if (!p) return problems.push('A cart item no longer exists');
+    if (l.price === '' || l.price === null || l.price === undefined) return problems.push(`${tier === 'wholesale' ? 'Wholesale price' : 'Price'} not set for ${p.name} — type the price`);
     const rate = Number(l.price);
     if (!Number.isFinite(rate) || rate < 0 || Math.abs(rate-Math.round(rate*10000)/10000) > Number.EPSILON*Math.max(1,Math.abs(rate))*4) problems.push(`Selling price for ${p.name} supports at most 4 decimal places`);
     if (isSerial(p) && (!l.serials.length || l.serials.length !== Number(l.qty))) problems.push(`Pick the serial numbers for ${p.name}`);
@@ -251,7 +255,7 @@ export default function POS() {
         <div className="row">
           {sh?.shift && <Link to="/shifts" className="sh-pos-badge" title="Shift & day close"><Badge tone="ok">Shift open · {sh.shift.user} · since {fdatetime(sh.shift.opened_at)}</Badge></Link>}
           <div style={{ flex: 1 }}><ProductSearch camera onPick={(p) => add(p)} onCode={addBySerial} placeholder="Search product by serial, name, model or brand (F2)" inputRef={searchRef} autoFocus /></div>
-          <Tabs tabs={[['retail', 'Retail'], ['wholesale', 'Wholesale']]} value={tier} onChange={setTier} />
+          <Tabs tabs={[['retail', 'Retail'], ['wholesale', 'Wholesale']]} value={tier} onChange={changeTier} />
           <Btn onClick={hold} disabled={!cart.length} title="Put this sale aside and serve the next customer (F7)">Hold</Btn>
           <Btn onClick={() => setShowHolds(true)} disabled={!holds.length} className={holds.length ? 'held-on' : ''} title="Sales on hold">Held{holds.length ? ` · ${holds.length}` : ''}</Btn>
         </div>
@@ -316,7 +320,7 @@ export default function POS() {
                     <td data-label="Qty">{isSerial(p)
                       ? <button type="button" className="qty-serial" onClick={() => setSerialFor(i)} aria-label={`Quantity ${l.serials.length} — pick serial numbers of ${p.name}`} title="Quantity = serial numbers picked. Click to add or remove serials.">{l.serials.length}</button>
                       : <input type="number" min="0" step={isDecimalUnit(p.unit) ? 0.5 : 1} value={l.qty} onChange={(e) => upd(i, { qty: e.target.value })} onWheel={noWheel} aria-label="Quantity" />}</td>
-                    <td data-label="Price"><input type="number" min="0" step="any" value={l.price} onChange={(e) => upd(i, { price: e.target.value })} aria-label="Unit price" />
+                    <td data-label="Price"><input type="number" min="0" step="any" value={l.price} onChange={(e) => upd(i, { price: e.target.value })} aria-label="Unit price" placeholder="Price Not Set" className={l.price === '' ? 'price-missing' : ''} />
                       {(() => {
                         const h = hist[p.id];
                         if (!h || h.loading) return <span className="price-hist">…</span>;

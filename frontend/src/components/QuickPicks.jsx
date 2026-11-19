@@ -39,7 +39,7 @@ export default function QuickPicks({ products, priceFor, onPick }) {
               <div className={`qp-tile ${out ? 'out' : ''}`} key={p.id}>
                 <button type="button" className="qp-add" onClick={() => onPick(p)} aria-label={`Add ${p.name}`} title={`Add ${p.name}`}>
                   <b>{p.name}</b>
-                  <span className="qp-meta"><span>{p.service ? 'Service' : out ? 'Out of stock' : `${fqty(stock, p.unit)} in stock`}</span><strong>{money(priceFor(p), false)}</strong></span>
+                  <span className="qp-meta"><span>{p.service ? 'Service' : out ? 'Out of stock' : `${fqty(stock, p.unit)} in stock`}</span><strong className={priceFor(p) === '' ? 'qp-noprice' : ''}>{priceFor(p) === '' ? 'Price Not Set' : money(priceFor(p), false)}</strong></span>
                 </button>
                 <button type="button" className={`qp-star ${fav ? 'on' : ''}`} onClick={() => toggleFav(p.id)} aria-pressed={fav} aria-label={fav ? `Remove ${p.name} from favourites` : `Add ${p.name} to favourites`} title={fav ? 'Remove from favourites' : 'Add to favourites'}>★</button>
               </div>

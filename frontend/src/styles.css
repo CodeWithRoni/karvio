@@ -152,37 +152,37 @@ input[type='checkbox'] { width: auto; min-height: 0; accent-color: var(--fiber);
 .door-btn { flex: none; display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border-radius: 7px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); cursor: pointer; transition: background .15s, border-color .15s, color .15s; }
 .door-btn:hover { border-color: var(--fiber); color: var(--fiber); }
 /* Menu: full (264px) or slim icons (72px). The width slides; the toggle rides on the line between menu and page. */
-.shell { --rw: 264px; grid-template-columns: var(--rw) minmax(0, 1fr); position: relative; transition: grid-template-columns .28s cubic-bezier(.2, .8, .2, 1); }
-@media (min-width: 861px) { .shell.nav-hidden { --rw: 72px; } }
+/* ---- Side menu: full (264px) ⇄ slim icons (64px), one smooth slide ----
+ * Nothing inside the menu moves while it slides: every icon already sits on the slim menu's centre line (32px),
+ * so the width simply closes over the names while they fade (out first when closing, in last when opening). */
+.shell { --rw: 264px; --ease: cubic-bezier(.4, 0, .2, 1); grid-template-columns: var(--rw) minmax(0, 1fr); position: relative; transition: grid-template-columns .32s var(--ease); }
+@media (min-width: 861px) { .shell.nav-hidden { --rw: 64px; } }
 .rail { overflow-x: hidden; }
 .door-mobile { display: none; }
-.rail-toggle { position: absolute; z-index: 45; top: 58px; left: calc(var(--rw) - 13px); width: 26px; height: 26px; display: grid; place-items: center; padding: 0;
-  border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); cursor: pointer; box-shadow: 0 2px 8px rgba(0, 0, 0, .25);
-  transition: left .28s cubic-bezier(.2, .8, .2, 1), color .15s, border-color .15s, transform .15s; }
-.rail-toggle:hover { color: var(--fiber); border-color: var(--fiber); transform: scale(1.08); }
-.rail-toggle:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.rail-toggle .rt-arrow { transition: transform .28s; transform-origin: 14.5px 12px; }
-.shell.nav-hidden .rail-toggle .rt-arrow { transform: rotate(180deg); }
-/* labels fade out while the menu narrows, and back in when it widens */
-.rail .brand-name, .rail .brand-sub, .rail .nav-group-label, .rail .nav-item-label, .rail .nav-chev, .rail .nav-count, .rail .nav kbd, .rail .bb-text, .rail .bb-tag, .rail .bb-dot, .rail .bb-chev, .rail-foot > * { transition: opacity .18s ease; }
+.brand-top { padding-left: 8px; }          /* logo centre on 32px */
+.branch-badge { padding-left: 4px; }       /* badge icon centre on 32px */
+.nav-section-icon { margin-left: 2px; }   /* group icon centre on 32px */
+.rail .brand-name, .rail .brand-sub, .rail .nav-group-label, .rail .nav-item-label, .rail .nav-chev, .rail .nav-count, .rail .nav kbd,
+.rail .bb-text, .rail .bb-tag, .rail .bb-dot, .rail .bb-chev, .rail-foot > * { white-space: nowrap; transition: opacity .18s ease .12s; }
+.rail .nav a, .rail .nav-group { white-space: nowrap; }
 @media (min-width: 861px) {
-.shell.nav-hidden .rail .brand-name, .shell.nav-hidden .rail .brand-sub, .shell.nav-hidden .rail .nav-chev, .shell.nav-hidden .rail .nav-count, .shell.nav-hidden .rail .nav kbd,
-.shell.nav-hidden .rail .bb-text, .shell.nav-hidden .rail .bb-tag, .shell.nav-hidden .rail .bb-dot, .shell.nav-hidden .rail .bb-chev, .shell.nav-hidden .rail-foot { opacity: 0; pointer-events: none; }
-.shell.nav-hidden .rail .brand-sub, .shell.nav-hidden .rail .rail-foot { height: 0; padding: 0; margin: 0; border: 0; overflow: hidden; }
-.shell.nav-hidden .rail .nav-group-label, .shell.nav-hidden .rail .nav-item-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.shell.nav-hidden .rail .brand { padding: 12px 10px 6px; }
-.shell.nav-hidden .rail .brand-top { justify-content: center; }
-.shell.nav-hidden .rail .branch-badge { justify-content: center; padding: 6px; gap: 0; }
-.shell.nav-hidden .rail .bb-text, .shell.nav-hidden .rail .bb-tag, .shell.nav-hidden .rail .bb-dot, .shell.nav-hidden .rail .bb-chev { position: absolute; }
-.shell.nav-hidden .rail .nav { padding: 4px 8px 14px; }
-.shell.nav-hidden .rail .nav-card { padding: 4px; align-items: center; }
-.shell.nav-hidden .rail .nav-group { justify-content: center; padding: 6px 0 4px; pointer-events: none; }
-.shell.nav-hidden .rail .nav a { justify-content: center; padding: 9px 0; width: 100%; }
-.shell.nav-hidden .rail .nav a.active::before { left: -4px; }
-.shell.nav-hidden .rail .nav-item-icon, .shell.nav-hidden .rail .nav-section-icon { transition: transform .18s; }
-.shell.nav-hidden .rail .nav a:hover .nav-item-icon { transform: scale(1.12); }
+  .shell.nav-hidden .rail .brand-name, .shell.nav-hidden .rail .brand-sub, .shell.nav-hidden .rail .nav-group-label, .shell.nav-hidden .rail .nav-item-label,
+  .shell.nav-hidden .rail .nav-chev, .shell.nav-hidden .rail .nav-count, .shell.nav-hidden .rail .nav kbd, .shell.nav-hidden .rail .bb-text, .shell.nav-hidden .rail .bb-tag,
+  .shell.nav-hidden .rail .bb-dot, .shell.nav-hidden .rail .bb-chev, .shell.nav-hidden .rail-foot > * { opacity: 0 !important; pointer-events: none; transition: opacity .1s ease; }
+  .shell.nav-hidden .rail .nav-group { pointer-events: none; }
+  .shell.nav-hidden .rail .nav a:hover .nav-item-icon { transform: scale(1.12); }
 }
-@media (prefers-reduced-motion: reduce) { .shell, .rail-toggle, .rail-toggle .rt-arrow { transition: none; } }
+/* the toggle: a round button riding on the menu's edge */
+.rail-toggle { position: absolute; z-index: 45; top: 14px; left: calc(var(--rw) - 12px); width: 24px; height: 24px; display: grid; place-items: center; padding: 0;
+  border-radius: 50%; border: 1px solid color-mix(in srgb, var(--fiber) 35%, var(--line)); color: var(--fiber); cursor: pointer;
+  background: radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--fiber) 22%, var(--panel)), var(--panel) 70%);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .35), 0 0 0 3px var(--rack);
+  transition: left .32s var(--ease), transform .18s, box-shadow .18s, border-color .18s; }
+.rail-toggle:hover { transform: scale(1.12); border-color: var(--fiber); box-shadow: 0 4px 16px color-mix(in srgb, var(--fiber) 40%, transparent), 0 0 0 3px var(--rack); }
+.rail-toggle:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.rail-toggle svg { transition: transform .32s var(--ease); }
+.shell.nav-hidden .rail-toggle svg { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) { .shell, .rail-toggle, .rail-toggle svg { transition: none; } }
 .nav kbd { white-space: nowrap; flex: none; }
 .nav a { min-width: 0; }
 .nav kbd { margin-left: auto; font: 600 10.5px var(--font); color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
@@ -1882,11 +1882,6 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
 .wc-type { padding: 1px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; color: var(--wc); background: color-mix(in srgb, var(--wc) 16%, transparent); }
 .wc-type.serial { --wc: #38bdf8; color: #38bdf8; background: color-mix(in srgb, #38bdf8 16%, transparent); }
 .wchip { display: flex; width: fit-content; }
-@media (min-width: 861px) {
-  .shell.nav-hidden .rail .nav-chev, .shell.nav-hidden .rail .nav-count, .shell.nav-hidden .rail .nav kbd { display: none; }
-  .shell.nav-hidden .rail .nav a, .shell.nav-hidden .rail .nav-group { gap: 0; }
-  .shell.nav-hidden .rail .nav-card { gap: 2px; }
-}
 .cart .cn > small { display: block; }
 .wchip { margin-top: 8px; }
 /* "Cost" heading straight above its Show / Hide buttons */
@@ -1895,5 +1890,20 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
 /* smaller Show / Hide pill */
 .cost-btn { font-size: 11px; padding: 0 8px; line-height: 1.6; min-height: 0; height: 20px; }
 .serial-grid .sg-all { background: transparent; border-style: dashed; color: var(--fiber); }
-/* menu toggle: level with the logo row and the page title */
-.rail-toggle { top: 14px; }
+/* POS: a line without a price (e.g. no wholesale price set) */
+.cart input.price-missing { border-color: var(--bad) !important; background: color-mix(in srgb, var(--bad) 8%, var(--panel-2)); }
+.cart input.price-missing::placeholder { color: var(--bad); font-weight: 700; opacity: 1; font-size: 12px; }
+.qp-noprice { color: var(--bad); font-size: 11.5px; }
+/* ---- Karvio's own scrollbars: thin, rounded, in the theme colours (not the browser's grey bars) ---- */
+:root { --sb-thumb: color-mix(in srgb, var(--text) 18%, transparent); --sb-thumb-hover: color-mix(in srgb, var(--fiber) 70%, transparent); }
+/* Chrome / Edge / Safari use the ::-webkit-scrollbar rules (standard scrollbar-* would switch them off); Firefox uses these */
+@supports not selector(::-webkit-scrollbar) { * { scrollbar-width: thin; scrollbar-color: var(--sb-thumb) transparent; } .rail { scrollbar-color: transparent transparent; } .rail:hover { scrollbar-color: var(--sb-thumb) transparent; } }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--sb-thumb); border-radius: 99px; border: 3px solid transparent; background-clip: padding-box; min-height: 40px; }
+*::-webkit-scrollbar-thumb:hover { background: var(--sb-thumb-hover); border-width: 2px; background-clip: padding-box; }
+*::-webkit-scrollbar-corner, *::-webkit-scrollbar-button { display: none; background: transparent; width: 0; height: 0; }
+/* the side menu's bar shows only while the pointer is on the menu */
+.rail::-webkit-scrollbar { width: 6px; }
+.rail::-webkit-scrollbar-thumb { background: transparent; border-width: 1px; }
+.rail:hover::-webkit-scrollbar-thumb { background: var(--sb-thumb); background-clip: padding-box; }

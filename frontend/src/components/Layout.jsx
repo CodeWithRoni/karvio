@@ -163,7 +163,7 @@ export default function Layout() {
       </aside>
       {/* Sits on the line between the menu and the page; slides with the menu as it narrows to icons and back. */}
       <button type="button" className="rail-toggle" onClick={toggleHidden} title={hidden ? 'Show the menu' : 'Hide the menu'} aria-label={hidden ? 'Show the menu' : 'Hide the menu'} aria-expanded={!hidden}>
-        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3" /><path d="M9 4v16" /><path className="rt-arrow" d="M15.5 10l-2 2 2 2" /></svg>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14.5 6l-6 6 6 6" /></svg>
       </button>
       <div className="main">
         <div className="topbar">

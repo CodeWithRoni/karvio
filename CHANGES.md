@@ -1,3 +1,10 @@
+# 20 November 2026 (2) — Wholesale prices, scrollbars, smoother menu
+
+- POS: switching Retail ⇄ Wholesale re-prices every line in the cart. A product without a wholesale price shows "Price Not Set" (red) and the sale waits until a price is typed; quick picks show "Price Not Set" too.
+- Karvio's own thin, rounded scrollbars in the theme colours everywhere (the side menu's bar shows only on hover).
+- Side menu: one smooth slide between full and slim (64px). Icons never move — they already sit on the slim menu's centre line — names fade out first when closing and in last when opening. New round toggle with a chevron on the menu edge.
+- Test: browser pos-wholesale.
+
 # 20 November 2026 — Return / exchange with serial items
 
 - Typing a return quantity for a serial item now ticks that many of its serials (the ones still with the customer); "All" / "Clear" pick every serial at once; the chips can still be changed by hand. Before, the serials stayed unticked, the server refused the exchange ("Select 3 serial number(s)…"), the dialog stayed open and no customer credit was made.
