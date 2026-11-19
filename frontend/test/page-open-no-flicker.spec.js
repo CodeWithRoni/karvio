@@ -13,7 +13,7 @@ for (const preload of [false, true]) test(`menu never leaves the screen when a p
   await page.goto('/#/');
   await expect(page.locator('nav a', { hasText: 'Dashboard' })).toBeVisible();
   if (preload) await page.waitForTimeout(6000);
-  for (const name of ['Purchases & returns', 'Reports hub', 'Expenses', 'Cash, bank & MFS']) {
+  for (const name of ['Purchases & Returns', 'Reports Hub', 'Expenses', 'Cash, Bank & MFS']) {
     await page.locator('nav a', { hasText: name }).click();
     await expect(page.locator('.page-head h1')).not.toHaveText('Dashboard');
     await page.waitForTimeout(300);

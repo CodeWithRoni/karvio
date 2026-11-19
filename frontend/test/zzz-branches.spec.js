@@ -29,7 +29,7 @@ test('add branches, work in one, send stock to the other and see every branch in
   }
   // the menu now has the picker and the branch pages
   await expect(page.getByLabel('Working branch')).toHaveValue(/.+/);
-  await expect(page.locator('.nav-card', { hasText: 'Stock' }).getByRole('link', { name: /Branch transfer/ })).toBeVisible();
+  await expect(page.locator('.nav-card', { hasText: 'Stock' }).getByRole('link', { name: /Branch Transfer/ })).toBeVisible();
 
   // send 2 fans from the main branch to the second branch
   await page.goto('/#/branch-transfer');

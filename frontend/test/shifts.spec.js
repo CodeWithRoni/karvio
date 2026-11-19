@@ -26,7 +26,7 @@ test('open a shift by counting notes, see it on the POS, close it with a shortag
   const acc = await call(request, 'account.save', { name: `Shift drawer ${Date.now()}`, type: 'cash', opening_balance: 0 });
   await page.setViewportSize({ width: 1400, height: 950 });
   await page.goto('/#/shifts');
-  await expect(page.locator('.nav-card', { hasText: 'Money & Reports' }).getByRole('link', { name: /Shift & day close/ })).toBeVisible();
+  await expect(page.locator('.nav-card', { hasText: 'Money & Reports' }).getByRole('link', { name: /Shift & Day Close/ })).toBeVisible();
   await page.getByRole('button', { name: '▶ Open shift' }).click();
   const dlg = page.getByRole('dialog');
   await dlg.getByLabel('Cash drawer').selectOption(acc.id);

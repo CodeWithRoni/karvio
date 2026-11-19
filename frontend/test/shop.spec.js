@@ -236,7 +236,7 @@ test('door button hides and shows the side menu without losing the page', async 
   await page.getByLabel('Show the menu').click();
   await expect(page.locator('.rail')).toBeVisible();
   expect((await page.locator('.rail').boundingBox()).width).toBeGreaterThan(200);
-  await expect(page.getByRole('link', { name: /Point of sale/ })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Point Of Sale/ })).toBeVisible();
 });
 
 // Dates are the shop's (server) dates, which may differ from this machine's clock.
@@ -353,13 +353,13 @@ test('side menu cards: Home, Sales, Purchase, Stock, Service & Warranty, Party L
   const cards = page.locator('.nav-card');
   expect((await cards.locator('.nav-group').allInnerTexts()).map((t) => t.trim().toLowerCase())).toEqual(['home', 'sales', 'purchase', 'stock', 'service & warranty', 'party ledger', 'money & reports', 'admin']);
   const links = async (title) => (await page.locator('.nav-card', { has: page.locator('.nav-group', { hasText: new RegExp(`^${title}$`, 'i') }) }).getByRole('link').allInnerTexts()).map((t) => t.split('\n')[0].trim());
-  expect(await links('Home')).toEqual(['Dashboard', 'Advanced search']);
-  expect(await links('Sales')).toEqual(['Point of sale', 'Sales & returns', 'Online orders', 'Quotation', 'Customers', 'Collection']);
-  expect(await links('Purchase')).toEqual(['Purchases & returns', 'Suppliers', 'Payment']);
-  expect(await links('Stock')).toEqual(['Products & stock', 'Price manager', 'Barcode labels', 'Stock count']);
-  expect(await links('Service & Warranty')).toEqual(['Repairs', 'Service', 'Warranty claims']);
-  expect(await links('Money & Reports')).toEqual(['Cash, bank & MFS', 'Shift & day close', 'Day book', 'Expenses', 'Profit', 'Reports hub']);
-  expect(await links('Admin')).toEqual(['Users & roles', 'Activity log', 'Settings']);
+  expect(await links('Home')).toEqual(['Dashboard', 'Advanced Search']);
+  expect(await links('Sales')).toEqual(['Point Of Sale', 'Sales & Returns', 'Online Orders', 'Quotation', 'Customers', 'Collection']);
+  expect(await links('Purchase')).toEqual(['Purchases & Returns', 'Suppliers', 'Payment']);
+  expect(await links('Stock')).toEqual(['Products & Stock', 'Price Manager', 'Barcode Labels', 'Stock Count']);
+  expect(await links('Service & Warranty')).toEqual(['Repairs', 'Service', 'Warranty Claims']);
+  expect(await links('Money & Reports')).toEqual(['Cash, Bank & MFS', 'Shift & Day Close', 'Day Book', 'Expenses', 'Profit', 'Reports Hub']);
+  expect(await links('Admin')).toEqual(['Users & Roles', 'Activity Log', 'Settings']);
   await page.keyboard.press('Alt+8');
   await expect(page).toHaveURL(/#\/history/);
 });
@@ -431,11 +431,11 @@ test('barcode labels: create a shop barcode, custom size, A4 start position, pur
 
   // menu: under Products & stock and Price manager
   await page.goto('/#/stock');
-  await expect(page.locator('.rail a', { hasText: 'Barcode labels' })).toBeVisible();
+  await expect(page.locator('.rail a', { hasText: 'Barcode Labels' })).toBeVisible();
   const links = await page.locator('.rail a').allTextContents();
-  const i = links.findIndex((t) => t.includes('Price manager'));
-  expect(links[i + 1]).toContain('Barcode labels');
-  await page.locator('.rail a', { hasText: 'Barcode labels' }).click();
+  const i = links.findIndex((t) => t.includes('Price Manager'));
+  expect(links[i + 1]).toContain('Barcode Labels');
+  await page.locator('.rail a', { hasText: 'Barcode Labels' }).click();
   await expect(page.locator('.page-head h1')).toHaveText('Barcode labels');
 
   // add the product: it has no barcode yet → create one

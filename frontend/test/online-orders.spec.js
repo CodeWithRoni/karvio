@@ -20,7 +20,7 @@ test('take a Facebook order, confirm it, send it with a courier and settle the c
   await call(request, 'purchase.create', { supplier_id: sup.id, items: [{ product_id: p.id, qty: 5, cost: 500, sale_price: 900 }], payments: [] });
   await page.setViewportSize({ width: 1400, height: 950 });
   await page.goto('/#/online-orders');
-  await expect(page.locator('.nav-card', { hasText: 'Sales' }).getByRole('link', { name: /Online orders/ })).toBeVisible();
+  await expect(page.locator('.nav-card', { hasText: 'Sales' }).getByRole('link', { name: /Online Orders/ })).toBeVisible();
   await page.getByRole('button', { name: '+ New order' }).click();
   const dlg = page.getByRole('dialog');
   await dlg.getByLabel('Customer name').fill(`Mitu ${stamp}`);

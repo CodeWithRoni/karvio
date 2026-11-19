@@ -19,7 +19,7 @@ test('day book shows the balances, the business and every entry of the day', asy
   const book = await call(request, 'daybook', { account_id: acc.id });
   await page.setViewportSize({ width: 1400, height: 950 });
   await page.goto('/#/daybook');
-  await expect(page.locator('.nav-card', { hasText: 'Money & Reports' }).getByRole('link', { name: /Day book/ })).toBeVisible();
+  await expect(page.locator('.nav-card', { hasText: 'Money & Reports' }).getByRole('link', { name: /Day Book/ })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Day book' })).toBeVisible();
   await expect(page.locator('.db-sum')).toContainText('Opening balance');
   await expect(page.locator('.db-biz')).toContainText('Sales');

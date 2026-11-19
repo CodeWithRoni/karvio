@@ -21,7 +21,7 @@ test('count the shelf by scanning, see the short items and fix the stock in one 
   await call(request, 'purchase.create', { supplier_id: sup.id, items: [{ product_id: a.id, qty: 5, cost: 300, sale_price: 500 }, { product_id: b.id, qty: 4, cost: 100, sale_price: 200 }], payments: [] });
   await page.setViewportSize({ width: 1400, height: 950 });
   await page.goto('/#/stock-count');
-  await expect(page.locator('.nav-card', { hasText: 'Stock' }).getByRole('link', { name: /Stock count/ })).toBeVisible();
+  await expect(page.locator('.nav-card', { hasText: 'Stock' }).getByRole('link', { name: /Stock Count/ })).toBeVisible();
   await page.getByRole('button', { name: '▶ Start counting' }).click();
   const scan = page.getByPlaceholder(/Scan a barcode or serial/);
   for (let i = 0; i < 3; i++) { await scan.fill(`CM${stamp}`); await scan.press('Enter'); }
