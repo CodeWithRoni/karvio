@@ -25,7 +25,8 @@ export const DoorIcon = ({ open = true, size = 20 }) => (
 // Long shop names shrink a little so the whole name fits on one line.
 const nameSize = (n) => (n.length > 22 ? 12 : n.length > 17 ? 13 : 15);
 const NAV_KEY = 'karvio_nav_hidden';
-const readHidden = () => { try { return localStorage.getItem(NAV_KEY) === '1'; } catch { return false; } };
+// Remembered per browser; with no choice saved yet, tablets (narrower than 1024px) start with the slim icon menu.
+const readHidden = () => { try { const v = localStorage.getItem(NAV_KEY); if (v === '1' || v === '0') return v === '1'; } catch { /* private mode */ } return typeof window !== 'undefined' && window.innerWidth > 640 && window.innerWidth < 1024; };
 const CLOSED_KEY = 'karvio_nav_closed';
 const readClosed = () => { try { const v = JSON.parse(localStorage.getItem(CLOSED_KEY) || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };
 const Chevron = () => <svg className="nav-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>;
@@ -166,9 +167,7 @@ export default function Layout() {
       </aside>
       {/* Sits on the line between the menu and the page; slides with the menu as it narrows to icons and back. */}
       <button type="button" className="rail-toggle" onClick={toggleHidden} title={hidden ? 'Show the menu' : 'Hide the menu'} aria-label={hidden ? 'Show the menu' : 'Hide the menu'} aria-expanded={!hidden}>
-        {hidden
-          ? <svg className="rt-open" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18" /><path d="m14 9 3 3-3 3" /></svg>
-          : <svg className="rt-close" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18" /><path d="m16 15-3-3 3-3" /></svg>}
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14.5 6l-6 6 6 6" /></svg>
       </button>
       {/* Slim menu: the page name in a dark tip beside the hovered icon (fixed, so the menu's scroll area cannot cut it) */}
       {hidden && tip && <div className="rail-tip" style={{ top: tip.top, left: tip.left }} role="tooltip">{tip.text}</div>}

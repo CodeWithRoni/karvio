@@ -156,7 +156,7 @@ input[type='checkbox'] { width: auto; min-height: 0; accent-color: var(--fiber);
  * Nothing inside the menu moves while it slides: every icon already sits on the slim menu's centre line (32px),
  * so the width simply closes over the names while they fade (out first when closing, in last when opening). */
 .shell { --rw: 264px; --ease: cubic-bezier(.4, 0, .2, 1); grid-template-columns: var(--rw) minmax(0, 1fr); position: relative; transition: grid-template-columns .32s var(--ease); }
-@media (min-width: 861px) { .shell.nav-hidden { --rw: 64px; } }
+@media (min-width: 641px) { .shell.nav-hidden { --rw: 64px; } }
 .rail { overflow-x: hidden; }
 .door-mobile { display: none; }
 .brand-top { padding-left: 8px; }          /* logo centre on 32px */
@@ -165,7 +165,7 @@ input[type='checkbox'] { width: auto; min-height: 0; accent-color: var(--fiber);
 .rail .brand-name, .rail .brand-sub, .rail .nav-group-label, .rail .nav-item-label, .rail .nav-chev, .rail .nav-count, .rail .nav kbd,
 .rail .bb-text, .rail .bb-tag, .rail .bb-dot, .rail .bb-chev, .rail-foot > * { white-space: nowrap; transition: opacity .18s ease .12s; }
 .rail .nav a, .rail .nav-group { white-space: nowrap; }
-@media (min-width: 861px) {
+@media (min-width: 641px) {
   .shell.nav-hidden .rail .brand-name, .shell.nav-hidden .rail .brand-sub, .shell.nav-hidden .rail .nav-group-label, .shell.nav-hidden .rail .nav-item-label,
   .shell.nav-hidden .rail .nav-chev, .shell.nav-hidden .rail .nav-count, .shell.nav-hidden .rail .nav kbd, .shell.nav-hidden .rail .bb-text, .shell.nav-hidden .rail .bb-tag,
   .shell.nav-hidden .rail .bb-dot, .shell.nav-hidden .rail .bb-chev, .shell.nav-hidden .rail-foot > * { opacity: 0 !important; pointer-events: none; transition: opacity .1s ease; }
@@ -391,25 +391,6 @@ table { width: 100%; border-collapse: collapse; }
   .split { grid-template-columns: 1fr; }
 }
 @media (max-width: 860px) {
-  .shell, .shell.nav-hidden { grid-template-columns: 1fr; transition: none; }
-  .rail-toggle { display: none; }
-  .door-mobile { display: grid; }
-  .topbar { position: sticky; top: 0; z-index: 30; }
-  .topbar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .topbar button { display: grid; place-items: center; flex: none; }
-  .shell .rail, .shell:not(.nav-hidden) .rail { animation: none; }
-  .rail { width: min(86vw, 300px) !important; overscroll-behavior: contain; will-change: transform; transition: transform .24s cubic-bezier(.2, .8, .2, 1) !important; }
-  .nav a { padding: 10px 10px; font-size: 15px; }
-  .nav kbd { display: none; }
-  .door-btn { width: 32px; height: 32px; }
-  body.nav-lock { overflow: hidden; }
-  .shell.nav-open::after { animation: fade-in .2s ease-out; }
-  .rail { position: fixed; inset: 0 auto 0 0; width: 270px; z-index: 60; transform: translateX(-100%); transition: transform .2s; box-shadow: var(--shadow);
-    padding: var(--sat) 0 var(--sab) var(--sal); } /* drawer covers the status / gesture bars: keep its content clear of them */
-  .shell.nav-open .rail { transform: none; }
-  .shell.nav-open::after { content: ''; position: fixed; inset: 0; background: rgba(6, 12, 20, .5); z-index: 55; }
-  .topbar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); font-weight: 800; }
-  .topbar button { background: none; border: 1px solid var(--line); color: var(--text); border-radius: 7px; width: 38px; height: 36px; font-size: 18px; cursor: pointer; }
   .content { padding: 16px 16px 40px; }
   .g2, .g3 { grid-template-columns: 1fr; }
   .daterange .dinput { width: 135px; }
@@ -420,6 +401,28 @@ table { width: 100%; border-collapse: collapse; }
   .pcb-row { grid-template-columns: 1fr 1fr; }
   .pcb-row .g { grid-column: 1 / -1; }
   .nav kbd { display: none; }
+}
+/* Phones (640px and narrower): the menu is a drawer that slides in over the page */
+@media (max-width: 640px) {
+  .shell, .shell.nav-hidden { grid-template-columns: 1fr; transition: none; }
+  .rail-toggle { display: none; }
+  .door-mobile { display: grid; }
+  .topbar { position: sticky; top: 0; z-index: 30; }
+  .topbar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .topbar button { display: grid; place-items: center; flex: none; }
+  .shell .rail, .shell:not(.nav-hidden) .rail { animation: none; }
+  .rail { width: min(86vw, 300px) !important; overscroll-behavior: contain; will-change: transform; transition: transform .3s cubic-bezier(.4, 0, .2, 1) !important; }
+  .nav a { padding: 10px 10px; font-size: 15px; }
+  .nav kbd { display: none; }
+  .door-btn { width: 32px; height: 32px; }
+  body.nav-lock { overflow: hidden; }
+  .shell.nav-open::after { animation: fade-in .3s ease-out; }
+  .rail { position: fixed; inset: 0 auto 0 0; width: 270px; z-index: 60; transform: translateX(-100%); transition: transform .3s cubic-bezier(.4, 0, .2, 1); box-shadow: var(--shadow);
+    padding: var(--sat) 0 var(--sab) var(--sal); } /* drawer covers the status / gesture bars: keep its content clear of them */
+  .shell.nav-open .rail { transform: none; }
+  .shell.nav-open::after { content: ''; position: fixed; inset: 0; background: rgba(6, 12, 20, .45); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); z-index: 55; }
+  .topbar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); font-weight: 800; }
+  .topbar button { background: none; border: 1px solid var(--line); color: var(--text); border-radius: 7px; width: 38px; height: 36px; font-size: 18px; cursor: pointer; }
 }
 @media print { .rail, .topbar, .page-actions, .dt-bar { display: none !important; } }
 
@@ -906,7 +909,7 @@ body::before { content: ''; position: fixed; top: 0; left: 0; right: 0; height: 
 @keyframes exit-up { from { transform: translateY(110%); opacity: .4; } to { transform: none; opacity: 1; } }
 @keyframes exit-down { to { transform: translateY(115%); opacity: 0; } }
 @keyframes exit-knock { 0%, 70%, 100% { transform: none; } 78% { transform: rotate(-8deg); } 86% { transform: rotate(6deg); } 93% { transform: rotate(-3deg); } }
-@media (min-width: 861px) { .exit-bg { align-items: center; } }
+@media (min-width: 641px) { .exit-bg { align-items: center; } }
 
 /* Users: working hours */
 .wh-box { border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; gap: 10px; }
@@ -1908,7 +1911,7 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
 .rail::-webkit-scrollbar-thumb { background: transparent; border-width: 1px; }
 .rail:hover::-webkit-scrollbar-thumb { background: var(--sb-thumb); background-clip: padding-box; }
 /* slim menu: the branch badge looks like the menu cards below it (no green side light) */
-@media (min-width: 861px) {
+@media (min-width: 641px) {
   .branch-badge { transition: box-shadow .2s, border-color .2s, background .2s; }
   .shell.nav-hidden .rail .branch-badge { box-shadow: none; border-color: var(--line); background: linear-gradient(160deg, color-mix(in srgb, var(--ok) 9%, var(--panel)) 0%, var(--panel) 55%); }
   .shell.nav-hidden .rail .branch-badge::after { display: none; }
@@ -1930,7 +1933,7 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
 /* ==== Side menu collapse, BikriPro technique ====
  * The menu is fixed on the left and its WIDTH animates; the page has the same padding-left with the same
  * timing, so both move together. Names fade, shrink and slide 8px left at the same time. 300ms ease-in-out. */
-@media (min-width: 861px) {
+@media (min-width: 641px) {
   .shell { display: block; --speed: 300ms; --ease: cubic-bezier(.4, 0, .2, 1); transition: none; }
   .shell .rail { position: fixed; top: 0; bottom: 0; left: 0; z-index: 40; width: var(--rw); transition: width var(--speed) var(--ease); will-change: width; }
   .shell .main { padding-left: var(--rw); transition: padding-left var(--speed) var(--ease); }
@@ -1940,15 +1943,15 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
   .shell.nav-hidden .rail .brand-name, .shell.nav-hidden .rail .brand-sub, .shell.nav-hidden .rail .nav-group-label, .shell.nav-hidden .rail .nav-item-label,
   .shell.nav-hidden .rail .bb-text, .shell.nav-hidden .rail .bb-tag, .shell.nav-hidden .rail .bb-chev, .shell.nav-hidden .rail .nav-chev, .shell.nav-hidden .rail .nav-count,
   .shell.nav-hidden .rail .nav kbd, .shell.nav-hidden .rail-foot > * { opacity: 0 !important; transform: translateX(-8px); transition: opacity var(--speed) var(--ease), transform var(--speed) var(--ease) !important; }
-  /* the round toggle: half outside the menu's right edge */
-  .rail-toggle { position: fixed; top: 4.4rem; left: calc(var(--rw) - 14px); width: 28px; height: 28px; border-radius: 999px; z-index: 45;
-    border: 1px solid var(--line); background: var(--panel); color: var(--muted); box-shadow: 0 4px 10px rgba(0, 0, 0, .3);
-    transition: left var(--speed) var(--ease), transform var(--speed) var(--ease), color var(--speed), border-color var(--speed); }
-  .rail-toggle:hover { transform: scale(1.1); color: var(--fiber); border-color: color-mix(in srgb, var(--fiber) 60%, var(--line)); box-shadow: 0 4px 12px rgba(0, 0, 0, .35); }
-  .rail-toggle svg { transform: none; transition: transform var(--speed) var(--ease); }
-  .shell.nav-hidden .rail-toggle svg { transform: none; }
-  .rail-toggle:hover .rt-close { transform: translateX(-2px); }
-  .rail-toggle:hover .rt-open { transform: translateX(2px); }
+  /* the round toggle (as before: chevron, level with the logo) — now riding the edge with the same 300ms timing */
+  .rail-toggle { position: fixed; top: 14px; left: calc(var(--rw) - 12px); width: 24px; height: 24px; border-radius: 50%; z-index: 45;
+    border: 1px solid color-mix(in srgb, var(--fiber) 35%, var(--line)); color: var(--fiber);
+    background: radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--fiber) 22%, var(--panel)), var(--panel) 70%);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, .35), 0 0 0 3px var(--rack);
+    transition: left var(--speed) var(--ease), transform .18s, box-shadow .18s, border-color .18s; }
+  .rail-toggle:hover { transform: scale(1.12); border-color: var(--fiber); box-shadow: 0 4px 16px color-mix(in srgb, var(--fiber) 40%, transparent), 0 0 0 3px var(--rack); }
+  .rail-toggle svg { transition: transform var(--speed) var(--ease); }
+  .shell.nav-hidden .rail-toggle svg { transform: rotate(180deg); }
   /* name tip beside a slim-menu icon */
   .rail-tip { position: fixed; z-index: 70; transform: translateY(-50%); background: #0b1520; color: #fff; font-size: 12px; font-weight: 600; white-space: nowrap;
     padding: 6px 10px; border-radius: 8px; box-shadow: 0 6px 18px rgba(0, 0, 0, .35); pointer-events: none; animation: tip-in .15s ease-out; }

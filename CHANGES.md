@@ -4,6 +4,7 @@
 - Karvio's own thin, rounded scrollbars in the theme colours everywhere (the side menu's bar shows only on hover).
 - Side menu: one smooth slide between full and slim (64px). Icons never move — they already sit on the slim menu's centre line — names fade out first when closing and in last when opening. New round toggle with a chevron on the menu edge.
 - Side menu (BikriPro technique): the menu is fixed on the left and its width animates (300ms ease-in-out) while the page's left padding animates with the same timing, so both move together; names fade and slide 8px left; round toggle half outside the menu edge with panel open / close icons that nudge on hover; in the slim menu a dark name tip appears beside the hovered icon. Branch shown as a plain row like Dashboard.
+- Menu toggle keeps its round chevron look and place (level with the logo) and slides with the menu. Tablets (641–1023px) get the collapsible menu too and start slim; phones (640px and narrower) keep the drawer, now sliding in 300ms over a softly blurred backdrop.
 - Test: browser pos-wholesale.
 
 # 20 November 2026 — Return / exchange with serial items
