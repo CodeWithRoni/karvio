@@ -1824,3 +1824,9 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
 .bb-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent); animation: bb-pulse 2s infinite; }
 @keyframes bb-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 55%, transparent); } 70%, 100% { box-shadow: 0 0 0 7px transparent; } }
 @media (prefers-reduced-motion: reduce) { .branch-badge::after, .bb-dot { animation: none; } }
+.branch-badge.can-pick { cursor: pointer; transition: border-color .2s, transform .15s; }
+.branch-badge.can-pick:hover { border-color: var(--ok); transform: translateY(-1px); }
+.bb-chev { flex: none; color: var(--muted); }
+.branch-badge.can-pick:hover .bb-chev { color: var(--ok); }
+.bb-select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; margin: 0; z-index: 2; }
+.branch-badge:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }

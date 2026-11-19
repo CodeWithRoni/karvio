@@ -1,6 +1,6 @@
 # 19 November 2026 (6) — Main Branch
 
-- Side menu: the branch dropdown is replaced by a "Working in <branch>" badge (Main tag for the Main Branch). The branch is chosen on the sign-in screen; sign out to work in another branch.
+- Side menu: the working branch shows as a "Working in <branch>" badge (Main tag for the Main Branch). Users who may work in any branch change it from a dropdown inside the badge; staff fixed to a branch see only its name.
 - Adding the first branch turns the shop as it is today into the "Main Branch" (with all its stock and history) and adds the new branch beside it.
 - The Main Branch is marked "Main", always listed first (menu picker, sign-in, reports) and cannot be closed; it can be renamed.
 - Live shop: the existing branch "Showroom - 1" was renamed "Main Branch" (address and phone kept).

@@ -174,16 +174,27 @@ export default function Layout() {
   );
 }
 
-/** The branch this session works in, chosen on the sign-in screen: shown as a badge (no picker; sign in again to change). */
+/** The working branch, as a badge. Users who may work in any branch get a dropdown inside it; staff fixed to one branch see just its name. */
 function BranchPicker() {
   const b = useStore((s) => s.branches);
   if (!b?.on) return null;
+  const active = (b.list || []).filter((x) => x.active);
   const cur = (b.list || []).find((x) => x.id === b.current) || {};
+  const change = async (id) => {
+    try { localStorage.setItem('karvio_branch', id); } catch { /* storage blocked */ }
+    await useStore.getState().boot();
+    useStore.getState().toast(`Working in ${(active.find((x) => x.id === id) || {}).name || 'branch'}`);
+  };
+  const pick = b.can_switch && active.length > 1;
   return (
-    <div className="branch-badge" role="status" aria-label="Working branch" data-branch={b.current} title={b.can_switch ? 'Signed in to this branch. Sign out and choose another branch to change.' : 'Your branch'}>
+    <div className={`branch-badge ${pick ? 'can-pick' : ''}`} data-branch={b.current} title={pick ? 'The branch you are working in — click to change' : 'Your branch'} {...(pick ? {} : { role: 'status', 'aria-label': 'Working branch' })}>
       <span className="bb-ico" aria-hidden="true"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l1.5-5h15L21 9" /><path d="M3 9h18v2a3 3 0 01-6 0 3 3 0 01-6 0 3 3 0 01-6 0z" /><path d="M5 13v7h14v-7M10 20v-4h4v4" /></svg></span>
       <span className="bb-text"><small>Working in</small><b>{cur.name || 'Branch'}</b></span>
       {cur.main ? <span className="bb-tag">Main</span> : <span className="bb-dot" aria-hidden="true" />}
+      {pick && <>
+        <svg className="bb-chev" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+        <select className="bb-select" value={b.current} onChange={(e) => change(e.target.value)} aria-label="Working branch">{active.map((x) => <option key={x.id} value={x.id}>{x.name}{x.main ? ' (Main)' : ''}</option>)}</select>
+      </>}
     </div>
   );
 }

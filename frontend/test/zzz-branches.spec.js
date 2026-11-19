@@ -30,8 +30,9 @@ test('add branches, work in one, send stock to the other and see every branch in
   await expect(page.locator('.dc-hist').first().locator('tr', { hasText: 'Main branch' })).toContainText('Main');
   await page.screenshot({ path: '/tmp/branches-main.png' });
   // the menu now has the picker and the branch pages
-  await expect(page.getByRole('status', { name: 'Working branch' })).toContainText('Main branch');
-  await expect(page.getByRole('combobox', { name: 'Working branch' })).toHaveCount(0);
+  // an admin (any branch) gets the dropdown inside the badge
+  await expect(page.locator('.branch-badge')).toContainText('Main branch');
+  await expect(page.getByRole('combobox', { name: 'Working branch' })).toHaveValue(/.+/);
   await expect(page.locator('.nav-card', { hasText: 'Stock' }).getByRole('link', { name: /Branch Transfer/ })).toBeVisible();
 
   // send 2 fans from the main branch to the second branch
@@ -45,10 +46,8 @@ test('add branches, work in one, send stock to the other and see every branch in
   await expect(page.locator('.bt-list')).toContainText('On the way');
   // switch to the second branch and take it in
   const second = (await call(request, 'branches.get')).list.find((b) => b.name === 'Second branch').id;
-  // the branch is chosen at sign-in; here the device's saved branch is changed and the app reloaded
-  await page.evaluate((id) => localStorage.setItem('karvio_branch', id), second);
-  await page.reload();
-  await expect(page.getByRole('status', { name: 'Working branch' })).toContainText('Second branch');
+  await page.getByRole('combobox', { name: 'Working branch' }).selectOption(second);
+  await expect(page.locator('.branch-badge')).toContainText('Second branch');
   await page.getByRole('button', { name: '✓ Take it in' }).click();
   await page.getByRole('tab', { name: 'Done' }).click();
   await expect(page.locator('.bt-list')).toContainText('Received');
@@ -92,7 +91,21 @@ test('add branches, work in one, send stock to the other and see every branch in
   await pick.selectOption({ label: 'Second branch' });
   await fresh.screenshot({ path: '/tmp/login-branch.png' });
   await fresh.getByRole('button', { name: 'Sign in' }).click();
-  await expect(fresh.getByRole('status', { name: 'Working branch' })).toHaveAttribute('data-branch', second);
+  await expect(fresh.locator('.branch-badge')).toHaveAttribute('data-branch', second);
+  await expect(fresh.getByRole('combobox', { name: 'Working branch' })).toHaveCount(1);
   await fresh.locator('.branch-badge').screenshot({ path: '/tmp/branch-badge.png' });
   await fresh.close();
+  // staff fixed to a branch: just the name, no dropdown
+  const staff = (await call(request, 'users.list')).find((u) => u.username === `bstaff${stamp}`);
+  await call(request, 'branch.assign', { users: { [staff.id]: second } });
+  const fixed = await page.context().browser().newPage();
+  await fixed.addInitScript(({ endpoint }) => { try { localStorage.setItem('erp_api_config', JSON.stringify({ scriptUrl: endpoint })); } catch { /* about:blank */ } }, { endpoint });
+  await fixed.goto(page.url().replace(/#.*$/, '#/'));
+  await fixed.getByLabel('Username').fill(`bstaff${stamp}`);
+  await fixed.getByLabel('Password').fill('long-password-123');
+  await fixed.getByLabel('Sign in to branch').selectOption({ label: 'Second branch' });
+  await fixed.getByRole('button', { name: 'Sign in' }).click();
+  await expect(fixed.getByRole('status', { name: 'Working branch' })).toContainText('Second branch');
+  await expect(fixed.getByRole('combobox', { name: 'Working branch' })).toHaveCount(0);
+  await fixed.close();
 });
