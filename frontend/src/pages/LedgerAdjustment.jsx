@@ -17,13 +17,13 @@ const TXT = {
   customer: {
     title: 'Customer Ledger Adjust', who: 'Customer', invoice: 'Sale invoice', report: '/customer-ledger-report', prefix: 'CLA', rev: 'cadjust',
     sub: 'Raise or lower what a customer owes — write off a small leftover due, give a late discount or correct a mistake. No cash, bank or MFS money moves.',
-    add: 'Customer owes more', ded: 'Customer owes less — write off / discount', owes: 'owes', adv: 'advance',
+    add: 'Customer owes more', ded: 'Write off / discount', owes: 'owes', adv: 'advance',
     effect: 'A deduction shows as Customer dues written off in the profit report.'
   },
   supplier: {
     title: 'Supplier Ledger Adjust', who: 'Supplier', invoice: 'Purchase invoice', report: '/supplier-ledger-report', prefix: 'SLA', rev: 'sadjust',
     sub: 'Raise or lower what we owe a supplier — rebates, discounts and corrections. No cash, bank or MFS money moves.',
-    add: 'We owe the supplier more', ded: 'We owe less — rebate / discount', owes: 'we owe', adv: 'advance paid',
+    add: 'We owe more', ded: 'Rebate / discount', owes: 'we owe', adv: 'advance paid',
     effect: 'A deduction shows as Supplier rebates in the profit report.'
   }
 };
@@ -91,7 +91,7 @@ export default function LedgerAdjustment({ kind }) {
             ))}
           </div>
           {kind === 'supplier' && lower && !f.pending_id && (
-            <Tabs tabs={[['now', 'Yes — received now'], ['later', 'Not yet — only promised']]} value={f.promised ? 'later' : 'now'} onChange={(v) => set({ promised: v === 'later' })} />
+            <Tabs tabs={[['now', 'Received now'], ['later', 'Only promised']]} value={f.promised ? 'later' : 'now'} onChange={(v) => set({ promised: v === 'later' })} />
           )}
         </div>
         <div className="la-grid">

@@ -1546,6 +1546,10 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
 .la-dir label.on.ded { background: color-mix(in srgb, var(--ok) 16%, transparent); } .la-dir label.on.ded b, .la-dir label.on.ded small { color: var(--ok); }
 .la-dir label.on.add { background: color-mix(in srgb, var(--warn) 16%, transparent); } .la-dir label.on.add b, .la-dir label.on.add small { color: var(--warn); }
 .la-dir label.off { cursor: not-allowed; } .la-dir label.off:not(.on) { opacity: .45; }
+.la-top > .tabs { padding: 3px; border-radius: 11px; background: var(--rack); align-self: stretch; align-items: stretch; }
+.la-top > .tabs button { padding: 0 16px; border-radius: 8px; font-size: 13px; transition: background .15s, color .15s; }
+.la-top > .tabs button:hover { color: var(--text); }
+.la-top > .tabs button.on { background: color-mix(in srgb, var(--fiber) 18%, transparent); color: var(--fiber); box-shadow: none; }
 .la-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 16px; }
 .la-row { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .la-label { color: var(--muted); font-size: 12.5px; font-weight: 600; }

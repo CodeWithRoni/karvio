@@ -62,7 +62,7 @@ test('a supplier rebate (Supplier Ledger Adjust · Deduction) lowers what we owe
 test('a promised rebate waits on the adjust page until it is received', async ({ page, request }) => {
   const { sup } = await setup(request);
   const form = await openAdjust(page, sup.name);
-  await form.getByRole('tab', { name: 'Not yet — only promised' }).click();
+  await form.getByRole('tab', { name: 'Only promised' }).click();
   await form.getByLabel('Adjustment type').selectOption('target');
   await form.getByLabel('Amount').fill('4000');
   await form.getByLabel('Reason').fill('November target bonus');
