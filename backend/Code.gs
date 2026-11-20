@@ -5228,6 +5228,37 @@ function partyDelete_(kind, p, user) {
   return true;
 }
 
+/* ---- Salary to staff, and monthly limits. A salary expense can name the staff member it was paid to (kept in
+ * Settings 'expense_staff' as { expense id: user id }, so it can be paid in parts). Monthly expenses set the most
+ * that can be spent in a month: a salary line for one person limits that person's salary; any other line limits
+ * its category. Without a monthly line there is no limit. */
+function isSalaryCat_(cat) { return /salary|salaries|wage|বেতন/i.test(String(cat || '')); }
+function expenseStaffMap_() { return jsonSetting_('expense_staff', {}); }
+function expenseStaffList_() { return all_('Users').filter(function (u) { return u.active; }).map(function (u) { return { id: u.id, name: u.name, role: u.role }; }); }
+function expenseLimit_(cat, staffId, date, exceptId) {
+  var month = String(date || today_()).slice(0, 7), key = nameKey_(cat), salary = isSalaryCat_(cat), map = expenseStaffMap_();
+  var lines = recurringTemplates_().filter(function (t) { return t.active !== false && nameKey_(t.category) === key && (salary ? String(t.staff_id || '') === String(staffId || '') : true); });
+  if (!lines.length) return { limit: null, spent: 0, left: null, month: month, lines: [] };
+  var limit = round_(sum_(lines, function (t) { return num_(t.amount); })), spent = 0;
+  all_('Expenses').forEach(function (e) {
+    if (e.status !== 'active' || e.id === exceptId || String(e.date).slice(0, 7) !== month || nameKey_(e.category) !== key) return;
+    if (salary && String(map[e.id] || '') !== String(staffId || '')) return;
+    spent = round_(spent + num_(e.amount));
+  });
+  return { limit: limit, spent: spent, left: round_(Math.max(limit - spent, 0)), month: month, lines: lines.map(function (t) { return t.name; }) };
+}
+function expenseLimitCheck_(cat, staffId, date, amount, exceptId) {
+  var l = expenseLimit_(cat, staffId, date, exceptId); if (l.limit === null || l.spent + amount <= l.limit + 0.005) return;
+  var who = isSalaryCat_(cat) ? (staffId ? 'Salary of ' + ((all_('Users').filter(function (u) { return u.id === staffId; })[0] || {}).name || 'this staff member') : cat + ' (no staff chosen)') : cat;
+  fail_(who + ' for ' + l.month + ' is limited to ' + l.limit + ' in Monthly expenses (' + l.lines.join(', ') + '). Already spent ' + l.spent + ', so at most ' + l.left + ' more can be paid this month');
+}
+function expenseLimitInfo_(p) {
+  var staffId = isSalaryCat_(p.category) ? String(p.staff_id || '') : '';
+  var out = expenseLimit_(String(p.category || ''), staffId, bookDateSafe_(p.date), p.except_id || '');
+  out.salary = isSalaryCat_(p.category); out.staff = out.salary ? expenseStaffList_() : [];
+  return out;
+}
+function bookDateSafe_(d) { d = String(d || '').slice(0, 10); return isDate_(d) ? d : today_(); }
 function expenseCreate_(p, user) {
   var amt = round_(p.amount); if (amt <= 0) fail_('Amount must be greater than 0');
   var cat = String(p.category || '').trim().replace(/\s+/g, ' '); if (!cat) fail_('Select an expense category');
@@ -5238,7 +5269,11 @@ function expenseCreate_(p, user) {
   cat = String(listed).trim();
   var acc = all_('Accounts').filter(function (a) { return a.id === p.account_id && a.active; })[0]; if (!acc) fail_('Select the account used for payment');
   var date = bookDate_(p.date, 'expense');
+  var staffId = isSalaryCat_(cat) ? String(p.staff_id || '') : '';
+  if (staffId && !all_('Users').some(function (u) { return u.id === staffId; })) fail_('Choose the staff member this salary is paid to');
+  if (!_mem.__recurringRecord) expenseLimitCheck_(cat, staffId, date, amt); // a Monthly expenses line may record its own amount for that month
   var e = insert_('Expenses', { date: date, category: cat, amount: amt, account_id: acc.id, note: p.note || '', user: user.name, status: 'active', created_at: now_() });
+  if (staffId) { var sm = expenseStaffMap_(); sm[e.id] = staffId; setSetting_('expense_staff', JSON.stringify(sm)); }
   acctTxn_(acc.id, 'out', amt, 'expense', e.id, 'Expense: ' + cat + (p.note ? ' — ' + p.note : ''), user, date);
   return e;
 }
@@ -5267,12 +5302,16 @@ function recurringStatus_() {
     delete out.done; return out;
   });
 }
-function recurringList_() { var list = recurringStatus_(); return { templates: list, due: sum_(list, function (t) { return t.due_count; }) }; }
+function recurringList_() {
+  var list = recurringStatus_(), users = indexBy_(all_('Users'));
+  list.forEach(function (t) { if (t.staff_id) t.staff_name = (users[t.staff_id] || {}).name || ''; });
+  return { templates: list, due: sum_(list, function (t) { return t.due_count; }), staff: expenseStaffList_() };
+}
 function recurringSave_(p, user) {
   var list = Array.isArray(p.templates) ? p.templates : [];
   if (list.length > 50) fail_('Up to 50 monthly expenses');
   var cats = []; try { cats = JSON.parse(getSetting_('expense_categories', '[]')); } catch (e) {}
-  var accs = indexBy_(all_('Accounts').filter(function (a) { return a.active; })), old = indexBy_(recurringTemplates_()), names = {};
+  var accs = indexBy_(all_('Accounts').filter(function (a) { return a.active; })), old = indexBy_(recurringTemplates_()), names = {}, users = indexBy_(all_('Users')), staffSeen = {};
   var out = list.map(function (t) {
     var name = String(t.name || '').trim().replace(/\s+/g, ' ').slice(0, 60); if (!name) fail_('Each monthly expense needs a name');
     if (names[nameKey_(name)]) fail_('Two monthly expenses are called "' + name + '"'); names[nameKey_(name)] = 1;
@@ -5281,8 +5320,11 @@ function recurringSave_(p, user) {
     var amount = round_(t.amount); if (!(amount > 0)) fail_(name + ': amount must be more than 0');
     if (!accs[t.account_id]) fail_(name + ': choose an active account');
     var day = Math.round(Number(t.day)); if (!(day >= 1 && day <= 28)) fail_(name + ': day of the month must be 1 to 28');
+    var staffId = isSalaryCat_(cat) ? String(t.staff_id || '') : '';
+    if (staffId && !users[staffId]) fail_(name + ': choose the staff member');
+    if (staffId && staffSeen[staffId + '|' + nameKey_(cat)]) fail_(users[staffId].name + ' has two salary lines. Keep one line per person'); if (staffId) staffSeen[staffId + '|' + nameKey_(cat)] = 1;
     var prev = t.id && old[t.id] ? old[t.id] : {};
-    return { id: prev.id || uid_(), name: name, category: String(cat).trim(), amount: amount, account_id: t.account_id, day: day, active: t.active !== false,
+    return { id: prev.id || uid_(), name: name, category: String(cat).trim(), amount: amount, account_id: t.account_id, day: day, active: t.active !== false, staff_id: staffId,
       // a paused line that is switched back on starts counting again from this month
       since: !prev.id || (prev.active === false && t.active !== false) ? today_().slice(0, 7) : prev.since || recurringFirstMonth_(), done: recurringDone_(prev),
       last_month: prev.last_month || '', last_expense_id: prev.last_expense_id || '' };
@@ -5300,8 +5342,11 @@ function recurringRecord_(p, user) {
   else if (!st.missed.some(function (m) { return m.month === month; })) fail_(t.name + ' is not waiting to be recorded for ' + month);
   var date = p.date ? String(p.date).slice(0, 10) : (month === st.month ? today_() : month + '-' + ('0' + t.day).slice(-2));
   if (date.slice(0, 7) < month) fail_('Record ' + t.name + ' for ' + month + ' with a date in ' + month + ' or later');
-  var e = expenseCreate_({ category: t.category, amount: p.amount === undefined || p.amount === '' ? t.amount : p.amount, account_id: p.account_id || t.account_id,
-    date: date, note: ('Monthly: ' + t.name + (month !== st.month ? ' (' + month + ')' : '') + (p.note ? ' — ' + String(p.note).slice(0, 200) : '')) }, user);
+  _mem.__recurringRecord = true;
+  var e;
+  try { e = expenseCreate_({ category: t.category, staff_id: t.staff_id || '', amount: p.amount === undefined || p.amount === '' ? t.amount : p.amount, account_id: p.account_id || t.account_id,
+    date: date, note: ('Monthly: ' + t.name + (month !== st.month ? ' (' + month + ')' : '') + (p.note ? ' — ' + String(p.note).slice(0, 200) : '')) }, user); }
+  finally { delete _mem.__recurringRecord; }
   t.done = recurringDone_(t); t.done[month] = e.id;
   if (!t.since) t.since = recurringFirstMonth_();
   if (!t.last_month || month >= t.last_month) { t.last_month = month; t.last_expense_id = e.id; }
@@ -5330,6 +5375,7 @@ function expenseUpdate_(p, user) {
   var moneyChanged = Math.abs(amt - num_(e.amount)) > 0.004 || acc.id !== e.account_id || date !== e.date;
   if (!moneyChanged && cat === e.category && note === String(e.note || '')) fail_('No changes to save');
   if (moneyChanged) confirmAdmin_(user, p.password);
+  if (moneyChanged || cat !== e.category) expenseLimitCheck_(cat, isSalaryCat_(cat) ? String(expenseStaffMap_()[e.id] || '') : '', date, amt, e.id);
   var txns = all_('AccountTxns').filter(function (t) { return t.ref_type === 'expense' && t.ref_id === e.id && !t.voided; });
   if (txns.length !== 1) fail_('The account entry of this expense is missing or duplicated. Review it before editing');
   var before = { date: e.date, category: e.category, amount: e.amount, account: accs[e.account_id] ? accs[e.account_id].name : e.account_id, note: e.note || '' };
@@ -5341,10 +5387,10 @@ function expenseUpdate_(p, user) {
   return o;
 }
 function expensesList_(p, user, allRows) {
-  var accs = indexBy_(all_('Accounts'));
+  var accs = indexBy_(all_('Accounts')), staff = expenseStaffMap_(), users = indexBy_(all_('Users'));
   return all_('Expenses').filter(function (e) { return branchSees_('Expenses', e.id) && inRange_(e.date, p.from, p.to) && (!p.category || e.category === p.category) && (!p.status || e.status === p.status); })
     .sort(function (a, b) { return b._row - a._row; })
-    .map(function (e) { var o = Object.assign({}, e); delete o._row; o.account_name = accs[e.account_id] ? accs[e.account_id].name : ''; return o; });
+    .map(function (e) { var o = Object.assign({}, e); delete o._row; o.account_name = accs[e.account_id] ? accs[e.account_id].name : ''; if (staff[e.id]) { o.staff_id = staff[e.id]; o.staff_name = (users[staff[e.id]] || {}).name || ''; } return o; });
 }
 
 /* ============================================================================
@@ -7714,6 +7760,7 @@ var ROUTES = {
   'expense.create':   r_('expenses', expenseCreate_, true),
   'expense.recurring':        r_('expenses', recurringList_),
   'expense.recurring.save':   r_('expenses', recurringSave_, true),
+  'expense.limit':            r_('expenses', function (p) { return expenseLimitInfo_(p); }),
   'expense.recurring.record': r_('expenses', recurringRecord_, true),
   'expense.update':   r_('expenses', expenseUpdate_, true),
   'expense.categories': r_('expenses', expenseCategoriesSave_, true),

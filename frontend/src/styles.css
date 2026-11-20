@@ -2173,3 +2173,12 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
 .pos-edit-banner { display: flex; flex-direction: column; gap: 2px; margin: 0 0 10px; padding: 10px 14px; border: 1px solid color-mix(in srgb, var(--fiber) 55%, transparent); background: color-mix(in srgb, var(--fiber) 10%, transparent); border-radius: 10px; font-size: 13px; }
 .pos-edit-banner > b { color: var(--fiber); }
 @media (max-width: 640px) { .ri-list li { grid-template-columns: 1fr auto; } .ri-no { grid-column: 1 / -1; } .inv-search { flex: 1 1 100%; } }
+
+/* ---- Expenses: monthly limit note under the form */
+.exp-limit { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); font-size: 13px; }
+.exp-limit b { font-size: 13px; }
+.exp-limit-bar { display: block; height: 6px; border-radius: 4px; background: color-mix(in srgb, var(--muted) 25%, transparent); overflow: hidden; margin-top: 4px; }
+.exp-limit-bar i { display: block; height: 100%; background: var(--ok); border-radius: 4px; }
+.exp-limit.full .exp-limit-bar i { background: var(--warn); }
+.exp-limit.over { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--text); }
+.exp-limit.over > b { color: var(--bad); }

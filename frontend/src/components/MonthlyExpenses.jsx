@@ -5,6 +5,7 @@ import { money, fdate, today } from '../lib/format';
 import { useApi, Btn, Field, Badge, Modal, Select, Empty, ErrorBox, useAction } from './ui';
 import { TableSkeleton } from './Skeleton';
 import DateInput from './DateInput';
+const isSalaryCat = (c) => /salary|salaries|wage|বেতন/i.test(String(c || ''));
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const monthName = (ym) => `${MONTHS[Number(ym.slice(5, 7)) - 1]} ${ym.slice(0, 4)}`;
@@ -29,7 +30,7 @@ export default function MonthlyExpenses({ cats, onRecorded }) {
         <div className="mx-list">
           {d.templates.map((t) => (
             <div className={`mx-row ${t.due || t.missed?.length ? 'due' : ''} ${t.active === false ? 'off' : ''}`} key={t.id}>
-              <div><b>{t.name}</b><small>{t.category} · from {acc[t.account_id] || '—'} · every month on day {t.day}</small></div>
+              <div><b>{t.name}</b><small>{t.category}{t.staff_name ? ` · ${t.staff_name}` : ''} · from {acc[t.account_id] || '—'} · every month on day {t.day} · most per month {money(t.amount, false)}</small></div>
               <b className="num">{money(t.amount)}</b>
               <div className="mx-state">
                 {t.active === false ? <Badge tone="muted">Paused</Badge> : t.recorded ? <Badge tone="ok">Recorded for this month</Badge> : t.due ? <Badge tone="warn">Due since {fdate(t.due_date)}</Badge> : <Badge tone="muted">Due {fdate(t.due_date)}</Badge>}
@@ -46,13 +47,13 @@ export default function MonthlyExpenses({ cats, onRecorded }) {
           ))}
         </div>
       ) : <Empty compact icon="receipt" title="No monthly expenses yet">Add rent, salaries, internet or any bill you pay every month. Each month they come due on their day and are recorded with one click.</Empty>}
-      {edit && <EditList list={edit} cats={cats} accounts={accounts} onClose={() => setEdit(null)} onSaved={(r) => { q.setData(r); setEdit(null); }} />}
+      {edit && <EditList list={edit} cats={cats} accounts={accounts} staff={d.staff || []} onClose={() => setEdit(null)} onSaved={(r) => { q.setData(r); setEdit(null); }} />}
       {rec && <RecordOne t={rec} accounts={accounts} onClose={() => setRec(null)} onSaved={(r) => { q.setData(r.list); setRec(null); onRecorded?.(); }} />}
     </div>
   );
 }
 
-function EditList({ list, cats, accounts, onClose, onSaved }) {
+function EditList({ list, cats, accounts, staff, onClose, onSaved }) {
   const [rows, setRows] = useState(list.length ? list : [blank(cats, accounts)]);
   const [busy, run] = useAction();
   const set = (i, k, v) => setRows(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
@@ -65,6 +66,9 @@ function EditList({ list, cats, accounts, onClose, onSaved }) {
           <div className="mx-edit-row" key={r.id || i}>
             <Field label="Name"><input value={r.name} maxLength={60} onChange={(e) => set(i, 'name', e.target.value)} placeholder="e.g. Shop rent" /></Field>
             <Field label="Category"><select value={r.category} onChange={(e) => set(i, 'category', e.target.value)}>{cats.map((c) => <option key={c}>{c}</option>)}</select></Field>
+            {isSalaryCat(r.category) && <Field label="Staff"><select value={r.staff_id || ''} onChange={(e) => set(i, 'staff_id', e.target.value)} aria-label="Staff">
+              <option value="">Not for one person</option>{staff.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select></Field>}
             <Field label="Amount"><input type="number" min="0" step="any" value={r.amount} onChange={(e) => set(i, 'amount', e.target.value)} /></Field>
             <Field label="Paid from"><Select value={r.account_id} onChange={(v) => set(i, 'account_id', v)} options={accounts} allowEmpty={false} /></Field>
             <Field label="Day"><input type="number" min="1" max="28" value={r.day} onChange={(e) => set(i, 'day', e.target.value)} aria-label="Day of the month" /></Field>
@@ -73,6 +77,7 @@ function EditList({ list, cats, accounts, onClose, onSaved }) {
           </div>
         ))}
         <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>Days 1–28 only, so every month has the day. Pausing keeps the line but stops it coming due.</p>
+        <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>The amount is also the most that can be spent in a month: a salary line limits that person's salary (it can be paid in parts from Daily expenses), any other line limits its category.</p>
       </div>
     </Modal>
   );

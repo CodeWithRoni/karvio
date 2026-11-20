@@ -6,7 +6,8 @@
 export const ROW_SCOPED_ACTIONS = new Set([
   'bootstrap', 'products.list', 'customers.list', 'suppliers.list', 'accounts.list',
   'sale.create', 'purchase.create', 'sale.detail', 'purchase.detail',
-  'customer.payment', 'supplier.payment', 'account.entry', 'expense.create', 'expense.update',
+  'customer.payment', 'supplier.payment', 'account.entry',
+  // expense.create / expense.update read the whole month for the Monthly expenses limit, so they use table hints.
   'expenses.list', 'account.ledger',
   'login', 'logout', 'users.list', 'sms.log',
 ]);
@@ -36,6 +37,7 @@ export const APPEND_HINTS = {
   'customer.save': ['AuditLog'],
   'database.restore': ['AuditLog', 'ItemEvents'],
   'expense.recurring.save': ['AuditLog'],
+  'expense.update': ['AuditLog'],
   'ledger.adjust': ['AuditLog'],
   'order.confirm': ['AuditLog', 'ItemEvents'],
   'order.return': ['AuditLog', 'ItemEvents'],
@@ -209,9 +211,12 @@ export const TABLE_HINTS = {
   'dayclose.reopen': ['AccountTxns', 'Accounts', 'AuditLog'],
   'dayclose.save': ['AccountTxns', 'Accounts', 'AuditLog'],
   'expense.categories': ['AuditLog', 'Expenses', 'InvoiceLinks'],
+  'expense.create': ['AccountTxns', 'Accounts', 'Expenses'],
+  'expense.limit': ['Expenses'],
   'expense.recurring': ['Expenses'],
   'expense.recurring.record': ['AccountTxns', 'Accounts', 'Expenses'],
   'expense.recurring.save': ['Accounts', 'AuditLog', 'Expenses'],
+  'expense.update': ['AccountTxns', 'Accounts', 'AuditLog', 'Expenses'],
   'history': ['Brands', 'Categories', 'CustomerLedger', 'Customers', 'ItemEvents', 'Products', 'PurchaseItems', 'PurchaseReturnItems', 'PurchaseReturns', 'Purchases', 'SaleItems', 'Sales', 'SalesReturnItems', 'SalesReturns', 'SerialItems', 'WarrantyClaims'],
   'history.doc': ['CustomerLedger', 'Customers', 'SaleItems', 'Sales', 'SalesReturnItems', 'SalesReturns'],
   'ledger.adjust': ['AuditLog', 'CustomerLedger', 'Customers', 'Purchases', 'Sales', 'SalesReturns', 'SupplierLedger', 'Suppliers'],

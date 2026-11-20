@@ -10,12 +10,18 @@ import MonthlyExpenses from '../components/MonthlyExpenses';
 import DateInput from '../components/DateInput';
 
 const catKey = (c) => String(c || '').trim().replace(/\s+/g, ' ').toLowerCase();
+/** Salary-type categories get a staff member (same rule as the server). */
+export const isSalaryCat = (c) => /salary|salaries|wage|বেতন/i.test(String(c || ''));
 
 export default function Expenses() {
   const { accounts, settings, can } = useStore();
   const cats = (() => { try { return JSON.parse(settings.expense_categories); } catch { return ['Other']; } })();
   const cash = accounts.find((a) => a.type === 'cash') || accounts[0];
-  const [f, setF] = useState({ date: today(), category: cats[0] || '', amount: '', account_id: cash?.id || '', note: '' });
+  const [f, setF] = useState({ date: today(), category: cats[0] || '', amount: '', account_id: cash?.id || '', note: '', staff_id: '' });
+  const salary = isSalaryCat(f.category);
+  // The monthly limit for this category (or this person's salary), from Monthly expenses.
+  const lim = useApi('expense.limit', { category: f.category, staff_id: salary ? f.staff_id : '', date: f.date }, [], { skip: !f.category });
+  const L = lim.data, over = L && L.limit !== null && Number(f.amount) > L.left + 0.004;
   const [range, setRange] = useState({ from: monthStart(), to: today() });
   const [catFilter, setCatFilter] = useState('');
   const list = useApi('expenses.list', range);
@@ -30,9 +36,11 @@ export default function Expenses() {
 
   const save = async (e) => {
     e.preventDefault();
-    await run(() => api('expense.create', { ...f, amount: Number(f.amount) }), 'Expense recorded');
+    if (over) return useStore.getState().toast(`Only ${money(L.left)} can be paid this month — the Monthly expenses limit is ${money(L.limit)}`, 'err');
+    const ok = await run(() => api('expense.create', { ...f, staff_id: salary ? f.staff_id : '', amount: Number(f.amount) }), 'Expense recorded');
+    if (!ok) return;
     setF({ ...f, amount: '', note: '' });
-    changed();
+    changed(); lim.reload();
   };
   const all = list.data || [];
   const todayTotal = round2((todayList.data || []).filter((x) => x.date === day && x.status === 'active').reduce((a, x) => a + x.amount, 0));
@@ -65,10 +73,23 @@ export default function Expenses() {
         <form className="card form" onSubmit={save}>
           <Field label="Date"><DateInput value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
           <Field label="Category"><select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}>{cats.map((c) => <option key={c}>{c}</option>)}</select></Field>
-          <Field label="Amount"><input type="number" step="any" min="0" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} required /></Field>
+          {salary && <Field label="Staff"><select value={f.staff_id} onChange={(e) => setF({ ...f, staff_id: e.target.value })} aria-label="Staff">
+            <option value="">Not for one person</option>
+            {(L?.staff || []).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select></Field>}
+          <Field label="Amount"><input type="number" step="any" min="0" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} required className={over ? 'invalid' : ''} aria-invalid={over || undefined} /></Field>
           <Field label="Paid from"><Select value={f.account_id} onChange={(v) => setF({ ...f, account_id: v })} options={accounts} allowEmpty={false} /></Field>
+          {L && L.limit !== null && (
+            <div className={`wide exp-limit ${over ? 'over' : L.left <= 0.004 ? 'full' : ''}`} role={over ? 'alert' : 'status'}>
+              {over
+                ? <><b>⚠ More than the monthly limit</b><span>{salary && f.staff_id ? `${(L.staff || []).find((u) => u.id === f.staff_id)?.name || 'This staff member'}'s salary` : f.category} for this month is {money(L.limit)} in Monthly expenses. {money(L.spent)} is already paid, so only <b>{money(L.left)}</b> can be paid now.</span></>
+                : <><b>{salary && f.staff_id ? `Salary of ${(L.staff || []).find((u) => u.id === f.staff_id)?.name || ''}` : f.category} — monthly limit {money(L.limit)}</b><span>Paid this month {money(L.spent)} · left {money(L.left)}{salary ? ' · can be paid in parts' : ''}</span>
+                  <span className="exp-limit-bar"><i style={{ width: `${Math.min(100, L.limit > 0 ? (L.spent / L.limit) * 100 : 100)}%` }} /></span></>}
+            </div>
+          )}
+          {salary && f.staff_id && L && L.limit === null && <div className="wide muted" style={{ fontSize: 12.5 }}>No monthly salary is set for this person in Monthly expenses, so there is no limit.</div>}
           <Field label="Note" wide><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} placeholder="e.g. Lunch for staff, DESCO bill" /></Field>
-          <div className="wide row end"><Btn kind="primary" busy={busy} type="submit">Add expense</Btn></div>
+          <div className="wide row end"><Btn kind="primary" busy={busy} type="submit" disabled={over}>Add expense</Btn></div>
         </form>
         <div className="stats" style={{ gridTemplateColumns: '1fr' }}>
           <div className="stat"><span>Spent today</span><b>{todayList.loading || todayList.error ? '—' : money(todayTotal)}</b><ErrorBox error={todayList.error} onRetry={todayList.reload} /></div>
@@ -109,7 +130,7 @@ export default function Expenses() {
         onRowClick={open}
         totals={{ amount: rows.filter((x) => x.status === 'active').reduce((a, x) => a + x.amount, 0) }}
         columns={[
-          { key: 'date', label: 'Date', type: 'date' }, { key: 'category', label: 'Category' }, { key: 'note', label: 'Note' },
+          { key: 'date', label: 'Date', type: 'date' }, { key: 'category', label: 'Category', value: (r) => (r.staff_name ? `${r.category} · ${r.staff_name}` : r.category) }, { key: 'note', label: 'Note' },
           { key: 'account_name', label: 'Paid from' }, { key: 'amount', label: 'Amount', type: 'money' }, { key: 'user', label: 'By' },
           { key: 'status', label: 'Status', render: (r) => <Badge tone={statusTone(r.status)}>{r.status}</Badge> },
           ...(can('cancel') ? [{ key: 'x', label: '', noSort: true, noExport: true, render: (r) => r.status === 'active' && <span onClick={(e) => e.stopPropagation()}><Btn size="sm" kind="danger" onClick={() => setRev({ type: 'expense', id: r.id, label: 'expense' })}>Cancel</Btn></span> }] : [])
