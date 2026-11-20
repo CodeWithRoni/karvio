@@ -1963,6 +1963,8 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
   border: 1px solid color-mix(in srgb, var(--fiber) 35%, var(--line)) !important; color: var(--fiber) !important;
   background: radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--fiber) 22%, var(--panel)), var(--panel) 70%) !important;
   box-shadow: 0 2px 10px rgba(0, 0, 0, .35); transition: transform .18s, box-shadow .18s; }
+.round-toggle.door-mobile { display: none; }
+@media (max-width: 640px) { .round-toggle.door-mobile { display: grid; } }
 .round-toggle:active { transform: scale(.94); }
 .round-toggle:hover { box-shadow: 0 4px 16px color-mix(in srgb, var(--fiber) 40%, transparent); }
 /* ==== Phones: every data table becomes a list of cards — one card per row, "label … value" lines ==== */
