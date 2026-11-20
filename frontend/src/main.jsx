@@ -8,9 +8,12 @@ import '@fontsource/manrope/latin-800.css';
 import '@fontsource/hind-siliguri/bengali-400.css';
 import '@fontsource/hind-siliguri/bengali-600.css';
 import './styles.css';
+import { startMobileTables } from './lib/mobileTables';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <App />
   </React.StrictMode>
 );
+
+startMobileTables(); // phones: table columns become labelled lines in each card

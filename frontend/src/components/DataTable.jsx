@@ -86,7 +86,7 @@ export default function DataTable({ columns, rows, loading, title = 'Export', ex
   };
 
   return (
-    <div className="dt">
+    <div className={`dt ${selectable ? 'dt-sel' : ''}`}>
       {(searchable || exportable || toolbar) && (
         <div className="dt-bar">
           {searchable && <input className="dt-search" type="search" placeholder="Search this table" value={q} onChange={(e) => { setQ(e.target.value); setPage(0); }} aria-label="Search table" />}
@@ -130,14 +130,14 @@ export default function DataTable({ columns, rows, loading, title = 'Export', ex
             {slice.map((row, i) => (
               <tr key={row.id || i} onClick={onRowClick ? () => onRowClick(row) : undefined} className={`${onRowClick ? 'click' : ''} ${rowClass ? rowClass(row) : ''} ${sel.has(row) ? 'picked' : ''}`}
                 tabIndex={onRowClick ? 0 : undefined} onKeyDown={onRowClick ? (e) => e.key === 'Enter' && onRowClick(row) : undefined}>
-                {selectable && <td onClick={(e) => e.stopPropagation()}><input type="checkbox" className="dt-check" checked={sel.has(row)} onChange={() => toggle(row)} aria-label="Select row" /></td>}
-                {columns.map((c) => <td key={c.key} className={`${c.type === 'money' || c.type === 'num' ? 'r num' : ''} ${c.className || ''}`}>{fmt(c, row)}</td>)}
+                {selectable && <td className="dt-cbx" onClick={(e) => e.stopPropagation()}><input type="checkbox" className="dt-check" checked={sel.has(row)} onChange={() => toggle(row)} aria-label="Select row" /></td>}
+                {columns.map((c) => <td key={c.key} data-label={typeof c.label === 'string' ? c.label : undefined} className={`${c.type === 'money' || c.type === 'num' ? 'r num' : ''} ${c.className || ''}`}>{fmt(c, row)}</td>)}
               </tr>
             ))}
           </tbody>
           {totals && filtered.length > 0 && (
             <tfoot>
-              <tr>{selectable && <td />}{columns.map((c, i) => <td key={c.key} className={c.type === 'money' || c.type === 'num' ? 'r num' : ''}>{i === 0 ? 'Total' : totals[c.key] !== undefined ? (typeof totals[c.key] === 'string' ? totals[c.key] : c.type === 'money' ? money(totals[c.key], false) : fqty(totals[c.key])) : ''}</td>)}</tr>
+              <tr>{selectable && <td className="dt-cbx" />}{columns.map((c, i) => <td key={c.key} data-label={i === 0 || typeof c.label !== 'string' ? undefined : c.label} data-empty={i !== 0 && totals[c.key] === undefined ? '' : undefined} className={c.type === 'money' || c.type === 'num' ? 'r num' : ''}>{i === 0 ? 'Total' : totals[c.key] !== undefined ? (typeof totals[c.key] === 'string' ? totals[c.key] : c.type === 'money' ? money(totals[c.key], false) : fqty(totals[c.key])) : ''}</td>)}</tr>
             </tfoot>
           )}
         </table>

@@ -1,3 +1,15 @@
+# 20 November 2026 (3) — Phone layout, page by page
+
+Every page, every tab and the common dialogs were checked at phone width (390px) with real data.
+- Tables on phones become cards: one card per row, the first column as the title and every other column as a "label … value" line; ticks sit in the card corner; totals get their own card. Hand-made tables get their labels from the column headings automatically.
+- Filter rows: search and date ranges take a full line, other fields two per line; no fixed widths pushing fields off the screen (Purchases, Day book, Reports hub, Activity log).
+- Date boxes no longer shrink to "20 Nc".
+- Export / due-reminder bars wrap ("Send due reminder" is no longer cut off) on Collection and Payment.
+- PC / CCTV quotation: part picker, warranty, then qty · price · remove — no more half-width pickers.
+- Settings: long switch labels (SMS gateway on) wrap under the box.
+- Dashboard lists (leaderboard, top sellers, low stock, sales below cost) take their natural height on phones.
+- Small history tables scroll sideways instead of being cut.
+
 # 20 November 2026 (2) — Wholesale prices, scrollbars, smoother menu
 
 - POS: switching Retail ⇄ Wholesale re-prices every line in the cart. A product without a wholesale price shows "Price Not Set" (red) and the sale waits until a price is typed; quick picks show "Price Not Set" too.
