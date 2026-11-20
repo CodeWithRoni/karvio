@@ -6542,11 +6542,20 @@ function productHistory_(p, user) {
   var actSale = indexBy_(all_('Sales').filter(function (s) { return s.status === 'active' && (can_(user, 'sales.all') || s.user_id === user.id); }));
   var si = all_('SaleItems').filter(function (i) { return i.product_id === pr.id && actSale[i.sale_id]; });
   out.last_sales = si.slice(-3).reverse().map(function (i) { var s = actSale[i.sale_id]; return { price: i.price, qty: i.qty, date: s.date, invoice_no: s.invoice_no, customer: s.customer_name }; });
+  // POS hover card: last and second-last selling price, the highest, lowest and average (per unit, weighted by quantity),
+  // and — with a customer chosen — what this customer paid the last 3 times.
+  var line = function (i) { var s = actSale[i.sale_id]; return { price: round_(num_(i.price), 4), qty: i.qty, date: String(s.date).slice(0, 10), invoice_no: s.invoice_no, customer: s.customer_name || '' }; };
+  var qty = 0, value = 0, max = null, min = null;
+  si.forEach(function (i) { var pr0 = num_(i.price), q0 = num_(i.qty); qty += q0; value += pr0 * q0; if (max === null || pr0 > max) max = pr0; if (min === null || pr0 < min) min = pr0; });
+  out.sale_stats = { times: si.length, qty: round_(qty, 4), last: si.length ? line(si[si.length - 1]) : null, second: si.length > 1 ? line(si[si.length - 2]) : null,
+    max: max === null ? null : round_(max, 4), min: min === null ? null : round_(min, 4), avg: qty > 0 ? round_(value / qty, 2) : null };
+  if (p.customer_id) out.customer_sales = si.filter(function (i) { return actSale[i.sale_id].customer_id === p.customer_id; }).slice(-3).reverse().map(line);
   if (can_(user, 'cost') || can_(user, 'purchase')) {
     var actPur = indexBy_(all_('Purchases').filter(function (x) { return x.status === 'active'; }));
     var pi = all_('PurchaseItems').filter(function (i) { return i.product_id === pr.id && actPur[i.purchase_id]; });
     var last = pi[pi.length - 1];
     if (can_(user, 'cost')) out.avg_cost = pr.cost_price;
+    if (can_(user, 'cost') && pi.length) { var costs = pi.map(function (i) { return num_(i.cost); }); out.cost_stats = { min: round_(Math.min.apply(null, costs), 4), max: round_(Math.max.apply(null, costs), 4), avg: round_(pr.cost_price, 4), times: pi.length }; }
     out.last_purchase = last ? { cost: last.cost, qty: last.qty, date: actPur[last.purchase_id].date, invoice_no: actPur[last.purchase_id].invoice_no, supplier: actPur[last.purchase_id].supplier_name } : null;
   }
   return out;
@@ -7268,6 +7277,102 @@ function partyCard_(p, user) {
     balance: balance, due: due, advance: round_(Math.max(-balance, 0)), last: last };
 }
 
+/* ---- Staff report (Reports hub): a leaderboard of everyone who sold in the period, or everything about one
+ * person — invoices, sales after returns, profit (cost permission), discounts, dues given, money collected,
+ * products, customers, payment methods and day-by-day. Returns count against the seller of the invoice, on
+ * the day of the return. Without "View sales made by other staff" a user sees only themselves. */
+function staffReport_(p, user, period) {
+  var from = p.from || '', to = p.to || '', cost = can_(user, 'cost'), all = can_(user, 'sales.all');
+  var users = indexBy_(all_('Users')), byName = {}; all_('Users').forEach(function (u) { byName[u.name] = u.id; });
+  var only = all ? String(p.staff_id || '') : user.id, mine = function (id) { return all || id === user.id; };
+  var sales = {}, inPeriod = [], cancelled = {};
+  all_('Sales').forEach(function (s) {
+    if (!branchSees_('Sales', s.id)) return;
+    sales[s.id] = s;
+    if (!inRange_(s.date, from, to) || !mine(s.user_id)) return;
+    if (s.status === 'active') inPeriod.push(s);
+    else if (!/^Edited — /.test(String(s.cancel_reason || ''))) cancelled[s.user_id] = (cancelled[s.user_id] || 0) + 1;
+  });
+  var blank = function (id, name) { return { staff_id: id, staff: name || (users[id] || {}).name || 'Unknown', role: (users[id] || {}).role || '', invoices: 0, qty: 0, gross: 0, discount: 0, returns: 0, returns_count: 0,
+    net: 0, profit: 0, paid: 0, due_given: 0, collected: 0, customers: 0, cash_sales: 0, cancelled: 0, first: '', last: '', _cust: {} }; };
+  var g = {}, row = function (id, name) { return g[id] = g[id] || blank(id, name); };
+  inPeriod.forEach(function (s) {
+    var r = row(s.user_id, s.user_name), d = String(s.date).slice(0, 10);
+    r.invoices++; r.gross = round_(r.gross + num_(s.total)); r.discount = round_(r.discount + num_(s.discount)); r.profit = round_(r.profit + num_(s.profit));
+    r.paid = round_(r.paid + num_(s.paid) + num_(s.credit_used)); r.due_given = round_(r.due_given + num_(s.due));
+    if (s.customer_id) r._cust[s.customer_id] = 1; else r.cash_sales++;
+    if (!r.first || d < r.first) r.first = d; if (d > r.last) r.last = d;
+  });
+  var ids = {}; inPeriod.forEach(function (s) { ids[s.id] = s; });
+  all_('SaleItems').forEach(function (i) { var s = ids[i.sale_id]; if (s) { var r = g[s.user_id]; r.qty = round_(r.qty + num_(i.qty), 4); } });
+  var retRows = [];
+  all_('SalesReturns').forEach(function (rt) {
+    var s = sales[rt.sale_id]; if (rt.status !== 'active' || !s || !inRange_(rt.date, from, to) || !mine(s.user_id)) return;
+    var r = row(s.user_id, s.user_name); r.returns = round_(r.returns + num_(rt.total)); r.returns_count++; r.profit = round_(r.profit - returnProfit_(rt));
+    retRows.push(rt);
+  });
+  // Money they took in for customer dues (by the name on the money entry).
+  all_('AccountTxns').forEach(function (t) {
+    if (t.voided || t.ref_type !== 'cpay' || t.direction !== 'in' || !inRange_(t.date, from, to)) return;
+    var id = byName[t.user]; if (!id || !mine(id)) return;
+    var r = row(id, t.user); r.collected = round_(r.collected + num_(t.amount));
+  });
+  Object.keys(cancelled).forEach(function (id) { row(id).cancelled = cancelled[id]; });
+  var rows = Object.keys(g).map(function (k) {
+    var r = g[k]; r.customers = Object.keys(r._cust).length; delete r._cust;
+    r.net = round_(r.gross - r.returns); r.avg = r.invoices ? round_(r.gross / r.invoices) : 0;
+    r.margin = r.net > 0 ? round_(r.profit / r.net * 100, 1) : 0;
+    if (!cost) { delete r.profit; delete r.margin; }
+    return r;
+  }).filter(function (r) { return r.invoices || r.returns || r.collected || r.cancelled; })
+    .sort(function (a, b) { return b.net - a.net || b.invoices - a.invoices; });
+  var team = { net: round_(sum_(rows, function (r) { return r.net; })), invoices: sum_(rows, function (r) { return r.invoices; }), staff: rows.length };
+  rows.forEach(function (r, i) { r.rank = i + 1; r.share = team.net > 0 ? round_(r.net / team.net * 100, 1) : 0; });
+  var best = function (k) { var b = rows.filter(function (r) { return num_(r[k]) > 0; }).sort(function (a, b) { return b[k] - a[k]; })[0]; return b ? { staff: b.staff, value: b[k] } : null; };
+  var board = { team: team, best_seller: best('net'), most_invoices: best('invoices'), best_profit: cost ? best('profit') : null, best_collector: best('collected'), best_avg: best('avg') };
+  if (!p.staff_id && all) {
+    var cols = [col_('rank', '#', 'num'), col_('staff', 'Staff'), col_('role', 'Role'), col_('invoices', 'Invoices', 'num', true), col_('qty', 'Qty sold', 'num', true), col_('gross', 'Sales', 'money', true),
+      col_('returns', 'Returns', 'money', true), col_('net', 'Net sales', 'money', true), col_('share', 'Share %', 'num')];
+    if (cost) cols.push(col_('profit', 'Profit', 'money', true), col_('margin', 'Margin %', 'num'));
+    cols.push(col_('avg', 'Avg invoice', 'money'), col_('discount', 'Discount given', 'money', true), col_('due_given', 'Sold on due', 'money', true), col_('collected', 'Dues collected', 'money', true),
+      col_('customers', 'Customers', 'num', true), col_('cancelled', 'Cancelled', 'num', true), col_('last', 'Last sale', 'date'));
+    return finishReport_('Staff Leaderboard' + period, cols, rows, { staff_board: board });
+  }
+  // ---- One person in detail
+  var me = rows.filter(function (r) { return r.staff_id === only; })[0] || Object.assign(blank(only), { net: 0, avg: 0 }), daily = {}, prods = {}, custs = {}, methods = {}, accs = indexBy_(all_('Accounts'));
+  inPeriod = inPeriod.filter(function (s) { return s.user_id === only; });
+  retRows = retRows.filter(function (rt) { return sales[rt.sale_id].user_id === only; });
+  ids = {}; inPeriod.forEach(function (s) { ids[s.id] = s; });
+  inPeriod.forEach(function (s) {
+    var d = String(s.date).slice(0, 10), x = daily[d] = daily[d] || { date: d, invoices: 0, sales: 0, returns: 0, net: 0, profit: 0 };
+    x.invoices++; x.sales = round_(x.sales + num_(s.total)); x.profit = round_(x.profit + num_(s.profit));
+    var cid = s.customer_id || '', c = custs[cid] = custs[cid] || { customer: s.customer_id ? s.customer_name : 'Cash sales (walk-in)', invoices: 0, amount: 0, due: 0 };
+    c.invoices++; c.amount = round_(c.amount + num_(s.total)); c.due = round_(c.due + num_(s.due));
+    var pays = []; try { pays = (typeof s.payments === 'string' ? JSON.parse(s.payments || '[]') : s.payments) || []; } catch (e) {}
+    pays.forEach(function (pp) { var name = (accs[pp.account_id] || {}).name || 'Other', m = methods[name] = methods[name] || { method: name, count: 0, amount: 0 }; m.count++; m.amount = round_(m.amount + num_(pp.amount)); });
+    if (num_(s.credit_used) > 0) { var m2 = methods['Customer advance'] = methods['Customer advance'] || { method: 'Customer advance', count: 0, amount: 0 }; m2.count++; m2.amount = round_(m2.amount + num_(s.credit_used)); }
+    if (num_(s.due) > 0) { var m3 = methods['On due'] = methods['On due'] || { method: 'On due', count: 0, amount: 0 }; m3.count++; m3.amount = round_(m3.amount + num_(s.due)); }
+  });
+  retRows.forEach(function (rt) { var d = String(rt.date).slice(0, 10), x = daily[d] = daily[d] || { date: d, invoices: 0, sales: 0, returns: 0, net: 0, profit: 0 }; x.returns = round_(x.returns + num_(rt.total)); x.profit = round_(x.profit - returnProfit_(rt)); });
+  all_('SaleItems').forEach(function (i) {
+    var s = ids[i.sale_id]; if (!s) return;
+    var x = prods[i.product_id] = prods[i.product_id] || { product: i.name, unit: i.unit || 'pcs', qty: 0, amount: 0, profit: 0, invoices: 0 };
+    x.qty = round_(x.qty + num_(i.qty), 4); x.amount = round_(x.amount + num_(i.total)); x.profit = round_(x.profit + num_(i.total) - num_(i.cost)); x.invoices++;
+  });
+  var list = function (o, key) { return Object.keys(o).map(function (k) { var x = o[k]; if (!cost) delete x.profit; return x; }).sort(function (a, b) { return b[key] - a[key]; }); };
+  var dailyRows = Object.keys(daily).sort().map(function (k) { var x = daily[k]; x.net = round_(x.sales - x.returns); if (!cost) delete x.profit; return x; });
+  var invRows = inPeriod.slice().sort(function (a, b) { return b._row - a._row; }).map(function (s) {
+    var o = { id: s.id, date: String(s.date).slice(0, 10), time: String(s.created_at || '').slice(11, 16), invoice_no: s.invoice_no, customer: s.customer_name || 'Cash sale', total: s.total, discount: s.discount, paid: round_(num_(s.paid) + num_(s.credit_used)), due: s.due, status: s.status };
+    if (cost) o.profit = s.profit; return o;
+  });
+  var icols = [col_('date', 'Date', 'date'), col_('time', 'Time'), col_('invoice_no', 'Invoice'), col_('customer', 'Customer'), col_('total', 'Total', 'money', true), col_('discount', 'Discount', 'money', true), col_('paid', 'Paid', 'money', true), col_('due', 'Due', 'money', true)];
+  if (cost) icols.push(col_('profit', 'Profit', 'money', true));
+  var u = users[only] || {};
+  return finishReport_('Staff Report — ' + (u.name || me.staff) + period, icols, invRows, { staff_board: board, staff_detail: {
+    staff: u.name || me.staff, role: u.role || me.role, username: u.username || '', active: u.active !== false, since: String(u.created_at || '').slice(0, 10),
+    rank: me.rank || 0, of: rows.length, summary: me, daily: dailyRows, products: list(prods, 'amount').slice(0, 50), customers: list(custs, 'amount').slice(0, 50), methods: list(methods, 'amount') } });
+}
+
 function reportsRaw_(p, user) {
   var from = p.from || '', to = p.to || '', group = p.group || 'invoice', cost = can_(user, 'cost');
   // Without "View sales made by other staff", every report shows only the user's own sales (and their returns).
@@ -7277,6 +7382,7 @@ function reportsRaw_(p, user) {
   var period = (from || to) ? ' (' + (from || '…') + ' → ' + (to || '…') + ')' : '';
   var T = p.type;
   if (T === 'stock_summary') return stockSummaryReport_(p, user);
+  if (T === 'staff') return staffReport_(p, user, period);
   var partyKind = T === 'supplier_payments' || p.party === 'supplier' ? 'supplier' : 'customer';
   if (T === 'due_collections' || T === 'supplier_payments' || T === 'aging' || T === 'party_items') {
     if (partyKind === 'customer' && !can_(user, 'customers')) fail_('Permission denied: this report needs the Customers permission');

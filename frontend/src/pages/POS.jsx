@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import QuickPicks, { rememberRecent } from '../components/QuickPicks';
+import ProductHover, { clearPriceCards } from '../components/ProductPriceCard';
+import RecentInvoices from '../components/RecentInvoices';
 import { useStore, shopDay } from '../lib/store';
 import { api } from '../lib/api';
 import { money, qty as fqty, round2, isDecimalUnit, fdate, fdatetime } from '../lib/format';
@@ -36,6 +38,10 @@ export default function POS() {
   const [payTouched, setPayTouched] = useState(!!draft?.customerId);
   const setPays = (v) => { setPayTouched(true); setPaysRaw(v); };
   const [useCredit, setUseCredit] = useState(false);
+  // Editing a saved invoice in the POS: { id, invoice_no, date, user_name, customer_id, credit_used, qty: {product: qty}, serials: {product: [..]} }.
+  // Complete then saves the changes to that invoice (same number); Clear cart stops editing.
+  const [editing, setEditing] = useState(draft?.editing || null);
+  const [editSave, setEditSave] = useState(null); // { print } while asking for the admin password
   const [payPrevious, setPayPrevious] = useState(false);
   const [previousPays, setPreviousPays] = useState(() => defaultPay(''));
   const canPayPrevious = useStore((st) => st.can('customers') && st.apiCapabilities?.saleDuePayment === true);
@@ -58,7 +64,7 @@ export default function POS() {
   const searchRef = useRef();
   const discRef = useRef();
 
-  useEffect(() => { try { savePosDraft({ cart, customerId, discount }); } catch {} }, [cart, customerId, discount]);
+  useEffect(() => { try { savePosDraft({ cart, customerId, discount, editing }); } catch {} }, [cart, customerId, discount, editing]);
 
   const pmap = useMemo(() => Object.fromEntries(products.map((p) => [p.id, p])), [products]);
   const customer = customers.find((c) => c.id === customerId);
@@ -68,6 +74,8 @@ export default function POS() {
   const priceFor = (p) => tierPrice(p, tier);
   const changeTier = (t) => { setTier(t); setCart((c) => c.map((l) => { const p = pmap[l.product_id]; return p ? { ...l, price: tierPrice(p, t) } : l; })); };
 
+  // Hover card with the product's selling prices (search list, quick add, cart).
+  const priceHover = (p, child, o = {}) => <ProductHover product={p} customerId={customerId} as={o.as} className={o.className}>{child}</ProductHover>;
   const loadHist = (id, force) => {
     if (!force && hist[id]) return;
     setHist((h) => ({ ...h, [id]: h[id] || { loading: true } }));
@@ -135,7 +143,7 @@ export default function POS() {
   const disc = Math.min(Math.max(Number(discount) || 0, 0), subtotal);
   const total = round2(subtotal - disc);
   const advance = customer && customer.balance < 0 ? -customer.balance : 0;
-  const credit = useCredit ? Math.min(advance, total) : 0;
+  const credit = editing ? (customerId && customerId === editing.customer_id ? Math.min(editing.credit_used, total) : 0) : useCredit ? Math.min(advance, total) : 0;
   const paid = round2(cleanPays(pays).reduce((a, p) => a + p.amount, 0) + credit);
   const due = round2(total - paid);
   const change = paid > total ? round2(paid - total) : 0;
@@ -160,7 +168,8 @@ export default function POS() {
     const rate = Number(l.price);
     if (!Number.isFinite(rate) || rate < 0 || Math.abs(rate-Math.round(rate*10000)/10000) > Number.EPSILON*Math.max(1,Math.abs(rate))*4) problems.push(`Selling price for ${p.name} supports at most 4 decimal places`);
     if (isSerial(p) && (!l.serials.length || l.serials.length !== Number(l.qty))) problems.push(`Pick the serial numbers for ${p.name}`);
-    if (!p.service && Number(l.qty) > (p.available ?? p.stock)) problems.push(`Only ${fqty(p.available ?? p.stock, p.unit)} of ${p.name} in stock`);
+    const back = editing ? Number(editing.qty?.[p.id]) || 0 : 0; // what the edited invoice gives back to stock
+    if (!p.service && Number(l.qty) > (p.available ?? p.stock) + back) problems.push(`Only ${fqty((p.available ?? p.stock) + back, p.unit)} of ${p.name} in stock`);
   });
   if (due > 0.004 && !customer) problems.push('Cash sales must be fully paid — select a customer to sell on due');
 
@@ -171,7 +180,9 @@ export default function POS() {
   };
 
   const [confirmUI, ask] = useConfirm();
-  const reset = () => { setPayPrevious(false); setPreviousPays(defaultPay('')); setNextPay(''); setSendSms(false); setCart([]); setCustomerId(''); setDiscount(''); setPaysRaw(defaultPay()); setPayTouched(false); setUseCredit(false); setNote(''); searchRef.current?.focus(); };
+  const clearAsk = () => (editing ? { title: `Stop editing ${editing.invoice_no}?`, message: `Nothing changes on ${editing.invoice_no}. The screen is cleared for a new sale.`, confirmLabel: 'Stop editing' }
+    : { title: 'Clear the cart?', message: 'All items, the customer and payments on this screen will be removed.' });
+  const reset = () => { setPayPrevious(false); setPreviousPays(defaultPay('')); setNextPay(''); setSendSms(false); setCart([]); setCustomerId(''); setDiscount(''); setPaysRaw(defaultPay()); setPayTouched(false); setUseCredit(false); setNote(''); setEditing(null); searchRef.current?.focus(); };
   useEffect(() => onShopDraftsCleared(() => { reset(); setHolds([]); refresh('products').catch(() => {}); }), []);
 
   // Hold: put this cart aside (items, customer, discount, price tier, note) and start a fresh one.
@@ -204,6 +215,7 @@ export default function POS() {
   const checkout = async (print) => {
     if (!cart.length || busy || checkingOut.current) return;
     if (problems.length) return toast(problems[0], 'err');
+    if (editing) { setEditSave({ print }); return; }
     // Collected more than the bill (cash change): only send what the invoice needs.
     let payList = cleanPays(pays);
     if (change > 0) {
@@ -227,8 +239,54 @@ export default function POS() {
         searchRef.current?.focus();
       } else setDone({ ...res, change });
       reset();
-      setHist({});
+      setHist({}); clearPriceCards();
       refresh('products', 'customers').catch(() => toast('Sale saved. Reload the page to refresh stock and customer balances.', 'err'));
+    } finally { checkingOut.current = false; }
+  };
+
+  const canEdit = useStore((st) => st.can('cancel'));
+  // Open a saved invoice in the POS for editing (from the recent invoices under the search box).
+  const openInvoice = async (row) => {
+    if (editing?.id === row.id) return;
+    if ((cart.length || editing) && !await ask({ title: editing ? `Stop editing ${editing.invoice_no}?` : 'Replace the cart?', message: `${row.invoice_no} will open here for editing. ${editing ? 'Changes not saved' : 'The items in the cart'} will be removed.`, confirmLabel: `Open ${row.invoice_no}` })) return;
+    let d;
+    try { d = await api('sale.detail', { id: row.id }); } catch (e) { return toast(e.message, 'err'); }
+    const s = d.sale;
+    if (s.status !== 'active') return toast(`${s.invoice_no} is cancelled`, 'err');
+    if ((d.returns || []).some((r) => r.status === 'active')) return toast(`${s.invoice_no} has a return, so it cannot be edited. Cancel the return first, or make another return / exchange`, 'err');
+    const qty = {}, serials = {};
+    d.items.forEach((i) => { qty[i.product_id] = (qty[i.product_id] || 0) + Number(i.qty); if (i.serials) serials[i.product_id] = [...(serials[i.product_id] || []), ...String(i.serials).split(',').map((x) => x.trim()).filter(Boolean)]; });
+    let pays0 = []; try { pays0 = (Array.isArray(s.payments) ? s.payments : JSON.parse(s.payments || '[]')).map((x) => ({ account_id: x.account_id, amount: String(x.amount) })); } catch { pays0 = []; }
+    reset();
+    setCart(d.items.map((i) => ({ product_id: i.product_id, qty: Number(i.qty), price: i.price, serials: i.serials ? String(i.serials).split(',').map((x) => x.trim()).filter(Boolean) : [], warranty_days: Number(i.warranty_days) > 0 ? Number(i.warranty_days) : '' })));
+    setCustomerId(s.customer_id || ''); setDiscount(Number(s.discount) ? String(s.discount) : ''); setNote(s.note || ''); setTier('retail');
+    setNextPay(s.next_payment_date || '');
+    setPaysRaw(pays0.length ? pays0 : defaultPay('')); setPayTouched(true);
+    setEditing({ id: s.id, invoice_no: s.invoice_no, date: s.date, user_name: s.user_name, customer_id: s.customer_id || '', credit_used: Number(s.credit_used) || 0, qty, serials });
+    d.items.forEach((i) => loadHist(i.product_id));
+    toast(`${s.invoice_no} opened for editing`);
+  };
+  const saveEdit = async (password, reason) => {
+    const print = editSave?.print;
+    let payList = cleanPays(pays);
+    if (change > 0) {
+      let excess = change;
+      payList = [...payList].reverse().map((p) => { const cut = Math.min(p.amount, excess); excess = round2(excess - cut); return { ...p, amount: round2(p.amount - cut) }; }).reverse().filter((p) => p.amount > 0);
+    }
+    checkingOut.current = true;
+    try {
+      const res = await run(() => api('sale.edit', {
+        id: editing.id, password, reason, customer_id: customerId, discount: disc, note, credit_used: credit,
+        next_payment_date: due > 0.004 ? nextPay : '',
+        items: cart.map((l) => ({ product_id: l.product_id, qty: Number(l.qty), price: Number(l.price), serials: l.serials, warranty_days: l.warranty_days === '' ? 0 : l.warranty_days })),
+        payments: payList
+      }));
+      if (!res) return;
+      setEditSave(null);
+      if (print) printInvoice(res);
+      toast(`${res.sale.invoice_no} updated${change > 0 ? ` — return change ${money(change)}` : ''}`, 'ok');
+      reset(); setHist({}); clearPriceCards();
+      refresh('products', 'customers').catch(() => {});
     } finally { checkingOut.current = false; }
   };
 
@@ -238,9 +296,9 @@ export default function POS() {
     F8: () => discRef.current?.focus(),
     F9: () => checkout(false),
     F10: () => checkout(true),
-    F7: () => hold(),
-    'mod+delete': async () => { if (cart.length && await ask({ title: 'Clear the cart?', message: 'All items, the customer and payments on this screen will be removed.' })) reset(); }
-  }, [cart, pays, customerId, discount, useCredit, note, sendSms, busy, tier, nextPay, holds]);
+    F7: () => { if (!editing) hold(); },
+    'mod+delete': async () => { if ((cart.length || editing) && await ask(clearAsk())) reset(); }
+  }, [cart, pays, customerId, discount, useCredit, note, sendSms, busy, tier, nextPay, holds, editing]);
 
   const sh = shiftQ.data;
   const shiftModal = openingShift && sh && <OpenShift accounts={sh.accounts} mode={sh.mode} onClose={() => setOpeningShift(false)} onDone={shiftQ.reload} />;
@@ -263,10 +321,11 @@ export default function POS() {
       <div className="pos-left">
         <div className="row">
           {sh?.shift && <Link to="/shifts" className="sh-pos-badge" title="Shift & day close"><Badge tone="ok">Shift open · {sh.shift.user} · since {fdatetime(sh.shift.opened_at)}</Badge></Link>}
-          <div style={{ flex: 1 }}><ProductSearch camera onPick={(p) => add(p)} onCode={addBySerial} placeholder={narrow ? 'Search product by serial or name' : 'Search product by serial, name, model or brand (F2)'} inputRef={searchRef} autoFocus /></div>
+          {editing && <span className="pos-editing" title={`Editing ${editing.invoice_no} — Complete saves the changes; Clear cart stops editing`}>✎ {editing.invoice_no}</span>}
+          <div style={{ flex: 1 }}><ProductSearch camera hover={priceHover} panel={canEdit ? (close) => <RecentInvoices editingId={editing?.id} onPick={(r) => { close(); openInvoice(r); }} /> : undefined} onPick={(p) => add(p)} onCode={addBySerial} placeholder={narrow ? 'Search product by serial or name' : 'Search product by serial, name, model or brand (F2)'} inputRef={searchRef} autoFocus /></div>
           <Tabs tabs={[['retail', 'Retail'], ['wholesale', 'Wholesale']]} value={tier} onChange={changeTier} />
-          <Btn onClick={hold} disabled={!cart.length} title="Put this sale aside and serve the next customer (F7)">Hold</Btn>
-          <Btn onClick={() => setShowHolds(true)} disabled={!holds.length} className={holds.length ? 'held-on' : ''} title="Sales on hold">Held{holds.length ? ` · ${holds.length}` : ''}</Btn>
+          <Btn onClick={hold} disabled={!cart.length || !!editing} title={editing ? 'Save or clear the invoice you are editing first' : 'Put this sale aside and serve the next customer (F7)'}>Hold</Btn>
+          <Btn onClick={() => setShowHolds(true)} disabled={!holds.length || !!editing} className={holds.length ? 'held-on' : ''} title="Sales on hold">Held{holds.length ? ` · ${holds.length}` : ''}</Btn>
         </div>
         {showHolds && (
           <Modal open size="md" title="Sales on hold" onClose={() => setShowHolds(false)} footer={<Btn onClick={() => setShowHolds(false)}>Close</Btn>}>
@@ -280,6 +339,12 @@ export default function POS() {
             <p className="muted" style={{ fontSize: 12.5, marginBottom: 0 }}>Held sales stay on this computer until resumed. Stock is not reserved: it is checked when the sale is completed.</p>
           </Modal>
         )}
+        {editing && (
+          <div className="pos-edit-banner" role="status">
+            <b>✎ Editing invoice {editing.invoice_no}</b>
+            <span>{fdate(editing.date)}{editing.user_name ? ` · sold by ${editing.user_name}` : ''} — change items, prices, customer or payments, then <b>Save changes</b>. The invoice keeps its number and date. <b>Clear cart</b> stops editing.</span>
+          </div>
+        )}
         <div className="cart">
           <table>
             <thead><tr><th>Item</th>{canCost && <th style={{ width: 110 }} className="cost-col">Cost</th>}<th style={{ width: 100 }} className="r">Qty</th><th style={{ width: 150 }} className="r">Price</th><th style={{ width: 110 }} className="r">Amount</th><th style={{ width: 30 }} /></tr></thead>
@@ -289,7 +354,7 @@ export default function POS() {
                 return (
                   <tr key={i}>
                     <td className="cn">
-                      <b>{p.name}</b>
+                      <ProductHover product={p} customerId={customerId}><b>{p.name}</b></ProductHover>
                       <small>{p.service ? 'Service — no stock' : `${fqty(p.available ?? p.stock, p.unit)} in stock`}{p.unit !== 'pcs' ? ` · sold by ${p.unit}` : ''}</small>
                       {isSerial(p) && (l.serials.length
                         ? <div><button className="serial-ok" onClick={() => setSerialFor(i)}>S/N: {l.serials.join(', ')}</button></div>
@@ -346,7 +411,7 @@ export default function POS() {
               })}
             </tbody>
           </table>
-          {!cart.length && <QuickPicks products={products} priceFor={priceFor} onPick={(p) => add(p)} />}
+          {!cart.length && <QuickPicks products={products} priceFor={priceFor} onPick={(p) => add(p)} hover={priceHover} />}
         </div>
         <div className="keys">
           <span><kbd>F2</kbd> search</span><span><kbd>F4</kbd> customer</span><span><kbd>F8</kbd> discount</span>
@@ -360,7 +425,8 @@ export default function POS() {
           {customer && (
             <div className="collect">
               <PaymentSplit value={pays} onChange={setPays} total={round2(total - credit)} label="Collected balance" />
-              {advance > 0 && (
+              {editing && credit > 0 && <div className="muted" style={{ marginTop: 8, fontSize: 12.5 }}>Customer advance used on this invoice: {money(credit)}</div>}
+              {advance > 0 && !editing && (
                 <label className="check" style={{ marginTop: 8, fontWeight: 500 }}>
                   <input type="checkbox" checked={useCredit} onChange={(e) => setUseCredit(e.target.checked)} /> Use customer advance ({money(advance)})
                 </label>
@@ -372,7 +438,7 @@ export default function POS() {
                   {customer.balance > 0.004 && total > 0 && due > 0.004 && <div className="row total-due"><span>Total due</span><b>{money(Math.max(customer.balance - previousPaid, 0) + due)}</b></div>}
                 </div>
               )}
-              {customer.balance > 0.004 && canPayPrevious && <div className="pos-previous-payment" style={{marginTop:10}}>
+              {customer.balance > 0.004 && canPayPrevious && !editing && <div className="pos-previous-payment" style={{marginTop:10}}>
                 <label className="check"><input type="checkbox" checked={payPrevious} onChange={(e) => {setPayPrevious(e.target.checked);setPreviousPays(defaultPay(''));}} /> Make previous due payment</label>
                 {payPrevious && <div className="previous-due-payment" style={{marginTop:8}}>
                   <PaymentSplit value={previousPays} onChange={setPreviousPays} total={customer.balance} label="Previous due collection (separate receipt)" />
@@ -428,10 +494,10 @@ export default function POS() {
           <button type="button" role="switch" aria-checked={smsReady && sendSms} aria-label="Send SMS to customer" className="switch" disabled={!smsReady} onClick={() => setSendSms(!sendSms)}><span /></button>
         </div>
         <div className="row">
-          <Btn kind="primary" size="lg" style={{ flex: 1 }} busy={busy} disabled={!cart.length} onClick={() => checkout(true)}>Complete & print</Btn>
-          <Btn size="lg" disabled={!cart.length || busy} onClick={() => checkout(false)}>Complete</Btn>
+          <Btn kind="primary" size="lg" style={{ flex: 1 }} busy={busy} disabled={!cart.length} onClick={() => checkout(true)}>{editing ? 'Save & print' : 'Complete & print'}</Btn>
+          <Btn size="lg" disabled={!cart.length || busy} onClick={() => checkout(false)}>{editing ? 'Save changes' : 'Complete'}</Btn>
         </div>
-        <button type="button" className="btn clear-cart" disabled={!cart.length} onClick={async () => { if (await ask({ title: 'Clear the cart?', message: 'All items, the customer and payments on this screen will be removed.' })) reset(); }}>
+        <button type="button" className="btn clear-cart" disabled={!cart.length && !editing} onClick={async () => { if (await ask(clearAsk())) reset(); }}>
           <span className="cc-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" /></svg></span>
           <span>Clear cart</span><kbd>Ctrl + Del</kbd>
         </button>
@@ -465,12 +531,13 @@ export default function POS() {
         {serialFor !== null && cart[serialFor] && (
           <>
             <p className="muted">Click every serial number you are selling, or scan the barcode on each box — the quantity is the number of serials picked.{cart[serialFor].want ? ` Planned: ${cart[serialFor].want}.` : ''}</p>
-            <SerialChooser productId={cart[serialFor].product_id} value={cart[serialFor].serials}
+            <SerialChooser productId={cart[serialFor].product_id} value={cart[serialFor].serials} extra={editing?.serials?.[cart[serialFor].product_id]}
               onChange={(v) => upd(serialFor, { serials: v, qty: v.length })} />
           </>
         )}
       </Modal>
 
+      {editSave && editing && <EditSaveDialog invoiceNo={editing.invoice_no} busy={busy} onClose={() => setEditSave(null)} onSave={saveEdit} />}
       <QuickCustomer open={quick !== null} initial={quick || ''} onClose={() => setQuick(null)} onCreated={(c) => selectCustomer(c.id)} />
 
       <Modal open={!!done} onClose={() => { setDone(null); searchRef.current?.focus(); }} title="Sale completed" size="sm"
@@ -495,5 +562,23 @@ export default function POS() {
         )}
       </Modal>
     </div>
+  );
+}
+
+/** Saving an edited invoice needs an admin password (as in Sales → Edit invoice); the reason goes to the activity log. */
+function EditSaveDialog({ invoiceNo, busy, onClose, onSave }) {
+  const [password, setPassword] = useState('');
+  const [reason, setReason] = useState('');
+  const go = (e) => { e?.preventDefault(); if (password) onSave(password, reason.trim()); };
+  return (
+    <Modal open size="sm" title={`Save changes to ${invoiceNo}`} onClose={onClose}
+      footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} disabled={!password} onClick={go}>Save changes</Btn></>}>
+      <form onSubmit={go} className="form">
+        <p className="muted wide" style={{ margin: 0 }}>{invoiceNo} keeps its number and date. Stock, serials, payments and the customer's due are corrected; the old version stays in the activity log.</p>
+        <Field label="Admin password" wide><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus autoComplete="current-password" aria-label="Admin password" /></Field>
+        <Field label="Reason (optional)" wide><input value={reason} maxLength={200} onChange={(e) => setReason(e.target.value)} placeholder="e.g. wrong price" aria-label="Reason" /></Field>
+        <button type="submit" hidden />
+      </form>
+    </Modal>
   );
 }

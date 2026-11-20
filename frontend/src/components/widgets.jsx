@@ -30,12 +30,13 @@ function useTenRows(ref, list, hi) {
  * Product search box with barcode support.
  * Typing a barcode / SKU and pressing Enter adds it straight away.
  * ---------------------------------------------------------------- */
-export function ProductSearch({ onPick, onCode, camera = false, inStockOnly = false, noServices = false, autoFocus, placeholder = 'Search product by name, model or brand (F2)', inputRef }) {
+export function ProductSearch({ onPick, onCode, camera = false, inStockOnly = false, noServices = false, autoFocus, placeholder = 'Search product by name, model or brand (F2)', inputRef, hover, panel }) {
   const products = useStore((s) => s.products);
   const brands = useStore((s) => s.brands);
   const brandMap = useMemo(() => Object.fromEntries((brands || []).map((b) => [b.id, b.name])), [brands]);
   const [q, setQ] = useState('');
   const [hi, setHi] = useState(0);
+  const [panelOpen, setPanelOpen] = useState(false); // panel (e.g. recent invoices) under the empty box, opened by a click
   const localRef = useRef();
   const ref = inputRef || localRef;
 
@@ -71,19 +72,21 @@ export function ProductSearch({ onPick, onCode, camera = false, inStockOnly = fa
         const raw = q.trim(), fallback = list[hi];
         Promise.resolve(onCode(raw)).then((done) => { if (done) { setQ(''); setHi(0); ref.current?.focus(); } else if (fallback) pick(fallback); });
       } else if (list[hi]) pick(list[hi]);
-    } else if (e.key === 'Escape') setQ('');
+    } else if (e.key === 'Escape') { setQ(''); setPanelOpen(false); }
   };
 
   return (
     <div className={`psearch ${camera ? 'camera-field' : ''}`}>
-      <input ref={ref} value={q} autoFocus={autoFocus} onChange={(e) => { setQ(e.target.value); setHi(0); }} onKeyDown={onKey}
-        placeholder={placeholder} aria-label="Search product" role="combobox" aria-expanded={list.length > 0} />
+      <input ref={ref} value={q} autoFocus={autoFocus} onChange={(e) => { setQ(e.target.value); setHi(0); setPanelOpen(false); }} onKeyDown={onKey}
+        onMouseDown={panel ? () => { if (!q) setPanelOpen((o) => !o); } : undefined} onBlur={panel ? () => setTimeout(() => setPanelOpen(false), 150) : undefined}
+        placeholder={placeholder} aria-label="Search product" role="combobox" aria-expanded={list.length > 0 || (panelOpen && !q)} />
       {camera && <CameraScanButton onScan={scanCamera} label="Scan product barcode or serial with camera" title="Scan product or serial"/>}
+      {panel && panelOpen && !q && <div className="psearch-panel">{panel(() => setPanelOpen(false))}</div>}
       {list.length > 0 && (
         <ul ref={listRef} className="psearch-list" role="listbox">
           {list.map((p, i) => (
             <li key={p.id} role="option" aria-selected={i === hi} className={i === hi ? 'hi' : ''} onMouseDown={(e) => { e.preventDefault(); pick(p); }} onMouseEnter={() => setHi(i)}>
-              <span className="pn">{p.name}<small>{[p.sku, p.barcode].filter(Boolean).join(' / ')}</small></span>
+              {(() => { const pn = <span className="pn">{p.name}<small>{[p.sku, p.barcode].filter(Boolean).join(' / ')}</small></span>; return hover ? hover(p, pn, { className: 'pn-wrap' }) : pn; })()}
               {p.service ? <span className="ps svc">Service</span> : <span className={`ps ${(p.available ?? p.stock) <= 0 ? 'out' : ''}`}>{fqty(p.available ?? p.stock, p.unit)}</span>}
               <span className="pp">{money(p.sale_price, false)}</span>
             </li>
@@ -261,7 +264,7 @@ export function CustomerPicker({ value, onChange, onAddNew }) {
 
 /* Serial chooser: the serials in stock for a product. Click to pick / unpick (any number),
  * or scan a barcode — the scanner types the serial and presses Enter, which picks it. */
-export function SerialChooser({ productId, value, onChange, max }) {
+export function SerialChooser({ productId, value, onChange, max, extra }) {
   const [list, setList] = useState(null);
   const [q, setQ] = useState('');
   const [note, setNote] = useState(null); // { ok, text } — result of the last scan
@@ -270,7 +273,7 @@ export function SerialChooser({ productId, value, onChange, max }) {
     let live = true;
     setList(null);
     api('serials.list', { product_id: productId, status: 'in_stock' })
-      .then((r) => live && setList(r.map((x) => x.serial)))
+      .then((r) => live && setList([...new Set([...(extra || []), ...r.map((x) => x.serial)])])) // extra: serials of the invoice being edited
       .catch(() => live && setList([]));
     return () => { live = false; };
   }, [productId]);

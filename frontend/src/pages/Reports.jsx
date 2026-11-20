@@ -6,6 +6,7 @@ import { monthStart, today, addDays, money, qty, fdate } from '../lib/format';
 import { api } from '../lib/api';
 import { PurchaseDetail } from './Purchases';
 import { MoneyReport, AgingReport, IndividualReport } from './PartyReports';
+import { StaffReport } from './StaffReport';
 import DataTable from '../components/DataTable';
 import Statement from '../components/Statement';
 import { useApi, PageHead, Field, Select, DateRange, ErrorBox, Tabs, Badge, Modal, Btn } from '../components/ui';
@@ -33,7 +34,7 @@ export default function Reports() {
   const [params] = useSearchParams();
   const canStatements = can('cost');
   // Party reports (own filters, see PartyReports.jsx): what the user may see of customers and suppliers.
-  const partyList = [...(can('customers') ? [['due_collections', 'Due collection']] : []), ...(can('suppliers') ? [['supplier_payments', 'Supplier payments']] : []),
+  const partyList = [['staff', 'Staff leaderboard'], ...(can('customers') ? [['due_collections', 'Due collection']] : []), ...(can('suppliers') ? [['supplier_payments', 'Supplier payments']] : []),
     ...(can('customers') || can('suppliers') ? [['aging', 'Aging report (dues by age)'], ['individual', 'Individual report (one customer / supplier)']] : [])];
   const PARTY = Object.fromEntries(partyList);
   const list = canStatements ? [...REPORTS, ...partyList, ['slow_stock', 'Slow-moving stock'], ['supplier_prices', 'Supplier prices'], ['supplier_rebates', 'Supplier rebates'], ['below_cost', 'Sales below cost'], ...Object.entries(STATEMENTS).map(([k, v]) => [k, v[1]])] : [...REPORTS, ...partyList];
@@ -71,6 +72,7 @@ export default function Reports() {
         {type === 'supplier_payments' && <MoneyReport key="s" kind="supplier" picker={picker} />}
         {type === 'aging' && <AgingReport picker={picker} />}
         {type === 'individual' && <IndividualReport picker={picker} />}
+        {type === 'staff' && <StaffReport picker={picker} />}
       </>
     );
   }

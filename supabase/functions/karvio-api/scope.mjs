@@ -271,6 +271,7 @@ export const TABLE_HINTS = {
   'reports:sales': ['CustomerLedger', 'Customers', 'SaleItems', 'Sales', 'SalesReturns'],
   'reports:sales_returns': ['Sales', 'SalesReturnItems', 'SalesReturns'],
   'reports:slow_stock': ['Brands', 'Categories', 'Products', 'PurchaseItems', 'Purchases', 'SaleItems', 'Sales'],
+  'reports:staff': ['AccountTxns', 'Accounts', 'SaleItems', 'Sales', 'SalesReturns'],
   'reports:stock_summary': ['Brands', 'Categories', 'ItemEvents', 'Products', 'PurchaseItems', 'PurchaseReturnItems', 'Purchases', 'Repairs', 'SaleItems', 'Sales', 'SalesReturnItems', 'SalesReturns', 'SerialItems', 'WarrantyClaims'],
   'reports:supplier_payments': ['AccountTxns', 'Accounts', 'Purchases', 'SupplierLedger', 'Suppliers'],
   'reports:supplier_prices': ['Products', 'PurchaseItems', 'Purchases', 'Suppliers'],

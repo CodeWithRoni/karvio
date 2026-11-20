@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { money, qty as fqty } from '../lib/format';
 import { Tabs } from './ui';
@@ -11,7 +11,7 @@ const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } ca
 /** Call when a product goes into the cart: it moves to the front of "Recent". */
 export function rememberRecent(id) { write(RECENT_KEY, [id, ...read(RECENT_KEY).filter((x) => x !== id)].slice(0, 12)); }
 
-export default function QuickPicks({ products, priceFor, onPick }) {
+export default function QuickPicks({ products, priceFor, onPick, hover }) {
   const [tab, setTabState] = useState(() => { try { return localStorage.getItem(TAB_KEY) || 'best'; } catch { return 'best'; } });
   const [best, setBest] = useState(null);
   const [favs, setFavs] = useState(() => read(FAV_KEY));
@@ -35,7 +35,7 @@ export default function QuickPicks({ products, priceFor, onPick }) {
         <div className="qp-grid">
           {list.map((p) => {
             const stock = p.available ?? p.stock, out = !p.service && stock <= 0, fav = favs.includes(p.id);
-            return (
+            const tile = (
               <div className={`qp-tile ${out ? 'out' : ''}`} key={p.id}>
                 <button type="button" className="qp-add" onClick={() => onPick(p)} aria-label={`Add ${p.name}`} title={`Add ${p.name}`}>
                   <b>{p.name}</b>
@@ -44,6 +44,7 @@ export default function QuickPicks({ products, priceFor, onPick }) {
                 <button type="button" className={`qp-star ${fav ? 'on' : ''}`} onClick={() => toggleFav(p.id)} aria-pressed={fav} aria-label={fav ? `Remove ${p.name} from favourites` : `Add ${p.name} to favourites`} title={fav ? 'Remove from favourites' : 'Add to favourites'}>★</button>
               </div>
             );
+            return hover ? <Fragment key={p.id}>{hover(p, tile, { as: 'div', className: 'qp-hover-in' })}</Fragment> : tile;
           })}
         </div>
       ) : <p className="qp-empty">{emptyText}</p>}
