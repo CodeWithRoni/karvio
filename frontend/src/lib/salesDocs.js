@@ -272,6 +272,9 @@ export function salesReturnHtml(d) {
     <div class="foot"><span>Printed ${esc(new Date().toLocaleString())}</span><span>Customer signature: ____________________</span></div></div>`;
 }
 export const salesReturnDocHtml = (d) => wrap([salesReturnHtml(d)]);
+/** Several sales returns, each on its own page (Reports hub → Individual report). */
+export const printSalesReturns = (list) => printHtml(wrap(list.map(salesReturnHtml)));
+export const pdfSalesReturns = (list, filename) => pdfPages(list.map(salesReturnHtml), css, filename);
 export const pdfClaims = (list, filename) => pdfPages(list.map(claimHtml), css, filename);
 export async function excelClaims(list, filename) {
   const XLSX = await import('xlsx');

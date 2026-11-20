@@ -1,3 +1,4 @@
+import { PartyHover } from '../components/PartyCard';
 import { purchasePricing } from '../lib/purchasePricing';
 import CameraScanButton from '../components/CameraScanButton';
 import { purchaseDetails } from '../lib/purchaseDetails';
@@ -354,10 +355,12 @@ function NewPurchase({ onDone }) {
       <div className="card">
         <div className="form">
           <Field label={<>Supplier <span className="req">*</span></>} wide error={needSupplier && !supplier ? 'Select the supplier you are buying from' : undefined}>
-            <select ref={supplierRef} value={supplier} onChange={(e) => { setSupplier(e.target.value); setNeedSupplier(false); setPayPrevious(false); setPreviousPays(defaultPay('')); }} aria-label="Supplier" className={needSupplier && !supplier ? 'invalid' : ''}>
-              <option value="">Select a supplier…</option>
-              {suppliers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-            </select>
+            <PartyHover kind="supplier" id={supplier} className="block" focus={false}>
+              <select ref={supplierRef} value={supplier} onChange={(e) => { setSupplier(e.target.value); setNeedSupplier(false); setPayPrevious(false); setPreviousPays(defaultPay('')); }} aria-label="Supplier" className={needSupplier && !supplier ? 'invalid' : ''}>
+                <option value="">Select a supplier…</option>
+                {suppliers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+              </select>
+            </PartyHover>
           </Field>
           {sup && prev !== 0 && (
             <div className={`wide sup-bal ${prev > 0 ? 'owe' : 'adv'}`}>

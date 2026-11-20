@@ -85,6 +85,8 @@ export function purchaseReturnHtml(d) {
   </div>`;
 }
 export const purchaseReturnDocHtml = (d) => page(purchaseReturnHtml(d));
+/** Several purchase returns, each on its own page (Reports hub → Individual report). */
+export const printPurchaseReturns = (list) => printHtml(`<style>@page{size:A4;margin:12mm}body{margin:0}${css}.pinv+.pinv{page-break-before:always;break-before:page}</style>${list.map(purchaseReturnHtml).join('')}`);
 
 /** Render each HTML block on its own A4 page(s) and download a PDF. Bengali text renders correctly. */
 export async function pdfPages(blocks, styles, filename) {
@@ -115,6 +117,7 @@ export async function pdfPages(blocks, styles, filename) {
   } finally { host.remove(); }
 }
 export const pdfPurchases = (list, filename) => pdfPages(list.map(purchaseInvoiceHtml), css, filename);
+export const pdfPurchaseReturns = (list, filename) => pdfPages(list.map(purchaseReturnHtml), css, filename);
 
 /** Sheet 1: one line per invoice. Sheet 2: every product line with supplier details and serial numbers. */
 export async function excelPurchases(list, filename) {

@@ -5,6 +5,7 @@ import { useStore } from '../lib/store';
 import { monthStart, today, addDays, money, qty, fdate } from '../lib/format';
 import { api } from '../lib/api';
 import { PurchaseDetail } from './Purchases';
+import { MoneyReport, AgingReport, IndividualReport } from './PartyReports';
 import DataTable from '../components/DataTable';
 import Statement from '../components/Statement';
 import { useApi, PageHead, Field, Select, DateRange, ErrorBox, Tabs, Badge, Modal, Btn } from '../components/ui';
@@ -31,9 +32,13 @@ export default function Reports() {
   const { customers, suppliers, accounts, categories, brands, products, can, settings } = useStore();
   const [params] = useSearchParams();
   const canStatements = can('cost');
-  const list = canStatements ? [...REPORTS, ['slow_stock', 'Slow-moving stock'], ['supplier_prices', 'Supplier prices'], ['supplier_rebates', 'Supplier rebates'], ['below_cost', 'Sales below cost'], ...Object.entries(STATEMENTS).map(([k, v]) => [k, v[1]])] : REPORTS;
+  // Party reports (own filters, see PartyReports.jsx): what the user may see of customers and suppliers.
+  const partyList = [...(can('customers') ? [['due_collections', 'Due collection']] : []), ...(can('suppliers') ? [['supplier_payments', 'Supplier payments']] : []),
+    ...(can('customers') || can('suppliers') ? [['aging', 'Aging report (dues by age)'], ['individual', 'Individual report (one customer / supplier)']] : [])];
+  const PARTY = Object.fromEntries(partyList);
+  const list = canStatements ? [...REPORTS, ...partyList, ['slow_stock', 'Slow-moving stock'], ['supplier_prices', 'Supplier prices'], ['supplier_rebates', 'Supplier rebates'], ['below_cost', 'Sales below cost'], ...Object.entries(STATEMENTS).map(([k, v]) => [k, v[1]])] : [...REPORTS, ...partyList];
   const start = params.get('type');
-  const [type, setType] = useState(start === 'stock_summary' || (canStatements && (STATEMENTS[start] || start === 'supplier_prices' || start === 'supplier_rebates' || start === 'slow_stock' || start === 'below_cost')) ? start : 'sales');
+  const [type, setType] = useState(PARTY[start] ? start : start === 'stock_summary' || (canStatements && (STATEMENTS[start] || start === 'supplier_prices' || start === 'supplier_rebates' || start === 'slow_stock' || start === 'below_cost')) ? start : 'sales');
   const [lots, setLots] = useState(null);
   const [purchase, setPurchase] = useState(null);
   const toast = useStore((x) => x.toast);
@@ -54,14 +59,27 @@ export default function Reports() {
   const groups = stock ? ['product','group','category','lots'] : GROUPS[type];
   const g = groups ? (groups.includes(group) ? group : groups[0]) : '';
   const payload = stock ? { type, group:g, ...sf } : { type, ...range, group: g, status: type === 'warranty' ? wst : status, customer_id: type === 'sales' ? party : '', supplier_id: type === 'purchases' ? party : '', account_id: type === 'payment_methods' ? party : '', ...(type === 'supplier_prices' ? { group_id: sf.group_id, brand_id: sf.brand_id, product_id: sf.product_id } : {}) };
-  const rep = useApi(statement ? statement[0] : 'reports', statement ? (sheet ? {} : { from: range.from, to: range.to }) : slow ? { type, days: slowDays } : payload);
+  const partyType = !!PARTY[type];
+  const rep = useApi(statement ? statement[0] : 'reports', statement ? (sheet ? {} : { from: range.from, to: range.to }) : slow ? { type, days: slowDays } : payload, [], { skip: partyType });
   const r = rep.data;
+  const picker = <Field label="Report"><select value={type} onChange={(e) => { setType(e.target.value); setParty(''); }}>{list.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>;
+  if (partyType) {
+    return (
+      <>
+        <PageHead title="Reports hub" sub="Pick a report and a period. Every report exports to Excel, PDF or the printer." />
+        {type === 'due_collections' && <MoneyReport key="c" kind="customer" picker={picker} />}
+        {type === 'supplier_payments' && <MoneyReport key="s" kind="supplier" picker={picker} />}
+        {type === 'aging' && <AgingReport picker={picker} />}
+        {type === 'individual' && <IndividualReport picker={picker} />}
+      </>
+    );
+  }
 
   return (
     <>
       <PageHead title="Reports hub" sub="Pick a report and a period. Every report exports to Excel, PDF or the printer." />
       <div className="filters">
-        <Field label="Report"><select value={type} onChange={(e) => { setType(e.target.value); setParty(''); }}>{list.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
+        {picker}
         {groups && !statement && <Field label="View"><select value={g} onChange={(e) => setGroup(e.target.value)}>{groups.map((x) => <option key={x} value={x}>{GLABEL[x] || ({product:'By product',group:'By product group',category:'By category',lots:'Purchase lots & warranty'})[x]}</option>)}</select></Field>}
         {slow && <div className="field"><span className="field-label">Not sold in the last</span><Tabs tabs={[30, 60, 90, 180, 365].map((n) => [n, `${n} days`])} value={slowDays} onChange={setSlowDays} /></div>}
         {!stock && !sheet && !slow && <Field label="Period"><Tabs tabs={PRESETS.map(([v, l]) => [v, l])} value={preset} onChange={(v) => { setPreset(v); setRange(PRESETS.find((p) => p[0] === v)[2]()); }} /></Field>}

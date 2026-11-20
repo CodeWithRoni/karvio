@@ -1,3 +1,4 @@
+import { PartyHover } from './PartyCard';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../lib/store';
 import { api } from '../lib/api';
@@ -229,7 +230,7 @@ export function CustomerPicker({ value, onChange, onAddNew }) {
   if (sel) {
     return (
       <div className="cust-sel">
-        <div><b>{sel.name}</b><small>{sel.phones}{sel.addresses ? ` · ${String(sel.addresses).split('|')[0]}` : ''}</small></div>
+        <div><PartyHover kind="customer" id={sel.id}><b tabIndex={0}>{sel.name}</b></PartyHover><small>{sel.phones}{sel.addresses ? ` · ${String(sel.addresses).split('|')[0]}` : ''}</small></div>
         <button className="x" onClick={() => onChange('')} aria-label="Remove customer">×</button>
       </div>
     );

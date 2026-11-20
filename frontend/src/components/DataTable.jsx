@@ -10,8 +10,9 @@ import { Pager, DEFAULT_PAGE_SIZE } from './Pager';
  * columns: [{ key, label, type: 'text'|'money'|'num'|'date', render?(row), value?(row), sum?, total?(rows), className? }]
  * selectable: tick rows; Excel / PDF / Print then export only the ticked rows.
  * docExport: { excel(rows), pdf(rows), print(rows) } — full documents (e.g. invoices) for the ticked rows.
+ * docAll: use docExport for the whole (filtered) table when nothing is ticked, too.
  */
-export default function DataTable({ columns, rows, loading, title = 'Export', exportable = true, searchable = true, onRowClick, empty, totals: totalsProp, toolbar, rowClass, selectable = exportable, docExport, sumFilter, selectionActions }) {
+export default function DataTable({ columns, rows, loading, title = 'Export', exportable = true, searchable = true, onRowClick, empty, totals: totalsProp, toolbar, rowClass, selectable = exportable, docExport, docAll = false, sumFilter, selectionActions }) {
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(() => new Set());
   useEffect(() => { setSel(new Set()); }, [rows]);
@@ -69,7 +70,7 @@ export default function DataTable({ columns, rows, loading, title = 'Export', ex
   const outRows = picked.length ? picked : filtered;
   const outTotals = picked.length && totals ? Object.fromEntries(Object.keys(totals).map((k) => { const c = columns.find((x) => x.key === k); return [k, c?.total ? c.total(picked.filter((r) => !sumFilter || sumFilter(r))) : picked.filter((r) => !sumFilter || sumFilter(r)).reduce((a, r) => a + (Number(c && c.value ? c.value(r) : r[k]) || 0), 0)]; })) : totals;
   const run = (kind) => {
-    if (picked.length && docExport && docExport[kind]) return download(() => docExport[kind](picked));
+    if ((picked.length || docAll) && docExport && docExport[kind]) return download(() => docExport[kind](picked.length ? picked : filtered));
     if (kind === 'excel') return download(() => exportExcel(title, expCols, outRows, outTotals));
     if (kind === 'pdf') return download(() => exportPdf(title, expCols, outRows, outTotals));
     return download(() => printTable(title, expCols, outRows, outTotals));
