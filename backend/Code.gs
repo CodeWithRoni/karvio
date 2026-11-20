@@ -2617,6 +2617,48 @@ function branchReport_(p, user) {
   return { from: from, to: to, branches: rows, all: out.all, transit: showCost ? transit : { qty: transit.qty }, shared_cash: unassigned };
 }
 
+/* ---- Branch stock: every product with how much each branch holds, what is on the way, and the shop total.
+ * Read only. Quantities come from the branch rows (the same numbers each branch sells from); serial products also
+ * list which serial numbers are in which branch. Cost value only for users who may see cost. */
+function branchStockData_(showCost, onlyPid) {
+  var list = branchesAll_(), ids = list.map(function (b) { return b.id; }), per = {}, serials = {}, sCost = {};
+  branchRows_().rows.forEach(function (r) {
+    if (r.key.indexOf('s|') !== 0 || !r.num) return;
+    var k = r.key.split('|'); if (onlyPid && k[1] !== onlyPid) return;
+    (per[k[1]] = per[k[1]] || {})[k[2]] = r.num;
+  });
+  all_('SerialItems').forEach(function (sn) {
+    if (sn.status !== 'in_stock' || (onlyPid && sn.product_id !== onlyPid)) return;
+    var at = serialBranch_(sn.id), m = serials[sn.product_id] = serials[sn.product_id] || {};
+    (m[at] = m[at] || []).push(String(sn.serial));
+    sCost[sn.product_id] = round_((sCost[sn.product_id] || 0) + num_(sn.cost));
+  });
+  return { list: list, ids: ids, per: per, serials: serials, sCost: sCost, showCost: showCost };
+}
+function branchStockRow_(pr, d) {
+  var q = d.per[pr.id] || {}, sn = d.serials[pr.id] || {}, row = { by: {}, serials: {}, transit: round_(q[BRANCH_TRANSIT] || 0, 4) }, sum = 0;
+  d.ids.forEach(function (id) { var n = round_(q[id] || 0, 4); row.by[id] = n; sum += n; if (sn[id]) row.serials[id] = sn[id].slice().sort(); });
+  if (sn[BRANCH_TRANSIT]) row.serials[BRANCH_TRANSIT] = sn[BRANCH_TRANSIT].slice().sort();
+  row.total = round_(sum + row.transit, 4);
+  if (d.showCost) row.value = isSerialProduct_(pr) ? round_(d.sCost[pr.id] || 0) : round_(row.total * num_(pr.cost_price));
+  return row;
+}
+/** Reports → Branch stock. */
+function branchStock_(p, user) {
+  if (!branchesOn_()) fail_('Add branches first (Settings → Branches)');
+  var d = branchStockData_(can_(user, 'cost')), cats = indexBy_(all_('Categories')), brands = indexBy_(all_('Brands'));
+  var rows = all_('Products').filter(function (pr) { return !isService_(pr); }).map(function (pr) {
+    var r = branchStockRow_(pr, d);
+    return Object.assign(r, { product_id: pr.id, name: pr.name, unit: pr.unit || 'pcs', active: pr.active !== false && pr.active !== 'false', serial: isSerialProduct_(pr),
+      group_id: pr.category_id || '', group: (cats[pr.category_id] || {}).name || 'No group', category_id: pr.subcategory_id || '', category: (cats[pr.subcategory_id] || {}).name || 'No category',
+      brand_id: pr.brand_id || '', brand: (brands[pr.brand_id] || {}).name || 'No brand' });
+  }).sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
+  var totals = { by: {}, transit: 0, total: 0, value: 0 };
+  rows.forEach(function (r) { d.ids.forEach(function (id) { totals.by[id] = round_((totals.by[id] || 0) + r.by[id], 4); }); totals.transit = round_(totals.transit + r.transit, 4); totals.total = round_(totals.total + r.total, 4); if (d.showCost) totals.value = round_(totals.value + r.value); });
+  if (!d.showCost) delete totals.value;
+  return { branches: d.list.map(function (b) { return { id: b.id, name: b.name, main: !!b.main, active: b.active }; }), rows: rows, totals: totals, cost: d.showCost, current: _branch || '' };
+}
+
 /* ---- Owner's money: deposits (capital in) and withdrawals (drawings). They move an account balance
  * but are never sales, expenses or profit. Cash-count corrections from Day close are not the owner's money. */
 function isCashCount_(t) { return /^(Deposit|Withdrawal) — cash count (extra|shortage) on \d{4}-\d{2}-\d{2} — /.test(String(t.note || '')); }
@@ -6610,6 +6652,11 @@ function topProducts_(sales, today, showCost) {
 function productHistory_(p, user) {
   var pr = all_('Products').filter(function (x) { return x.id === p.product_id; })[0]; if (!pr) fail_('Product not found');
   var out = { product_id: pr.id, stock: pr.stock, last_sales: [] };
+  // POS price card: how much each branch holds (and what is on the way), so stock can be fetched from another branch
+  if (branchesOn_() && !isService_(pr)) {
+    var bsd = branchStockData_(false, pr.id), bsr = branchStockRow_(pr, bsd);
+    out.branch_stock = { here: _branch || '', transit: bsr.transit, total: bsr.total, branches: bsd.list.filter(function (b) { return b.active || bsr.by[b.id]; }).map(function (b) { return { id: b.id, name: b.name, main: !!b.main, qty: bsr.by[b.id] }; }) };
+  }
   var actSale = indexBy_(all_('Sales').filter(function (s) { return s.status === 'active' && (can_(user, 'sales.all') || s.user_id === user.id); }));
   var si = all_('SaleItems').filter(function (i) { return i.product_id === pr.id && actSale[i.sale_id]; });
   out.last_sales = si.slice(-3).reverse().map(function (i) { var s = actSale[i.sale_id]; return { price: i.price, qty: i.qty, date: s.date, invoice_no: s.invoice_no, customer: s.customer_name }; });
@@ -7691,6 +7738,7 @@ var ROUTES = {
   'branch.transfer.receive': r_('products', function (p, u) { return branchTransferFinish_(p, u, true); }, true),
   'branch.transfer.cancel':  r_('products', function (p, u) { return branchTransferFinish_(p, u, false); }, true),
   'branch.report':    r_('reports', branchReport_),
+  'branch.stock':     r_('reports', branchStock_),
   daybook:            r_('accounts', daybook_),
   'dashboard.below_cost': r_(null, belowCostCard_),
   'notes.list':       r_(null, notesList_),

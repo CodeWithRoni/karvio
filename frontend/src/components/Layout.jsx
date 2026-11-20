@@ -53,6 +53,7 @@ export const NAV = [
   { to: '/barcodes', label: 'Barcode Labels' },
   { to: '/stock-count', label: 'Stock Count', perm: 'products' },
   { to: '/branch-transfer', label: 'Branch Transfer', perm: 'products', branches: true },
+  { to: '/branch-stock', label: 'Branch Stock', perm: 'reports', branches: true },
   { group: 'Service & Warranty' },
   { to: '/repairs', label: 'Repairs', perm: 'repairs' },
   { to: '/service', label: 'Service', perm: 'service' },

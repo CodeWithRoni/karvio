@@ -4,12 +4,13 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../lib/api';
 import { useStore } from '../lib/store';
-import { money, fdate } from '../lib/format';
+import { money, fdate, qty } from '../lib/format';
 
-const cache = new Map(); // product|customer → { at, data }
+const cache = new Map(); // product|customer|branch → { at, data }
 const FRESH = 30000, W = 320;
 function load(id, customerId) {
-  const key = `${id}|${customerId || ''}`, hit = cache.get(key);
+  let branch = ''; try { branch = localStorage.getItem('karvio_branch') || ''; } catch { /* storage blocked */ }
+  const key = `${id}|${customerId || ''}|${branch}`, hit = cache.get(key); // per branch: the card shows which branch you are in
   if (hit && Date.now() - hit.at < FRESH) return Promise.resolve(hit.data);
   return api('product.history', { product_id: id, customer_id: customerId || undefined }).then((data) => { cache.set(key, { at: Date.now(), data }); return data; });
 }
@@ -19,10 +20,17 @@ export const clearPriceCards = () => cache.clear();
 const tk = (v) => (v === null || v === undefined ? '—' : money(v, false));
 
 function Body({ name, d, customer }) {
-  const st = d.sale_stats || {}, cs = d.cost_stats;
+  const st = d.sale_stats || {}, cs = d.cost_stats, bs = d.branch_stock;
   return (
     <div className="ppc">
       <div className="ppc-title" title={name}>{name}</div>
+      {bs && <>
+        <div className="ppc-sec"><span className="ppc-h">🏬 Stock in branches</span><small>total {qty(bs.total)}</small></div>
+        <div className="ppc-branches">
+          {bs.branches.map((b) => <span key={b.id} className={`${b.id === bs.here ? 'here' : ''} ${b.qty > 0 ? '' : 'none'}`} title={b.id === bs.here ? 'The branch you are working in' : ''}>{b.name}<b>{qty(b.qty)}</b></span>)}
+          {bs.transit > 0 && <span className="transit">On the way<b>{qty(bs.transit)}</b></span>}
+        </div>
+      </>}
       <div className="ppc-sec"><span className="ppc-h">📈 Selling prices</span>{st.times ? <small>sold {st.times} time{st.times === 1 ? '' : 's'}</small> : null}</div>
       {st.times ? <>
         <div className="ppc-grid">

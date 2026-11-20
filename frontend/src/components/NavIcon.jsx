@@ -20,6 +20,7 @@ const shapes = {
   '/online-orders': <><path d="M3 7h11v9H3zM14 10h4l3 3v3h-7z"/><circle cx="7" cy="18" r="1.8"/><circle cx="17.5" cy="18" r="1.8"/></>,
   '/stock-count': <><path d="M4 4h16v16H4z"/><path d="m8 12 3 3 5-6"/></>,
   '/branch-transfer': <><path d="M4 9h13l-3-3m6 9H7l3 3"/></>,
+  '/branch-stock': <><path d="M3 21V9l5-4 5 4v12M13 21V12l4-3 4 3v9M2 21h20M6 13h4m-4 4h4m6-2h2m-2 3h2"/></>,
   '/shifts': <><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></>,
   '/daybook': <><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4Z"/><path d="M5 17a3 3 0 0 1 3-3h11M9 8h6"/></>,
   '/branch-report': <><path d="M4 20V10m6 10V4m6 16v-7m4 7H2"/></>,
