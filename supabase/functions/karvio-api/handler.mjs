@@ -117,7 +117,7 @@ export function createHandler({rpc,dispatch=()=>{},protocol=2,scopedReads=true,n
    }
    // Same answer as last time if nothing was saved since (see the read-cache migration for the rules).
    const cacheKey=readCache&&protocol===2&&scopedReads&&CACHED_READS.has(body.action)&&typeof body.token==='string'&&!unavailable(scopeState,'cacheUnavailable')&&!globalThis.__karvioTraceWholeShop
-    ?body.action+':'+hash(canonical(body.payload??{})):null;
+    ?body.action+':'+(typeof body.branch==='string'?body.branch.slice(0,64):'')+':'+hash(canonical(body.payload??{})):null; // per branch: each branch sees its own numbers
    if(cacheKey){
     try{const hit=await call('karvio_cached_read',{token:body.token,cache_key:cacheKey});if(hit!==null&&hit!==undefined){m.scope='cache';return finish(reply({ok:true,data:hit}),'ok');}}
     catch(error){if(missingFunction(error))scopeState.cacheUnavailable=Date.now();else throw error;}

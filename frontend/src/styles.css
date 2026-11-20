@@ -1369,7 +1369,8 @@ b.up, .kpi > b.up { color: var(--ok); } b.down, .kpi > b.down { color: var(--bad
 .mx-edit { display: flex; flex-direction: column; gap: 10px; }
 .mx-edit-row { display: grid; grid-template-columns: 1.4fr 1fr 110px 1fr 70px auto auto; gap: 8px; align-items: end; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .mx-edit-row .check { padding-bottom: 8px; }
-@media (max-width: 860px) { .mx-edit-row { grid-template-columns: 1fr 1fr; } .mx-row { grid-template-columns: 1fr auto; } .mx-state { grid-column: 1 / -1; justify-content: flex-start; } }
+.mx-edit-row.with-staff { grid-template-columns: 1.3fr 1fr 1fr 100px 1fr 64px auto auto; } /* salary line: the extra Staff column */
+@media (max-width: 860px) { .mx-edit-row, .mx-edit-row.with-staff { grid-template-columns: 1fr 1fr; } .mx-row { grid-template-columns: 1fr auto; } .mx-state { grid-column: 1 / -1; justify-content: flex-start; } }
 tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
 .last-buy small.sup-compare, .sup-compare { display: flex; flex-direction: column; gap: 1px; margin-top: 3px; }
 .sup-compare span { color: var(--muted); }
@@ -2182,3 +2183,24 @@ tr.best td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
 .exp-limit.full .exp-limit-bar i { background: var(--warn); }
 .exp-limit.over { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--text); }
 .exp-limit.over > b { color: var(--bad); }
+
+/* Settings → Invoice: templates on the left, Link validity card in the space on the right */
+.inv-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 360px); gap: 18px; align-items: start; }
+.inv-top .tpl-pick { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+.link-valid { display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--panel-2); margin-top: 22px; }
+.link-valid .lv-title { font-size: 14px; }
+.link-valid > small { font-size: 12px; line-height: 1.4; margin-top: -6px; }
+.lv-row { display: flex; flex-direction: column; gap: 7px; padding-top: 10px; border-top: 1px solid var(--line); }
+.lv-name { display: flex; flex-direction: column; gap: 1px; }
+.lv-name span { font-weight: 600; font-size: 13px; }
+.lv-name small { font-size: 11.5px; }
+.lv-ctl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-height: 34px; }
+.lv-days { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.lv-days input { width: 84px; }
+.lv-life { font-size: 12.5px; font-weight: 600; color: var(--ok, #1f9d55); }
+@media (max-width: 900px) { .inv-top { grid-template-columns: 1fr; } .link-valid { margin-top: 0; } }
+.lv-ctl .seg button.on { background: var(--accent, #f2c230); color: #1b1b1b; }
+/* Document viewer: room for a full A4 page (210 mm) on the grey desk, as tall as the window allows */
+.modal-doc { max-width: min(980px, 100%); }
+.modal-doc .modal-body { padding: 10px 12px; }
+.modal-doc .doc-frame { height: calc(100vh - 12vh - 150px); min-height: 420px; }

@@ -150,7 +150,7 @@ function Builder() {
         customer: meta.customer, phone: meta.phone, title: meta.title, valid_days: Number(meta.validDays) || 7, discount: Number(meta.discount) || 0, note: meta.note,
         lines: filled.map((l) => ({ group: l.group, name: l.name, warranty: l.warranty || '', qty: Number(l.qty), price: Number(l.price) || 0 }))
       }));
-      useStore.getState().toast(`Quotation ${r.no} ${r.sms?.status === 'sent' ? 'sent' : 'queued for SMS'} to ${r.phone} — link valid 3 days`, 'ok');
+      useStore.getState().toast(`Quotation ${r.no} ${r.sms?.status === 'sent' ? 'sent' : 'queued for SMS'} to ${r.phone} — ${r.lifetime ? 'link never expires' : `link valid ${r.days || 3} day${r.days === 1 ? '' : 's'}`}`, 'ok');
     } catch { /* toast shown */ }
   };
   const toPos = async () => {

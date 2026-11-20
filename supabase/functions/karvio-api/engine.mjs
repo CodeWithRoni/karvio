@@ -3087,7 +3087,8 @@ function settingsSave_(p, user) {
     'dashboard_hidden', 'invoice_template', 'invoice_paper', 'invoice_custom_width', 'invoice_custom_height', 'invoice_note',
     'sms_invoice_link', 'invoice_link_base', 'books_locked_until', 'shop_logo', 'invoice_qr', 'daily_summary_enabled', 'daily_summary_phones', 'daily_summary_hour', 'day_close_lock', 'whatsapp_template', 'shift_mode', 'shift_required',
     'courier_steadfast_key', 'courier_steadfast_secret', 'courier_pathao_client_id', 'courier_pathao_client_secret', 'courier_pathao_username', 'courier_pathao_password', 'courier_pathao_store_id', 'courier_pathao_sandbox', 'courier_redx_token', 'courier_redx_sandbox',
-    'sms_on_sale', 'sms_on_due_reminder', 'sms_on_quote', 'sms_on_repair_done', 'sms_on_repair_tech', 'sms_on_service_tech', 'sms_on_service_done', 'sms_due_template'];
+    'sms_on_sale', 'sms_on_due_reminder', 'sms_on_quote', 'sms_on_repair_done', 'sms_on_repair_tech', 'sms_on_service_tech', 'sms_on_service_done', 'sms_due_template',
+    'invoice_link_days', 'quote_link_days'];
   var vals = Object.assign({}, p.values || {});
   if (vals.shop_logo !== undefined) {
     var logo = String(vals.shop_logo || '');
@@ -3096,6 +3097,15 @@ function settingsSave_(p, user) {
     if (logo.length > 200000) fail_('The logo is too large; use a smaller picture (under about 150 KB)');
     vals.shop_logo = logo;
   }
+  // Link validity (Settings → Invoice): 1 to 3650 days, or "life" = the link never expires.
+  ['invoice_link_days', 'quote_link_days'].forEach(function (k) {
+    if (vals[k] === undefined) return;
+    var v = String(vals[k] || '').trim().toLowerCase();
+    if (v === 'life' || v === 'lifetime' || v === '0') { vals[k] = 'life'; return; }
+    var n = Number(v);
+    if (!(n >= 1 && n <= 3650) || Math.round(n) !== n) fail_((k === 'invoice_link_days' ? 'Invoice' : 'Quotation') + ' link validity: enter 1 to 3650 days, or choose Lifetime');
+    vals[k] = String(n);
+  });
   if (vals.invoice_qr !== undefined) vals.invoice_qr = String(vals.invoice_qr) === 'false' ? 'false' : 'true';
   if (vals.day_close_lock !== undefined) vals.day_close_lock = String(vals.day_close_lock) === 'false' ? 'false' : 'true';
   if (vals.shift_mode !== undefined) vals.shift_mode = vals.shift_mode === 'shared' ? 'shared' : 'cashier';
@@ -3260,6 +3270,17 @@ function sendSaleSms_(sale, lines, customer) {
  *  their rows are deleted (when opened, when a new link is made, and once a day on any save).
  * ========================================================================== */
 var LINK_DAYS = 15;
+var LIFETIME_ISO = '9999-12-31T23:59:59', LIFETIME_MS = Date.UTC(9999, 11, 31, 12, 0, 0);
+/** How long a public link stays valid, from Settings → Invoice: days, or 0 = lifetime (never expires). */
+function linkDays_(key, def) {
+  var v = String(getSetting_(key, '') || '').trim().toLowerCase();
+  if (!v) return def;
+  if (v === 'life' || v === 'lifetime' || v === '0') return 0;
+  var n = Math.round(Number(v));
+  return n >= 1 && n <= 3650 ? n : def;
+}
+function invoiceLinkDays_() { return linkDays_('invoice_link_days', LINK_DAYS); }
+function quoteLinkDays_() { return linkDays_('quote_link_days', QUOTE_LINK_DAYS); }
 var DEFAULT_LINK_BASE = 'https://codewithroni.github.io/karvio/';
 function linkHash_(token) { return hash_('karvio-invoice-link', token); }
 function linkBase_() {
@@ -3278,7 +3299,9 @@ function newLinkToken_() {
 }
 function maskLink_(url) { return String(url).replace(/(#\/i\/)([A-Za-z0-9]{4})[A-Za-z0-9]+/, '$1$2…'); }
 function linkExpiry_(fromIso) {
-  var d = new Date(fromIso.slice(0, 10) + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + LINK_DAYS);
+  var days = invoiceLinkDays_();
+  if (!days) return LIFETIME_ISO;
+  var d = new Date(fromIso.slice(0, 10) + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10) + fromIso.slice(10); // same time of day, LINK_DAYS later
 }
 function invoiceLinkCreate_(saleId) {
@@ -3323,7 +3346,7 @@ function saleLink_(p, user) {
   if (!can_(user, 'sales.all') && s.user_id !== user.id) fail_('Permission denied: this invoice belongs to another user');
   var l = invoiceLinkCreate_(s.id);
   audit_(user, 'invoice_link', s.invoice_no);
-  return { url: l.url, expires_at: l.expires_at, days: LINK_DAYS };
+  return { url: l.url, expires_at: l.expires_at, days: invoiceLinkDays_() };
 }
 /** Public (no sign-in): the invoice behind a link, with only what is printed on the invoice. */
 function invoicePublic_(p) {
@@ -3351,7 +3374,7 @@ function invoicePublic_(p) {
     customer: d.customer ? pick(d.customer, ['name', 'phones', 'addresses', 'balance']) : null,
     returns: d.returns.map(function (r) { return pick(r, ['return_no', 'date', 'total', 'status']); }),
     shop: shop,
-    expires_at: link.expires_at
+    expires_at: link.expires_at, lifetime: String(link.expires_at).slice(0, 4) === '9999'
   };
 }
 /* ============================================================================
@@ -3456,7 +3479,7 @@ function quoteSend_(p, user) {
   var validDays = Math.round(num_(p.valid_days)); if (validDays < 1 || validDays > 365) validDays = 7;
   var live = cleanupQuoteLinks_();
   if (live.length >= QUOTE_LINK_MAX) fail_('Too many quotation links are open right now. Try again after some expire');
-  var token = newLinkToken_(), created = Date.now(), expires = created + QUOTE_LINK_DAYS * 864e5;
+  var qDays = quoteLinkDays_(), token = newLinkToken_(), created = Date.now(), expires = qDays ? created + qDays * 864e5 : LIFETIME_MS;
   var quote = {
     // Date, time and two random digits: does not repeat (the old 7-digit clock suffix repeated every ~2.8 hours).
     no: 'Q-' + Utilities.formatDate(new Date(created), TZ_(), "yyyy-MM-dd'T'HH:mm:ss").replace(/\D/g, '').slice(2) + ('0' + Math.floor(Math.random() * 100)).slice(-2), date: today_(), customer: quoteText_(p.customer, 100), phone: digits.length === 13 ? '0' + digits.slice(3) : digits,
@@ -3472,14 +3495,16 @@ function quoteSend_(p, user) {
   flush_();
   var url = linkBase_() + '#/q/' + token;
   var tpl = getSetting_('sms_quote_template', DEFAULT_QUOTE_SMS);
-  var msg = fillTpl_(tpl, { name: quote.customer || 'customer', shop: getSetting_('shop_name'), title: quote.title, total: smsAmt_(quote.total), days: QUOTE_LINK_DAYS, link: url }, 'raw');
+  // A lifetime link has no "valid N days" to tell the customer.
+  if (!qDays) tpl = String(tpl).replace(/\s*\(?\s*valid\s*(for\s*)?\{days\}\s*days?\s*\)?/i, '');
+  var msg = fillTpl_(tpl, { name: quote.customer || 'customer', shop: getSetting_('shop_name'), title: quote.title, total: smsAmt_(quote.total), days: qDays || 'unlimited', link: url }, 'raw');
   if (String(tpl).indexOf('{link}') < 0) msg += ' View: ' + url;
   var masked = msg.split(url).join(url.replace(/(#\/q\/[A-Za-z0-9]{4})[A-Za-z0-9]+/, '$1…'));
   var sms = sendSms_(quote.phone, msg, masked);
   if (sms && (sms.status === 'failed' || sms.status === 'skipped')) fail_('SMS could not be sent: ' + (sms.response || sms.status) + '. The quotation link was not kept');
   audit_(user, 'quote_send', { no: quote.no, phone: quote.phone, total: quote.total, parts: clean.length });
   // The working link goes only to the customer's phone; it is not returned, so request receipts never hold it.
-  return { no: quote.no, phone: quote.phone, expires_at: quote.expires_at, days: QUOTE_LINK_DAYS, sms: sms };
+  return { no: quote.no, phone: quote.phone, expires_at: quote.expires_at, days: qDays, lifetime: !qDays, sms: sms };
 }
 /** Public (no sign-in): the quotation behind a link, while it is valid. */
 function quotePublic_(p) {
@@ -3492,7 +3517,7 @@ function quotePublic_(p) {
   var quote; try { quote = JSON.parse(row[2]); } catch (e) { return { expired: true, message: bad }; }
   var st = settingsMap_(), shop = {};
   ['shop_name', 'shop_address', 'shop_phone', 'shop_tel', 'shop_email', 'shop_web', 'shop_social', 'shop_footer', 'currency', 'shop_logo'].forEach(function (k) { shop[k] = st[k] || ''; });
-  return { quote: quote, shop: shop, expires_at: quote.expires_at };
+  return { quote: quote, shop: shop, expires_at: quote.expires_at, lifetime: String(quote.expires_at).slice(0, 4) === '9999' };
 }
 /* ---- Daily summary SMS for the owner (Settings → SMS settings) ---- */
 function dailySummaryText_(date) {

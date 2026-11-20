@@ -90,7 +90,7 @@ export default function PublicQuote({ token }) {
         </div>
         {err && <p className="pubinv-err">{err}</p>}
         <footer className="pubinv-foot">
-          This private link works until <b>{fdatetime(d.expires_at)}</b>, then the quotation is deleted. Save a PDF if you need to keep it.
+          {d.lifetime || String(d.expires_at || '').startsWith('9999') ? <>This is your private link to the quotation. Save a PDF if you need a copy.</> : <>This private link works until <b>{fdatetime(d.expires_at)}</b>, then the quotation is deleted. Save a PDF if you need to keep it.</>}
         </footer>
       </article>
     </div>

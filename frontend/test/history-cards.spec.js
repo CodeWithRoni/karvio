@@ -73,19 +73,26 @@ test('a serial: six cards, and every number opens its document', async ({ page }
   await expect(card(page, 'Warranty claims')).toContainText(ids.cl.claim_no);
   await expect(card(page, 'Warranty claims')).toContainText('Pending');
 
-  // the sale invoice, exactly as the POS prints it (80 mm receipt), then printed
+  // the sale invoice on screen as a full A4 page (the template from Settings), printed as A4 or on the POS paper (80 mm)
   await card(page, 'Sold to').getByRole('button', { name: ids.s2.sale.invoice_no }).click();
   const modal = page.locator('.modal');
   await expect(modal.locator('.modal-head h2')).toHaveText(`Sale invoice ${ids.s2.sale.invoice_no}`);
   const frame = page.frameLocator('.doc-frame');
-  await expect(frame.locator('body')).toContainText(`Invoice: ${ids.s2.sale.invoice_no}`);
+  await expect(frame.locator('.sdoc')).toContainText('INVOICE');
+  await expect(frame.locator('.sdoc')).toContainText(ids.s2.sale.invoice_no);
   await expect(frame.locator('body')).toContainText(`S/N: ${SN(2)}`);
   await expect(frame.locator('body')).toContainText('Served by');
-  await modal.getByRole('button', { name: 'Print' }).click();
-  await expect.poll(() => page.evaluate(() => window.__printed || '')).toContain(`Invoice: <b>${ids.s2.sale.invoice_no}</b>`);
-  const printed = await page.evaluate(() => window.__printed);
-  expect(printed).toContain('@page{size:80mm'); // the same 80 mm receipt the POS prints
+  expect(await frame.locator('body').evaluate((b) => Math.round(b.getBoundingClientRect().width))).toBeGreaterThan(780); // 210 mm wide
+  await page.screenshot({ path: 'test-results/doc-viewer-a4.png' });
+  await modal.getByRole('button', { name: 'Print A4' }).click();
+  await expect.poll(() => page.evaluate(() => window.__printed || '')).toContain('@page{size:A4');
+  let printed = await page.evaluate(() => window.__printed);
   expect(printed).not.toContain('#dfe5ec'); // the grey desk is only on screen
+  await page.evaluate(() => { window.__printed = ''; });
+  await modal.getByRole('button', { name: 'Print (POS paper)' }).click();
+  await expect.poll(() => page.evaluate(() => window.__printed || '')).toContain(`Invoice: <b>${ids.s2.sale.invoice_no}</b>`);
+  printed = await page.evaluate(() => window.__printed);
+  expect(printed).toContain('@page{size:80mm'); // the same 80 mm receipt the POS prints
   await modal.locator('.modal-foot').getByRole('button', { name: 'Close' }).click();
   await expect(modal).toHaveCount(0);
 
@@ -212,6 +219,6 @@ test('phone: an A4 page and a receipt shrink to fit the screen', async ({ page }
   expect((await docFits(page)).overflow).toBeLessThanOrEqual(0);
   await page.keyboard.press('Escape');
   await card(page, 'Sold to').getByRole('button', { name: ids.s1.sale.invoice_no }).click();
-  await expect(page.frameLocator('.doc-frame').locator('body')).toContainText(`Invoice: ${ids.s1.sale.invoice_no}`);
+  await expect(page.frameLocator('.doc-frame').locator('.sdoc')).toContainText(ids.s1.sale.invoice_no);
   await expect.poll(async () => (await docFits(page)).overflow).toBeLessThanOrEqual(0);
 });

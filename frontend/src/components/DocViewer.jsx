@@ -3,17 +3,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { printHtml, printFonts } from '../lib/export';
-import { invoiceHtml } from '../lib/receipt';
-import { claimDocHtml, salesReturnDocHtml } from '../lib/salesDocs';
+import { printInvoice } from '../lib/receipt';
+import { claimDocHtml, salesReturnDocHtml, saleDocHtml } from '../lib/salesDocs';
 import { purchaseDocHtml, purchaseReturnDocHtml } from '../lib/purchaseDocs';
 import { Modal, Btn, Loading, ErrorBox } from './ui';
+import { useStore } from '../lib/store';
 
 export const DOC_TITLE = { sale: 'Sale invoice', purchase: 'Purchase invoice', sreturn: 'Sales return', preturn: 'Purchase return', claim: 'Warranty claim' };
 /** The permission needed to open each kind of document (the server checks it again). */
 export const DOC_PERM = { sale: 'pos', purchase: 'purchase', sreturn: 'sales.return', preturn: 'purchase', claim: 'warranty' };
 
 async function build(type, d) {
-  if (type === 'sale') return invoiceHtml(d); // template and paper from Settings → Invoice, like the POS
+  // On screen a sale is always a full A4 page in the template chosen in Settings → Invoice (a thermal receipt is too narrow to read);
+  // "Print (POS paper)" still prints it the way the POS does.
+  if (type === 'sale') return { html: saleDocHtml(d, 'a4'), paper: 'a4', detail: d };
   if (type === 'purchase') return { html: purchaseDocHtml(d), paper: 'a4' };
   if (type === 'sreturn') return { html: salesReturnDocHtml(d), paper: 'a4' };
   if (type === 'preturn') return { html: purchaseReturnDocHtml(d), paper: 'a4' };
@@ -50,10 +53,12 @@ export default function DocViewer({ doc, onClose }) {
   const onLoad = () => { fit(); frame.current?.contentDocument?.fonts?.ready.then(fit).catch(() => {}); };
   useEffect(() => { window.addEventListener('resize', fit); return () => window.removeEventListener('resize', fit); }, []);
 
+  const paperSetting = useStore((s) => s.settings.invoice_paper || String(s.settings.receipt_width || 80));
+  const posPaper = doc.type === 'sale' && paperSetting !== 'a4';
   const srcDoc = state.html ? `<!doctype html><html><head><meta charset="utf-8"><style>${printFonts}</style></head><body>${state.html}<style>${desk(state.paper)}</style></body></html>` : '';
   return (
-    <Modal open title={`${DOC_TITLE[doc.type] || 'Document'} ${doc.no || ''}`} onClose={onClose} size="lg"
-      footer={<><Btn onClick={onClose}>Close</Btn><Btn kind="primary" disabled={!state.html} onClick={() => printHtml(state.html)}>Print</Btn></>}>
+    <Modal open title={`${DOC_TITLE[doc.type] || 'Document'} ${doc.no || ''}`} onClose={onClose} size="doc"
+      footer={<><Btn onClick={onClose}>Close</Btn>{posPaper && <Btn disabled={!state.detail} onClick={() => printInvoice(state.detail)}>Print (POS paper)</Btn>}<Btn kind="primary" disabled={!state.html} onClick={() => printHtml(state.html)}>Print A4</Btn></>}>
       {state.loading && <Loading label="Opening" />}
       <ErrorBox error={state.error} />
       {state.html && <iframe ref={frame} className="doc-frame" title={`${DOC_TITLE[doc.type]} ${doc.no || ''}`} srcDoc={srcDoc} sandbox="allow-same-origin" onLoad={onLoad} />}

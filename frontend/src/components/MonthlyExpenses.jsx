@@ -63,7 +63,7 @@ function EditList({ list, cats, accounts, staff, onClose, onSaved }) {
       footer={<><Btn onClick={() => setRows([...rows, blank(cats, accounts)])}>Add another</Btn><span className="spacer" /><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={save}>Save list</Btn></>}>
       <div className="mx-edit">
         {rows.map((r, i) => (
-          <div className="mx-edit-row" key={r.id || i}>
+          <div className={`mx-edit-row ${isSalaryCat(r.category) ? 'with-staff' : ''}`} key={r.id || i}>
             <Field label="Name"><input value={r.name} maxLength={60} onChange={(e) => set(i, 'name', e.target.value)} placeholder="e.g. Shop rent" /></Field>
             <Field label="Category"><select value={r.category} onChange={(e) => set(i, 'category', e.target.value)}>{cats.map((c) => <option key={c}>{c}</option>)}</select></Field>
             {isSalaryCat(r.category) && <Field label="Staff"><select value={r.staff_id || ''} onChange={(e) => set(i, 'staff_id', e.target.value)} aria-label="Staff">

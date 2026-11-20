@@ -12,13 +12,15 @@ import { Pager, DEFAULT_PAGE_SIZE } from './Pager';
  * docExport: { excel(rows), pdf(rows), print(rows) } — full documents (e.g. invoices) for the ticked rows.
  * docAll: use docExport for the whole (filtered) table when nothing is ticked, too.
  */
-export default function DataTable({ columns, rows, loading, title = 'Export', exportable = true, searchable = true, onRowClick, empty, totals: totalsProp, toolbar, rowClass, selectable = exportable, docExport, docAll = false, sumFilter, selectionActions }) {
+export default function DataTable({ columns, rows, loading, title = 'Export', exportable = true, searchable = true, onRowClick, empty, totals: totalsProp, toolbar, rowClass, selectable = exportable, docExport, docAll = false, keepOrder = false, sumFilter, selectionActions }) {
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(() => new Set());
   useEffect(() => { setSel(new Set()); }, [rows]);
   const [sort, setSort] = useState(null);
   const sortColumn = sort && columns.find((c) => c.key === sort.key && !c.noSort);
   useEffect(() => { if (sort && !sortColumn) setSort(null); }, [sort, sortColumn]);
+  // the column the table is ordered by when nobody picked one: Date / Period / Time, newest first (keepOrder = as given)
+  const autoCol = keepOrder ? null : columns.find((c) => !c.noSort && (c.key === 'date' || c.key === 'period' || c.key === 'ts'));
   const [page, setPage] = useState(0);
   const [exporting, setExporting] = useState(false);
   // Every table opens with 20 rows per page; the size can be changed under the table (20 / 50 / 100 / custom).
@@ -37,6 +39,13 @@ export default function DataTable({ columns, rows, loading, title = 'Export', ex
       const ql = q.toLowerCase();
       r = r.filter((row) => columns.some((c) => String(c.value ? c.value(row) : row[c.key] ?? '').toLowerCase().includes(ql)));
     }
+    if (!sortColumn && autoCol) {
+      // Newest first by default: the date column, descending (a table that comes oldest-first is turned round,
+      // so rows of the same day are newest first too; created_at / time break the remaining ties).
+      const k = autoCol.key, d = (row) => String(row?.[k] ?? ''), t = (row) => String(row?.created_at || row?.time || '');
+      const asc = r.length > 1 && d(r[0]) + t(r[0]) < d(r[r.length - 1]) + t(r[r.length - 1]);
+      r = (asc ? [...r].reverse() : [...r]).sort((a, b) => d(b).localeCompare(d(a)) || t(b).localeCompare(t(a)));
+    }
     if (sortColumn) {
       const c = sortColumn;
       const get = (row) => (c.value ? c.value(row) : row[c.key]);
@@ -48,7 +57,7 @@ export default function DataTable({ columns, rows, loading, title = 'Export', ex
       });
     }
     return r;
-  }, [rows, q, sort, sortColumn, columns]);
+  }, [rows, q, sort, sortColumn, columns, autoCol]);
 
   const totals = useMemo(() => {
     if (totalsProp !== undefined && !q) return totalsProp;
@@ -113,10 +122,10 @@ export default function DataTable({ columns, rows, loading, title = 'Export', ex
               {selectable && <th style={{ width: 36 }}><input type="checkbox" className="dt-check" checked={allOnPage} onChange={togglePage} aria-label="Select all rows on this page" /></th>}
               {columns.map((c) => (
                 <th key={c.key} className={`${c.type === 'money' || c.type === 'num' ? 'r' : ''} ${c.className || ''}`}
-                  aria-sort={sort?.key === c.key ? (sort.dir > 0 ? 'ascending' : 'descending') : undefined}>
+                  aria-sort={sort?.key === c.key ? (sort.dir > 0 ? 'ascending' : 'descending') : !sort && autoCol?.key === c.key ? 'descending' : undefined}>
                   {c.noSort ? c.label : (
                     <button onClick={() => setSort((s) => (s?.key === c.key ? (s.dir > 0 ? { key: c.key, dir: -1 } : null) : { key: c.key, dir: 1 }))}>
-                      {c.label}{sort?.key === c.key ? (sort.dir > 0 ? ' ▲' : ' ▼') : ''}
+                      {c.label}{sort?.key === c.key ? (sort.dir > 0 ? ' ▲' : ' ▼') : ''}{!sort && autoCol?.key === c.key && <span className="dt-auto" aria-hidden="true" title="Newest first"> ▼</span>}
                     </button>
                   )}
                 </th>

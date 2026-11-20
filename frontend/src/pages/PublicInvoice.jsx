@@ -114,7 +114,7 @@ export default function PublicInvoice({ token }) {
         </div>
         {err && <p className="pubinv-err">{err}</p>}
         <footer className="pubinv-foot">
-          This private link works until <b>{fdate(d.expires_at)}</b>, then it is deleted. Please download the PDF if you need to keep the invoice.
+          {d.lifetime || String(d.expires_at || '').startsWith('9999') ? <>This is your private link to the invoice. Please download the PDF if you need a copy.</> : <>This private link works until <b>{fdate(d.expires_at)}</b>, then it is deleted. Please download the PDF if you need to keep the invoice.</>}
         </footer>
       </article>
     </div>

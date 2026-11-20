@@ -287,8 +287,27 @@ const SAMPLE = {
   customer: { phones: '01303393871', addresses: 'BERA BAZAR, PABNA', balance: 500 }
 };
 
+/** One row of the Link validity card: a number of days, or Lifetime (stored as "life"). */
+function LinkDays({ label, hint, value, def, onChange }) {
+  const life = String(value || '').toLowerCase() === 'life';
+  const days = life ? '' : (value === undefined || value === null || value === '' ? String(def) : String(value));
+  return (
+    <div className="lv-row">
+      <div className="lv-name"><span>{label}</span><small className="muted">{hint}</small></div>
+      <div className="lv-ctl">
+        <div className="seg" role="radiogroup" aria-label={`${label} validity`}>
+          <button type="button" role="radio" aria-checked={!life} className={!life ? 'on' : ''} onClick={() => life && onChange(String(def))}>Days</button>
+          <button type="button" role="radio" aria-checked={life} className={life ? 'on' : ''} onClick={() => onChange('life')}>Lifetime</button>
+        </div>
+        {life ? <span className="lv-life">Never expires</span>
+          : <label className="lv-days"><input type="number" min="1" max="3650" step="1" value={days} onChange={(e) => onChange(e.target.value)} aria-label={`${label} — days valid`} /> days</label>}
+      </div>
+    </div>
+  );
+}
+
 function InvoiceSettings() {
-  const { f, setF, bind, save, busy } = useSettingsForm(['invoice_template', 'invoice_paper', 'invoice_custom_width', 'invoice_custom_height', 'invoice_note', 'shop_footer', 'receipt_width', 'invoice_qr']);
+  const { f, setF, bind, save, busy } = useSettingsForm(['invoice_template', 'invoice_paper', 'invoice_custom_width', 'invoice_custom_height', 'invoice_note', 'shop_footer', 'receipt_width', 'invoice_qr', 'invoice_link_days', 'quote_link_days']);
   const settings = useStore((s) => s.settings);
   const paper = f.invoice_paper || String(f.receipt_width || 80);
   const tpl = f.invoice_template || 'classic';
@@ -301,7 +320,8 @@ function InvoiceSettings() {
   };
   return (
     <div className="card form">
-      <div className="wide">
+      <div className="wide inv-top">
+        <div>
         <span className="field-label">Invoice template</span>
         <div className="tpl-pick" role="radiogroup" aria-label="Invoice template">
           {TEMPLATES.map(([k, label]) => (
@@ -312,6 +332,13 @@ function InvoiceSettings() {
             </button>
           ))}
         </div>
+        </div>
+        <section className="link-valid" aria-label="Link validity">
+          <b className="lv-title">Link validity</b>
+          <small className="muted">How long a link sent to a customer keeps working. New links only — links already sent keep their date.</small>
+          <LinkDays label="Online invoice link" hint="Sent with the sale SMS or shared from Sales" value={f.invoice_link_days} def={15} onChange={(v) => setF({ ...f, invoice_link_days: v })} />
+          <LinkDays label="Quotation link" hint="Sent by SMS from the PC builder / Quotation" value={f.quote_link_days} def={3} onChange={(v) => setF({ ...f, quote_link_days: v })} />
+        </section>
       </div>
       <Field label="Paper size" hint="Used by Complete & print in the POS.">
         <select value={paper} onChange={(e) => setF({ ...f, invoice_paper: e.target.value })}>{PAPERS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>

@@ -78,6 +78,7 @@ export const NAV = [
 
 export default function Layout() {
   const { user, settings, theme, toggleTheme, logout, can } = useStore();
+  const branchKey = useStore((s) => s.branchEpoch || 0); // switching the working branch remounts the page, so it loads that branch's data at once
   const [open, setOpen] = useState(false);
   const [hidden, setHidden] = useState(readHidden); // desktop: menu tucked away
   const [closed, setClosed] = useState(readClosed); // menu groups folded away by this user on this browser
@@ -177,7 +178,7 @@ export default function Layout() {
           <span>{settings.shop_name || 'Karvio'}</span>
         </div>
         {/* A page whose file is still loading shows its placeholder here only: the menu never leaves the screen. */}
-        <main className="content"><Suspense fallback={<Loading />}><Outlet /></Suspense></main>
+        <main className="content"><Suspense fallback={<Loading />}><Outlet key={branchKey} /></Suspense></main>
       </div>
     </div>
   );
@@ -192,6 +193,7 @@ function BranchPicker() {
   const change = async (id) => {
     try { localStorage.setItem('karvio_branch', id); } catch { /* storage blocked */ }
     await useStore.getState().boot();
+    useStore.setState((s) => ({ branchEpoch: (s.branchEpoch || 0) + 1 })); // the open page reloads with the new branch's data
     useStore.getState().toast(`Working in ${(active.find((x) => x.id === id) || {}).name || 'branch'}`);
   };
   const pick = b.can_switch && active.length > 1;

@@ -124,7 +124,7 @@ function SaleDetail({ id, onClose, onChanged }) {
           {s.status === 'cancelled' && <div className="errbox">Cancelled — {s.cancel_reason}</div>}
           {link && (
             <div className="cust-link" role="status">
-              <span>Customer link (works until {fdate(link.expires_at)}):</span>
+              <span>Customer link ({String(link.expires_at || '').startsWith('9999') ? 'never expires' : `works until ${fdate(link.expires_at)}`}):</span>
               <input readOnly value={link.url} onFocus={(e) => e.target.select()} aria-label="Customer invoice link" />
             </div>
           )}

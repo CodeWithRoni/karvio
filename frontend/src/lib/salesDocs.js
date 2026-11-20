@@ -38,6 +38,8 @@ const tplCss = `
 const pageCss = (paper) => paper === 'a5' ? '@page{size:A5;margin:8mm}.sdoc{font-size:10.5px}.sdoc h1{font-size:16px}.sdoc h2{font-size:16px}' : '@page{size:A4;margin:12mm}';
 const isBiz = (list = []) => list.length ? list.some(d => (d.shop || useStore.getState().settings).invoice_template === 'business') : useStore.getState().settings.invoice_template === 'business';
 const wrap = (blocks, paper = 'a4', biz = false) => `<style>${biz && paper !== 'a5' ? bizPageCss() : pageCss(paper) + (biz ? '.bdoc{--bdoc-h:194mm;--bdoc-w:132mm}' : '')}body{margin:0}${css}${tplCss}${biz ? bizCss : ''}.sdoc+.sdoc,.bdoc+.bdoc{page-break-before:always;break-before:page}</style>${blocks.join('')}`;
+/** The look chosen in Settings → Invoice for documents other than the invoice (Business has no such layout: they use Classic). */
+const docTpl = () => { const t = useStore.getState().settings.invoice_template || 'classic'; return t === 'business' ? 'classic' : t; };
 const noteHtml = (settings = useStore.getState().settings) => { const n = String(settings.invoice_note || '').trim(); return n ? `<div class="note-line"><b>Note:</b> ${esc(n)}</div>` : ''; };
 
 /* ---------------- "Business" template: centred letterhead, grey bill bar, boxed info, page footer ---------------- */
@@ -235,7 +237,7 @@ export async function excelSales(list, filename) {
 /* ---------------- Warranty claims ---------------- */
 export function claimHtml(c) {
   const log = (c.log || []).map((l) => `<li><b>${esc(l.status)}</b> — ${esc(fdatetime(l.ts))} · ${esc(l.user || '')}${l.note ? ` — ${esc(l.note)}` : ''}</li>`).join('');
-  return `<div class="sdoc">${head('WARRANTY CLAIM', `<b>${esc(c.claim_no)}</b><br>Received ${esc(fdate(c.date))}<br>Status: <b>${esc(c.status)}</b>`)}
+  return `<div class="sdoc tpl-${esc(docTpl())}">${head('WARRANTY CLAIM', `<b>${esc(c.claim_no)}</b><br>Received ${esc(fdate(c.date))}<br>Status: <b>${esc(c.status)}</b>`)}
     <div class="meta">
       <div class="box"><b class="t">Customer</b><b>${esc(c.customer_name || '—')}</b><div>${esc(c.phone || '')}</div><div class="sm">Invoice: ${esc(c.invoice_no || '—')}</div></div>
       <div class="box"><b class="t">Product</b><b>${esc(c.product_name || '')}</b><div class="sn">Serial: ${esc(c.serial || '—')}</div><div>Warranty till: ${esc(fdate(c.expiry) || 'N/A')} — <b>${c.in_warranty ? 'In warranty' : 'EXPIRED'}</b></div></div>
@@ -257,7 +259,7 @@ export function salesReturnHtml(d) {
       <td class="r">${esc(qty(i.qty))}</td><td class="r">${esc(unitPrice(i.price))}</td><td class="r">${esc(money(i.total, false))}</td></tr>`;
   }).join('');
   const title = r.type === 'exchange' ? 'EXCHANGE' : 'SALES RETURN';
-  return `<div class="sdoc">${head(title, `<b>${esc(r.return_no)}</b><br>${esc(fdatetime(r.created_at || r.date))}<br><span class="sm">By ${esc(r.user || '')}</span>`)}
+  return `<div class="sdoc tpl-${esc(docTpl())}">${head(title, `<b>${esc(r.return_no)}</b><br>${esc(fdatetime(r.created_at || r.date))}<br><span class="sm">By ${esc(r.user || '')}</span>`)}
     ${r.status === 'cancelled' ? `<div class="cx">CANCELLED — ${esc(r.cancel_reason || '')}</div>` : ''}
     <div class="meta">
       <div class="box"><b class="t">Customer</b><b>${esc(r.customer_name || 'Cash')}</b>${c.phones ? `<div>Phone: ${esc(splitList(c.phones).join(', '))}</div>` : ''}${c.addresses ? `<div>${esc(String(c.addresses).split('|').join('; '))}</div>` : ''}</div>
@@ -274,8 +276,8 @@ export function salesReturnHtml(d) {
 export const salesReturnDocHtml = (d) => wrap([salesReturnHtml(d)]);
 /** Several sales returns, each on its own page (Reports hub → Individual report). */
 export const printSalesReturns = (list) => printHtml(wrap(list.map(salesReturnHtml)));
-export const pdfSalesReturns = (list, filename) => pdfPages(list.map(salesReturnHtml), css, filename);
-export const pdfClaims = (list, filename) => pdfPages(list.map(claimHtml), css, filename);
+export const pdfSalesReturns = (list, filename) => pdfPages(list.map(salesReturnHtml), css + tplCss, filename);
+export const pdfClaims = (list, filename) => pdfPages(list.map(claimHtml), css + tplCss, filename);
 export async function excelClaims(list, filename) {
   const XLSX = await import('xlsx');
   const a = [['Claim #', 'Received', 'Status', 'Product', 'Serial', 'Invoice', 'Customer', 'Phone', 'Problem', 'Coverage', 'Warranty till', 'Vendor', 'Progress']];
