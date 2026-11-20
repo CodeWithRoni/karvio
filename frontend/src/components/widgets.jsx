@@ -30,13 +30,12 @@ function useTenRows(ref, list, hi) {
  * Product search box with barcode support.
  * Typing a barcode / SKU and pressing Enter adds it straight away.
  * ---------------------------------------------------------------- */
-export function ProductSearch({ onPick, onCode, camera = false, inStockOnly = false, noServices = false, autoFocus, placeholder = 'Search product by name, model or brand (F2)', inputRef, hover, panel }) {
+export function ProductSearch({ onPick, onCode, camera = false, inStockOnly = false, noServices = false, autoFocus, placeholder = 'Search product by name, model or brand (F2)', inputRef, hover }) {
   const products = useStore((s) => s.products);
   const brands = useStore((s) => s.brands);
   const brandMap = useMemo(() => Object.fromEntries((brands || []).map((b) => [b.id, b.name])), [brands]);
   const [q, setQ] = useState('');
   const [hi, setHi] = useState(0);
-  const [panelOpen, setPanelOpen] = useState(false); // panel (e.g. recent invoices) under the empty box, opened by a click
   const localRef = useRef();
   const ref = inputRef || localRef;
 
@@ -72,16 +71,14 @@ export function ProductSearch({ onPick, onCode, camera = false, inStockOnly = fa
         const raw = q.trim(), fallback = list[hi];
         Promise.resolve(onCode(raw)).then((done) => { if (done) { setQ(''); setHi(0); ref.current?.focus(); } else if (fallback) pick(fallback); });
       } else if (list[hi]) pick(list[hi]);
-    } else if (e.key === 'Escape') { setQ(''); setPanelOpen(false); }
+    } else if (e.key === 'Escape') setQ('');
   };
 
   return (
     <div className={`psearch ${camera ? 'camera-field' : ''}`}>
-      <input ref={ref} value={q} autoFocus={autoFocus} onChange={(e) => { setQ(e.target.value); setHi(0); setPanelOpen(false); }} onKeyDown={onKey}
-        onMouseDown={panel ? () => { if (!q) setPanelOpen((o) => !o); } : undefined} onBlur={panel ? () => setTimeout(() => setPanelOpen(false), 150) : undefined}
-        placeholder={placeholder} aria-label="Search product" role="combobox" aria-expanded={list.length > 0 || (panelOpen && !q)} />
+      <input ref={ref} value={q} autoFocus={autoFocus} onChange={(e) => { setQ(e.target.value); setHi(0); }} onKeyDown={onKey}
+        placeholder={placeholder} aria-label="Search product" role="combobox" aria-expanded={list.length > 0} />
       {camera && <CameraScanButton onScan={scanCamera} label="Scan product barcode or serial with camera" title="Scan product or serial"/>}
-      {panel && panelOpen && !q && <div className="psearch-panel">{panel(() => setPanelOpen(false))}</div>}
       {list.length > 0 && (
         <ul ref={listRef} className="psearch-list" role="listbox">
           {list.map((p, i) => (

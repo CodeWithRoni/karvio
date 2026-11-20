@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import QuickPicks, { rememberRecent } from '../components/QuickPicks';
 import ProductHover, { clearPriceCards } from '../components/ProductPriceCard';
-import RecentInvoices from '../components/RecentInvoices';
+import InvoiceSearch from '../components/InvoiceSearch';
 import { useStore, shopDay } from '../lib/store';
 import { api } from '../lib/api';
 import { money, qty as fqty, round2, isDecimalUnit, fdate, fdatetime } from '../lib/format';
@@ -321,8 +321,8 @@ export default function POS() {
       <div className="pos-left">
         <div className="row">
           {sh?.shift && <Link to="/shifts" className="sh-pos-badge" title="Shift & day close"><Badge tone="ok">Shift open · {sh.shift.user} · since {fdatetime(sh.shift.opened_at)}</Badge></Link>}
-          {editing && <span className="pos-editing" title={`Editing ${editing.invoice_no} — Complete saves the changes; Clear cart stops editing`}>✎ {editing.invoice_no}</span>}
-          <div style={{ flex: 1 }}><ProductSearch camera hover={priceHover} panel={canEdit ? (close) => <RecentInvoices editingId={editing?.id} onPick={(r) => { close(); openInvoice(r); }} /> : undefined} onPick={(p) => add(p)} onCode={addBySerial} placeholder={narrow ? 'Search product by serial or name' : 'Search product by serial, name, model or brand (F2)'} inputRef={searchRef} autoFocus /></div>
+          {canEdit && <InvoiceSearch current={editing?.invoice_no} onPick={openInvoice} />}
+          <div style={{ flex: 1 }}><ProductSearch camera hover={priceHover} onPick={(p) => add(p)} onCode={addBySerial} placeholder={narrow ? 'Search product by serial or name' : 'Search product by serial, name, model or brand (F2)'} inputRef={searchRef} autoFocus /></div>
           <Tabs tabs={[['retail', 'Retail'], ['wholesale', 'Wholesale']]} value={tier} onChange={changeTier} />
           <Btn onClick={hold} disabled={!cart.length || !!editing} title={editing ? 'Save or clear the invoice you are editing first' : 'Put this sale aside and serve the next customer (F7)'}>Hold</Btn>
           <Btn onClick={() => setShowHolds(true)} disabled={!holds.length || !!editing} className={holds.length ? 'held-on' : ''} title="Sales on hold">Held{holds.length ? ` · ${holds.length}` : ''}</Btn>

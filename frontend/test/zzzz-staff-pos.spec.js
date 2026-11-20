@@ -61,18 +61,26 @@ test('POS: hovering a product shows its selling prices', async ({ page }) => {
   await expect(page.locator('.ppc-pop .ppc')).toContainText('2ND LAST');
 });
 
-test('POS: last 50 invoices, edit one, save under the same number, clear', async ({ page }) => {
+test('POS: invoice search box lists every invoice, searches by number, edits, clears', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
   await page.goto('/#/pos');
-  const search = page.getByRole('combobox', { name: 'Search product' });
-  await search.click();
-  const list = page.locator('.ri-list');
+  const inv = page.getByRole('combobox', { name: 'Search invoice' });
+  await inv.click();
+  const list = page.locator('.inv-search .ri-list');
   await expect(list).toBeVisible();
   await expect(list.locator('li').first()).toContainText(ids.sale.sale.invoice_no);
-  expect(await list.locator('li').count()).toBeLessThanOrEqual(50);
-  await page.screenshot({ path: 'test-results/pos-recent-invoices.png' });
+  await expect(page.locator('.inv-search .ri-head')).toContainText('All invoices');
+  await page.screenshot({ path: 'test-results/pos-invoice-search.png' });
+  await inv.fill(ids.sale.sale.invoice_no.replace(/\D/g, '').slice(-3));
+  await expect(list.locator('li').first()).toContainText(ids.sale.sale.invoice_no);
+  await page.screenshot({ path: 'test-results/pos-invoice-search-typed.png' });
+  // the product search on the right stays a product search
+  await page.getByRole('combobox', { name: 'Search product' }).click();
+  await expect(page.locator('.ri')).toHaveCount(0);
+  await inv.fill(ids.sale.sale.invoice_no);
   await list.locator('li').first().click();
-  await expect(page.locator('.pos-editing')).toHaveText(`✎ ${ids.sale.sale.invoice_no}`);
+  await expect(page.locator('.inv-search.editing')).toBeVisible();
+  await expect(inv).toHaveAttribute('placeholder', `✎ ${ids.sale.sale.invoice_no}`);
   await expect(page.locator('.pos-edit-banner')).toContainText(ids.sale.sale.invoice_no);
   await page.getByRole('spinbutton', { name: /Quantity/ }).first().fill('3');
   await page.getByRole('spinbutton', { name: 'Amount' }).first().fill('1650');
@@ -81,16 +89,17 @@ test('POS: last 50 invoices, edit one, save under the same number, clear', async
   await page.getByLabel('Admin password').fill('admin123');
   await page.getByLabel('Reason').fill('one more mouse');
   await page.locator('.modal').getByRole('button', { name: 'Save changes' }).click();
-  await expect(page.locator('.pos-editing')).toHaveCount(0);
+  await expect(page.locator('.inv-search.editing')).toHaveCount(0);
   const d = await page.evaluate(async ({ endpoint, token, id }) => (await (await fetch(endpoint, { method: 'POST', body: JSON.stringify({ action: 'sale.detail', payload: { id }, token }) })).json()).data, { endpoint, token, id: ids.sale.sale.invoice_no });
   expect([d.sale.invoice_no, d.sale.total, d.items[0].qty]).toEqual([ids.sale.sale.invoice_no, 1650, 3]);
   // Open again, then Clear: nothing changes and the POS is empty
-  await search.click();
-  await page.locator('.ri-list li').first().click();
-  await expect(page.locator('.pos-editing')).toBeVisible();
+  await inv.fill(ids.sale.sale.invoice_no);
+  await page.locator('.inv-search .ri-list li').first().click();
+  await expect(page.locator('.inv-search.editing')).toBeVisible();
   await page.getByRole('button', { name: /Clear cart/ }).click();
   await page.getByRole('button', { name: 'Stop editing' }).click();
-  await expect(page.locator('.pos-editing')).toHaveCount(0);
+  await expect(page.locator('.inv-search.editing')).toHaveCount(0);
+  await expect(inv).toHaveAttribute('placeholder', 'Search invoice');
   await expect(page.locator('.cart td.cn')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Complete', exact: true })).toBeVisible();
 });
