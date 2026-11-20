@@ -174,6 +174,10 @@ function OrderView({ o, couriers, onClose, onChanged, onEdit }) {
 }
 
 function ShipDialog({ o, couriers, onClose, onDone }) {
+  const admin = useStore((state) => state.user?.role === 'admin');
+  const [unconfirmed, setUnconfirmed] = useState(!!o.booking_pending);
+  const [resetForm, setResetForm] = useState(false);
+  const [clear, setClear] = useState({ password: '', reason: '', confirm: '' });
   const [courier, setCourier] = useState(o.courier_choice || (couriers.find((c) => c.api) || couriers[0]).id);
   const c = couriers.find((x) => x.id === courier);
   const [manual, setManual] = useState(!c?.api);
@@ -193,10 +197,12 @@ function ShipDialog({ o, couriers, onClose, onDone }) {
     if (courier === 'redx' && !lists.areas) load('areas');
   }, [useApiBook, courier]);
   const submit = async () => {
+    try {
     const r = useApiBook
       ? await run(() => api('courier.call', { op: 'book', courier, id: o.id, ...pick }), `Booked with ${c.name}`)
       : await run(() => api('order.ship', { id: o.id, courier, courier_name: name, tracking, charge }), 'Marked as sent');
     if (r) onDone(r);
+    } catch (error) { if (error.uncertain && useApiBook) setUnconfirmed(true); }
   };
   const redxAreas = (lists.areas || []).filter((a) => !areaQ || a.name.toLowerCase().includes(areaQ.toLowerCase())).slice(0, 200);
   const ready = useApiBook ? (courier === 'steadfast' || (courier === 'pathao' && pick.city_id && pick.zone_id) || (courier === 'redx' && pick.area_id)) : tracking.trim();
@@ -204,6 +210,17 @@ function ShipDialog({ o, couriers, onClose, onDone }) {
     <Modal open size="md" title={`Send ${o.no} with a courier`} onClose={onClose}
       footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} disabled={!ready} onClick={submit}>{useApiBook ? `Book with ${c.name} · COD ${tk(o.cod)}` : 'Save tracking'}</Btn></>}>
       <div className="form">
+        {unconfirmed && <div className="wide note" role="alert">
+          <b>Booking result needs checking</b>
+          <p>Check the courier portal. If the parcel exists, select manual entry below and enter its tracking number. Retrying checks the saved result and will not send an unresolved booking again.</p>
+          {admin && <Btn size="sm" onClick={() => setResetForm(!resetForm)}>I checked: no booking exists</Btn>}
+          {admin && resetForm && <div className="form" style={{marginTop:10}}>
+            <Field label="Administrator password"><input type="password" value={clear.password} onChange={e=>setClear({...clear,password:e.target.value})} /></Field>
+            <Field label="Why is another attempt safe?"><input value={clear.reason} onChange={e=>setClear({...clear,reason:e.target.value})} /></Field>
+            <Field label="Type NOT BOOKED"><input value={clear.confirm} onChange={e=>setClear({...clear,confirm:e.target.value})} /></Field>
+            <Btn busy={busy} disabled={!clear.password||clear.reason.trim().length<5||clear.confirm!=='NOT BOOKED'} onClick={async()=>{try{const r=await run(()=>api('courier.reset',{id:o.id,...clear}),'Another booking attempt is allowed');if(r)onDone(r);}catch{}}}>Allow another attempt</Btn>
+          </div>}
+        </div>}
         <Field label="Courier" wide><div className="oo-couriers" role="radiogroup" aria-label="Courier">{couriers.map((x) => (
           <label key={x.id} className={`sh-mode ${courier === x.id ? 'on' : ''}`}><input type="radio" name="courier" checked={courier === x.id} onChange={() => setCourier(x.id)} />
             <span><b>{x.name}</b><small>{x.id === 'other' ? 'Any courier, by hand' : x.api ? 'API ready — book from here' : 'No API keys — by hand'}</small></span></label>))}</div></Field>

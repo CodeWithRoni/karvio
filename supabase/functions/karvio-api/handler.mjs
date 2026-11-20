@@ -106,7 +106,7 @@ export function createHandler({rpc,dispatch=()=>{},protocol=2,scopedReads=true,n
    m.action=body.action;
    if(!internal&&!await allowRequest(body))return finish(reply({ok:false,error:'Too many requests. Try again in a minute.'},429),'limited');
    // The two halves of a courier request run only inside the gateway step below, never from a browser.
-   if(!internal&&(body.action==='courier.prepare'||body.action==='courier.finish'))return finish(reply({ok:false,error:'Unknown action: '+body.action}),'rejected');
+   if(!internal&&['courier.prepare','courier.record','courier.finish'].includes(body.action))return finish(reply({ok:false,error:'Unknown action: '+body.action}),'rejected');
    if(protocol===2&&body.action==='courier.call'&&!internal){const data=await courierGateway(body,b=>handle(new Request('http://internal/',{method:'POST',body:JSON.stringify(b)}),true).then(r=>r.json()),courierFetch);return finish(reply(data),data.ok?'ok':'rejected');}
    // The daily-summary scheduler (pg_cron) must hand over a one-time code the database minted for this call.
    if(body.action==='summary.tick'){let ok=false;try{ok=await call('karvio_cron_claim',{nonce:String(body.payload?.nonce||'')})===true;}catch{}if(!ok)return finish(reply({ok:false,error:'Not allowed'},403),'rejected');}
@@ -200,21 +200,30 @@ export function createHandler({rpc,dispatch=()=>{},protocol=2,scopedReads=true,n
 /** courier.call: ask the engine what to send (courier.prepare), send it from here, give the engine the answer
  * (courier.finish). A courier that does not answer in 20 s counts as not reached; nothing is stored then. */
 export async function courierGateway(body,run,fetchImpl){
- const payload=body.payload||{};
- const prep=await run({action:'courier.prepare',payload,token:body.token});
+ const payload=body.payload||{}, branch=body.branch;
+ const prep=await run({action:'courier.prepare',payload:{...payload,__request_id:body.request_id||''},token:body.token,branch});
  if(!prep.ok)return prep;
  const spec=prep.data;
+ if(spec.__booking_done)return {ok:true,data:spec.__booking_done};
+ const uncertain=()=>({ok:false,error:'Courier booking is unconfirmed. Check the courier portal before trying again. If booked, enter its tracking number manually; an admin can clear this only after confirming it was NOT BOOKED.',retryable:true,uncertain:true});
+ if(spec.__booking_pending)return uncertain();
  const send=async(r,token)=>{
   const headers=Object.fromEntries(Object.entries(r.headers||{}).map(([k,v])=>[k,String(v).replace('{{token}}',token||'')]));
   const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),20000);
   try{const res=await fetchImpl(r.url,{method:r.method,headers,body:r.payload||undefined,signal:ctl.signal});return {code:res.status,text:(await res.text()).slice(0,500000)};}
   finally{clearTimeout(timer);}
  };
- let res;
+ let res=spec.__booking_response;
  try{
   let token='';
-  if(spec.pre){const a=await send(spec.pre,'');let d=null;try{d=JSON.parse(a.text);}catch{}if(a.code<200||a.code>=300||!d||!d[spec.pre.take])res=a;else token=d[spec.pre.take];}
+  if(!res&&spec.pre){const a=await send(spec.pre,'');let d=null;try{d=JSON.parse(a.text);}catch{}if(a.code<200||a.code>=300||!d||!d[spec.pre.take])res=a;else token=d[spec.pre.take];}
   if(!res)res=await send(spec,token);
- }catch{return {ok:false,error:'The courier could not be reached. Check the internet connection and try again.'};}
- return run({action:'courier.finish',payload:{...payload,__response:res},token:body.token,request_id:body.request_id});
+ }catch{return payload.op==='book'?uncertain():{ok:false,error:'The courier could not be reached. Check the internet connection and try again.'};}
+ const bookingPayload=spec.__booking_payload||payload;
+ if(payload.op==='book'&&!spec.__booking_response){
+  const recorded=await run({action:'courier.record',payload:{id:payload.id,__booking_id:spec.__booking_id,__response:res},token:body.token,branch});
+  if(!recorded.ok)return uncertain();
+ }
+ const result=await run({action:'courier.finish',payload:{...bookingPayload,__booking_id:spec.__booking_id,__response:res},token:body.token,branch,request_id:body.request_id});
+ return !result.ok&&payload.op==='book'?{...result,retryable:true,uncertain:true}:result;
 }

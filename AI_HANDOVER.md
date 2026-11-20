@@ -25,3 +25,7 @@ Known remaining work: dashboard whole-history computation (SQL port), global wri
 Owner authorized push on 15 November 2026. Baseline main 4d1bd6a264dc3f8ea4e7869c352285c3147bcac4 / Edge v59. Two migrations add private transfer staging/worker/cleanup and compact request-scoped snapshots/indexes. Existing business rows are not rewritten during migration. Backend-first CI applies migrations and verifies exact Edge build before Pages publication.
 
 See docs/BOUNDED-BACKUPS.md and VERIFICATION.md. Scope/global-lock/report limitations remain explicit. No native release or Google Drive automation. One-time approved Drive backup exists from the previous task. Never publish verification/ user databases or credentials.
+
+# Audit corrections — 20 November 2026
+
+The ten findings from the dae888d audit are corrected locally; see docs/NOV20-AUDIT-FIXES.md for behavior, migration, tests and limits. Decimal round_ is now corrected (the older remaining-work note above predates this change). Hosted courier booking now persists its send intent and response; unresolved sends require portal reconciliation before an administrator can authorize another attempt. Branch repair tags are now stored; legacy untagged reservations are conservative until the job is edited/delivered. Apply the new read_metrics migration before the new Edge build when publication is authorized. Owner authorized publication on 20 November 2026 after local verification. Use the backend-first deployment workflow; no production business records were manually changed.

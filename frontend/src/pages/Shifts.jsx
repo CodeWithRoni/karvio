@@ -1,3 +1,4 @@
+import { roundDecimal } from '../lib/round';
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useStore } from '../lib/store';
@@ -154,7 +155,7 @@ export function CloseShift({ s, onClose, onDone }) {
   const [busy, run] = useAction();
   const fromNotes = anyNotes(notes);
   const counted = fromNotes ? notesTotal(notes) : manual === '' ? null : Number(manual);
-  const diff = useMemo(() => (counted === null ? null : Math.round((counted - s.expected) * 100) / 100), [counted, s.expected]);
+  const diff = useMemo(() => (counted === null ? null : roundDecimal(counted - s.expected, 2)), [counted, s.expected]);
   const isOff = diff !== null && off(diff);
   const submit = async () => {
     const rec = await run(() => api('shift.close', { id: s.id, counted, notes: fromNotes ? notes : {}, note, adjust: isOff && adjust }), `${s.no} closed`);

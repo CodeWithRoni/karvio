@@ -1,3 +1,4 @@
+import { roundDecimal } from '../lib/round';
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../lib/store';
 import { api } from '../lib/api';
@@ -52,7 +53,7 @@ function CountForm({ d, onSaved }) {
   const fromNotes = useMemo(() => FACES.reduce((s, f) => s + f * (Number(notes[f]) || 0), 0), [notes]);
   const anyNotes = FACES.some((f) => Number(notes[f]) > 0);
   const counted = anyNotes ? fromNotes : manual === '' ? null : Number(manual);
-  const diff = counted === null ? null : Math.round((counted - d.expected) * 100) / 100;
+  const diff = counted === null ? null : roundDecimal(counted - d.expected, 2);
   const off = diff !== null && Math.abs(diff) > 0.005;
   const save = async () => {
     await run(() => api('dayclose.save', { account_id: d.account.id, date: d.date, counted, notes: anyNotes ? notes : {}, note, adjust: off && adjust }), `${d.account.name} closed for ${fdate(d.date)}`);

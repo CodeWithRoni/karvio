@@ -9,6 +9,7 @@ import { Link } from 'react-router-dom';
 import { OpenShift } from './Shifts';
 import { ProductSearch, PaymentSplit, defaultPay, cleanPays, QuickCustomer, CustomerPicker, SerialChooser } from '../components/widgets';
 import { loadPosDraft, savePosDraft, loadHolds, saveHolds } from '../lib/posDraft';
+import { onShopDraftsCleared } from '../lib/shopStorage';
 import DateInput from '../components/DateInput';
 import WhatsAppBtn from '../components/WhatsAppBtn';
 
@@ -171,6 +172,7 @@ export default function POS() {
 
   const [confirmUI, ask] = useConfirm();
   const reset = () => { setPayPrevious(false); setPreviousPays(defaultPay('')); setNextPay(''); setSendSms(false); setCart([]); setCustomerId(''); setDiscount(''); setPaysRaw(defaultPay()); setPayTouched(false); setUseCredit(false); setNote(''); searchRef.current?.focus(); };
+  useEffect(() => onShopDraftsCleared(() => { reset(); setHolds([]); refresh('products').catch(() => {}); }), []);
 
   // Hold: put this cart aside (items, customer, discount, price tier, note) and start a fresh one.
   const cartTotal = (c, disc) => Math.max(0, c.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.price) || 0), 0) - (Number(disc) || 0));

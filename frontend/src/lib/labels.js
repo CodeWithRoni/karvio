@@ -1,3 +1,4 @@
+import { roundDecimal } from './round';
 // Barcode labels: sizes, barcode drawing and the printable page (thermal label rolls and A4 label sheets).
 // Everything is laid out in millimetres so what is printed matches the chosen label size exactly.
 import JsBarcode from 'jsbarcode';
@@ -47,7 +48,7 @@ export function layoutOf(o) {
   const cols = r.cols || 1, gapX = cols > 1 ? r.gapX || 0 : 0;
   return { w: r.w, h: r.h, cols, rows: 1, top: 0, left: 0, gapX, gapY: 0, pageW: round(cols * r.w + (cols - 1) * gapX), pageH: r.h, perPage: cols };
 }
-const round = (n) => Math.round(n * 100) / 100;
+const round = (n) => roundDecimal(n, 2);
 
 /** Problems with the chosen size, in words; empty when it is fine to print. */
 export function layoutErrors(L) {

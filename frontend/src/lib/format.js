@@ -1,3 +1,4 @@
+import { roundDecimal } from './round';
 import { useStore, shopDay } from './store';
 
 /** A person's name or username for display: the first letter always in capitals ("admin" → "Admin"). */
@@ -48,5 +49,5 @@ export function addDays(dateStr, n) {
 export function monthStart() { return today().slice(0, 8) + '01'; }
 
 export const unitLabel = (u) => u || 'pcs';
-export const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+export const round2 = (n) => roundDecimal(n, 2);
 export const splitList = (s, sep = ',') => String(s || '').split(sep).map((x) => x.trim()).filter(Boolean);

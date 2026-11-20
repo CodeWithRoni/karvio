@@ -1,3 +1,4 @@
+import { roundDecimal } from '../lib/round';
 // Customers / Suppliers are plain directories (mode "directory": names, phones, addresses).
 // Collection / Payment (mode "money") show the dues, the ledger and take or make payments.
 import { useEffect, useState } from 'react';
@@ -285,7 +286,7 @@ function PaymentForm({ kind, id, name, balance, accounts, onClose, onDone }) {
   const availableAdvance = Math.max(-Number(balance || 0), 0);
   const invalidAmount = !Number.isFinite(Number(f.amount)) || Number(f.amount) <= 0 || (returningAdvance && Number(f.amount) > availableAdvance + 0.005);
   // Collecting less than the customer owes: ask when the rest will be paid, for a dashboard reminder on that day.
-  const rest = kind === 'customer' && f.direction === 'receive' && balance > 0.004 && Number(f.amount) > 0 ? Math.round((balance - Number(f.amount)) * 100) / 100 : 0;
+  const rest = kind === 'customer' && f.direction === 'receive' && balance > 0.004 && Number(f.amount) > 0 ? roundDecimal(balance - Number(f.amount), 2) : 0;
   const partPaid = rest > 0.004;
   const save = async () => {
     const r = await run(() => api(c.payment, { [c.key]: id, ...f, amount: Number(f.amount), next_payment_date: partPaid ? f.next_payment_date : '' }), partPaid && f.next_payment_date ? `Payment recorded · reminder set for ${fdate(f.next_payment_date)}` : 'Payment recorded');

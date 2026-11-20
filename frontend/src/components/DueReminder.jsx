@@ -1,3 +1,4 @@
+import { roundDecimal } from '../lib/round';
 import { useState } from 'react';
 import { useStore } from '../lib/store';
 import { api } from '../lib/api';
@@ -6,7 +7,7 @@ import { Modal, Btn } from './ui';
 import { waNumber, waUrl } from '../lib/whatsapp';
 
 export const DEFAULT_DUE_SMS = 'Dear {name}, your due at {shop} is Tk {due}. Please pay at your earliest convenience. Thank you. {shop_phone}';
-const lakh = (v) => (Math.round((Number(v) || 0) * 100) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+const lakh = (v) => (roundDecimal(v, 2)).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 const fill = (tpl, vars) => tpl.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m));
 /** SMS parts: 160 letters per SMS (153 when split); Bangla letters count 70 (67 when split). */
 const parts = (t) => { const uni = /[^\x00-\x7F]/.test(t), one = uni ? 70 : 160, many = uni ? 67 : 153; return t.length <= one ? 1 : Math.ceil(t.length / many); };

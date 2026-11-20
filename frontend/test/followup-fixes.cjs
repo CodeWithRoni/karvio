@@ -3,7 +3,7 @@ let checks=0;const eq=(a,b)=>{assert.deepEqual(JSON.parse(JSON.stringify(a)),b);
 function load(file,imports){const module={exports:{}};vm.runInNewContext(esbuild.transformSync(fs.readFileSync(path.join(__dirname,'../src',file),'utf8'),{format:'cjs',loader:'jsx'}).code,{module,exports:module.exports,React,require:n=>{assert(n in imports,'Unmocked dependency '+n);return imports[n];},console,Date});return module.exports;}
 const state={settings:{currency:'Tk',invoice_template:'classic',shop_name:'Unrelated staff shop'},units:[]};
 const store={getState:()=>state};
-const format=load('lib/format.js',{'./store':{useStore:store,shopDay:()=> '2026-11-11'}});
+const format=load('lib/format.js',{'./store':{useStore:store,shopDay:()=> '2026-11-11'},'./round':load('lib/round.js',{})});
 const pricing=load('lib/quotationTotals.js',{'./format':format});
 for(const discount of [150,-1,Infinity,'not money']){eq(pricing.quotationTotals([{qty:1,price:100}],discount).valid,false);}
 eq(pricing.quotationTotals([{qty:1,price:100}],25).total,75);eq(pricing.quotationTotals([{qty:1,price:100}],100).total,0);

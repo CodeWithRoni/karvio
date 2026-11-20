@@ -38,7 +38,7 @@ export default function Stock() {
     if (f.qty !== '' && (p.service || Number(p.stock) !== Number(f.qty))) return false;
     if (f.low && (p.service || p.stock > (p.low_stock > 0 ? p.low_stock : lowDef))) return false;
     return true;
-  }).map((p) => ({ ...p, group: catMap[p.category_id] || '', category: catMap[p.subcategory_id] || '', brand: brandMap[p.brand_id] || '', value: p.stock * (p.cost_price || 0) })), [products, f, catMap, brandMap, lowDef]);
+  }).map((p) => ({ ...p, group: catMap[p.category_id] || '', category: catMap[p.subcategory_id] || '', brand: brandMap[p.brand_id] || '', value: Number.isFinite(p.inventory_cost) ? p.inventory_cost : p.stock * (p.cost_price || 0) })), [products, f, catMap, brandMap, lowDef]);
 
   const cols = [
     { key: 'name', label: 'Product', render: (r) => <><b>{r.name}</b>{!r.active && <> <Badge>inactive</Badge></>}<div className="muted" style={{ fontSize: 12 }}>{[r.sku, r.barcode].filter(Boolean).join(' / ')}</div></> , value: (r) => r.name },

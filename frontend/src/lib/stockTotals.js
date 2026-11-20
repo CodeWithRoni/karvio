@@ -10,5 +10,5 @@ export function stockQuantityTotal(rows, key) {
   return [...units].map(([unit, n]) => n.toLocaleString('en-IN', { maximumFractionDigits: 4 }) + ' ' + unit).join(' · ') || 0;
 }
 export function stockMoneyTotal(rows, priceKey) {
-  return rows.reduce((sum, row) => sum + (row.service ? 0 : (Number(row.stock) || 0) * (Number(row[priceKey]) || 0)), 0);
+  return rows.reduce((sum, row) => sum + (row.service ? 0 : priceKey === 'cost_price' && Number.isFinite(row.inventory_cost) ? row.inventory_cost : (Number(row.stock) || 0) * (Number(row[priceKey]) || 0)), 0);
 }

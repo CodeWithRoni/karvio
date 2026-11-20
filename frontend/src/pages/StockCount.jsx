@@ -1,3 +1,6 @@
+import { stockCountKey, loadStockCount as load, saveStockCount as save } from '../lib/stockCountDraft';
+import { roundDecimal } from '../lib/round';
+import { onShopDraftsCleared } from '../lib/shopStorage';
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../lib/store';
 import { api } from '../lib/api';
@@ -6,10 +9,7 @@ import { useApi, PageHead, Btn, Field, ErrorBox, Badge, Empty, Loading, useActio
 import { ProductSearch } from '../components/widgets';
 import { printTable } from '../lib/export';
 
-const KEY = 'karvio_stock_count';
-const load = () => { try { return JSON.parse(localStorage.getItem(KEY) || 'null'); } catch { return null; } };
-const save = (d) => { try { d ? localStorage.setItem(KEY, JSON.stringify(d)) : localStorage.removeItem(KEY); } catch { /* storage full or blocked: the count stays on screen */ } };
-const r4 = (n) => Math.round(n * 10000) / 10000;
+const r4 = (n) => roundDecimal(n, 4);
 
 /** Count one product: serial products by the serials found, others by the typed or scanned quantity. */
 function lineOf(p, d) {
@@ -28,19 +28,22 @@ function lineOf(p, d) {
 /** Stock → Stock count: scan the shelf, see what is short or over, fix the stock in one step. */
 export default function StockCount() {
   const [tab, setTab] = useState('count');
+  useStore((state) => [state.user?.id, state.branches?.current].join('|'));
+  const scope = stockCountKey();
   return (
     <>
       <PageHead title="Stock count" sub="Scan what is really on the shelf. The system shows what is short or over, then fixes the stock in one click.">
         <Tabs tabs={[['count', 'Count'], ['history', 'Past counts']]} value={tab} onChange={setTab} />
       </PageHead>
-      {tab === 'count' ? <Counter onApplied={() => setTab('history')} /> : <History />}
+      {tab === 'count' ? <Counter key={scope} scope={scope} onApplied={() => setTab('history')} /> : <History />}
     </>
   );
 }
 
-function Counter({ onApplied }) {
+function Counter({ onApplied, scope }) {
   const { categories, toast, refresh, can } = useStore();
   const [d, setD] = useState(load);
+  useEffect(() => onShopDraftsCleared(() => setD(null)), []);
   const [name, setName] = useState(`Stock count ${today()}`);
   const [cat, setCat] = useState('');
   const [filter, setFilter] = useState('all');
@@ -48,11 +51,11 @@ function Counter({ onApplied }) {
   const [busy, run] = useAction();
   const [confirmUI, ask] = useConfirm();
   const showCost = can('cost');
-  useEffect(() => { save(d); }, [d]);
+  useEffect(() => { try { save(d, scope); } catch (e) { toast(e.message || 'Could not save stock count draft', 'err'); } }, [d, scope]);
 
   const start = async () => {
     const r = await run(() => api('stockcount.start', { category_id: cat }));
-    if (r) setD({ name: name.trim() || 'Stock count', started_at: r.at, category: r.category, products: r.products, counts: {}, found: {}, extra: {}, zero: false });
+    if (r) setD({ name: name.trim() || 'Stock count', started_at: r.at, branch_id: r.branch_id, category: r.category, products: r.products, counts: {}, found: {}, extra: {}, zero: false });
   };
   const lines = useMemo(() => (d ? d.products.map((p) => lineOf(p, d)) : []), [d]);
   if (!d) return (
@@ -99,9 +102,10 @@ function Counter({ onApplied }) {
   const toFix = counted.filter((l) => diffOf(l) !== 0 && !l.p.serial).length;
 
   const apply = async () => {
+    if (scope !== stockCountKey()) return toast('The user, connection or branch changed. Reopen Stock Count before continuing.', 'err');
     if (!counted.length) return toast('Count at least one product', 'err');
     if (!(await ask({ title: `Apply ${d.name}?`, message: `${counted.length} products were counted. ${toFix} will have their stock changed to the count${showCost ? ` (value ${money(val(counted))})` : ''}. Serial products are only reported. This cannot be undone here.`, confirmLabel: 'Apply the count' }))) return;
-    const rec = await run(() => api('stockcount.apply', { name: d.name, started_at: d.started_at, lines: counted.map((l) => ({ product_id: l.p.id, counted: l.counted, expected: l.p.stock, missing: l.missing, extra: l.extra })) }), 'Stock count applied');
+    const rec = await run(() => api('stockcount.apply', { name: d.name, started_at: d.started_at, branch_id: d.branch_id, lines: counted.map((l) => ({ product_id: l.p.id, counted: l.counted, expected: l.p.stock, missing: l.missing, extra: l.extra })) }), 'Stock count applied');
     if (!rec) return;
     setD(null); save(null); refresh('products').catch(() => {}); onApplied?.();
   };

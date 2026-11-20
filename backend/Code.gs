@@ -104,7 +104,16 @@ function now_()   { return Utilities.formatDate(new Date(), TZ_(), "yyyy-MM-dd'T
 function today_() { return Utilities.formatDate(new Date(), TZ_(), 'yyyy-MM-dd'); }
 function fail_(m) { throw new Error(m); }
 function num_(v)  { var n = Number(v); return isFinite(n) ? n : 0; }
-function round_(n, d) { var f = Math.pow(10, d == null ? 2 : d); return Math.round((Number(n) || 0) * f) / f; }
+function round_(n, d) {
+  var v = Number(n) || 0, places = d == null ? 2 : d;
+  if (!isFinite(v)) return v;
+  // Shift decimal digits instead of multiplying a binary float (1.005 * 100 < 100.5).
+  // Keep Math.round's existing tie direction, including negative ledger balances.
+  var p = String(v).split('e'), shifted = Number(p[0] + 'e' + ((Number(p[1]) || 0) + places));
+  if (!isFinite(shifted)) return v;
+  var r = String(Math.round(shifted)).split('e');
+  return Number(r[0] + 'e' + ((Number(r[1]) || 0) - places));
+}
 function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 function indexBy_(arr, key) { var m = {}; arr.forEach(function (x) { m[x[key || 'id']] = x; }); return m; }
 function parseList_(s) { return String(s || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean); }
@@ -1056,13 +1065,14 @@ function productUsageIndex_() {
   return used;
 }
 function productsList_(user) {
-  var reservations = repairReservations_().qty, history = productUsageIndex_(), serialValues = {}, showCost = can_(user,'cost');
-  if (showCost) all_('SerialItems').forEach(function(s) { if (s.status === 'in_stock') serialValues[s.product_id]=(serialValues[s.product_id] || 0)+num_(s.cost); });
+  var reservations = repairReservations_(null, _branch).qty, history = productUsageIndex_(), serialValues = {}, showCost = can_(user,'cost');
+  if (showCost) all_('SerialItems').forEach(function(s) { if (s.status === 'in_stock' && (!_branch || serialBranch_(s.id) === _branch)) serialValues[s.product_id]=(serialValues[s.product_id] || 0)+num_(s.cost); });
   var list = all_('Products').map(function (p) { var c = Object.assign({}, p); delete c._row; c.has_history = !!history[p.id]; c.reserved = reservations[p.id] || 0; c.available = Math.max(0, round_(p.stock - c.reserved, 4)); if (showCost && isSerialProduct_(p)) c.inventory_cost=round_(serialValues[p.id] || 0,4); return c; });
   if (_branch) list.forEach(function (c) {
     if (isService_(c)) return;
     c.stock_total = c.stock; c.stock_here = branchQty_(c.id, _branch); c.stock = c.stock_here; // this branch; the shop total stays in stock_total
-    c.available = Math.max(0, round_(Math.min(c.available, c.stock_here), 4));
+    c.available = Math.max(0, round_(c.stock_here - c.reserved, 4));
+    if (showCost && isSerialProduct_(c) && c.stock_here > 0) c.cost_price = round_(num_(c.inventory_cost) / c.stock_here, 4);
   });
   return stripCost_(list, user);
 }
@@ -1349,9 +1359,10 @@ function stockCountStart_(p, user) {
       return { id: pr.id, name: pr.name, sku: pr.sku || '', barcode: pr.barcode || '', unit: pr.unit || '', category: (cats[pr.category_id] || {}).name || '',
         stock: _branch ? branchQty_(pr.id, _branch) : num_(pr.stock), cost: showCost ? num_(pr.cost_price) : null, serial: serial, serials: serial ? (serials[pr.id] || []).sort() : [] };
     });
-  return { at: now_(), category_id: cat, category: cat ? (cats[cat] || {}).name || '' : '', products: list };
+  return { at: now_(), branch_id: _branch, category_id: cat, category: cat ? (cats[cat] || {}).name || '' : '', products: list };
 }
 function stockCountApply_(p, user) {
+  if (branchesOn_() && p.branch_id !== _branch) fail_('This stock count belongs to another branch or an older version. Start a new count in this branch');
   var name = String(p.name || '').trim().slice(0, 120) || 'Stock count';
   var lines = Array.isArray(p.lines) ? p.lines : [];
   if (!lines.length) fail_('Count at least one product');
@@ -1984,6 +1995,7 @@ function orderShip_(p, user) {
   var tracking = String(p.tracking || '').trim().slice(0, 80); if (!tracking) fail_('Write the tracking or consignment number');
   o.courier = { name: courier, label: courier === 'other' ? String(p.courier_name || '').trim().slice(0, 60) || COURIERS.other : COURIERS[courier], consignment_id: tracking, tracking: tracking,
     booked_at: now_(), booked_by: user.name, by_api: false, status: '', charge: Math.max(round_(num_(p.charge)), 0) };
+  if (o.courier_attempt) { o.courier_attempt.state = 'done'; delete o.courier_attempt.response; }
   orderLog_(o, user, 'shipped', o.courier.label + ' ' + tracking);
   orderWrite_(f.all, f.row, o);
   return orderView_(o);
@@ -2027,7 +2039,11 @@ function orderReturn_(p, user) {
   if (d.sale.status !== 'active') fail_('The invoice of this order is cancelled');
   var items = d.items.filter(function (i) { return i.qty - (i.returned_qty || 0) > 1e-9; }).map(function (i) {
     var left = round_(i.qty - (i.returned_qty || 0), 4), line = { sale_item_id: i.id, qty: left };
-    if (i.serials) line.serials = parseList_(i.serials).slice(0, left).join(',');
+    if (i.serials) {
+      var remainingSerials = i.serials_left || [];
+      if (remainingSerials.length !== left) fail_('Returnable serial history changed; reopen the invoice');
+      line.serials = remainingSerials.join(',');
+    }
     return line;
   });
   var ret = null;
@@ -2068,6 +2084,8 @@ function orderSaleActive_(o) {
 }
 function orderView_(o, sales) {
   var v = Object.assign({}, o);
+  v.booking_pending = !!o.courier_attempt && o.courier_attempt.state !== 'done';
+  delete v.courier_attempt;
   if (o.sale_id) {
     var s = sales ? sales[o.sale_id] : all_('Sales').filter(function (x) { return x.id === o.sale_id; })[0];
     v.sale_status = s ? s.status : 'missing';
@@ -2231,6 +2249,61 @@ function courierSend_(spec) {
   return go(spec, token);
 }
 function courierCall_(p, user) { return courierFinish_(p, user, courierSend_(courierPrepare_(p, user))); }
+/** Persist the send intent before contacting a courier. A lost acknowledgement cannot authorize a second POST. */
+function courierPrepareHosted_(p, user) {
+  if (p.op !== 'book') return courierPrepare_(p, user);
+  need_(user, 'pos');
+  var f = orderFind_(p.id), o = f.o, a = o.courier_attempt;
+  if (o.sale_id) branchRequire_('Sales', o.sale_id);
+  if (a) {
+    if (a.state === 'done' && a.request_id === p.__request_id) return { __booking_done: orderView_(o) };
+    if (a.state === 'response' && o.status === 'confirmed' && !o.courier) return { __booking_response: a.response, __booking_payload: a.payload, __booking_id: a.id };
+    if (a.state !== 'done') return { __booking_pending: true };
+  }
+  var spec = courierPrepare_(p, user);
+  var payload = { op: 'book', id: p.id, courier: p.courier, city_id: p.city_id || '', zone_id: p.zone_id || '', area_id: p.area_id || '', area_name: p.area_name || '' };
+  a = { id: uid_(), request_id: p.__request_id || '', state: 'sending', payload: payload, started_at: now_(), by: user.name };
+  o.courier_attempt = a; orderWrite_(f.all, f.row, o);
+  audit_(user, 'courier_booking_started', { order: o.no, courier: p.courier });
+  spec.__booking_id = a.id; spec.__booking_payload = payload;
+  return spec;
+}
+function courierRecordHosted_(p, user) {
+  need_(user, 'pos');
+  var f = orderFind_(p.id), o = f.o, a = o.courier_attempt;
+  if (o.sale_id) branchRequire_('Sales', o.sale_id);
+  if (!a || a.id !== p.__booking_id || a.state === 'done') fail_('Courier booking changed. Reopen the order');
+  if (a.state !== 'response') {
+    if (!p.__response || typeof p.__response.code !== 'number' || typeof p.__response.text !== 'string' || p.__response.text.length > 500000) fail_('Invalid courier response');
+    a.response = p.__response; a.state = 'response'; orderWrite_(f.all, f.row, o);
+  }
+  return { recorded: true };
+}
+function courierFinishHosted_(p, user) {
+  if (p.op !== 'book') return courierFinish_(p, user, p.__response);
+  need_(user, 'pos');
+  var f = orderFind_(p.id), a = f.o.courier_attempt;
+  if (f.o.sale_id) branchRequire_('Sales', f.o.sale_id);
+  if (!a || a.id !== p.__booking_id || a.state !== 'response') fail_('Courier response is not ready. Reopen the order');
+  var result = courierFinish_(a.payload, user, a.response);
+  f = orderFind_(p.id); f.o.courier_attempt.state = 'done'; delete f.o.courier_attempt.response;
+  orderWrite_(f.all, f.row, f.o);
+  return orderView_(f.o);
+}
+function courierReset_(p, user) {
+  if (user.role !== 'admin') fail_('Only an admin can allow another courier booking attempt');
+  confirmAdmin_(user, p.password);
+  var reason = String(p.reason || '').trim();
+  if (p.confirm !== 'NOT BOOKED' || reason.length < 5) fail_('Confirm NOT BOOKED after checking the courier portal, and write the reason');
+  var f = orderFind_(p.id), o = f.o;
+  if (o.sale_id) branchRequire_('Sales', o.sale_id);
+  if (o.status !== 'confirmed' || o.courier || !o.courier_attempt || o.courier_attempt.state === 'done') fail_('This order has no unresolved booking to clear');
+  delete o.courier_attempt;
+  orderLog_(o, user, o.status, 'Courier portal checked: not booked — ' + reason.slice(0,200)); orderWrite_(f.all, f.row, o);
+  audit_(user, 'courier_booking_reset', { order: o.no, reason: reason.slice(0,200) });
+  return orderView_(o);
+}
+
 
 /* ---- Branches (multi-branch). Off until an admin adds the first branch. Each user can be fixed to one
  * branch (admins and unassigned users pick the branch they work in). Product stock (Products.stock) stays the
@@ -2241,7 +2314,7 @@ function courierCall_(p, user) { return courierFinish_(p, user, courierSend_(cou
  * Every stock change (update_ / insertMany_) lands in the branch of the request, so sales, purchases, returns,
  * adjustments and stock counts all follow without changes of their own. */
 var BRANCH_SHEET = '__KarvioBranchRows', BRANCH_TRANSIT = '__transit';
-var BRANCH_DOC_TABLES = ['Sales', 'Purchases', 'SalesReturns', 'PurchaseReturns', 'Expenses'];
+var BRANCH_DOC_TABLES = ['Sales', 'Purchases', 'SalesReturns', 'PurchaseReturns', 'Expenses', 'Repairs'];
 var _branch = '', _reqUser = null;
 function jsonSetting_(k, def) { var v = null; try { v = JSON.parse(getSetting_(k, '')); } catch (e) {} return v && typeof v === 'object' ? v : def; }
 /** All branches, the Main Branch first. The Main Branch is the shop as it was before branches (the first one made). */
@@ -2312,7 +2385,12 @@ function branchOnInsert_(name, objs) {
 }
 function branchOnUpdate_(name, r, patch) {
   if (!_branch || _mem.__branchSkip) return;
-  if (name === 'Products' && patch.stock !== undefined && !isService_(r)) branchMove_(r.id, _branch, round_(num_(patch.stock) - num_(r.stock), 4), r.name);
+  if (name === 'Repairs' && !branchGet_('d|Repairs|' + r.id)) branchPut_('d|Repairs|' + r.id, 0, _branch);
+  if (name === 'Products' && patch.stock !== undefined && !isService_(r)) {
+    var delta = round_(num_(patch.stock) - num_(r.stock), 4), held = repairReservations_(_mem.__repairDelivery, _branch).qty[r.id] || 0;
+    if (delta < 0 && held > 0 && branchQty_(r.id, _branch) + delta < held - 1e-9) fail_('Stock is reserved for open repair or service jobs in ' + branchName_(_branch) + ': ' + r.name);
+    branchMove_(r.id, _branch, delta, r.name);
+  }
   if (name === 'SerialItems' && patch.status !== undefined && patch.status !== r.status) {
     if (r.status === 'in_stock' && patch.status !== 'in_stock') {
       var at = serialBranch_(r.id);
@@ -2321,7 +2399,17 @@ function branchOnUpdate_(name, r, patch) {
   }
 }
 /** A user fixed to a branch sees only that branch's documents; others see all. */
-function branchSees_(table, id) { var f = _reqUser ? branchFixed_(_reqUser) : ''; return !f || docBranch_(table, id) === f; }
+function branchSees_(table, id) { var f = _reqUser ? branchFixed_(_reqUser) : ''; if (table === 'Repairs' && !branchGet_('d|Repairs|' + id)) return true; return !f || docBranch_(table, id) === f; }
+function branchRequire_(table, id) {
+  // Shared party ledgers/accounts have no document branch tag.
+  if (BRANCH_DOC_TABLES.indexOf(table) < 0) return;
+  if (!branchSees_(table, id)) fail_('Permission denied: this document belongs to another branch');
+}
+function inDocumentBranch_(table, id, run) {
+  branchRequire_(table, id);
+  var old = _branch; if (_branch && (table !== 'Repairs' || branchGet_('d|Repairs|' + id))) _branch = docBranch_(table, id);
+  try { return run(); } finally { _branch = old; }
+}
 function docBranch_(table, id) { var r = branchGet_('d|' + table + '|' + id); return r && r.text ? r.text : branchDefault_(); }
 
 /* ---- Branch admin: list, add, change; who works where; which account belongs to which branch. */
@@ -2365,6 +2453,7 @@ function branchSave_(p, user) {
   // The first branch takes all the stock and serials the shop has today.
   if (!wasOn && branchesOn_()) {
     var first = branchDefault_();
+    all_('Repairs').forEach(function(job){if(!branchGet_('d|Repairs|' + job.id))branchPut_('d|Repairs|' + job.id,0,first);});
     all_('Products').forEach(function (pr) { if (!isService_(pr) && Math.abs(num_(pr.stock)) > 1e-9 && !branchGet_('s|' + pr.id + '|' + first)) branchPut_('s|' + pr.id + '|' + first, num_(pr.stock)); });
     all_('SerialItems').forEach(function (s) { if (s.status === 'in_stock' && !branchGet_('n|' + s.id)) branchPut_('n|' + s.id, 0, first); });
   }
@@ -2408,7 +2497,7 @@ function branchTransfersList_(p, user) {
 }
 function branchTransferSend_(p, user) {
   if (!branchesOn_()) fail_('Add branches first');
-  var from = _branch, to = String(p.to || '');
+  var from = _branch, to = String(p.to || ''), reserved = repairReservations_(null, _branch);
   if (!branchActive_(to)) fail_('Choose the branch to send to');
   if (to === from) fail_('Choose another branch than this one');
   var pmap = indexBy_(all_('Products')), sidx = {}, lines = [], seen = {};
@@ -2421,6 +2510,7 @@ function branchTransferSend_(p, user) {
       splitSerials_(it.serials).forEach(function (sn) {
         var s = sidx[pr.id + '|' + String(sn).toLowerCase()]; if (!s) fail_('Serial ' + sn + ' of ' + pr.name + ' is not in stock');
         if (serialBranch_(s.id) !== from) fail_('Serial ' + sn + ' is in ' + branchName_(serialBranch_(s.id)) + ', not in this branch');
+        if (reserved.serial[s.id]) fail_('Serial ' + sn + ' is reserved for a repair or service job');
         if (line.serial_ids.indexOf(s.id) >= 0) fail_('Serial ' + sn + ' is listed twice');
         line.serials.push(s.serial); line.serial_ids.push(s.id);
       });
@@ -2430,6 +2520,7 @@ function branchTransferSend_(p, user) {
       if (!isDecimalUnit_(pr.unit) && line.qty % 1 !== 0) fail_('Quantity of ' + pr.name + ' must be a whole number');
     }
     if (!(line.qty > 0)) fail_('Write how many ' + pr.name + ' to send');
+    if ((reserved.qty[pr.id] || 0) > 0 && line.qty > branchQty_(pr.id, from) - (reserved.qty[pr.id] || 0) + 1e-9) fail_('Only unreserved stock can be transferred: ' + pr.name);
     lines.push(line);
   });
   if (!lines.length) fail_('Add at least one product');
@@ -2468,14 +2559,22 @@ function branchReport_(p, user) {
   var add = function (id, k, v) { if (!out[id]) out[id] = blank(); out[id][k] = round_(out[id][k] + v); out.all[k] = round_(out.all[k] + v); };
   var inRange = function (r) { var d = String(r.date).slice(0, 10); return d >= from && d <= to && r.status !== 'cancelled'; };
   all_('Sales').filter(inRange).forEach(function (s) { var b = docBranch_('Sales', s.id); add(b, 'sales', num_(s.total)); add(b, 'sales_count', 1); add(b, 'paid', num_(s.paid)); add(b, 'due', num_(s.due)); add(b, 'profit', num_(s.profit)); });
-  all_('SalesReturns').filter(inRange).forEach(function (r) { add(docBranch_('SalesReturns', r.id), 'returns', num_(r.total)); });
+  all_('SalesReturns').filter(inRange).forEach(function (r) {
+    add(docBranch_('SalesReturns', r.id), 'returns', num_(r.total));
+    // Reverse the profit in the selling branch, even if another branch accepts the return.
+    add(docBranch_('Sales', r.sale_id), 'profit', -returnProfit_(r));
+  });
   all_('Purchases').filter(inRange).forEach(function (r) { var b = docBranch_('Purchases', r.id); add(b, 'purchases', num_(r.total)); add(b, 'purchase_count', 1); });
   all_('Expenses').filter(inRange).forEach(function (r) { add(docBranch_('Expenses', r.id), 'expenses', num_(r.amount)); });
-  var pmap = indexBy_(all_('Products')), transit = { qty: 0, value: 0 };
+  var pmap = indexBy_(all_('Products')), transit = { qty: 0, value: 0 }, serialCosts = {};
+  all_('SerialItems').forEach(function (sn) {
+    if (sn.status !== 'in_stock') return;
+    var k = sn.product_id + '|' + serialBranch_(sn.id); serialCosts[k] = (serialCosts[k] || 0) + num_(sn.cost);
+  });
   branchRows_().rows.forEach(function (r) {
     if (r.key.indexOf('s|') !== 0 || !r.num) return;
     var k = r.key.split('|'), pr = pmap[k[1]]; if (!pr) return;
-    var v = r.num * num_(pr.cost_price);
+    var v = isSerialProduct_(pr) ? (serialCosts[k[1] + '|' + k[2]] || 0) : r.num * num_(pr.cost_price);
     if (k[2] === BRANCH_TRANSIT) { transit.qty = round_(transit.qty + r.num, 4); transit.value = round_(transit.value + v); return; }
     add(k[2], 'stock_qty', r.num); add(k[2], 'stock_value', v);
   });
@@ -3462,6 +3561,7 @@ function repairOpen_(r) { return isServiceJob_(r) ? SERVICE_OPEN.indexOf(r.statu
 function repairRow_(id) {
   var r = all_('Repairs').filter(function (x) { return x.id === id && !isServiceJob_(x); })[0];
   if (!r) fail_('Repair job not found');
+  branchRequire_('Repairs', r.id);
   return r;
 }
 function repairParts_(r) { try { var a = typeof r.parts === 'string' ? JSON.parse(r.parts || '[]') : r.parts; return Array.isArray(a) ? a : []; } catch (e) { return []; } }
@@ -3479,10 +3579,13 @@ function repairOut_(r, sales) {
   return o;
 }
 /** The parts list as stored on the job: real products in stock, the price typed, serials for serial items. */
-function repairReservations_(exceptId) {
+function repairReservations_(exceptId, branchId) {
   var qty = {}, serial = {}, idx = serialIndex_();
   all_('Repairs').forEach(function (job) {
     if (job.id === exceptId || !repairOpen_(job)) return;
+    var tag = branchId ? branchGet_('d|Repairs|' + job.id) : null;
+    // Old releases stored no branch on jobs: keep their reservations conservative until edited/delivered.
+    if (tag && tag.text && tag.text !== branchId) return;
     repairParts_(job).forEach(function (part) {
       qty[part.product_id] = (qty[part.product_id] || 0) + num_(part.qty);
       splitSerials_(part.serials).forEach(function (sn) { var rec = idx[part.product_id + '|' + sn]; if (rec) serial[rec.id] = job.id; });
@@ -3491,7 +3594,8 @@ function repairReservations_(exceptId) {
   return { qty: qty, serial: serial };
 }
 function repairPartsClean_(list, exceptId) {
-  var pmap = indexBy_(all_('Products')), sidx = serialIndex_(), seen = {}, quantities = {}, reserved = repairReservations_(exceptId);
+  var jobTag = exceptId && _branch ? branchGet_('d|Repairs|' + exceptId) : null, bid = jobTag && jobTag.text ? jobTag.text : _branch;
+  var pmap = indexBy_(all_('Products')), sidx = serialIndex_(), seen = {}, quantities = {}, reserved = repairReservations_(exceptId), branchReserved = bid ? repairReservations_(exceptId, bid).qty : {};
   return (list || []).map(function (it) {
     var pr = pmap[it.product_id]; if (!pr || !pr.active) fail_('Part not found or inactive');
     var qty = inventoryQuantity_(it.qty, pr.name); if (qty <= 0) fail_('Invalid quantity for ' + pr.name);
@@ -3499,6 +3603,7 @@ function repairPartsClean_(list, exceptId) {
     var price = round_(it.price); if (price < 0) fail_('Invalid price for ' + pr.name);
     quantities[pr.id] = (quantities[pr.id] || 0) + qty;
     if (!isService_(pr) && quantities[pr.id] > pr.stock - (reserved.qty[pr.id] || 0) + 1e-9) fail_('Only ' + Math.max(0, pr.stock - (reserved.qty[pr.id] || 0)) + ' ' + pr.unit + ' of ' + pr.name + ' available; the rest is reserved for repair or service jobs');
+    if (bid && !isService_(pr) && quantities[pr.id] > branchQty_(pr.id, bid) - (branchReserved[pr.id] || 0) + 1e-9) fail_('Insufficient unreserved stock for ' + pr.name + ' in ' + branchName_(bid));
     var sers = [];
     if (isSerialProduct_(pr)) {
       sers = splitSerials_(it.serials);
@@ -3506,6 +3611,7 @@ function repairPartsClean_(list, exceptId) {
       sers.forEach(function (s) {
         var k = pr.id + '|' + s;
         if (!sidx[k] || sidx[k].status !== 'in_stock') fail_('Serial ' + s + ' is not in stock for ' + pr.name);
+        if (bid && serialBranch_(sidx[k].id) !== bid) fail_('Serial ' + s + ' is in another branch');
         if (reserved.serial[sidx[k].id]) fail_('Serial ' + s + ' is reserved for another repair or service job');
         if (seen[k]) fail_('Duplicate serial ' + s); seen[k] = 1;
       });
@@ -3680,7 +3786,8 @@ function serviceProductNamed_(name, description) {
   return insert_('Products', { sku: '', barcode: '', name: name, category_id: '', subcategory_id: '', brand_id: '', unit: 'pcs', roll_length: 0, cost_price: 0, sale_price: 0, wholesale_price: 0, stock: 0, low_stock: 0, has_warranty: false, warranty_type: '', warranty_days: 0, active: true, created_at: now_(), service: true, description: description || '' });
 }
 /** Hand the device back: a sale invoice for the parts and the charge; the advance is used as credit. */
-function repairDeliver_(p, user) {
+function repairDeliver_(p, user) { return inDocumentBranch_('Repairs', p.id, function () { return repairDeliver_In_(p, user); }); }
+function repairDeliver_In_(p, user) {
   need_(user, 'pos'); // Handover creates a sale and can collect money or discount stock.
   var r = repairRow_(p.id);
   if (!repairOpen_(r)) fail_('Job ' + r.job_no + ' is ' + repairStatusOf_(r));
@@ -3750,6 +3857,7 @@ function serviceTypes_() { var v = null; try { v = JSON.parse(getSetting_('servi
 function serviceRow_(id, user) {
   var r = all_('Repairs').filter(function (x) { return x.id === id && isServiceJob_(x); })[0];
   if (!r) fail_('Service job not found');
+  branchRequire_('Repairs', r.id);
   if (user && user.role === 'technician' && r.technician_id !== user.id) fail_('This service job is not yours');
   return r;
 }
@@ -3899,7 +4007,8 @@ function serviceDoneSms_(r, note) {
 }
 /** Complete: what was used stays on the job (the rest goes back to stock) and becomes a normal sale invoice
  *  together with the service charge. */
-function serviceComplete_(p, user) {
+function serviceComplete_(p, user) { return inDocumentBranch_('Repairs', p.id, function () { return serviceComplete_In_(p, user); }); }
+function serviceComplete_In_(p, user) {
   serviceManager_(user); need_(user, 'pos'); // the invoice can collect money and discount
   var r = serviceRow_(p.id);
   if (!repairOpen_(r)) fail_('Service ' + r.job_no + ' is ' + r.status);
@@ -4216,6 +4325,7 @@ function purchaseWarranty_(p, user) {
 function purchaseDetail_(p) {
   var pur = all_('Purchases').filter(function (x) { return x.id === p.id || x.invoice_no === p.id; })[0];
   if (!pur) fail_('Purchase not found');
+  branchRequire_('Purchases', pur.id);
   var returns = all_('PurchaseReturns').filter(function (r) { return r.purchase_id === pur.id; });
   var prods = indexBy_(all_('Products')), retIds = {}, retQty = {}, retValue = {};
   returns.forEach(function(r) { if (r.status === 'active') retIds[r.id] = true; });
@@ -4386,6 +4496,7 @@ function addDays_(dateStr, days) {
 function saleDetail_(p, user) {
   var s = all_('Sales').filter(function (x) { return x.id === p.id || x.invoice_no === p.id; })[0];
   if (!s) fail_('Invoice not found');
+  branchRequire_('Sales', s.id);
   if (user && !can_(user, 'sales.all') && s.user_id !== user.id) fail_('Permission denied: this invoice belongs to another user');
   var items = all_('SaleItems').filter(function (i) { return i.sale_id === s.id; });
   var customer = s.customer_id ? all_('Customers').filter(function (c) { return c.id === s.customer_id; })[0] || null : null;
@@ -4469,6 +4580,7 @@ function customerHeldReturnCost_(si, quantity) {
 function sreturnCreate_(p, user) {
   var sale = all_('Sales').filter(function (s) { return s.id === p.sale_id; })[0];
   if (!sale || sale.status !== 'active') fail_('Invoice not found or already cancelled');
+  branchRequire_('Sales', sale.id);
   if (!can_(user, 'sales.all') && sale.user_id !== user.id) fail_('Permission denied: this invoice belongs to another user');
   var pmap = indexBy_(all_('Products')), sidx = serialIndex_();
   var sitems = all_('SaleItems').filter(function (i) { return i.sale_id === sale.id; });
@@ -4635,6 +4747,7 @@ function sreturnsList_(p, user, allRows) {
 function preturnCreate_(p, user) {
   var pur = all_('Purchases').filter(function (x) { return x.id === p.purchase_id; })[0];
   if (!pur || pur.status !== 'active') fail_('Purchase not found or cancelled');
+  branchRequire_('Purchases', pur.id);
   var pmap = indexBy_(all_('Products')), sidx = serialIndex_();
   var pitems = all_('PurchaseItems').filter(function (i) { return i.purchase_id === pur.id; });
   var retIds = {}; all_('PurchaseReturns').forEach(function (r) { if (r.purchase_id === pur.id && r.status === 'active') retIds[r.id] = 1; });
@@ -5207,6 +5320,7 @@ function reverse_(p, user) {
   if (!fn) fail_('Unknown transaction type');
   var docTable = { sale: 'Sales', purchase: 'Purchases', sreturn: 'SalesReturns', preturn: 'PurchaseReturns', cpay: 'CustomerLedger', spay: 'SupplierLedger', rebate: 'SupplierLedger', cadjust: 'CustomerLedger', sadjust: 'SupplierLedger', expense: 'Expenses', account: 'AccountTxns' }[p.type];
   var doc = all_(docTable).filter(function (x) { return x.id === p.id; })[0];
+  if (doc) branchRequire_(docTable, doc.id);
   if (doc && doc.date) lockCheck_(doc.date, 'a transaction');
   var r = fn(p, user, reason);
   if (p.type === 'sale') orderSaleCancelled_(p.id, user, reason);
@@ -5280,6 +5394,7 @@ function saleEdit_(p, user) {
   confirmAdmin_(user, p.password);
   var s = all_('Sales').filter(function (x) { return x.id === p.id; })[0];
   if (!s || s.status !== 'active') fail_('Invoice not found or already cancelled');
+  branchRequire_('Sales', s.id);
   if (!can_(user, 'sales.all') && s.user_id !== user.id) fail_('Permission denied: this invoice belongs to another user');
   lockCheck_(s.date, 'an invoice');
   if (all_('SalesReturns').some(function (r) { return r.sale_id === s.id && r.status === 'active'; })) fail_('This invoice has a return. Cancel the return first, or make another return / exchange');
@@ -5328,6 +5443,7 @@ function purchaseEdit_(p, user) {
   confirmAdmin_(user, p.password);
   var pur = all_('Purchases').filter(function (x) { return x.id === p.id; })[0];
   if (!pur || pur.status !== 'active') fail_('Purchase not found or already cancelled');
+  branchRequire_('Purchases', pur.id);
   lockCheck_(pur.date, 'a purchase');
   if (all_('PurchaseReturns').some(function (r) { return r.purchase_id === pur.id && r.status === 'active'; })) fail_('This purchase has a return to the supplier. Cancel the return first');
   var reason = String(p.reason || '').trim().slice(0, 200);
@@ -5706,10 +5822,12 @@ function itemHistory_(p, user) {
   }
   var q = String(p.q || '').trim(); if (!q) fail_('Enter a serial number, barcode or invoice number');
   var ql = q.toLowerCase(), events = all_('ItemEvents'), res = { query: q, kind: 'none', summary: null, items: [], timeline: [], claims: [], returns: [], cards: null };
-  var pmap = indexBy_(all_('Products')), sales = indexBy_(all_('Sales')), purs = indexBy_(all_('Purchases'));
+  var pmap = indexBy_(all_('Products')), sales = indexBy_(all_('Sales')), purs = indexBy_(all_('Purchases').filter(function(d){return branchSees_('Purchases',d.id);}));
   var returnsById = indexBy_(all_('SalesReturns'));
-  function ownSale(s) { return !s || can_(user, 'sales.all') || s.user_id === user.id; }
+  function ownSale(s) { return !s || (branchSees_('Sales', s.id) && (can_(user, 'sales.all') || s.user_id === user.id)); }
   function visibleEv(e) {
+    var table = {sale:'Sales',purchase:'Purchases',sreturn:'SalesReturns',preturn:'PurchaseReturns'}[e.ref_type];
+    if (table && !branchSees_(table,e.ref_id)) return false;
     var sale = e.ref_type === 'sale' ? sales[e.ref_id] : (e.ref_type === 'sreturn' && returnsById[e.ref_id] ? sales[returnsById[e.ref_id].sale_id] : null);
     return ownSale(sale);
   }
@@ -5745,6 +5863,7 @@ function itemHistory_(p, user) {
   // 2) Invoice (sale or purchase)
   var sl = p.exact_product ? null : all_('Sales').filter(function (s) { return s.invoice_no.toLowerCase() === ql; })[0];
   if (sl) {
+    branchRequire_('Sales', sl.id);
     if (!can_(user, 'sales.all') && sl.user_id !== user.id) fail_('Permission denied: this invoice belongs to another user');
     res.kind = 'sale_invoice';
     var its = all_('SaleItems').filter(function (i) { return i.sale_id === sl.id; });
@@ -5761,6 +5880,7 @@ function itemHistory_(p, user) {
   var pu = p.exact_product ? null : all_('Purchases').filter(function (s) { return s.invoice_no.toLowerCase() === ql; })[0]
     || all_('Purchases').filter(function (s) { return s.supplier_invoice && s.supplier_invoice.toLowerCase() === ql; }).sort(function (a, b) { return (b.status === 'active') - (a.status === 'active') || b._row - a._row; })[0];
   if (pu) {
+    branchRequire_('Purchases', pu.id);
     if (!can_(user, 'purchase')) fail_('Permission denied: purchase invoice history');
     res.kind = 'purchase_invoice';
     var pits = all_('PurchaseItems').filter(function (i) { return i.purchase_id === pu.id; });
@@ -5809,7 +5929,7 @@ function historyCards_(kind, x, user) {
   var cx = {
     money: can_(user, 'cost') || can_(user, 'purchase'),
     cost: can_(user, 'cost'),
-    sales: indexBy_(all_('Sales')), purs: indexBy_(all_('Purchases')), pmap: indexBy_(all_('Products')),
+    sales: indexBy_(all_('Sales').filter(function(d){return branchSees_('Sales',d.id);})), purs: indexBy_(all_('Purchases').filter(function(d){return branchSees_('Purchases',d.id);})), pmap: indexBy_(all_('Products')),
     cats: indexBy_(all_('Categories')), brands: indexBy_(all_('Brands')),
     own: function (s) { return !s || can_(user, 'sales.all') || s.user_id === user.id; }
   };
@@ -5967,6 +6087,7 @@ function historyDoc_route_(p, user) {
   if (t === 'sreturn') {
     need_(user, 'sales.return');
     var r = all_('SalesReturns').filter(function (x) { return x.id === id || x.return_no === id; })[0]; if (!r) fail_('Sales return not found');
+    branchRequire_('SalesReturns',r.id);
     var sale = all_('Sales').filter(function (x) { return x.id === r.sale_id; })[0];
     if (sale && !can_(user, 'sales.all') && sale.user_id !== user.id) fail_('Permission denied: this return belongs to another user');
     var acc = r.refund_account_id ? all_('Accounts').filter(function (a) { return a.id === r.refund_account_id; })[0] : null;
@@ -5978,6 +6099,7 @@ function historyDoc_route_(p, user) {
   if (t === 'preturn') {
     need_(user, 'purchase');
     var pr = all_('PurchaseReturns').filter(function (x) { return x.id === id || x.return_no === id; })[0]; if (!pr) fail_('Purchase return not found');
+    branchRequire_('PurchaseReturns',pr.id);
     var acc2 = pr.account_id ? all_('Accounts').filter(function (a) { return a.id === pr.account_id; })[0] : null;
     var sup = pr.supplier_id ? all_('Suppliers').filter(function (x) { return x.id === pr.supplier_id; })[0] : null;
     var po = Object.assign({}, pr); delete po._row; po.account = acc2 ? acc2.name : '';
@@ -7219,6 +7341,7 @@ var ROUTES = {
   'order.return':     r_('pos', orderReturn_, true),
   'order.cancel':     r_('pos', orderCancel_, true),
   'courier.call':     r_(null, courierCall_, true),
+  'courier.reset':    r_('pos', courierReset_, true),
   'sale.detail':      r_('pos', saleDetail_),
   'sale.edit':        r_('pos', function (p, u) { return stripCost_(saleEdit_(p, u), u); }, true),
   'sales.details':    r_('pos', function (p, u) { var ids = Array.isArray(p.ids) ? p.ids : []; if (ids.length > 200) fail_('Export at most 200 invoices per request; use batched export'); if (!ids.length) fail_('Select at least one invoice'); return ids.map(function (id) { return saleDetail_({ id: id }, u); }); }),

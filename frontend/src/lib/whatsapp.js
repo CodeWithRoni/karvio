@@ -1,7 +1,8 @@
+import { roundDecimal } from './round';
 import { splitList } from './format';
 
 export const DEFAULT_WHATSAPP = 'Assalamu Alaikum {name},\nThank you for shopping at {shop}.\nInvoice: {invoice}\nTotal: Tk {total} · Paid: Tk {paid} · Due: Tk {due}\nView / download your invoice:\n{link}\n{shop_phone}';
-const lakh = (v) => (Math.round((Number(v) || 0) * 100) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+const lakh = (v) => (roundDecimal(v, 2)).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
 /** A Bangladeshi mobile number in the form WhatsApp wants (8801XXXXXXXXX); '' when it is not a usable number. */
 export function waNumber(phone) {

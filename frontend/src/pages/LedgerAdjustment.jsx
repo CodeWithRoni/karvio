@@ -1,3 +1,4 @@
+import { roundDecimal } from '../lib/round';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useStore } from '../lib/store';
@@ -28,7 +29,7 @@ const TXT = {
   }
 };
 const blank = (dir = 'ded') => ({ party_id: '', invoice_id: '', date: today(), ref: '', dir, type: '', promised: false, expected: '', amount: '', reason: '', pending_id: '' });
-const r2 = (n) => Math.round(n * 100) / 100;
+const r2 = (n) => roundDecimal(n, 2);
 
 export default function LedgerAdjustment({ kind }) {
   const t = TXT[kind];

@@ -5,7 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {execFileSync} from 'node:child_process';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'frontend/package.json'), 'utf8'));
 // read-cache.mjs and append-logs.mjs check narrow reads, which tracing turns off (it reads the whole shop).
@@ -13,7 +13,7 @@ const files = [...new Set(['test:supabase', 'test:performance'].flatMap(k => [..
   .filter(f => !f.endsWith('/read-cache.mjs') && !f.endsWith('/append-logs.mjs'));
 const out = path.join(root, '.trace-tables.jsonl');
 fs.rmSync(out, {force: true});
-const env = {...process.env, KARVIO_TRACE_OUT: out, NODE_OPTIONS: `--import ${path.join(root, 'scripts/trace-table-preload.mjs')}`};
+const env = {...process.env, KARVIO_TRACE_OUT: out, NODE_OPTIONS: `--import ${pathToFileURL(path.join(root, 'scripts/trace-table-preload.mjs')).href}`};
 for (const f of files) {
   try { execFileSync(process.execPath, [f], {cwd: path.join(root, 'frontend'), env, stdio: 'pipe'}); }
   catch (e) { throw new Error(`${f} failed while tracing:\n${String(e.stderr || e.stdout || e.message).slice(-2000)}`); }
@@ -25,7 +25,7 @@ for (const line of fs.readFileSync(out, 'utf8').split('\n').filter(Boolean))
   for (const [action, tables] of Object.entries(JSON.parse(line))) tables.forEach(t => (merged[action] ||= new Set()).add(t));
 fs.rmSync(out, {force: true});
 const scopePath = path.join(root, 'supabase/functions/karvio-api/scope.mjs');
-const {ROW_SCOPED_ACTIONS, ALWAYS_TABLES, DEFAULT_PRIVATE, APPEND_TABLES} = await import(scopePath);
+const {ROW_SCOPED_ACTIONS, ALWAYS_TABLES, DEFAULT_PRIVATE, APPEND_TABLES} = await import(pathToFileURL(scopePath).href);
 const sorted = Object.entries(merged).sort(([a], [b]) => a.localeCompare(b));
 const hints = Object.fromEntries(sorted
   .filter(([a, s]) => !ROW_SCOPED_ACTIONS.has(a) && a !== 'owner.initialize' && a !== 'ping' && a !== 'reports' && [...s].some(t => !t.startsWith('#')))
