@@ -366,7 +366,7 @@ function requestInfo_(req, user) {
   var id = req.request_id || (req.payload && req.payload.request_id);
   if (!id) return null; // old clients still work; current clients always send a request key
   if (!/^[A-Za-z0-9_-]{12,160}$/.test(String(id))) fail_('Invalid request ID');
-  return { key: 'r_' + textDigest_((user ? user.id : 'public') + '|' + req.action + '|' + id), payload: textDigest_(JSON.stringify(req.payload || {})), action: req.action, user: user ? user.id : 'public' };
+  return { key: 'r_' + textDigest_((user ? user.id : 'public') + '|' + req.action + '|' + id), payload: textDigest_(JSON.stringify(req.payload || {})), action: req.action, user: user ? user.id : 'public', branch: _branch || '' };
 }
 function retryError_(message) { var e = new Error(message); e.retryable = true; e.uncertain = true; return e; }
 
@@ -769,8 +769,9 @@ function login_(p) {
   // Branch chosen on the sign-in screen: staff fixed to a branch can only sign in to their own one.
   var branch = '';
   if (branchesOn_()) {
-    var fixed = userBranches_()[u.id], asked = String(p.branch || '');
-    if (fixed && branchActive_(fixed)) { if (asked && asked !== fixed) fail_('You work in ' + branchName_(fixed) + '. Choose that branch to sign in'); branch = fixed; }
+    var fixed = branchFixed_(u), asked = String(p.branch || '');
+    branchClosedFail_(u);
+    if (fixed) { if (asked && asked !== fixed) fail_('You work in ' + branchName_(fixed) + '. Choose that branch to sign in'); branch = fixed; }
     else if (asked) { if (!branchActive_(asked)) fail_('Choose an open branch'); branch = asked; }
     else branch = branchDefault_();
   }
@@ -1742,7 +1743,7 @@ function shiftFigures_(s, endRow) {
   var lines = {}, totIn = 0, totOut = 0;
   all_('AccountTxns').forEach(function (t) {
     if (t.account_id !== s.account_id || t.voided || t._row <= s.start_row || (endRow && t._row > endRow) || isCashCount_(t)) return;
-    if (s.mode !== 'shared' && t.user !== s.user) return;
+    if (s.mode !== 'shared' && shiftNames_(s).indexOf(t.user) < 0) return;
     var a = num_(t.amount), key = (DAY_CLOSE_GROUPS[t.ref_type] ? t.ref_type : 'other') + ':' + t.direction;
     var l = lines[key] = lines[key] || { type: t.ref_type || 'other', label: DAY_CLOSE_GROUPS[t.ref_type] || 'Other', direction: t.direction, amount: 0, count: 0 };
     l.amount = round_(l.amount + a); l.count++;
@@ -1775,6 +1776,17 @@ function shiftAccounts_() {
     .map(function (a) { return { id: a.id, name: a.name, type: a.type, last_counted: last[a.id] === undefined ? null : last[a.id] }; });
 }
 function shiftView_(s) { return Object.assign({}, s, shiftFigures_(s)); }
+/** Money is booked under the user's name, so a cashier renamed during an open shift keeps every name the shift knew. */
+function shiftNames_(s) { return Array.isArray(s.user_names) && s.user_names.length ? s.user_names : [s.user]; }
+function shiftRenamed_(userId, name) {
+  var open = openShifts_(), changed = false;
+  open.forEach(function (s) {
+    if (s.user_id !== userId) return;
+    var names = shiftNames_(s).slice(); if (names.indexOf(name) < 0) names.push(name);
+    s.user_names = names; s.user = name; changed = true;
+  });
+  if (changed) saveOpenShifts_(open);
+}
 function shiftMine_(p, user) {
   shiftNeed_(user);
   var mine = shiftFor_(user);
@@ -1891,8 +1903,13 @@ function orderFind_(id) {
   var all = orderRows_(), row = all.rows.filter(function (r) { return r.id === String(id || ''); })[0];
   if (!row) fail_('Order not found');
   var o = orderParse_(row); if (!o) fail_('This order is damaged and cannot be opened');
+  if (!orderSees_(o)) fail_('Permission denied: this order belongs to another branch');
   return { all: all, row: row, o: o };
 }
+/** An order belongs to the branch of its invoice; before the invoice, to the branch it was taken in.
+ *  Orders saved before branches were tracked on them stay visible to everyone until they get an invoice. */
+function orderBranch_(o) { return o.sale_id ? docBranch_('Sales', o.sale_id) : String(o.branch || ''); }
+function orderSees_(o) { var f = _reqUser ? branchFixed_(_reqUser) : '', b = f ? orderBranch_(o) : ''; return !f || !b || b === f; }
 function orderWrite_(all, row, o) {
   var copy = Object.assign({}, o); delete copy.id; delete copy.sale_status; delete copy.due_now;
   var json = JSON.stringify(copy);
@@ -1955,7 +1972,7 @@ function orderSave_(p, user) {
     if (o.status !== 'new') fail_('Only a new order can be changed. This one is ' + o.status);
     Object.assign(o, clean); o.updated_at = now_(); o.updated_by = user.name;
   } else {
-    o = Object.assign({ id: uid_(), no: nextNo_('seq_online_order', 'OO-'), date: today_(), created_at: now_(), created_by: user.name, history: [] }, clean);
+    o = Object.assign({ id: uid_(), no: nextNo_('seq_online_order', 'OO-'), date: today_(), created_at: now_(), created_by: user.name, branch: _branch || '', history: [] }, clean);
     orderLog_(o, user, 'new', 'Order taken from ' + clean.source);
     found = { all: orderRows_(), row: null };
   }
@@ -2019,7 +2036,11 @@ function orderSettle_(p, user) {
   var collected = p.collected === undefined || p.collected === '' ? o.cod : round_(Number(p.collected));
   if (!isFinite(collected) || collected < 0 || collected > o.cod + 0.005) fail_('The collected amount must be between 0 and ' + o.cod);
   var date = bookDate_(p.date, 'courier payment');
-  if (collected > 0) customerPayment_({ customer_id: o.customer_id, amount: collected, account_id: acc.id, date: date, note: 'COD ' + o.no + ' via ' + (o.courier ? o.courier.label : 'courier') }, user);
+  if (collected > 0) {
+    _mem.__payForSale = o.sale_id || '';
+    try { customerPayment_({ customer_id: o.customer_id, amount: collected, account_id: acc.id, date: date, note: 'COD ' + o.no + ' via ' + (o.courier ? o.courier.label : 'courier') }, user); }
+    finally { delete _mem.__payForSale; }
+  }
   if (charge > 0) {
     var cats = []; try { cats = JSON.parse(getSetting_('expense_categories', '[]')); } catch (e) {}
     if (!Array.isArray(cats)) cats = [];
@@ -2096,7 +2117,7 @@ function orderView_(o, sales) {
 }
 function ordersList_(p, user) {
   var sales = indexBy_(all_('Sales'));
-  var list = orderRows_().rows.map(orderParse_).filter(Boolean).map(function (o) { return orderView_(o, sales); })
+  var list = orderRows_().rows.map(orderParse_).filter(function (o) { return o && orderSees_(o); }).map(function (o) { return orderView_(o, sales); })
     .sort(function (a, b) { return String(b.created_at).localeCompare(String(a.created_at)); });
   var counts = {}; ORDER_STATUSES.forEach(function (s) { counts[s] = 0; });
   var withCourier = 0, toSettle = 0;
@@ -2334,12 +2355,20 @@ function accountBranches_() { return jsonSetting_('account_branches', {}); }
 /** The branch a request works in: the user's own branch, or the one they chose, or the first branch. */
 function branchFor_(user, asked) {
   if (!branchesOn_()) return '';
-  var fixed = user ? userBranches_()[user.id] : '';
-  if (fixed && branchActive_(fixed)) return fixed;
+  var fixed = branchFixed_(user);
+  if (fixed) return fixed; // a closed branch too: such staff are stopped in doPost until an admin moves them
   if (asked && branchActive_(String(asked))) return String(asked);
   return branchDefault_();
 }
-function branchFixed_(user) { var f = user ? userBranches_()[user.id] : ''; return f && branchActive_(f) ? f : ''; }
+/** The branch a user is fixed to. Staff stay fixed to it even after it is closed (they cannot work until an admin
+ *  moves them); an admin fixed to a closed branch works as an unassigned admin, so the shop is never locked out. */
+function branchFixed_(user) {
+  var f = user ? userBranches_()[user.id] : '';
+  if (!f || !branchesAll_().some(function (b) { return b.id === f; })) return '';
+  return branchActive_(f) || user.role !== 'admin' ? f : '';
+}
+function branchClosedFor_(user) { var f = branchesOn_() ? branchFixed_(user) : ''; return f && !branchActive_(f) ? f : ''; }
+function branchClosedFail_(user) { var f = branchClosedFor_(user); if (f) fail_(branchName_(f) + ' is closed. Ask an admin to move you to an open branch'); }
 function branchRows_() {
   if (_mem.__branchRows) return _mem.__branchRows;
   var sh = privateSheet_(BRANCH_SHEET), last = sh.getLastRow(), idx = {}, rows = [];
@@ -2439,6 +2468,8 @@ function branchSave_(p, user) {
       var left = 0; branchRows_().rows.forEach(function (r) { if (r.key.indexOf('s|') === 0 && r.key.split('|')[2] === b.id) left += Math.abs(r.num); });
       if (left > 1e-9) fail_(b.name + ' still has stock. Move it to another branch first');
       if (branchTransfers_().some(function (t) { return t.status === 'in_transit' && (t.from === b.id || t.to === b.id); })) fail_(b.name + ' has a transfer on the way');
+      var ub = userBranches_(), staff = all_('Users').filter(function (u) { return u.active && u.role !== 'admin' && ub[u.id] === b.id; }).map(function (u) { return u.name; });
+      if (staff.length) fail_(b.name + ' still has staff: ' + staff.slice(0, 5).join(', ') + (staff.length > 5 ? '…' : '') + '. Move them to another branch first');
       if (list.filter(function (x) { return x.active && x.id !== b.id; }).length === 0) fail_('Keep at least one branch open');
     }
     Object.assign(b, row);
@@ -2468,7 +2499,7 @@ function branchAssign_(p, user) {
   Object.keys(p.users || {}).forEach(function (uid) {
     var bid = String(p.users[uid] || '');
     if (!all_('Users').some(function (u) { return u.id === uid; })) fail_('User not found');
-    if (bid && !branchActive_(bid)) fail_('Choose an open branch');
+    if (bid && !branchActive_(bid) && ub[uid] !== bid) fail_('Choose an open branch');
     if (bid) ub[uid] = bid; else delete ub[uid];
   });
   Object.keys(p.accounts || {}).forEach(function (aid) {
@@ -2661,7 +2692,7 @@ function userSave_(p, user) {
   } else { row.access_limit = false; row.access_from = ''; row.access_to = ''; row.access_days = ''; }
   // Branch (admins only, when branches are on): the same setting as Settings → Branches, so both places agree.
   var setBranch = p.branch_id !== undefined && user.role === 'admin' && branchesOn_(), bid = String(p.branch_id || '');
-  if (setBranch && bid && !branchActive_(bid)) fail_('Choose an open branch');
+  if (setBranch && bid && !branchActive_(bid) && !(p.id && userBranches_()[p.id] === bid)) fail_('Choose an open branch');
   var keepBranch = function (u) {
     if (!setBranch) return u;
     var ub = userBranches_(); if (bid) ub[u.id] = bid; else delete ub[u.id];
@@ -2671,7 +2702,10 @@ function userSave_(p, user) {
     if (p.id === user.id && !row.active) fail_('You cannot disable your own account');
     if (p.id === user.id && user.role === 'admin' && row.role !== 'admin') fail_('You cannot demote your own account');
     if (p.password) { requirePassword_(p.password); row.salt = uid_(); row.password_hash = pwHash_(row.salt, p.password); }
-    return keepBranch(pubUser_(update_('Users', p.id, row)));
+    var oldName = (all_('Users').filter(function (x) { return x.id === p.id; })[0] || {}).name; // read before update_ changes the row
+    var saved = update_('Users', p.id, row);
+    if (oldName !== undefined && row.name !== oldName) shiftRenamed_(p.id, row.name);
+    return keepBranch(pubUser_(saved));
   }
   requirePassword_(p.password);
   row.salt = uid_(); row.password_hash = pwHash_(row.salt, p.password); row.created_at = now_();
@@ -3665,7 +3699,7 @@ function repairsMeta_() {
 function repairsList_(p) {
   var q = String(p.q || '').toLowerCase(), sales = indexBy_(all_('Sales'));
   return all_('Repairs').filter(function (r) {
-    if (isServiceJob_(r)) return false;
+    if (isServiceJob_(r) || !branchSees_('Repairs', r.id)) return false;
     if (p.status && repairStatusOf_(r) !== p.status) return false;
     if (p.technician_id && r.technician_id !== p.technician_id) return false;
     if (!inRange_(r.date, p.from, p.to)) return false;
@@ -3769,7 +3803,7 @@ function repairSeen_(p, user) {
 }
 /** Dashboard alerts for admins: jobs the technician marked Completed or Failed that no admin has marked Seen. */
 function repairAlerts_() {
-  return all_('Repairs').filter(function (r) { var s = repairStatusOf_(r); return !isServiceJob_(r) && (s === 'Completed' || s === 'Failed') && !r.alert_seen; })
+  return all_('Repairs').filter(function (r) { var s = repairStatusOf_(r); return !isServiceJob_(r) && (s === 'Completed' || s === 'Failed') && !r.alert_seen && branchSees_('Repairs', r.id); })
     .sort(function (a, b) { return String(b.result_at || b.updated_at).localeCompare(String(a.result_at || a.updated_at)) || String(b.job_no).localeCompare(String(a.job_no)); })
     .map(function (r) {
       var o = repairOut_(r);
@@ -3906,7 +3940,7 @@ function serviceTypeDelete_(p, user) {
 function servicesList_(p, user) {
   var q = String(p.q || '').toLowerCase(), sales = indexBy_(all_('Sales'));
   return all_('Repairs').filter(function (r) {
-    if (!isServiceJob_(r)) return false;
+    if (!isServiceJob_(r) || !branchSees_('Repairs', r.id)) return false;
     if (user.role === 'technician' && r.technician_id !== user.id) return false;
     if (p.status && r.status !== p.status) return false;
     if (p.technician_id && r.technician_id !== p.technician_id) return false;
@@ -4836,14 +4870,17 @@ function preturnsList_(p, user, allRows) {
 /* ============================================================================
  *  16. PAYMENTS (customer due collection / supplier payments) & EXPENSES
  * ========================================================================== */
+/** _mem.__payForSale (set by the server only, never from the browser): the invoice this money is for — it is
+ *  settled first (a courier's cash on delivery pays its own parcel); the rest pays older dues as usual. */
 function customerPayment_(p, user) {
+  var forSaleId = _mem.__payForSale || '';
   var c = all_('Customers').filter(function (x) { return x.id === p.customer_id; })[0]; if (!c) fail_('Customer not found');
   var amt = round_(p.amount); if (amt <= 0) fail_('Amount must be greater than 0');
   var acc = all_('Accounts').filter(function (a) { return a.id === p.account_id && a.active; })[0]; if (!acc) fail_('Select an account');
   var pay = p.direction === 'pay'; // pay = we hand money to the customer (refund of advance)
   var availableAdvance = round_(Math.max(-(customerBalances_()[c.id] || 0), 0));
   if (pay && amt > availableAdvance + 0.005) fail_('Advance refund cannot exceed available advance (' + availableAdvance + '). Refresh the customer balance');
-  var ref = uid_(), date = bookDate_(p.date, 'payment'), no = nextNo_('seq_cpay', 'CP-');
+  var ref = (!pay && forSaleId ? PAY_FOR_PREFIX + forSaleId + '|' : '') + uid_(), date = bookDate_(p.date, 'payment'), no = nextNo_('seq_cpay', 'CP-');
   acctTxn_(acc.id, pay ? 'out' : 'in', amt, 'cpay', ref, (pay ? 'Paid to ' : 'Collection from ') + c.name, user, date);
   var row = insert_('CustomerLedger', { date: date, customer_id: c.id, type: pay ? 'refund' : 'payment', ref_id: ref, ref_no: no, debit: pay ? amt : 0, credit: pay ? 0 : amt, note: (p.note || '') + ' [' + acc.name + ']', voided: false });
   audit_(user, 'customer_payment', { customer: c.name, amount: amt });
@@ -5278,6 +5315,7 @@ function recurringRecord_(p, user) {
 function expenseUpdate_(p, user) {
   var e = all_('Expenses').filter(function (x) { return x.id === p.id; })[0];
   if (!e) fail_('Expense not found');
+  branchRequire_('Expenses', e.id);
   if (e.status !== 'active') fail_('A cancelled expense cannot be edited');
   lockCheck_(e.date, 'an expense');
   var amt = round_(p.amount); if (!(amt > 0)) fail_('Amount must be greater than 0');
@@ -5322,7 +5360,10 @@ function reverse_(p, user) {
   var doc = all_(docTable).filter(function (x) { return x.id === p.id; })[0];
   if (doc) branchRequire_(docTable, doc.id);
   if (doc && doc.date) lockCheck_(doc.date, 'a transaction');
-  var r = fn(p, user, reason);
+  // Stock, serials and money go back in the branch that made the document, whichever branch the user works in.
+  var hereBranch = _branch, r;
+  if (_branch && doc && BRANCH_DOC_TABLES.indexOf(docTable) >= 0 && docTable !== 'Repairs') _branch = docBranch_(docTable, doc.id);
+  try { r = fn(p, user, reason); } finally { _branch = hereBranch; }
   if (p.type === 'sale') orderSaleCancelled_(p.id, user, reason);
   syncSerialCost_(null);
   audit_(user, 'reverse_' + p.type, { id: p.id, reason: reason });
@@ -5400,6 +5441,8 @@ function saleEdit_(p, user) {
   if (all_('SalesReturns').some(function (r) { return r.sale_id === s.id && r.status === 'active'; })) fail_('This invoice has a return. Cancel the return first, or make another return / exchange');
   if (all_('WarrantyClaims').some(function (c) { return c.sale_id === s.id; })) fail_('This invoice has warranty claims, so it cannot be edited');
   if (all_('Repairs').some(function (j) { return j.sale_id === s.id; })) fail_('This invoice belongs to a repair or service job. Cancel it and complete the job again');
+  var settledOrder = orderRows_().rows.map(orderParse_).filter(function (o) { return o && o.sale_id === s.id && o.settlement; })[0];
+  if (settledOrder) fail_('This invoice belongs to online order ' + settledOrder.no + ', and the courier payment is already settled. Use a return or a customer ledger adjustment instead');
   var reason = String(p.reason || '').trim().slice(0, 200);
   s = Object.assign({}, s); // a copy: the row itself gets the old-copy number below
   var hereBranch = _branch; if (_branch) _branch = docBranch_('Sales', s.id); // the invoice stays in its own branch
@@ -6185,6 +6228,8 @@ function collectionReminders_(sales, today, withCustomers) {
  * The open amounts minus any unapplied advance always equal the customer's ledger balance.
  * Returns { sale_id: amount still due } for every invoice; cancelled invoices are 0.
  */
+var PAY_FOR_PREFIX = 'for:';
+function payForSale_(ref) { var m = /^for:([^|]+)\|/.exec(String(ref || '')); return m ? m[1] : ''; }
 function saleOpenDues_() {
   if (!_txn && _mem.__openDues) return _mem.__openDues;
   var out = {}, active = {}, returnSale = {}, state = {}, custs = indexBy_(all_('Customers'));
@@ -6216,8 +6261,9 @@ function saleOpenDues_() {
     }
     var amt = round_(num_(l.credit) - num_(l.debit));
     if (amt > 0) {
-      if (l.type === 'sreturn' || l.type === 'adjust') {
-        var own = x.open.filter(function (o) { return o.id && o.id === (l.type === 'adjust' ? l.ref_id : returnSale[l.ref_id]); })[0];
+      var forSale = l.type === 'payment' ? payForSale_(l.ref_id) : '';
+      if (l.type === 'sreturn' || l.type === 'adjust' || forSale) {
+        var own = x.open.filter(function (o) { return o.id && o.id === (forSale || (l.type === 'adjust' ? l.ref_id : returnSale[l.ref_id])); })[0];
         if (own) { var take = Math.min(own.left, amt); own.left = round_(own.left - take); amt = round_(amt - take); }
       }
       x.pool = round_(x.pool + amt);
@@ -6752,8 +6798,8 @@ function dashboard_(p, user) {
   // "Needs attention": finished repair jobs (fixed or failed) still waiting for the customer to collect them.
   if (can_(user, 'expenses')) out.recurring_due = recurringList_().due;
   if (can_(user, 'suppliers')) { var waiting = rebatesPending_(); out.rebates_pending = { count: waiting.length, amount: round_(sum_(waiting, function (r) { return r.amount; })) }; }
-  if (can_(user, 'service') && user.role !== 'technician') out.services_done = all_('Repairs').filter(function (r) { return isServiceJob_(r) && r.status === 'Work done'; }).length;
-  if (can_(user, 'repairs')) out.repairs_waiting = all_('Repairs').filter(function (r) { var st = repairStatusOf_(r); return !isServiceJob_(r) && (st === 'Completed' || st === 'Failed'); }).length;
+  if (can_(user, 'service') && user.role !== 'technician') out.services_done = all_('Repairs').filter(function (r) { return isServiceJob_(r) && r.status === 'Work done' && branchSees_('Repairs', r.id); }).length;
+  if (can_(user, 'repairs')) out.repairs_waiting = all_('Repairs').filter(function (r) { var st = repairStatusOf_(r); return !isServiceJob_(r) && (st === 'Completed' || st === 'Failed') && branchSees_('Repairs', r.id); }).length;
   out.top_products = topProducts_(sales, today, showCost);
   out.recent = sales.slice(-8).reverse().map(function (s) { return { id: s.id, invoice_no: s.invoice_no, customer_name: s.customer_name, total: s.total, due: s.due, date: s.date }; });
 
@@ -7423,12 +7469,14 @@ function doPost(e) {
     var user = null, info = null;
     var run = function () {
       _branch = ''; _reqUser = null;
-      if (!route.public) { user = authUser_(req.token); need_(user, route.perm); _reqUser = user; _branch = branchFor_(user, req.branch); }
+      if (!route.public) { user = authUser_(req.token); need_(user, route.perm); if (req.action !== 'logout') branchClosedFail_(user); _reqUser = user; _branch = branchFor_(user, req.branch); }
       if (route.write) {
         info = requestInfo_(req, user);
         var saved = info && findReceipt_(info.key);
         if (saved) {
           if (saved.meta.payload !== info.payload) fail_('This request ID was already used with different data. Start a new operation.');
+          // Saved while working in another branch: say so instead of showing that branch's document as if it were made here.
+          if (saved.meta.branch !== undefined && String(saved.meta.branch || '') !== String(_branch || '')) fail_('This was already saved in ' + (saved.meta.branch ? branchName_(saved.meta.branch) : 'the shop before branches') + '. Switch to that branch to see it, or start a new one here.');
           return saved.data;
         }
       }
