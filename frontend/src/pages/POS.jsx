@@ -20,6 +20,13 @@ export default function POS() {
   const draft = loadPosDraft();
   const shiftQ = useApi('shift.mine', {}, []);
   const [openingShift, setOpeningShift] = useState(false);
+  const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 640px)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)');
+    const on = () => setNarrow(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
   const [cart, setCart] = useState(draft?.cart || []);
   const [customerId, setCustomerId] = useState(draft?.customerId || '');
   const [discount, setDiscount] = useState(draft?.discount || '');
@@ -254,7 +261,7 @@ export default function POS() {
       <div className="pos-left">
         <div className="row">
           {sh?.shift && <Link to="/shifts" className="sh-pos-badge" title="Shift & day close"><Badge tone="ok">Shift open · {sh.shift.user} · since {fdatetime(sh.shift.opened_at)}</Badge></Link>}
-          <div style={{ flex: 1 }}><ProductSearch camera onPick={(p) => add(p)} onCode={addBySerial} placeholder="Search product by serial, name, model or brand (F2)" inputRef={searchRef} autoFocus /></div>
+          <div style={{ flex: 1 }}><ProductSearch camera onPick={(p) => add(p)} onCode={addBySerial} placeholder={narrow ? 'Search product by serial or name' : 'Search product by serial, name, model or brand (F2)'} inputRef={searchRef} autoFocus /></div>
           <Tabs tabs={[['retail', 'Retail'], ['wholesale', 'Wholesale']]} value={tier} onChange={changeTier} />
           <Btn onClick={hold} disabled={!cart.length} title="Put this sale aside and serve the next customer (F7)">Hold</Btn>
           <Btn onClick={() => setShowHolds(true)} disabled={!holds.length} className={holds.length ? 'held-on' : ''} title="Sales on hold">Held{holds.length ? ` · ${holds.length}` : ''}</Btn>
