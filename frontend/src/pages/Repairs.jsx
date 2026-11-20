@@ -30,6 +30,7 @@ export default function Repairs() {
   const jobsRef = useRef(null);
   const showJobs = () => requestAnimationFrame(()=>jobsRef.current?.scrollIntoView({block:'start'}));
   const [period,setPeriod]=useState(null);
+  const [focus,setFocus]=useState('month');
   const meta = useApi('repairs.meta', {}, [], {refreshMs:60000});
   const list = useApi('repairs.list', {}, [], {refreshMs:15000});
   const periods=repairPeriods(meta.data?.today);
@@ -66,18 +67,28 @@ export default function Repairs() {
       <>
         <p className="muted">By received date · week starts Saturday · Last 3/6 Months includes the current month. Pending = Received; Complete = Completed. Delivered and Cancelled remain available in each period’s list.</p>
         {meta.loading&&!meta.data&&<p role="status">Loading repair dashboard…</p>}
-        <div className="repair-dashboard">
-          {periods.map(p=>{
-            const jobs=jobsInPeriod(scope,p),counts=repairCounts(jobs);
-            return <section className="repair-period" key={p.key} aria-label={p.label}>
-              <button type="button" className="repair-period-title" onClick={()=>{setPeriod(p);setTab('all');showJobs();}} aria-label={`View ${p.label} repair jobs`}>
-                <h2>{p.label}</h2><small>{fdate(p.from)}{p.from!==p.to?` – ${fdate(p.to)}`:''}</small>
-              </button>
-              <div className="repair-period-counts">{[['pending','Pending','Received'],['complete','Complete','Completed'],['failed','Failed','Failed']].map(([key,label,status])=><button type="button" key={key} className={`repair-count repair-${key}`} aria-label={`${p.label} ${label}: ${counts[key]}`} onClick={()=>{setPeriod(p);setTab(status);showJobs();}}><span>{label}</span><strong>{list.loading&&!list.data?'—':counts[key]}</strong></button>)}</div>
-              <button type="button" className="repair-period-footer" onClick={()=>{setPeriod(p);setTab('all');showJobs();}}>View {jobs.length} jobs →</button>
-            </section>;
-          })}
-        </div>
+        {(()=>{
+          const f=periods.find(p=>p.key===focus)||periods[2];
+          if(!f)return null;
+          const busy=list.loading&&!list.data;
+          const jobs=jobsInPeriod(scope,f),c=repairCounts(jobs),total=jobs.length;
+          const open=(status)=>{setPeriod(f);setTab(status);showJobs();};
+          const w=(n)=>total?`${n/total*100}%`:'0%';
+          return <div className="repair-dashboard" aria-label="Repair overview">
+            <div className="rd-seg" role="group" aria-label="Repair period">
+              {periods.map(p=>{const n=jobsInPeriod(scope,p).length;return <button type="button" key={p.key} className={p.key===f.key?'on':''} aria-pressed={p.key===f.key} aria-label={`${p.label}: ${busy?'—':n} jobs`} onClick={()=>setFocus(p.key)}>{p.label}<em>{busy?'—':n}</em></button>;})}
+            </div>
+            <div className="rd-body">
+              <div className="rd-total">
+                <small>{f.label} · {fdate(f.from)}{f.from!==f.to?` – ${fdate(f.to)}`:''}</small>
+                <strong>{busy?'—':total} <span>jobs</span></strong>
+                <div className="rd-bar" aria-hidden="true"><i className="p" style={{width:w(c.pending)}} /><i className="c" style={{width:w(c.complete)}} /><i className="f" style={{width:w(c.failed)}} /><i className="d" style={{width:w(c.delivered)}} /></div>
+              </div>
+              {[['pending','Pending','Received'],['complete','Complete','Completed'],['failed','Failed','Failed'],['delivered','Delivered','Delivered']].map(([key,label,status])=><button type="button" key={key} className={`rd-count rd-${key}`} aria-label={`${f.label} ${label}: ${c[key]}`} onClick={()=>open(status)}><span>{label}</span><strong>{busy?'—':c[key]}</strong></button>)}
+              <div className="rd-go"><Btn kind="primary" onClick={()=>open('all')} aria-label={`View ${f.label} repair jobs`}>View {busy?'':total+' '}jobs →</Btn></div>
+            </div>
+          </div>;
+        })()}
       </>
       <section className="repair-jobs-section" ref={jobsRef} aria-label="Repair job list">
       <div className="repair-list-heading"><div><h2>Repair jobs</h2><p className="muted">{activePeriod?`${activePeriod.label} · Received ${fdate(activePeriod.from)} – ${fdate(activePeriod.to)}`:'All received dates'}</p></div><Btn size="sm" onClick={()=>{setPeriod(null);setTech('');setTab('all');}}>Reset filters</Btn></div>

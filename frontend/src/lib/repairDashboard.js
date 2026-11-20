@@ -19,5 +19,5 @@ export function jobsInPeriod(jobs,period) {
  return jobs.filter(j=>{const date=String(j.date||'').slice(0,10);return date&&date>=period.from&&date<=period.to;});
 }
 export function repairCounts(jobs) {
- return {pending:jobs.filter(j=>j.status==='Received').length,complete:jobs.filter(j=>j.status==='Completed'||j.status==='Ready').length,failed:jobs.filter(j=>j.status==='Failed').length};
+ return {pending:jobs.filter(j=>j.status==='Received').length,complete:jobs.filter(j=>j.status==='Completed'||j.status==='Ready').length,failed:jobs.filter(j=>j.status==='Failed').length,delivered:jobs.filter(j=>j.status==='Delivered').length};
 }

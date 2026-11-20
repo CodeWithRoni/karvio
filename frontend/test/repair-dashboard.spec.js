@@ -8,7 +8,8 @@ test('repair dashboard has eight periods and drills from status counts into a jo
  const meta=await call('repairs.meta'),jobs=await call('repairs.list');
  const completed=jobs.filter(j=>j.date===meta.today&&j.status==='Completed').length;
  await page.addInitScript(({endpoint,token})=>{localStorage.setItem('erp_api_config',JSON.stringify({scriptUrl:endpoint}));localStorage.setItem('erp_token',token);},{endpoint,token});
- await page.goto('/#/repairs');await expect(page.locator('.repair-period')).toHaveCount(8);
+ await page.goto('/#/repairs');await expect(page.locator('.rd-seg button')).toHaveCount(8);
+ await page.locator('.rd-seg').getByRole('button',{name:/^Today: /}).click();
  await expect(page.getByRole('button',{name:`Today Complete: ${completed}`,exact:true})).toBeVisible();
  await expect(page.locator('.repair-dashboard')).not.toContainText('All time');
  await expect(page.getByRole('region',{name:'Repair job list',exact:true})).toBeVisible();
@@ -20,8 +21,9 @@ test('repair dashboard has eight periods and drills from status counts into a jo
  await page.locator('table').getByText(job.job_no,{exact:true}).click();
  const detail=page.getByRole('dialog',{name:`Repair job ${job.job_no}`,exact:true});await expect(detail).toContainText('Dashboard laptop');
  await detail.getByRole('button',{name:'Close',exact:true}).click();
- await expect(page.locator('.repair-period')).toHaveCount(8);
+ await expect(page.locator('.rd-seg button')).toHaveCount(8);
  await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
+ await page.locator('.rd-seg').getByRole('button',{name:/^Last Month: /}).click();
  await page.getByRole('button',{name:'View Last Month repair jobs',exact:true}).click();
  await expect(page.getByText(/Last Month · Received/)).toBeVisible();
  await expect(page.getByLabel('Received period',{exact:true})).toHaveValue('lastMonth');
