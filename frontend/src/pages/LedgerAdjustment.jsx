@@ -18,13 +18,13 @@ const TXT = {
     title: 'Customer Ledger Adjust', who: 'Customer', invoice: 'Sale invoice', report: '/customer-ledger-report', prefix: 'CLA', rev: 'cadjust',
     sub: 'Raise or lower what a customer owes — write off a small leftover due, give a late discount or correct a mistake. No cash, bank or MFS money moves.',
     add: 'Customer owes more', ded: 'Customer owes less — write off / discount', owes: 'owes', adv: 'advance',
-    effect: 'A deduction shows as Customer dues written off in the profit report. Cancelling needs the admin password.'
+    effect: 'A deduction shows as Customer dues written off in the profit report.'
   },
   supplier: {
     title: 'Supplier Ledger Adjust', who: 'Supplier', invoice: 'Purchase invoice', report: '/supplier-ledger-report', prefix: 'SLA', rev: 'sadjust',
     sub: 'Raise or lower what we owe a supplier — rebates, discounts and corrections. No cash, bank or MFS money moves.',
     add: 'We owe the supplier more', ded: 'We owe less — rebate / discount', owes: 'we owe', adv: 'advance paid',
-    effect: 'A deduction shows as Supplier rebates in the profit report. Cancelling needs the admin password.'
+    effect: 'A deduction shows as Supplier rebates in the profit report.'
   }
 };
 const blank = (dir = 'ded') => ({ party_id: '', invoice_id: '', date: today(), ref: '', dir, type: '', promised: false, expected: '', amount: '', reason: '', pending_id: '' });
@@ -83,16 +83,15 @@ export default function LedgerAdjustment({ kind }) {
         {f.pending_id && <div className="la-banner">Receiving a promised rebate — saving books it and removes it from the promised list. <button className="link" onClick={clear}>Cancel</button></div>}
         <div className="la-grid">
           <div className="la-col">
-            <Row label="Adjustment no"><input className="la-ro" value={`${t.prefix}-… (given when saved)`} disabled aria-label="Adjustment no" /></Row>
             <Row label={t.who} req><PartyPicker kind={kind} value={f.party_id} onChange={(id) => set({ party_id: id, invoice_id: '', pending_id: '' })} extra={f.party_id && opts.data ? side(bal) : ''} label={t.who} /></Row>
-            <Row label={t.invoice} hint="Optional — the invoice this adjustment is for.">
+            <Row label={t.invoice}>
               <select value={f.invoice_id} onChange={(e) => set({ invoice_id: e.target.value })} disabled={!f.party_id} aria-label={t.invoice}>
-                <option value="">Not for one invoice</option>
+                <option value="">Not for one invoice (optional)</option>
                 {(opts.data?.invoices || []).map((i) => <option key={i.id} value={i.id}>{i.invoice_no}{i.supplier_invoice ? ` (${i.supplier_invoice})` : ''} · {fdate(i.date)} · total {money(i.total, false)} · due {money(i.due, false)}</option>)}
               </select>
             </Row>
             <Row label="Adjustment date" req><DateInput value={f.date} max={today()} required onChange={(e) => set({ date: e.target.value })} aria-label="Adjustment date" /></Row>
-            <Row label="Reference no"><input value={f.ref} maxLength={60} onChange={(e) => set({ ref: e.target.value })} placeholder={kind === 'supplier' ? "Supplier's credit note / letter no" : 'Optional'} aria-label="Reference no" /></Row>
+            {kind === 'supplier' && <Row label="Reference no"><input value={f.ref} maxLength={60} onChange={(e) => set({ ref: e.target.value })} placeholder="Supplier's credit note / letter no" aria-label="Reference no" /></Row>}
           </div>
           <div className="la-col">
             <Row label="Adjustment" req top>
@@ -134,7 +133,6 @@ export default function LedgerAdjustment({ kind }) {
         <ErrorBox error={opts.error} onRetry={opts.reload} />
         <div className="la-actions">
           <p className="la-note">{t.effect}</p><span className="spacer" />
-          <Btn onClick={() => nav('/')}>Close</Btn>
           <Btn onClick={clear}>Clear</Btn>
           <Btn kind="primary" busy={busy} disabled={!canSave} onClick={save}>{promised ? 'Save as promised' : f.pending_id ? 'Save received rebate' : 'Save adjustment'}</Btn>
         </div>
