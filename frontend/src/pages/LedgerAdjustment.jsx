@@ -81,55 +81,53 @@ export default function LedgerAdjustment({ kind }) {
       <section className="card la-card" aria-label="General information">
         <h2 className="la-sec">General information <span className="muted">Fields marked <i className="req">*</i> are required</span></h2>
         {f.pending_id && <div className="la-banner">Receiving a promised rebate — saving books it and removes it from the promised list. <button className="link" onClick={clear}>Cancel</button></div>}
-        <div className="la-grid">
-          <div className="la-col">
-            <Row label={t.who} req><PartyPicker kind={kind} value={f.party_id} onChange={(id) => set({ party_id: id, invoice_id: '', pending_id: '' })} extra={f.party_id && opts.data ? side(bal) : ''} label={t.who} /></Row>
-            <Row label={t.invoice}>
-              <select value={f.invoice_id} onChange={(e) => set({ invoice_id: e.target.value })} disabled={!f.party_id} aria-label={t.invoice}>
-                <option value="">Not for one invoice (optional)</option>
-                {(opts.data?.invoices || []).map((i) => <option key={i.id} value={i.id}>{i.invoice_no}{i.supplier_invoice ? ` (${i.supplier_invoice})` : ''} · {fdate(i.date)} · total {money(i.total, false)} · due {money(i.due, false)}</option>)}
-              </select>
-            </Row>
-            <Row label="Adjustment date" req><DateInput value={f.date} max={today()} required onChange={(e) => set({ date: e.target.value })} aria-label="Adjustment date" /></Row>
-            {kind === 'supplier' && <Row label="Reference no"><input value={f.ref} maxLength={60} onChange={(e) => set({ ref: e.target.value })} placeholder="Supplier's credit note / letter no" aria-label="Reference no" /></Row>}
+        <div className="la-top">
+          <div className="la-dir" role="radiogroup" aria-label="Adjustment">
+            {[['add', 'Addition', t.add], ['ded', 'Deduction', t.ded]].map(([v, l, h]) => (
+              <label key={v} className={`${v} ${f.dir === v ? 'on' : ''} ${f.pending_id ? 'off' : ''}`}>
+                <input type="radio" name="la-dir" value={v} checked={f.dir === v} disabled={!!f.pending_id} onChange={() => set({ dir: v, type: '', promised: false })} />
+                <span><b>{l}</b><small>{h}</small></span>
+              </label>
+            ))}
           </div>
-          <div className="la-col">
-            <Row label="Adjustment" req top>
-              <div className="la-dir" role="radiogroup" aria-label="Adjustment">
-                {[['add', 'Addition', t.add], ['ded', 'Deduction', t.ded]].map(([v, l, h]) => (
-                  <label key={v} className={f.dir === v ? 'on' : ''}>
-                    <input type="radio" name="la-dir" value={v} checked={f.dir === v} disabled={!!f.pending_id} onChange={() => set({ dir: v, type: '', promised: false })} />
-                    <span><b>{l}</b><small>{h}</small></span>
-                  </label>
-                ))}
-              </div>
-            </Row>
-            <Row label="Adjustment type" req>
-              <select value={f.type} onChange={(e) => set({ type: e.target.value })} aria-label="Adjustment type">{Object.entries(types).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
-            </Row>
-            {kind === 'supplier' && lower && !f.pending_id && (
-              <Row label="Received?" req top>
-                <Tabs tabs={[['now', 'Yes — received now'], ['later', 'Not yet — only promised']]} value={f.promised ? 'later' : 'now'} onChange={(v) => set({ promised: v === 'later' })} />
-              </Row>
-            )}
-            {promised && <Row label="Expected by"><DateInput value={f.expected} min={today()} onChange={(e) => set({ expected: e.target.value })} aria-label="Expected by" /></Row>}
+          {kind === 'supplier' && lower && !f.pending_id && (
+            <Tabs tabs={[['now', 'Yes — received now'], ['later', 'Not yet — only promised']]} value={f.promised ? 'later' : 'now'} onChange={(v) => set({ promised: v === 'later' })} />
+          )}
+        </div>
+        <div className="la-grid">
+          <Row label={t.who} req span={2}><PartyPicker kind={kind} value={f.party_id} onChange={(id) => set({ party_id: id, invoice_id: '', pending_id: '' })} extra={f.party_id && opts.data ? side(bal) : ''} label={t.who} /></Row>
+          <Row label="Adjustment date" req><DateInput value={f.date} max={today()} required onChange={(e) => set({ date: e.target.value })} aria-label="Adjustment date" /></Row>
+          <Row label={t.invoice} span={kind === 'supplier' ? 1 : 2}>
+            <select value={f.invoice_id} onChange={(e) => set({ invoice_id: e.target.value })} disabled={!f.party_id} aria-label={t.invoice}>
+              <option value="">Not for one invoice (optional)</option>
+              {(opts.data?.invoices || []).map((i) => <option key={i.id} value={i.id}>{i.invoice_no}{i.supplier_invoice ? ` (${i.supplier_invoice})` : ''} · {fdate(i.date)} · total {money(i.total, false)} · due {money(i.due, false)}</option>)}
+            </select>
+          </Row>
+          <Row label="Adjustment type" req>
+            <select value={f.type} onChange={(e) => set({ type: e.target.value })} aria-label="Adjustment type">{Object.entries(types).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+          </Row>
+          {kind === 'supplier' && <Row label="Reference no"><input value={f.ref} maxLength={60} onChange={(e) => set({ ref: e.target.value })} placeholder="Supplier's credit note / letter no" aria-label="Reference no" /></Row>}
+          {promised && <Row label="Expected by"><DateInput value={f.expected} min={today()} onChange={(e) => set({ expected: e.target.value })} aria-label="Expected by" /></Row>}
+        </div>
+        <div className="la-bottom">
+          <div className="la-ar">
             <Row label="Amount" req hint={tooMuch ? (inv && amount > inv.due + 0.005 ? `${inv.invoice_no} has only ${money(inv.due)} still due.` : `The customer owes only ${money(Math.max(bal, 0))}.`) : ''} error={!!tooMuch}>
-              <input type="number" step="any" min="0" value={f.amount} onChange={(e) => set({ amount: e.target.value })} aria-label="Amount" />
+              <input type="number" step="any" min="0" value={f.amount} onChange={(e) => set({ amount: e.target.value })} aria-label="Amount" placeholder="0" />
               {kind === 'customer' && lower && inv && inv.due > 0 && <div className="la-quick"><Btn size="sm" onClick={() => set({ amount: String(inv.due) })}>Whole invoice due · {money(inv.due, false)}</Btn></div>}
             </Row>
-            <Row label="Reason" req top><textarea rows={2} maxLength={200} value={f.reason} onChange={(e) => set({ reason: e.target.value })} placeholder={kind === 'customer' ? 'e.g. customer asked to leave the last 50' : 'e.g. Eid offer on the router lot'} aria-label="Reason" /></Row>
+            <Row label="Reason" req><textarea rows={1} maxLength={200} value={f.reason} onChange={(e) => set({ reason: e.target.value })} placeholder={kind === 'customer' ? 'e.g. customer asked to leave the last 50' : 'e.g. Eid offer on the router lot'} aria-label="Reason" /></Row>
           </div>
+          {f.party_id && opts.data ? (promised
+            ? <p className="la-note la-promise">Nothing changes in the books yet. The promise is listed below and on the dashboard until you mark it received or drop it.</p>
+            : (
+              <div className={`la-pre ${inv ? 'inv' : ''}`} aria-label="Balance after">
+                <span /><span className="h">{t.who} balance</span>{inv && <span className="h">{inv.invoice_no} due</span>}
+                <span className="m">Now</span><b>{side(bal)}</b>{inv && <b>{money(inv.due)}</b>}
+                <span className="m">{lower ? 'Deduction' : 'Addition'}</span><b className={lower ? 'ok' : 'warn'}>{lower ? '−' : '+'} {money(okAmount ? amount : 0)}</b>{inv && <b className={lower ? 'ok' : 'warn'}>{`${lower ? '−' : '+'} ${money(okAmount ? amount : 0)}`}</b>}
+                <span className="m sum">After saving</span><b className="sum">{side(after)}</b>{inv && <b className="sum">{money(invAfter) + (invAfter < 0.005 ? ' · settled' : '')}</b>}
+              </div>
+            )) : <p className="la-note la-pre-empty">Pick a {t.who.toLowerCase()} to see the balance before and after saving.</p>}
         </div>
-        {f.party_id && opts.data && (promised
-          ? <p className="la-note la-promise">Nothing changes in the books yet. The promise is listed below and on the dashboard until you mark it received or drop it.</p>
-          : (
-            <div className="la-pre" aria-label="Balance after">
-              <span /><span className="h">{t.who} balance</span><span className="h">{inv ? `${inv.invoice_no} due` : ''}</span>
-              <span className="m">Now</span><b>{side(bal)}</b><b>{inv ? money(inv.due) : ''}</b>
-              <span className="m">{lower ? 'Deduction' : 'Addition'}</span><b className={lower ? 'ok' : 'warn'}>{lower ? '−' : '+'} {money(okAmount ? amount : 0)}</b><b className={lower ? 'ok' : 'warn'}>{inv ? `${lower ? '−' : '+'} ${money(okAmount ? amount : 0)}` : ''}</b>
-              <span className="m sum">After saving</span><b className="sum">{side(after)}</b><b className="sum">{inv ? money(invAfter) + (invAfter < 0.005 ? ' · settled' : '') : ''}</b>
-            </div>
-          ))}
         <ErrorBox error={opts.error} onRetry={opts.reload} />
         <div className="la-actions">
           <p className="la-note">{t.effect}</p><span className="spacer" />
@@ -175,11 +173,11 @@ export default function LedgerAdjustment({ kind }) {
   );
 }
 
-function Row({ label, req, hint, error, top, children }) {
+function Row({ label, req, hint, error, span, children }) {
   return (
-    <div className={`la-row ${top ? 'top' : ''} ${error ? 'has-error' : ''}`}>
+    <div className={`la-row ${error ? 'has-error' : ''}`} style={span > 1 ? { gridColumn: `span ${span}` } : undefined}>
       <span className="la-label">{label}{req && <i className="req">*</i>}</span>
-      <div>{children}{hint && <div className={`field-hint ${error ? 'field-error' : ''}`}>{hint}</div>}</div>
+      {children}{hint && <div className={`field-hint ${error ? 'field-error' : ''}`}>{hint}</div>}
     </div>
   );
 }
