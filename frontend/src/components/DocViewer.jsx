@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { printHtml, printFonts } from '../lib/export';
 import { printInvoice } from '../lib/receipt';
-import { claimDocHtml, salesReturnDocHtml, saleDocHtml } from '../lib/salesDocs';
+import { claimDocHtml, salesReturnDocHtml, saleDocHtml, fitBizEnd } from '../lib/salesDocs';
 import { purchaseDocHtml, purchaseReturnDocHtml } from '../lib/purchaseDocs';
 import { Modal, Btn, Loading, ErrorBox } from './ui';
 import { useStore } from '../lib/store';
@@ -58,7 +58,7 @@ export default function DocViewer({ doc, onClose }) {
   const srcDoc = state.html ? `<!doctype html><html><head><meta charset="utf-8"><style>${printFonts}</style></head><body>${state.html}<style>${desk(state.paper)}</style></body></html>` : '';
   return (
     <Modal open title={`${DOC_TITLE[doc.type] || 'Document'} ${doc.no || ''}`} onClose={onClose} size="doc"
-      footer={<><Btn onClick={onClose}>Close</Btn>{posPaper && <Btn disabled={!state.detail} onClick={() => printInvoice(state.detail)}>Print (POS paper)</Btn>}<Btn kind="primary" disabled={!state.html} onClick={() => printHtml(state.html)}>Print A4</Btn></>}>
+      footer={<><Btn onClick={onClose}>Close</Btn>{posPaper && <Btn disabled={!state.detail} onClick={() => printInvoice(state.detail)}>Print (POS paper)</Btn>}<Btn kind="primary" disabled={!state.html} onClick={() => printHtml(state.html, fitBizEnd)}>Print A4</Btn></>}>
       {state.loading && <Loading label="Opening" />}
       <ErrorBox error={state.error} />
       {state.html && <iframe ref={frame} className="doc-frame" title={`${DOC_TITLE[doc.type]} ${doc.no || ''}`} srcDoc={srcDoc} sandbox="allow-same-origin" onLoad={onLoad} />}

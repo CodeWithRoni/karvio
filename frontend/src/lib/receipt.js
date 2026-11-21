@@ -2,6 +2,8 @@ import { quotationTotals, quotationPrice } from './quotationTotals';
 import { qrSvg, logoImg } from './qr';
 // Thermal receipts (58mm / 80mm), A4 quotation and ledger statements.
 import { useStore } from './store';
+import { bizDocHtml, isBizTpl, docOpen, docHead, printDocs, m2fmt } from './salesDocs';
+import { printParties } from './partyDocs';
 import { unitPrice, money, qty, fdate, fdatetime, splitList, today, cap1 } from './format';
 import { printHtml, esc, shopContacts } from './export';
 
@@ -107,47 +109,33 @@ export function printQuotation({ title, customer, phone, lines, discount = 0, no
   const pricing = storedTotals ? { ...storedTotals, valid: true } : quotationTotals(lines, discount), sub = pricing.subtotal;
   if (!pricing.valid) throw new Error(pricing.error);
   const rows = lines.map((l, i) => `<tr><td>${i + 1}</td><td><b>${esc(l.group || '')}</b>${l.group ? '<br>' : ''}${esc(l.name)}</td><td class="r">${esc(l.warranty || '—')}</td><td class="r">${esc(l.qty)}</td><td class="r">${esc(quotationPrice(l.price))}</td><td class="r">${esc(money(storedTotals ? l.total : l.qty * l.price, false))}</td></tr>`).join('');
-  printHtml(`
-  <style>
-    @page{size:A4;margin:14mm}body{font:12px/1.45 system-ui,'Hind Siliguri',sans-serif;color:#111;margin:0}
-    .top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #0d1b2a;padding-bottom:10px;margin-bottom:14px}
-    h1{margin:0;font-size:22px}h2{margin:0;font-size:26px;letter-spacing:.04em;color:#0d1b2a}
-    table{width:100%;border-collapse:collapse;margin-top:10px}th,td{padding:7px 8px;border-bottom:1px solid #ddd;text-align:left;vertical-align:top}
-    th{background:#0d1b2a;color:#fff;font-weight:600}.r{text-align:right}.tot td{font-weight:700;border:0}.big{font-size:16px}
-    .meta{display:grid;grid-template-columns:1fr 1fr;gap:4px 24px}.note{margin-top:18px;color:#444}
-  </style>
-  <div class="top"><div><h1>${esc(s.shop_name || 'Karvio')}</h1><div>${esc(s.shop_address || '')}</div><div>${shopContacts(s)}</div></div>
-  <div class="r"><h2>QUOTATION</h2><div>${esc(no)}</div><div>${esc(fdate(quoteDate || today()))}</div></div></div>
-  <div class="meta"><div><b>Prepared for:</b> ${esc(customer || '—')}</div><div><b>Phone:</b> ${esc(phone || '—')}</div>
-  <div><b>Subject:</b> ${esc(title || 'Custom PC build')}</div><div><b>Valid for:</b> ${esc(validDays)} days</div></div>
-  <table><thead><tr><th>#</th><th>Item</th><th class="r">Warranty</th><th class="r">Qty</th><th class="r">Unit price</th><th class="r">Amount</th></tr></thead>
-  <tbody>${rows}</tbody>
-  <tfoot>
-    <tr class="tot"><td colspan="5" class="r">Subtotal</td><td class="r">${esc(money(sub))}</td></tr>
-    ${discount ? `<tr class="tot"><td colspan="5" class="r">Discount</td><td class="r">-${esc(money(discount))}</td></tr>` : ''}
-    <tr class="tot big"><td colspan="5" class="r">Grand total</td><td class="r">${esc(money(pricing.total))}</td></tr>
-  </tfoot></table>
-  ${note ? `<div class="note"><b>Notes:</b> ${esc(note)}</div>` : ''}
-  <div class="note">Prices may change with market rates after the validity period. Stock is not reserved until an order is confirmed.</div>`);
+  const valid = validDays ? `${validDays} days` : '—';
+  const notes = `${note ? `<div class="note-box"><b>Notes:</b> ${esc(note)}</div>` : ''}<div class="note-box sm">Prices may change with market rates after the validity period. Stock is not reserved until an order is confirmed.</div>`;
+  const totals = [['Subtotal', esc(money(sub))], ...(discount ? [['Discount', '-' + esc(money(discount))]] : []), ['Grand total', esc(money(pricing.total)), true]];
+  // the template chosen in Settings → Invoice
+  if (isBizTpl()) return printDocs([bizDocHtml({
+    title: 'Quotation',
+    left: [['Prepared For', `<b>${esc(customer || '—')}</b>`], ['Contact No', esc(phone || '')], ['Subject', esc(title || 'Custom PC build')]],
+    right: [['Quotation No', `<b>${esc(no)}</b>`], ['Date', esc(fdate(quoteDate || today()))], ['Valid For', esc(valid)]],
+    cols: [{ label: 'S/L', w: 38, cls: 'cn' }, { label: 'Item Descriptions' }, { label: 'Warranty', w: 80, cls: 'cn' }, { label: 'Unit Price', w: 96, cls: 'r' }, { label: 'Quantity', w: 72, cls: 'cn' }, { label: 'Total', w: 100, cls: 'r' }],
+    rows: lines.map((l, i) => [i + 1, `${l.group ? `<b>${esc(l.group)}</b><br>` : ''}${esc(l.name)}`, esc(l.warranty || '—'), esc(quotationPrice(l.price)), esc(l.qty), esc(m2fmt(storedTotals ? l.total : l.qty * l.price))]),
+    words: Number(pricing.total) || 0,
+    totals: [['TOTAL', esc(m2fmt(sub))], ['Discount', esc(m2fmt(discount || 0))], ['Grand TOTAL', esc(m2fmt(pricing.total)), true]],
+    foot: `${note ? `<div class="bfootnote"><b>Notes:</b> ${esc(note)}</div>` : ''}<div class="bfootnote">Prices may change with market rates after the validity period. Stock is not reserved until an order is confirmed.</div>`
+  })]);
+  return printDocs([`${docOpen()}${docHead('QUOTATION', `<b>${esc(no)}</b><br>${esc(fdate(quoteDate || today()))}`)}
+    <div class="meta">
+      <div class="box"><b class="t">Prepared for</b><b>${esc(customer || '—')}</b><div>Phone: ${esc(phone || '—')}</div></div>
+      <div class="box"><b class="t">Subject</b><b>${esc(title || 'Custom PC build')}</b><div>Valid for: ${esc(valid)}</div></div>
+    </div>
+    <table><thead><tr><th style="width:28px">#</th><th>Item</th><th class="r" style="width:80px">Warranty</th><th class="r" style="width:56px">Qty</th><th class="r" style="width:90px">Unit price</th><th class="r" style="width:96px">Amount</th></tr></thead><tbody>${rows}</tbody>
+    <tfoot class="qtot">${totals.map(([k, v, g]) => `<tr class="${g ? 'big' : ''}"><td colspan="5" class="r">${k}</td><td class="r">${v}</td></tr>`).join('')}</tfoot></table>
+    ${notes}
+    <div class="foot"><span>Printed ${esc(new Date().toLocaleString())}</span><span>Authorised signature: ____________________</span></div></div>`]);
 }
 
-/** Customer / supplier ledger statement on A4. */
-export function printStatement(kind, st, from, to) {
-  const s = useStore.getState().settings;
-  const rows = st.rows.map((r) => `<tr><td>${esc(fdate(r.date))}</td><td>${esc(r.ref_no || '')}</td><td>${esc(r.note || r.type)}</td><td class="r">${r.debit ? esc(money(r.debit, false)) : ''}</td><td class="r">${r.credit ? esc(money(r.credit, false)) : ''}</td><td class="r">${esc(money(r.balance, false))}</td></tr>`).join('');
-  const dl = kind === 'customer' ? ['Sale / paid out', 'Received'] : ['Paid / returned', 'Purchased'];
-  printHtml(`
-  <style>@page{size:A4;margin:14mm}body{font:11.5px/1.45 system-ui,'Hind Siliguri',sans-serif;color:#111;margin:0}
-  h1{margin:0;font-size:18px}table{width:100%;border-collapse:collapse;margin-top:12px}th,td{border:1px solid #ccc;padding:5px 7px;text-align:left}
-  th{background:#eef1f6}.r{text-align:right}.b{font-weight:700}</style>
-  <h1>${esc(s.shop_name || 'Karvio')}</h1><div>${esc(s.shop_address || '')}</div><div>${shopContacts(s)}</div>
-  <h3 style="margin:14px 0 4px">${kind === 'customer' ? 'Customer' : 'Supplier'} statement — ${esc(st.party)}</h3>
-  <div>${esc(st.phones || '')} ${esc(st.address || '')}</div>
-  <div>Period: ${esc(from ? fdate(from) : 'Beginning')} to ${esc(to ? fdate(to) : 'Today')}</div>
-  <table><thead><tr><th>Date</th><th>Ref</th><th>Details</th><th class="r">${dl[0]}</th><th class="r">${dl[1]}</th><th class="r">Balance</th></tr></thead>
-  <tbody><tr><td colspan="5" class="b">Opening balance</td><td class="r b">${esc(money(st.opening, false))}</td></tr>${rows}
-  <tr><td colspan="5" class="b">Closing balance ${st.closing > 0 ? (kind === 'customer' ? '(customer owes)' : '(payable to supplier)') : st.closing < 0 ? '(advance)' : ''}</td><td class="r b">${esc(money(st.closing))}</td></tr></tbody></table>`);
-}
+/** Customer / supplier ledger statement on A4, in the invoice template (Settings → Invoice). */
+export function printStatement(kind, st, from, to) { return printParties(kind, [st], { from, to }); }
 
 /** Small money receipt for due collection. */
 export function printMoneyReceipt(r) {

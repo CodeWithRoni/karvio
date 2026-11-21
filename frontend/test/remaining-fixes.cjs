@@ -75,7 +75,7 @@ target='shop2';eq(drafts.loadPosDraft(),null);
 const format={money:n=>String(n),qty:n=>String(n),fdate:n=>String(n),fdatetime:n=>String(n),splitList:s=>String(s||'').split(',').filter(Boolean),today:()=> '2026-11-11',cap1:s=>{const t=String(s??'');return t?t[0].toUpperCase()+t.slice(1):t;}};
 const settings={getState:()=>({settings:{invoice_template:'business'}})};
 let printed='';
-const imports={'./store':{useStore:settings},'./format':format,'./export':{esc:s=>String(s??''),shopContacts:()=>'',printHtml:html=>{printed=html;}},'./purchaseDocs':{pdfPages:()=>{}},'./qr':{invoiceQr:()=>'',logoImg:()=>'',qrSvg:()=>''}};
+const imports={'./store':{useStore:settings},'./format':format,'./export':{esc:s=>String(s??''),shopContacts:()=>'',printHtml:html=>{printed=html;}},'./purchaseDocs':{pdfPages:()=>{}},'./pdfPages':{pdfPages:()=>{}},'./qr':{invoiceQr:()=>'',logoImg:()=>'',qrSvg:()=>''}};
 const docs=load('../src/lib/salesDocs.js',imports);
 const document={sale:{...sale.sale,customer_name:'Snapshot'},customer:{balance:99999},items:[],returns:[]};
 let html=docs.saleDocHtml(document);
@@ -84,6 +84,7 @@ assert.ok(!html.includes('99,999'));checks++;
 html=docs.saleDocHtml({...document,sale:{...document.sale,balance_snapshot:''}});
 assert.match(html,/Previous Due<\/td><td>:<\/td><td class="r">Not recorded/);checks++;
 imports['./quotationTotals']=load('../src/lib/quotationTotals.js',{'./format':{round2:n=>Math.round((Number(n)+Number.EPSILON)*100)/100}});
+imports['./salesDocs']=docs;imports['./partyDocs']={printParties:()=>{}}; // A4 documents follow the invoice template
 const receipt=load('../src/lib/receipt.js',imports);
 receipt.printQuotation({lines:[],customer:'Test'});assert.ok(printed.includes('2026-11-11'));checks++;
 const date=load('../src/lib/format.js',{'./store':{useStore:settings,shopDay:()=> '2026-11-11'}});

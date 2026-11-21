@@ -119,7 +119,7 @@ function invoiceChecks() {
   equal((/<span>Paid now<\/span><span>([^<]+)/.exec(html) || [])[1], 'Tk 100', 'public invoice does not add advance twice');
   const docs = load('src/lib/salesDocs.js', {
     './store': { useStore: { getState: () => ({ settings: { invoice_template: 'business' } }) } },
-    './format': format, './export': { esc: x => String(x ?? ''), shopContacts: () => '', printHtml: () => {} }, './purchaseDocs': { pdfPages: () => {} }, './qr': { invoiceQr: () => '', logoImg: () => '' }
+    './format': format, './export': { esc: x => String(x ?? ''), shopContacts: () => '', printHtml: () => {} }, './pdfPages': { pdfPages: () => {} }, './qr': { invoiceQr: () => '', logoImg: () => '' }
   });
   const business = docs.saleDocHtml(fixture);
   equal((/Collected Amount<\/td><td>:<\/td><td class="r">([^<]+)/.exec(business) || [])[1], '100.00', 'business invoice does not add advance twice');

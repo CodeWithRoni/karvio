@@ -1,37 +1,35 @@
 // Purchase invoices as full documents: print, PDF (one invoice per A4 page) and Excel.
-import { useStore } from './store';
 import { money, qty, fdate, fdatetime, splitList } from './format';
-import { printHtml, printFonts, esc, shopContacts } from './export';
+import { esc } from './export';
+import { bizDocHtml, isBizTpl, docOpen, docHead, docWrap, printDocs, pdfDocs, m2fmt } from './salesDocs';
 
-const css = `
-  .pinv{font:12px/1.45 'Manrope','Hind Siliguri',system-ui,sans-serif;color:#111;background:#fff}
-  .pinv *{box-sizing:border-box}
-  .pinv .top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #0d1b2a;padding-bottom:10px;margin-bottom:12px}
-  .pinv h1{margin:0;font-size:20px}.pinv h2{margin:0;font-size:22px;letter-spacing:.04em;color:#0d1b2a;text-align:right}
-  .pinv .meta{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
-  .pinv .box{border:1px solid #ccd3dc;border-radius:6px;padding:8px 10px}
-  .pinv .box b.t{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:#556;margin-bottom:3px}
-  .pinv table{width:100%;border-collapse:collapse}
-  .pinv th,.pinv td{border:1px solid #ccd3dc;padding:5px 7px;text-align:left;vertical-align:top}
-  .pinv th{background:#0d1b2a;color:#fff;font-weight:600;font-size:11.5px}
-  .pinv .r{text-align:right}.pinv .sm{font-size:10.5px;color:#444}.pinv .sn{font-family:Consolas,monospace;font-size:10.5px;word-break:break-all}
-  .pinv .tot{margin-left:auto;width:290px;margin-top:10px}.pinv .tot td{border:0;padding:3px 0}.pinv .tot .g td{font-weight:800;font-size:14px;border-top:2px solid #0d1b2a;padding-top:6px}
-  .pinv .cx{margin:8px 0;padding:6px 10px;border:2px solid #c0392b;color:#c0392b;font-weight:800;text-align:center}
-  .pinv .foot{margin-top:18px;display:flex;justify-content:space-between;font-size:11px;color:#444}
-`;
 const pays = (p) => { try { return Array.isArray(p.payments) ? p.payments : JSON.parse(p.payments || '[]'); } catch { return []; } };
 
 export function purchaseInvoiceHtml(d) {
-  const s = useStore.getState().settings, p = d.purchase, sup = d.supplier || {};
+  const p = d.purchase, sup = d.supplier || {};
   const rows = d.items.map((i, n) => {
     const sers = splitList(String(i.serials || '').replace(/\n/g, ','));
     return `<tr><td>${n + 1}</td><td><b>${esc(i.name)}</b>${i.sku ? `<div class="sm">Model: ${esc(i.sku)}</div>` : ''}${i.description ? `<div class="sm">${esc(i.description)}</div>` : ''}${sers.length ? `<div class="sn">S/N (${sers.length}): ${esc(sers.join(', '))}</div>` : ''}</td>
       <td>${esc(i.unit || 'pcs')}</td><td class="r">${esc(qty(i.qty))}</td><td class="r">${esc(money(i.cost, false))}</td><td class="r">${esc(money(i.total, false))}</td></tr>`;
   }).join('');
   const pl = pays(p);
-  return `<div class="pinv">
-    <div class="top"><div><h1>${esc(s.shop_name || 'Karvio')}</h1><div>${esc(s.shop_address || '')}</div><div>${shopContacts(s)}</div></div>
-      <div><h2>PURCHASE INVOICE</h2><div style="text-align:right"><b>${esc(p.invoice_no)}</b><br>${p.supplier_invoice ? `Supplier invoice: <b>${esc(p.supplier_invoice)}</b><br>` : ''}Date: ${esc(fdate(p.date))}<br><span class="sm">Entered ${esc(fdatetime(p.created_at))} by ${esc(p.user || '')}</span></div></div></div>
+  if (isBizTpl()) return bizDocHtml({
+    title: 'Purchase Invoice',
+    left: [['Supplier', `<b>${esc(sup.name || p.supplier_name || '—')}</b>`], ['Address', esc(sup.address || '')], ['Contact No', esc(splitList(sup.phones || '').join(', '))], ['Supplier Invoice', esc(p.supplier_invoice || '')]],
+    right: [['Purchase No', `<b>${esc(p.invoice_no)}</b>`], ['Date', esc(fdate(p.date))], ['Entered By', esc(p.user || '')], ['Payment', pl.length ? pl.map((x) => `${esc(x.account_name || 'Paid')} ${esc(m2fmt(x.amount))}`).join(', ') : 'Bought on credit']],
+    cancelled: p.status === 'cancelled' ? p.cancel_reason || '' : null,
+    cols: [{ label: 'S/L', w: 38, cls: 'cn' }, { label: 'Item Descriptions' }, { label: 'Unit', w: 56, cls: 'cn' }, { label: 'Quantity', w: 72, cls: 'cn' }, { label: 'Purchase Price', w: 96, cls: 'r' }, { label: 'Total', w: 100, cls: 'r' }],
+    rows: d.items.map((i, n) => {
+      const sers = splitList(String(i.serials || '').replace(/\n/g, ','));
+      return [n + 1, `${esc(i.name)}${i.sku ? `<div class="sn">Model: ${esc(i.sku)}</div>` : ''}${i.description ? `<div class="sn">${esc(i.description)}</div>` : ''}${sers.length ? `<div class="sn">S/N (${sers.length}): ${esc(sers.join(', '))}</div>` : ''}`, esc(i.unit || 'pcs'), esc(qty(i.qty)), esc(m2fmt(i.cost)), esc(m2fmt(i.total))];
+    }),
+    words: Number(p.total) || 0,
+    due: [['Paid', esc(m2fmt(p.paid))], ['Due at Purchase', esc(m2fmt(p.due))], ['Due Now', esc(m2fmt(p.due_now ?? p.due))]],
+    totals: [['TOTAL', esc(m2fmt(p.subtotal))], ['Discount', esc(m2fmt(p.discount || 0))], ['Grand TOTAL', esc(m2fmt(p.total)), true]],
+    foot: `${p.note ? `<div class="bfootnote"><b>Note:</b> ${esc(p.note)}</div>` : ''}${d.returns && d.returns.length ? `<div class="bfootnote">Returns: ${esc(d.returns.map((r) => `${r.return_no} (${money(r.total, false)}, ${r.status})`).join(', '))}</div>` : ''}`,
+    sign: 'Received By'
+  });
+  return `${docOpen()}${docHead('PURCHASE INVOICE', `<b>${esc(p.invoice_no)}</b><br>${p.supplier_invoice ? `Supplier invoice: <b>${esc(p.supplier_invoice)}</b><br>` : ''}Date: ${esc(fdate(p.date))}<br><span class="sm">Entered ${esc(fdatetime(p.created_at))} by ${esc(p.user || '')}</span>`)}
     ${p.status === 'cancelled' ? `<div class="cx">CANCELLED — ${esc(p.cancel_reason || '')}</div>` : ''}
     <div class="meta">
       <div class="box"><b class="t">Supplier</b><b>${esc(sup.name || p.supplier_name || '—')}</b>${sup.phones ? `<div>Phone: ${esc(splitList(sup.phones).join(', '))}</div>` : ''}${sup.address ? `<div>${esc(sup.address)}</div>` : ''}</div>
@@ -51,25 +49,35 @@ export function purchaseInvoiceHtml(d) {
   </div>`;
 }
 
-export function printPurchases(list) {
-  return printHtml(`<style>@page{size:A4;margin:12mm}body{margin:0}${css}.pinv+.pinv{page-break-before:always;break-before:page}</style>${list.map(purchaseInvoiceHtml).join('')}`);
-}
-const page = (block) => `<style>@page{size:A4;margin:12mm}body{margin:0}${css}</style>${block}`;
+export const printPurchases = (list) => printDocs(list.map(purchaseInvoiceHtml));
 /** One purchase invoice as the full document printPurchases prints. */
-export const purchaseDocHtml = (d) => page(purchaseInvoiceHtml(d));
+export const purchaseDocHtml = (d) => docWrap([purchaseInvoiceHtml(d)]);
 
 /** A purchase return (goods sent back to the supplier). d = { ret, items, supplier } from history.doc (type preturn) */
 export function purchaseReturnHtml(d) {
-  const s = useStore.getState().settings, r = d.ret, sup = d.supplier || {};
+  const r = d.ret, sup = d.supplier || {};
   const rows = d.items.map((i, n) => {
     const sers = splitList(String(i.serials || '').replace(/\n/g, ','));
     return `<tr><td>${n + 1}</td><td><b>${esc(i.name)}</b>${sers.length ? `<div class="sn">S/N (${sers.length}): ${esc(sers.join(', '))}</div>` : ''}</td>
       <td class="r">${esc(qty(i.qty))}</td><td class="r">${esc(money(i.cost, false))}</td><td class="r">${esc(money(i.total, false))}</td></tr>`;
   }).join('');
   const adjusted = Number(r.total) - Number(r.received || 0);
-  return `<div class="pinv">
-    <div class="top"><div><h1>${esc(s.shop_name || 'Karvio')}</h1><div>${esc(s.shop_address || '')}</div><div>${shopContacts(s)}</div></div>
-      <div><h2>PURCHASE RETURN</h2><div style="text-align:right"><b>${esc(r.return_no)}</b><br>Date: ${esc(fdate(r.date))}<br><span class="sm">Entered ${esc(fdatetime(r.created_at))} by ${esc(r.user || '')}</span></div></div></div>
+  if (isBizTpl()) return bizDocHtml({
+    title: 'Purchase Return',
+    left: [['Returned To', `<b>${esc(sup.name || r.supplier_name || '—')}</b>`], ['Address', esc(sup.address || '')], ['Contact No', esc(splitList(sup.phones || '').join(', '))], ['Original Purchase', esc(r.invoice_no || '')]],
+    right: [['Return No', `<b>${esc(r.return_no)}</b>`], ['Date', esc(fdate(r.date))], ['Entered By', esc(r.user || '')]],
+    cancelled: r.status === 'cancelled' ? r.cancel_reason || '' : null,
+    cols: [{ label: 'S/L', w: 38, cls: 'cn' }, { label: 'Item Descriptions' }, { label: 'Quantity', w: 72, cls: 'cn' }, { label: 'Purchase Price', w: 96, cls: 'r' }, { label: 'Total', w: 100, cls: 'r' }],
+    rows: d.items.map((i, n) => {
+      const sers = splitList(String(i.serials || '').replace(/\n/g, ','));
+      return [n + 1, `${esc(i.name)}${sers.length ? `<div class="sn">S/N (${sers.length}): ${esc(sers.join(', '))}</div>` : ''}`, esc(qty(i.qty)), esc(m2fmt(i.cost)), esc(m2fmt(i.total))];
+    }),
+    words: Number(r.total) || 0,
+    totals: [['Return Value', esc(m2fmt(r.total)), true], [`Received${r.account ? ` (${r.account})` : ''}`, esc(m2fmt(r.received || 0))], ...(adjusted > 0.004 ? [['Adjusted to Balance', esc(m2fmt(adjusted))]] : [])],
+    foot: r.note ? `<div class="bfootnote"><b>Note:</b> ${esc(r.note)}</div>` : '',
+    sign: 'Authorised Signature'
+  });
+  return `${docOpen()}${docHead('PURCHASE RETURN', `<b>${esc(r.return_no)}</b><br>Date: ${esc(fdate(r.date))}<br><span class="sm">Entered ${esc(fdatetime(r.created_at))} by ${esc(r.user || '')}</span>`)}
     ${r.status === 'cancelled' ? `<div class="cx">CANCELLED — ${esc(r.cancel_reason || '')}</div>` : ''}
     <div class="meta">
       <div class="box"><b class="t">Returned to supplier</b><b>${esc(sup.name || r.supplier_name || '—')}</b>${sup.phones ? `<div>Phone: ${esc(splitList(sup.phones).join(', '))}</div>` : ''}${sup.address ? `<div>${esc(sup.address)}</div>` : ''}</div>
@@ -84,40 +92,13 @@ export function purchaseReturnHtml(d) {
     <div class="foot"><span>Printed ${esc(new Date().toLocaleString())}</span><span>Received by: ____________________</span></div>
   </div>`;
 }
-export const purchaseReturnDocHtml = (d) => page(purchaseReturnHtml(d));
+export const purchaseReturnDocHtml = (d) => docWrap([purchaseReturnHtml(d)]);
 /** Several purchase returns, each on its own page (Reports hub → Individual report). */
-export const printPurchaseReturns = (list) => printHtml(`<style>@page{size:A4;margin:12mm}body{margin:0}${css}.pinv+.pinv{page-break-before:always;break-before:page}</style>${list.map(purchaseReturnHtml).join('')}`);
+export const printPurchaseReturns = (list) => printDocs(list.map(purchaseReturnHtml));
 
-/** Render each HTML block on its own A4 page(s) and download a PDF. Bengali text renders correctly. */
-export async function pdfPages(blocks, styles, filename) {
-  const [{ jsPDF }, { default: html2canvas }] = await Promise.all([import('jspdf'), import('html2canvas')]);
-  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
-  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 32;
-  const host = document.createElement('div');
-  Object.assign(host.style, { position: 'absolute', left: '-10000px', top: '0', width: '760px', background: '#fff' });
-  host.innerHTML = `<style>${printFonts}${styles}</style>`;
-  document.body.appendChild(host);
-  try {
-    await document.fonts.load("400 12px 'Hind Siliguri'", 'বাংলা');
-    let first = true;
-    for (const html of blocks) {
-      const el = document.createElement('div'); el.style.padding = '4px'; el.innerHTML = html;
-      host.appendChild(el);
-      const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff', logging: false });
-      el.remove();
-      const pw = W - M * 2, sliceH = Math.floor(((H - M * 2) / pw) * canvas.width);
-      for (let y = 0; y < canvas.height; y += sliceH) {
-        const c = document.createElement('canvas'); c.width = canvas.width; c.height = Math.min(sliceH, canvas.height - y);
-        c.getContext('2d').drawImage(canvas, 0, y, c.width, c.height, 0, 0, c.width, c.height);
-        if (!first) doc.addPage(); first = false;
-        doc.addImage(c.toDataURL('image/jpeg', 0.92), 'JPEG', M, M, pw, (c.height / c.width) * pw); // JPEG: about 10× smaller than PNG, still sharp at scale 2
-      }
-    }
-    doc.save(filename);
-  } finally { host.remove(); }
-}
-export const pdfPurchases = (list, filename) => pdfPages(list.map(purchaseInvoiceHtml), css, filename);
-export const pdfPurchaseReturns = (list, filename) => pdfPages(list.map(purchaseReturnHtml), css, filename);
+export { pdfPages } from './pdfPages';
+export const pdfPurchases = (list, filename) => pdfDocs(list.map(purchaseInvoiceHtml), filename);
+export const pdfPurchaseReturns = (list, filename) => pdfDocs(list.map(purchaseReturnHtml), filename);
 
 /** Sheet 1: one line per invoice. Sheet 2: every product line with supplier details and serial numbers. */
 export async function excelPurchases(list, filename) {

@@ -298,7 +298,7 @@ function ReturnForm({ detail, onClose, onDone }) {
       } catch { return; }
       const d = res.summary;
       toast(`Exchanged: ${res.return.return_no} → ${res.sale.sale.invoice_no}` + (d.paid_now > 0 ? ` · received ${money(d.paid_now)}` : '') + (d.due > 0 ? ` · ${money(d.due)} due` : '') + (d.refund > 0 || (walkIn && d.difference < 0) ? ` · gave back ${money(walkIn ? -d.difference : d.refund)}` : ''), 'ok');
-      if (print) printInvoice(res.sale);
+      if (print) printSales([res.sale], 'a4'); // the new invoice of an exchange: A4, in the invoice template
       refresh('products', 'customers');
       return onDone();
     }

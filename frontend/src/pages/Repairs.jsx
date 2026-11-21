@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { money, fdate, fdatetime, round2 } from '../lib/format';
-import { printHtml, esc, shopContacts } from '../lib/export';
+import { esc } from '../lib/export';
 import { printInvoice } from '../lib/receipt';
 import { useStore } from '../lib/store';
 import DataTable from '../components/DataTable';
@@ -368,15 +368,29 @@ function Cancel({ job, meta, onClose, onDone }) {
   );
 }
 
-/** 80 mm receiving slip for the customer, like the warranty slip. */
+/** The repair job card (receiving slip) for the customer: A4, in the template chosen in Settings → Invoice. */
 export function printJobSlip(j) {
-  const s = useStore.getState().settings;
-  const row = (k, v) => (v ? `<div>${esc(k)}: ${esc(v)}</div>` : '');
-  printHtml(`<style>@page{size:80mm auto;margin:0}body{margin:0;width:72mm;padding:3mm 4mm;font:11px/1.4 'Courier New',monospace}.c{text-align:center}hr{border:0;border-top:1px dashed #000}</style>
-  <div class="c"><b style="font-size:15px">${esc(s.shop_name)}</b><div>${shopContacts(s, '<br>')}</div></div><hr>
-  <div class="c"><b>REPAIR RECEIVING SLIP</b></div>
-  <div>Job: <b>${esc(j.job_no)}</b></div>${row('Date', fdate(j.date))}${row('Customer', `${j.customer_name} ${j.phone || ''}`)}
-  ${row('Device', j.device)}${row('Serial / model', j.serial)}${row('Problem', j.problem)}${row('Received with', j.accessories)}
-  ${row('Technician', j.technician_name)}${j.estimate > 0 ? row('Estimate', money(j.estimate)) : ''}${j.advance > 0 ? row('Advance paid', money(j.advance)) : ''}<hr>
-  <div>Please bring this slip when collecting your device.</div><br><br><div>Customer signature ____________</div>`);
+  return import('../lib/salesDocs').then(({ bizDocHtml, isBizTpl, docOpen, docHead, printDocs, m2fmt }) => {
+    const opt = (v) => (v ? esc(v) : '—');
+    if (isBizTpl()) return printDocs([bizDocHtml({
+      title: 'Repair Job Card',
+      left: [['Customer', `<b>${esc(j.customer_name || '—')}</b>`], ['Contact No', esc(j.phone || '')], ['Received With', esc(j.accessories || '')]],
+      right: [['Job No', `<b>${esc(j.job_no)}</b>`], ['Date', esc(fdate(j.date))], ['Technician', esc(j.technician_name || '')]],
+      cols: [{ label: 'S/L', w: 38, cls: 'cn' }, { label: 'Device' }, { label: 'Serial / Model', w: 150 }, { label: 'Problem' }],
+      rows: [['1', `<b>${esc(j.device || '')}</b>`, opt(j.serial), opt(j.problem)]],
+      totals: [...(j.estimate > 0 ? [['Estimate', esc(m2fmt(j.estimate))]] : []), ...(j.advance > 0 ? [['Advance Paid', esc(m2fmt(j.advance)), true]] : [])],
+      foot: '<div class="bfootnote">Please bring this job card when collecting your device.</div>',
+      note: true, sign: 'Customer Signature'
+    })]);
+    return printDocs([`${docOpen()}${docHead('REPAIR JOB CARD', `<b>${esc(j.job_no)}</b><br>${esc(fdate(j.date))}`)}
+      <div class="meta">
+        <div class="box"><b class="t">Customer</b><b>${esc(j.customer_name || '—')}</b><div>Phone: ${opt(j.phone)}</div></div>
+        <div class="box"><b class="t">Job</b><div>Technician: ${opt(j.technician_name)}</div><div>Received with: ${opt(j.accessories)}</div></div>
+      </div>
+      <table><thead><tr><th style="width:28px">#</th><th>Device</th><th style="width:150px">Serial / model</th><th>Problem</th></tr></thead>
+      <tbody><tr><td>1</td><td><b>${esc(j.device || '')}</b></td><td>${opt(j.serial)}</td><td>${opt(j.problem)}</td></tr></tbody></table>
+      ${j.estimate > 0 || j.advance > 0 ? `<table class="tot">${j.estimate > 0 ? `<tr><td>Estimate</td><td class="r">${esc(money(j.estimate))}</td></tr>` : ''}${j.advance > 0 ? `<tr class="g"><td>Advance paid</td><td class="r">${esc(money(j.advance))}</td></tr>` : ''}</table>` : ''}
+      <p class="sm">Please bring this job card when collecting your device.</p>
+      <div class="foot"><span>Printed ${esc(new Date().toLocaleString())}</span><span>Customer signature: ____________________</span></div></div>`]);
+  });
 }

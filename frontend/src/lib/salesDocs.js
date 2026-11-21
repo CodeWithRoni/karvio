@@ -2,7 +2,7 @@
 import { useStore } from './store';
 import { unitPrice, money, qty, fdate, fdatetime, splitList, today, cap1 } from './format';
 import { printHtml, esc, shopContacts } from './export';
-import { pdfPages } from './purchaseDocs';
+import { pdfPages } from './pdfPages';
 import { invoiceQr, logoImg } from './qr';
 
 const css = `
@@ -22,6 +22,8 @@ const css = `
   .sdoc .brandbox{display:flex;gap:12px;align-items:center}.doc-logo{max-height:60px;max-width:150px;object-fit:contain;flex:none}
   .inv-qr{display:flex;gap:12px;align-items:center;margin-top:14px;padding:8px 10px;border:1px solid #ccd3dc;border-radius:6px;font-size:11px;line-height:1.5;break-inside:avoid}
   .inv-qr-code{width:78px;height:78px;flex:none}.inv-qr-code svg{width:100%;height:100%;display:block}
+  .sdoc .sgrid{display:grid;grid-template-columns:1fr 1fr;gap:4px 18px;margin-bottom:12px}.sdoc .sgrid b.t{margin-bottom:0}
+  .sdoc tr.b td{font-weight:800;background:#eef1f6}.sdoc tfoot.qtot td{border:0;font-weight:700;padding:4px 7px}.sdoc tfoot.qtot tr.big td{font-size:14px;border-top:2px solid #0d1b2a}.sdoc .note-box{margin-top:12px}
 `;
 const head = (title, right, settings = useStore.getState().settings) => { const s = settings; return `<div class="top"><div class="brandbox">${logoImg(s)}<div><h1>${esc(s.shop_name || 'Karvio')}</h1><div>${esc(s.shop_address || '')}</div><div>${shopContacts(s)}</div></div></div><div><h2>${title}</h2><div style="text-align:right">${right}</div></div></div>`; };
 const pays = (x) => { try { return Array.isArray(x.payments) ? x.payments : JSON.parse(x.payments || '[]'); } catch { return []; } };
@@ -38,8 +40,18 @@ const tplCss = `
 const pageCss = (paper) => paper === 'a5' ? '@page{size:A5;margin:8mm}.sdoc{font-size:10.5px}.sdoc h1{font-size:16px}.sdoc h2{font-size:16px}' : '@page{size:A4;margin:12mm}';
 const isBiz = (list = []) => list.length ? list.some(d => (d.shop || useStore.getState().settings).invoice_template === 'business') : useStore.getState().settings.invoice_template === 'business';
 const wrap = (blocks, paper = 'a4', biz = false) => `<style>${biz && paper !== 'a5' ? bizPageCss() : pageCss(paper) + (biz ? '.bdoc{--bdoc-h:194mm;--bdoc-w:132mm}' : '')}body{margin:0}${css}${tplCss}${biz ? bizCss : ''}.sdoc+.sdoc,.bdoc+.bdoc{page-break-before:always;break-before:page}</style>${blocks.join('')}`;
-/** The look chosen in Settings → Invoice for documents other than the invoice (Business has no such layout: they use Classic). */
-const docTpl = () => { const t = useStore.getState().settings.invoice_template || 'classic'; return t === 'business' ? 'classic' : t; };
+/** The template chosen in Settings → Invoice. Every A4 document (returns, purchases, claims, statements, quotations,
+ *  job cards) follows it; Business documents are drawn by bizDocHtml, the others restyle the classic layout. */
+export const docTplName = () => { const t = useStore.getState().settings.invoice_template || 'classic'; return ['classic', 'modern', 'minimal', 'business'].includes(t) ? t : 'classic'; };
+const docTpl = () => { const t = docTplName(); return t === 'business' ? 'classic' : t; };
+export const isBizTpl = () => docTplName() === 'business';
+/** Opening tag of a classic / modern / minimal document. */
+export const docOpen = () => `<div class="sdoc tpl-${esc(docTpl())}">`;
+export const docHead = (title, right) => head(title, right);
+/** A4 documents in the chosen template: one per page, ready to print / show / turn into a PDF. */
+export const docWrap = (blocks) => wrap(blocks, 'a4', isBizTpl());
+export const printDocs = (blocks) => printHtml(docWrap(blocks), fitBizEnd);
+export const pdfDocs = (blocks, filename) => pdfPages(blocks, css + tplCss + (isBizTpl() ? bizCss : ''), filename);
 const noteHtml = (settings = useStore.getState().settings) => { const n = String(settings.invoice_note || '').trim(); return n ? `<div class="note-line"><b>Note:</b> ${esc(n)}</div>` : ''; };
 
 /* ---------------- "Business" template: centred letterhead, grey bill bar, boxed info, page footer ---------------- */
@@ -88,6 +100,10 @@ const bizCss = `
   .bdoc .cx{margin:8px 0;padding:6px 10px;border:2px solid #c0392b;color:#c0392b;font-weight:800;text-align:center}
   .bdoc .bfoot{display:flex;justify-content:space-between;border-top:1px solid #777;margin-top:22px;padding-top:5px;font-size:11px}
   @media print{.bdoc .bfoot{display:none}}
+  .bdoc .bitems tr.bb td{background:#ececec;font-weight:700}
+  .bdoc .bblock{border:1px solid #333;padding:8px 10px;margin-bottom:10px}.bdoc .bblock b.t{display:block;font-weight:700;margin-bottom:3px}
+  .bdoc .bblock ul{margin:2px 0 0;padding-left:18px}.bdoc .bblock li{margin:2px 0}
+  .bdoc .bfootnote{margin-top:8px;font-size:11.5px}
 `;
 const m2 = (v, _x) => (Number(v) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const SOFTWARE_LINE = 'For Software: 01913354321';
@@ -152,6 +168,39 @@ function businessInvoiceHtml(d) {
     <div class="bfoot"><span>Print Date: ${esc(fdate(today()))}</span><span>Print Time: ${esc(now.toLocaleTimeString('en-US'))}</span><span>${SOFTWARE_LINE}</span><span>Page 1 of 1</span></div>
   </div>`;
 }
+
+/**
+ * Any A4 document in the Business look (centred letterhead, grey title bar, grey info box, boxed table, totals,
+ * signature at the bottom of the last page). m = {
+ *   title, left: [[label, html]], right: [[label, html]], cancelled, blocks: html before the table,
+ *   cols: [{ label, w, cls: 'r' | 'cn' }], rows: [[cell html…] | { span: [label, value] }], empty,
+ *   words: amount in words, due: [[label, value]] (boxed, left), totals: [[label, value, bold]],
+ *   foot: html under the totals (left), note: true = the invoice note, qr: invoice number, sign }
+ */
+export function bizDocHtml(m) {
+  const st = useStore.getState().settings, n = m.cols.length;
+  const info = (list) => `<table>${(list || []).map(([k, v]) => `<tr><td class="k">${esc(k)}</td><td class="c">:</td><td>${v === '' || v == null ? '—' : v}</td></tr>`).join('')}</table>`;
+  const cell = (c, v) => `<td${c.cls ? ` class="${c.cls}"` : ''}>${v ?? ''}</td>`;
+  const body = (m.rows || []).map((r) => (Array.isArray(r) ? `<tr>${r.map((v, i) => cell(m.cols[i] || {}, v)).join('')}</tr>`
+    : `<tr class="bb"><td colspan="${n - 1}">${r.span[0]}</td><td class="r">${r.span[1]}</td></tr>`)).join('') || `<tr><td colspan="${n}" class="cn">${esc(m.empty || 'Nothing to show')}</td></tr>`;
+  const left = [m.words != null ? `<div><b>Amount In Words :</b> ${esc(amountInWords(m.words))}</div>` : '',
+    m.due && m.due.length ? `<table class="bdue">${m.due.map(([k, v]) => `<tr><td class="k">${esc(k)}</td><td>:</td><td class="r">${v}</td></tr>`).join('')}</table>` : ''].join('');
+  const tot = m.totals && m.totals.length ? `<table class="btot">${m.totals.map(([k, v, b]) => `<tr><td class="k">${esc(k)} :</td><td class="r">${b ? `<b>${v}</b>` : v}</td></tr>`).join('')}</table>` : '';
+  const now = new Date();
+  return `<div class="bdoc">
+    <div class="bh">${logoImg(st, 'doc-logo blogo')}<h1>${esc(st.shop_name || 'Karvio')}</h1>${st.shop_address ? `<div>${esc(st.shop_address)}</div>` : ''}${shopContacts(st) ? `<div>${shopContacts(st)}</div>` : ''}</div>
+    <div class="bbar">${esc(m.title)}</div>
+    <div class="binfo">${info(m.left)}${info(m.right)}</div>
+    ${m.cancelled != null ? `<div class="cx">CANCELLED — ${esc(m.cancelled || '')}</div>` : ''}
+    ${m.blocks || ''}
+    <table class="bitems"><thead><tr>${m.cols.map((c) => `<th${c.w ? ` style="width:${c.w}px"` : ''}>${esc(c.label)}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table>
+    <div class="btail"><div class="bsum"><div>${left}${m.foot || ''}</div>${tot}</div>
+    <div class="bspace"></div>
+    <div class="bend"><div class="bleft">${m.qr ? invoiceQr(m.qr, st) : ''}${m.note ? noteHtml(st) : ''}</div><div class="bsign">${esc(m.sign || 'Authorised Signature And Company Stamp')}</div></div></div>
+    <div class="bfoot"><span>Print Date: ${esc(fdate(today()))}</span><span>Print Time: ${esc(now.toLocaleTimeString('en-US'))}</span><span>${SOFTWARE_LINE}</span><span>Page 1 of 1</span></div>
+  </div>`;
+}
+export const m2fmt = (v) => m2(v);
 
 /* ---------------- Sales invoices ---------------- */
 export function saleInvoiceHtml(d) {
@@ -236,6 +285,16 @@ export async function excelSales(list, filename) {
 
 /* ---------------- Warranty claims ---------------- */
 export function claimHtml(c) {
+  if (isBizTpl()) return bizDocHtml({
+    title: 'Warranty Claim',
+    left: [['Customer', `<b>${esc(c.customer_name || '—')}</b>`], ['Contact No', esc(c.phone || '')], ['Invoice No', esc(c.invoice_no || '')]],
+    right: [['Claim No', `<b>${esc(c.claim_no)}</b>`], ['Received', esc(fdate(c.date))], ['Status', `<b>${esc(c.status)}</b>`]],
+    blocks: `<div class="bblock"><b class="t">Problem reported</b>${esc(c.issue || '—')}${c.vendor ? `<div style="margin-top:6px"><b class="t">Vendor / service centre</b>${esc(c.vendor)}</div>` : ''}</div>`,
+    cols: [{ label: 'S/L', w: 38, cls: 'cn' }, { label: 'Product' }, { label: 'Serial No', w: 170 }, { label: 'Warranty Till', w: 110, cls: 'cn' }, { label: 'Warranty', w: 96, cls: 'cn' }],
+    rows: [['1', esc(c.product_name || ''), `<span class="sn">${esc(c.serial || '—')}</span>`, esc(fdate(c.expiry) || 'N/A'), `<b>${c.in_warranty ? 'In warranty' : 'EXPIRED'}</b>`]],
+    foot: `<div class="bblock" style="margin-top:10px;min-width:420px"><b class="t">Progress</b><ul>${(c.log || []).map((l) => `<li><b>${esc(l.status)}</b> — ${esc(fdatetime(l.ts))} · ${esc(l.user || '')}${l.note ? ` — ${esc(l.note)}` : ''}</li>`).join('') || '<li>—</li>'}</ul></div>`,
+    note: true, sign: 'Customer Signature'
+  });
   const log = (c.log || []).map((l) => `<li><b>${esc(l.status)}</b> — ${esc(fdatetime(l.ts))} · ${esc(l.user || '')}${l.note ? ` — ${esc(l.note)}` : ''}</li>`).join('');
   return `<div class="sdoc tpl-${esc(docTpl())}">${head('WARRANTY CLAIM', `<b>${esc(c.claim_no)}</b><br>Received ${esc(fdate(c.date))}<br>Status: <b>${esc(c.status)}</b>`)}
     <div class="meta">
@@ -246,8 +305,8 @@ export function claimHtml(c) {
     <div class="box"><b class="t">Progress</b><ul class="log" style="margin:4px 0 0;padding-left:18px">${log || '<li>—</li>'}</ul></div>
     <div class="foot"><span>Printed ${esc(new Date().toLocaleString())}</span><span>Customer signature: ____________________</span></div></div>`;
 }
-export const printClaims = (list) => printHtml(wrap(list.map(claimHtml)));
-export const claimDocHtml = (c) => wrap([claimHtml(c)]);
+export const printClaims = (list) => printDocs(list.map(claimHtml));
+export const claimDocHtml = (c) => docWrap([claimHtml(c)]);
 
 /* ---------------- Sales return / exchange ---------------- */
 /** d = { ret, items, customer } from history.doc (type sreturn) */
@@ -259,6 +318,19 @@ export function salesReturnHtml(d) {
       <td class="r">${esc(qty(i.qty))}</td><td class="r">${esc(unitPrice(i.price))}</td><td class="r">${esc(money(i.total, false))}</td></tr>`;
   }).join('');
   const title = r.type === 'exchange' ? 'EXCHANGE' : 'SALES RETURN';
+  const adjusted = Number(r.total) - Number(r.refund || 0);
+  if (isBizTpl()) return bizDocHtml({
+    title: r.type === 'exchange' ? 'Sales Exchange' : 'Sales Return',
+    left: [['Customer', `<b>${esc(r.customer_name || 'CASH')}</b>`], ['Address', esc(String(c.addresses || '').split('|').map((x) => x.trim()).filter(Boolean).join('; '))], ['Contact No', esc(splitList(c.phones || '').join(', '))], ['Original Invoice', esc(r.invoice_no || '')]],
+    right: [['Return No', `<b>${esc(r.return_no)}</b>`], ['Date', esc(fdate(r.date || r.created_at))], ['Entered By', esc(cap1(r.user || ''))], ['Type', r.type === 'exchange' ? 'Exchange' : 'Return']],
+    cancelled: r.status === 'cancelled' ? r.cancel_reason || '' : null,
+    cols: [{ label: 'S/L', w: 38, cls: 'cn' }, { label: 'Item Descriptions' }, { label: 'Unit Price', w: 96, cls: 'r' }, { label: 'Quantity', w: 72, cls: 'cn' }, { label: 'Total', w: 100, cls: 'r' }],
+    rows: d.items.map((i, n) => { const sn = sers(i.serials); return [n + 1, `${esc(i.name)}${sn.length ? `<div class="sn">${esc(sn.join(', '))}</div>` : ''}`, esc(unitPrice(i.price, true)), esc(qty(i.qty)), esc(m2(i.total))]; }),
+    words: Number(r.total) || 0,
+    totals: [['Return Value', esc(m2(r.total)), true], [`Refunded${r.refund_account ? ` (${r.refund_account})` : ''}`, esc(m2(r.refund || 0))], ...(adjusted > 0.004 ? [['Adjusted to Balance', esc(m2(adjusted))]] : [])],
+    foot: r.note ? `<div class="bfootnote"><b>Note:</b> ${esc(r.note)}</div>` : '',
+    note: true
+  });
   return `<div class="sdoc tpl-${esc(docTpl())}">${head(title, `<b>${esc(r.return_no)}</b><br>${esc(fdatetime(r.created_at || r.date))}<br><span class="sm">By ${esc(r.user || '')}</span>`)}
     ${r.status === 'cancelled' ? `<div class="cx">CANCELLED — ${esc(r.cancel_reason || '')}</div>` : ''}
     <div class="meta">
@@ -273,11 +345,11 @@ export function salesReturnHtml(d) {
     </table>
     <div class="foot"><span>Printed ${esc(new Date().toLocaleString())}</span><span>Customer signature: ____________________</span></div></div>`;
 }
-export const salesReturnDocHtml = (d) => wrap([salesReturnHtml(d)]);
+export const salesReturnDocHtml = (d) => docWrap([salesReturnHtml(d)]);
 /** Several sales returns, each on its own page (Reports hub → Individual report). */
-export const printSalesReturns = (list) => printHtml(wrap(list.map(salesReturnHtml)));
-export const pdfSalesReturns = (list, filename) => pdfPages(list.map(salesReturnHtml), css + tplCss, filename);
-export const pdfClaims = (list, filename) => pdfPages(list.map(claimHtml), css + tplCss, filename);
+export const printSalesReturns = (list) => printDocs(list.map(salesReturnHtml));
+export const pdfSalesReturns = (list, filename) => pdfDocs(list.map(salesReturnHtml), filename);
+export const pdfClaims = (list, filename) => pdfDocs(list.map(claimHtml), filename);
 export async function excelClaims(list, filename) {
   const XLSX = await import('xlsx');
   const a = [['Claim #', 'Received', 'Status', 'Product', 'Serial', 'Invoice', 'Customer', 'Phone', 'Problem', 'Coverage', 'Warranty till', 'Vendor', 'Progress']];
