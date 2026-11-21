@@ -1,0 +1,1 @@
+function r(a,n="qty"){const e={};return a.forEach(t=>{const i=n==="item_quantities"?t.item_quantities||{}:{[t.unit||"pcs"]:Number(t[n])||0};Object.entries(i).forEach(([s,u])=>{e[s]=(e[s]||0)+(Number(u)||0)})}),Object.keys(e).sort().map(t=>Math.round((e[t]+Number.EPSILON)*1e4)/1e4+" "+t).join(" · ")}export{r as q};
