@@ -1962,6 +1962,25 @@ function orderClean_(p) {
     subtotal: subtotal, delivery_charge: delivery, discount: discount, total: total, advance: advance, advance_account_id: accId, cod: round_(total - advance),
     note: String(p.note || '').trim().slice(0, 500), courier_choice: courier, weight: Math.min(Math.max(Number(p.weight) || 0.5, 0.1), 50) };
 }
+/** The customer an order belongs to: the one its advance was paid by, else found by phone or made from the order. */
+function orderCustomer_(o, user) {
+  var c = o.customer_id ? all_('Customers').filter(function (x) { return x.id === o.customer_id; })[0] : null;
+  if (!c) c = customerByPhone_(o.customer.phone);
+  if (!c) c = customerSave_({ name: o.customer.name, phones: o.customer.phone, addresses: o.customer.address, note: 'Online order ' + o.no }, user);
+  return c;
+}
+/** The advance is money received now: it is booked as a customer payment the day it is taken and waits on the
+ *  customer's account as credit until the invoice uses it (or it is paid back when the order is cancelled).
+ *  Orders saved before this was done have no advance_booked: their advance is booked the next time they are saved. */
+function orderBookAdvance_(o, user) {
+  var booked = round_(num_(o.advance_booked)), more = round_(num_(o.advance) - booked);
+  if (more < -0.005) fail_('An advance of ' + booked + ' is already received for this order. It cannot be lowered here: cancel the order to pay it back, or keep it');
+  if (more <= 0.005) return;
+  var c = orderCustomer_(o, user);
+  var pay = customerPayment_({ customer_id: c.id, amount: more, account_id: o.advance_account_id, note: 'Online order advance ' + o.no }, user);
+  o.customer_id = c.id; o.advance_booked = round_(booked + more);
+  o.advance_entries = (o.advance_entries || []).concat([{ amount: more, account_id: o.advance_account_id, account_name: pay.account, receipt_no: pay.receipt_no, date: pay.date }]);
+}
 function orderSave_(p, user) {
   var clean = orderClean_(p), o, found = null;
   if (p.id) {
@@ -1969,10 +1988,11 @@ function orderSave_(p, user) {
     if (o.status !== 'new') fail_('Only a new order can be changed. This one is ' + o.status);
     Object.assign(o, clean); o.updated_at = now_(); o.updated_by = user.name;
   } else {
-    o = Object.assign({ id: uid_(), no: nextNo_('seq_online_order', 'OO-'), date: today_(), created_at: now_(), created_by: user.name, branch: _branch || '', history: [] }, clean);
+    o = Object.assign({ id: uid_(), no: nextNo_('seq_online_order', 'OO-'), date: today_(), created_at: now_(), created_by: user.name, branch: _branch || '', history: [], advance_booked: 0 }, clean);
     orderLog_(o, user, 'new', 'Order taken from ' + clean.source);
     found = { all: orderRows_(), row: null };
   }
+  orderBookAdvance_(o, user);
   orderWrite_(found.all, found.row, o);
   audit_(user, p.id ? 'order_update' : 'order_create', { no: o.no, customer: o.customer.name, total: o.total });
   return orderView_(o);
@@ -1986,18 +2006,27 @@ function deliveryProduct_(user) {
 function orderConfirm_(p, user) {
   var f = orderFind_(p.id), o = f.o;
   if (o.status !== 'new') fail_('This order is already ' + o.status);
-  var customer = customerByPhone_(o.customer.phone);
-  if (!customer) customer = customerSave_({ name: o.customer.name, phones: o.customer.phone, addresses: o.customer.address, note: 'Online order ' + o.no }, user);
+  var booked = o.advance_booked !== undefined; // orders saved before advances were booked pay theirs on the invoice
+  var customer = orderCustomer_(o, user);
   var serials = p.serials || {}, items = o.items.map(function (it) {
     var line = { product_id: it.product_id, qty: it.qty, price: it.price };
     if (it.serial) line.serials = serials[it.product_id] || '';
     return line;
   });
   if (o.delivery_charge > 0) items.push({ product_id: deliveryProduct_(user).id, qty: 1, price: o.delivery_charge });
-  var detail = saleCreate_({ customer_id: customer.id, items: items, discount: o.discount, payments: o.advance > 0 ? [{ account_id: o.advance_account_id, amount: o.advance }] : [],
+  // The advance already received is used as the customer's credit (what is still on the account: it may have cleared an older due).
+  var credit = 0;
+  if (booked && num_(o.advance_booked) > 0) {
+    var lineTotal = round_(sum_(items, function (x) { return round_(num_(x.qty) * num_(x.price)); }));
+    credit = round_(Math.min(num_(o.advance_booked), Math.max(-(customerBalances_()[customer.id] || 0), 0), Math.max(lineTotal - num_(o.discount), 0)));
+  }
+  var detail = saleCreate_({ customer_id: customer.id, items: items, discount: o.discount, credit_used: credit,
+    payments: !booked && o.advance > 0 ? [{ account_id: o.advance_account_id, amount: o.advance }] : [],
     note: 'Online order ' + o.no + ' (' + o.source + ')' + (o.note ? ' — ' + o.note : ''), send_sms: p.send_sms === true }, user);
   o.customer_id = customer.id; o.sale_id = detail.sale.id; o.invoice_no = detail.sale.invoice_no; o.confirmed_at = now_();
-  orderLog_(o, user, 'confirmed', 'Invoice ' + o.invoice_no);
+  // COD stays total − advance: what the customer was told. Advance that cleared an older due already lowered that due.
+  if (booked) o.credit_used = credit;
+  orderLog_(o, user, 'confirmed', 'Invoice ' + o.invoice_no + (booked && credit + 0.005 < num_(o.advance_booked) ? ' · advance on the invoice ' + credit + ' of ' + o.advance_booked + ' (the rest went to an older due of this customer)' : ''));
   orderWrite_(f.all, f.row, o);
   return orderView_(o);
 }
@@ -2082,7 +2111,17 @@ function orderReturn_(p, user) {
 function orderCancel_(p, user) {
   var f = orderFind_(p.id), o = f.o;
   if (o.status !== 'new') fail_('A confirmed order has an invoice: cancel the invoice from Sales & returns, or use "Parcel came back"');
-  orderLog_(o, user, 'cancelled', p.reason || 'Cancelled');
+  var note = String(p.reason || 'Cancelled'), adv = round_(num_(o.advance_booked));
+  // The advance received: paid back from an account now, or kept on the customer's account as credit.
+  if (adv > 0 && p.refund_account_id) {
+    need_(user, 'customers'); // Cash refunds require customer-account permission.
+    var available = round_(Math.max(-(customerBalances_()[o.customer_id] || 0), 0));
+    if (adv > available + 0.005) fail_('The order advance is no longer fully on the customer account (available credit is ' + available + '). Keep it on the customer account');
+    var back = customerPayment_({ customer_id: o.customer_id, amount: adv, account_id: p.refund_account_id, direction: 'pay', note: 'Online order advance returned ' + o.no }, user);
+    o.advance_refund = { amount: adv, account_id: p.refund_account_id, account_name: back.account, receipt_no: back.receipt_no, date: back.date };
+    note += ' · advance ' + adv + ' returned from ' + back.account;
+  } else if (adv > 0) note += ' · advance ' + adv + ' kept on the customer account';
+  orderLog_(o, user, 'cancelled', note);
   orderWrite_(f.all, f.row, o);
   return orderView_(o);
 }
@@ -2695,6 +2734,8 @@ function approvalText_(a) {
 }
 function approvalHold_(kind, req, route, user) {
   var payload = req.payload || {};
+  // Work sent for approval keeps the day it was done: a blank date becomes today, not the day an admin approves it.
+  if (kind !== 'transfer' && (payload.date === undefined || payload.date === null || String(payload.date).trim() === '')) payload = Object.assign({}, payload, { date: today_() });
   var preview = route.fn(payload, user, req.token); // every check of the real save runs here
   var branch = _branch;
   approvalDiscard_();
@@ -3015,6 +3056,7 @@ function databaseInfo_(p, user) {
   var tables = Object.keys(SCHEMA).map(function (name) { return { name: name, rows: name === 'Settings' ? tableRows_(name).length : all_(name).length }; });
   tables.push({ name: 'SavedQuotes', rows: savedQuoteRows_().rows.length });
   tables.push({ name: 'OnlineOrders', rows: orderRows_().rows.length });
+  tables.push({ name: 'Approvals', rows: approvalRows_().rows.length });
   if (branchesOn_() || branchRows_().rows.length) tables.push({ name: 'BranchRows', rows: branchRows_().rows.length });
   return {
     tables: tables, total: sum_(tables, function (t) { return t.rows; }),
@@ -3040,12 +3082,26 @@ function databaseExport_(p, user) {
   out.saved_quotes = quotes; out.quotes_checksum = quotesDigest_(quotes); counts.SavedQuotes = quotes.length;
   var orders = backupJsonRows_(orderRows_());
   out.online_orders = orders; out.orders_checksum = hash_('karvio-orders-v1', JSON.stringify(orders)); counts.OnlineOrders = orders.length;
+  // Approval requests (waiting, approved and rejected) travel the same way.
+  var approvals = backupApprovalRows_();
+  out.approvals = approvals; out.approvals_checksum = hash_('karvio-approvals-v1', JSON.stringify(approvals)); counts.Approvals = approvals.length;
   var brows = branchRows_().rows.map(function (r) { return [r.key, r.num, r.text]; });
   out.branch_rows = brows; out.branch_checksum = hash_('karvio-branches-v1', JSON.stringify(brows)); counts.BranchRows = brows.length;
   setSetting_('last_backup_at', created); // straight to the sheet: this route is not journaled
   audit_(user, 'database_backup', { rows: sum_(Object.keys(counts), function (k) { return counts[k]; }) });
   flush_();
   return out;
+}
+/** Approval requests as [id, last change (ms), request JSON] rows, read straight from the sheet (none when it was never made). */
+function backupApprovalRows_() {
+  var sh = ss_().getSheetByName(APPROVAL_SHEET), last = sh ? sh.getLastRow() : 0, rows = [];
+  if (last) sh.getRange(1, 1, last, 3).getValues().forEach(function (r) { if (r[0]) rows.push([String(r[0]), num_(r[1]), String(r[2] === null || r[2] === undefined ? '' : r[2])]); });
+  return rows;
+}
+/** Replace every approval request (an empty list clears them). The sheet is made only when there is something to write. */
+function writeApprovalRows_(rows) {
+  if (rows.length || ss_().getSheetByName(APPROVAL_SHEET)) writeJsonRows_(APPROVAL_SHEET, rows);
+  delete _mem.__approvalRows;
 }
 function quotesDigest_(rows) { return hash_('karvio-quotes-v1', JSON.stringify(rows)); }
 /** Saved quotations as [id, last change (ms), quotation JSON] rows, oldest sheet row first. */
@@ -3140,6 +3196,7 @@ function databaseRestore_(p, user) {
   if (String(p.confirm || '').trim() !== RESTORE_WORD) fail_('Type RESTORE to confirm — nothing was restored');
   var b; try { b = JSON.parse(String(p.backup_text || '')); } catch (e) { fail_('This is not a Karvio database backup file'); }
   var plan = checkBackup_(b), quotes = checkBackupQuotes_(b), orders = checkBackupJsonRows_(b.online_orders, b.orders_checksum, 'karvio-orders-v1', 'online orders'), branchRows = checkBackupBranchRows_(b);
+  var approvals = checkBackupJsonRows_(b.approvals, b.approvals_checksum, 'karvio-approvals-v1', 'approval requests');
   var ss = ss_(), stamp = now_().replace('T', ' ');
   var safety = driveCopy_(ss, 'Karvio backup before restore ' + stamp);
   return withMaintenance_(function () {
@@ -3155,6 +3212,9 @@ function databaseRestore_(p, user) {
   if (quotes) writeBackupQuotes_(quotes); // a backup made before quotations were backed up keeps today's list
   if (orders) writeJsonRows_(ORDER_SHEET, orders); // the same for online orders
   if (branchRows) { writeJsonRows_(BRANCH_SHEET, branchRows); delete _mem.__branchRows; }
+  // Approval requests come back with the backup. A backup made before they were backed up has none: today's requests
+  // are cleared, because they were made against data that is no longer there.
+  writeApprovalRows_(approvals || []);
   flush_();
   _mem = { __ss: ss };
   setupDatabase(); // only fills what is missing (settings added after this backup was made)
@@ -3169,6 +3229,7 @@ function databaseRestore_(p, user) {
   if (quotes) counts.SavedQuotes = quotes.length;
   if (orders) counts.OnlineOrders = orders.length;
   if (branchRows) counts.BranchRows = branchRows.length;
+  counts.Approvals = approvals ? approvals.length : 0;
   return { safety: safety, backup_created_at: b.created_at, shop_name: b.shop_name, counts: counts, signed_out: !stillSignedIn, restored_at: restoredAt };
   });
 }
@@ -3231,6 +3292,8 @@ function databaseReset_(p, user) {
 
   wipeAll_(ss);
   writeJsonRows_(BRANCH_SHEET, []); delete _mem.__branchRows; // stock per branch means nothing once the stock is gone
+  // Saved quotations, online orders and approval requests belong to the old data: a fresh start has none.
+  writeJsonRows_(SAVED_QUOTE_SHEET, []); writeJsonRows_(ORDER_SHEET, []); writeApprovalRows_([]);
 
   insertMany_('Users', users);
   if (settings.length) writeRows_('Settings', 2, 1, settings);
@@ -5122,6 +5185,7 @@ function preturnsList_(p, user, allRows) {
   var q = String(p.q || '').toLowerCase(), items = {};
   all_('PurchaseReturnItems').forEach(function (i) { (items[i.return_id] = items[i.return_id] || []).push(i.name + ' x' + i.qty); });
   return all_('PurchaseReturns').filter(function (r) {
+    if (!branchSees_('PurchaseReturns', r.id)) return false;
     return inRange_(r.date, p.from, p.to) && (!p.status || r.status === p.status) && (!q || (r.return_no + ' ' + r.invoice_no + ' ' + r.supplier_name).toLowerCase().indexOf(q) >= 0);
   }).sort(function (a, b) { return b._row - a._row; }).map(function (r) {
     var o = Object.assign({}, r); delete o._row;
@@ -5254,7 +5318,8 @@ function statement_(table, key, parties, sign, p) {
 /* ---- Party ledger adjustments (Party Ledger Adjust, admin only): raise or lower what a customer owes us or what we
  * owe a supplier. No money moves. A supplier deduction is a rebate (type 'rebate', counted as other income); every other
  * adjustment is a ledger row of type 'adjust' (ref_id = the invoice it is for, when one was chosen). A customer deduction is
- * a due written off: it lowers profit ("Customer dues written off"). Additions only correct the balance.
+ * a due written off: it lowers profit ("Customer dues written off"). An addition of type Missed charge or Other addition is
+ * real income (customer) or cost (supplier) and counts in profit; a Correction only fixes the balance.
  * Notes read '<Type label> — <reason>' plus ' · Ref: <reference no>' when one was given. */
 var ADJ_REF = ' · Ref: ';
 var ADJUST_TYPES = {
@@ -5348,6 +5413,20 @@ function writeoffTotal_(from, to, key) {
   all_('CustomerLedger').forEach(function (l) {
     if (l.type !== 'adjust' || l.voided || !(num_(l.credit) > 0) || !inRange_(l.date, from, to)) return;
     var a = num_(l.credit); total += a; if (key) by[key(l.date)] = (by[key(l.date)] || 0) + a;
+  });
+  return key ? by : round_(total);
+}
+/** Party Ledger Adjust additions that are real income or cost: a missed charge or another addition — not a Correction,
+ *  which only fixes a wrong balance. side 'customer' = charges added to customers (other income); 'supplier' = charges
+ *  suppliers added to what we owe (a cost). With `key` grouped for the profit timeline. */
+function ledgerChargeTotal_(side, from, to, key) {
+  var cust = side === 'customer', table = cust ? 'CustomerLedger' : 'SupplierLedger', correction = ADJUST_TYPES[side].add.correction + ' — ';
+  var total = 0, by = {};
+  all_(table).forEach(function (l) {
+    if (l.type !== 'adjust' || l.voided || !inRange_(l.date, from, to)) return;
+    var a = num_(cust ? l.debit : l.credit); // an addition raises the balance: customer debit, supplier credit
+    if (!(a > 0) || String(l.note || '').indexOf(correction) === 0) return;
+    total += a; if (key) by[key(l.date)] = (by[key(l.date)] || 0) + a;
   });
   return key ? by : round_(total);
 }
@@ -6155,6 +6234,8 @@ function claimRestock_(p, user) {
 function claimsList_(p, user, allRows) {
   var q = String(p.q || '').toLowerCase();
   return all_('WarrantyClaims').filter(function (c) {
+    // Claims carry no branch of their own: staff fixed to a branch see the claims on that branch's invoices.
+    if (c.sale_id && !branchSees_('Sales', c.sale_id)) return false;
     if (!inRange_(c.date, p.from, p.to)) return false;
     if (p.status === 'open') { if (c.status === 'Delivered' || c.status === 'Rejected') return false; }
     else if (p.status && c.status !== p.status) return false;
@@ -6926,7 +7007,9 @@ function profitSummary_(from, to) {
   o.stock_adjust = stockAdjustValue_(from, to); // negative = stock written off
   o.rebates = rebateTotal_(from, to); // supplier rebates: other income
   o.writeoffs = writeoffTotal_(from, to); // customer dues written off (Customer Ledger Adjust)
-  o.net = round_(o.gross - o.expenses + o.stock_adjust + o.rebates - o.writeoffs);
+  o.customer_charges = ledgerChargeTotal_('customer', from, to); // charges added to customers later: other income
+  o.supplier_charges = ledgerChargeTotal_('supplier', from, to); // charges suppliers added later: a cost
+  o.net = round_(o.gross - o.expenses + o.stock_adjust + o.rebates - o.writeoffs + o.customer_charges - o.supplier_charges);
   o.margin = o.net_sales > 0 ? round_(o.gross / o.net_sales * 100, 1) : 0;
   o.net_margin = o.net_sales > 0 ? round_(o.net / o.net_sales * 100, 1) : 0;
   return o;
@@ -6958,13 +7041,15 @@ function profitReport_(p, user) {
   exps.forEach(function (x) { row(key(x.date)).expenses += x.amount; });
   var adj = stockAdjustValue_(from, to, key);
   var reb = rebateTotal_(from, to, key), wo = writeoffTotal_(from, to, key);
-  Object.keys(adj).concat(Object.keys(reb), Object.keys(wo)).forEach(function (k) { row(k); });
+  var cch = ledgerChargeTotal_('customer', from, to, key), sch = ledgerChargeTotal_('supplier', from, to, key);
+  Object.keys(adj).concat(Object.keys(reb), Object.keys(wo), Object.keys(cch), Object.keys(sch)).forEach(function (k) { row(k); });
   var timeline = Object.keys(tl).sort().map(function (k) {
     var r = tl[k]; ['sales', 'cost', 'returns', 'returns_profit', 'gross', 'expenses'].forEach(function (f) { r[f] = round_(r[f]); });
     r.stock_adjust = round_(adj[k] || 0);
     r.rebates = round_(reb[k] || 0);
     r.writeoffs = round_(wo[k] || 0);
-    r.net = round_(r.gross - r.expenses + r.stock_adjust + r.rebates - r.writeoffs); return r;
+    r.customer_charges = round_(cch[k] || 0); r.supplier_charges = round_(sch[k] || 0);
+    r.net = round_(r.gross - r.expenses + r.stock_adjust + r.rebates - r.writeoffs + r.customer_charges - r.supplier_charges); return r;
   });
 
   // Per product: item profit before invoice discounts, less profit on returned units.
@@ -7054,7 +7139,9 @@ function dashboard_(p, user) {
       c.stock_adjust = period === 'total' ? stockAdjustValue_('', '') : period === 'today' ? stockAdjustValue_(today, today) : period === 'yesterday' ? stockAdjustValue_(yesterday, yesterday) : stockAdjustValue_(month + '-01', today);
       c.rebates = period === 'total' ? rebateTotal_('', '') : period === 'today' ? rebateTotal_(today, today) : period === 'yesterday' ? rebateTotal_(yesterday, yesterday) : rebateTotal_(month + '-01', today);
       c.writeoffs = period === 'total' ? writeoffTotal_('', '') : period === 'today' ? writeoffTotal_(today, today) : period === 'yesterday' ? writeoffTotal_(yesterday, yesterday) : writeoffTotal_(month + '-01', today);
-      c.net_profit = round_(c.gross_profit - c.expenses + c.stock_adjust + c.rebates - c.writeoffs);
+      var cr = period === 'total' ? ['', ''] : period === 'today' ? [today, today] : period === 'yesterday' ? [yesterday, yesterday] : [month + '-01', today];
+      c.customer_charges = ledgerChargeTotal_('customer', cr[0], cr[1]); c.supplier_charges = ledgerChargeTotal_('supplier', cr[0], cr[1]);
+      c.net_profit = round_(c.gross_profit - c.expenses + c.stock_adjust + c.rebates - c.writeoffs + c.customer_charges - c.supplier_charges);
     }
     return c;
   }
@@ -7090,7 +7177,7 @@ function dashboard_(p, user) {
       row.expenses = { amount: round_(sum_(ex, function (x) { return x.amount; })), count: ex.length };
       if (row.profit !== undefined) {
         row.gross_profit = { amount: row.profit, count: s.length };
-        row.net_profit = { amount: round_(row.profit - row.expenses.amount + stockAdjustValue_(r[2], r[3]) + rebateTotal_(r[2], r[3]) - writeoffTotal_(r[2], r[3])), count: ex.length };
+        row.net_profit = { amount: round_(row.profit - row.expenses.amount + stockAdjustValue_(r[2], r[3]) + rebateTotal_(r[2], r[3]) - writeoffTotal_(r[2], r[3]) + ledgerChargeTotal_('customer', r[2], r[3]) - ledgerChargeTotal_('supplier', r[2], r[3])), count: ex.length };
       }
       var sd = s.filter(function (x) { return x.due > 0; }), pd = pu.filter(function (x) { return x.due > 0; });
       row.receivable = { amount: round_(sum_(sd, function (x) { return x.due; })), count: sd.length };
@@ -7694,7 +7781,10 @@ function reportsRaw_(p, user) {
   var from = p.from || '', to = p.to || '', group = p.group || 'invoice', cost = can_(user, 'cost');
   // Without "View sales made by other staff", every report shows only the user's own sales (and their returns).
   var salesById = null, saleOf = function (id) { salesById = salesById || indexBy_(all_('Sales')); return salesById[id]; };
-  var ownSale = function (s) { return !!s && (can_(user, 'sales.all') || s.user_id === user.id); };
+  // Staff fixed to a branch see only that branch's documents (sales, purchases, returns, expenses, accounts).
+  var ownSale = function (s) { return !!s && (can_(user, 'sales.all') || s.user_id === user.id) && branchSees_('Sales', s.id); };
+  var fixedBranch = _reqUser ? branchFixed_(_reqUser) : '', acctBranch = fixedBranch ? accountBranches_() : {};
+  var seesAccount = function (id) { return !fixedBranch || !acctBranch[id] || acctBranch[id] === fixedBranch; };
   var status = p.status || 'active', okStatus = function (s) { return status === 'all' || s === status; };
   var period = (from || to) ? ' (' + (from || '…') + ' → ' + (to || '…') + ')' : '';
   var T = p.type;
@@ -7775,7 +7865,7 @@ function reportsRaw_(p, user) {
   }
 
   if (T === 'sales') {
-    var sl = all_('Sales').filter(function (s) { return (can_(user, 'sales.all') || s.user_id === user.id) && inRange_(s.date, from, to) && okStatus(s.status) && (!p.customer_id || s.customer_id === p.customer_id) && (!p.user_id || s.user_id === p.user_id); });
+    var sl = all_('Sales').filter(function (s) { return ownSale(s) && inRange_(s.date, from, to) && okStatus(s.status) && (!p.customer_id || s.customer_id === p.customer_id) && (!p.user_id || s.user_id === p.user_id); });
     if (group === 'invoice') {
       var items = {}; all_('SaleItems').forEach(function (i) { (items[i.sale_id] = items[i.sale_id] || []).push(i.name + ' x' + i.qty); });
       var cols = [col_('date', 'Date', 'date'), col_('invoice_no', 'Invoice'), col_('customer_name', 'Customer'), col_('items', 'Items'), col_('subtotal', 'Subtotal', 'money', 1), col_('discount', 'Discount', 'money', 1), col_('total', 'Total', 'money', 1), col_('paid', 'Paid', 'money', 1), col_('due', 'Due at sale', 'money', 1), col_('due_now', 'Due now', 'money', 1)];
@@ -7799,7 +7889,7 @@ function reportsRaw_(p, user) {
 
   if (T === 'purchases') {
     var purchaseDues = purchaseOpenDues_();
-    var pu = all_('Purchases').filter(function (s) { return inRange_(s.date, from, to) && okStatus(s.status) && (!p.supplier_id || s.supplier_id === p.supplier_id); });
+    var pu = all_('Purchases').filter(function (s) { return branchSees_('Purchases', s.id) && inRange_(s.date, from, to) && okStatus(s.status) && (!p.supplier_id || s.supplier_id === p.supplier_id); });
     if (group === 'invoice') {
       var pit = {}; all_('PurchaseItems').forEach(function (i) { (pit[i.purchase_id] = pit[i.purchase_id] || []).push(i.name + ' x' + i.qty); });
       var pc = [col_('date', 'Date', 'date'), col_('invoice_no', 'Invoice'), col_('supplier_name', 'Supplier'), col_('items', 'Items'), col_('subtotal', 'Subtotal', 'money', 1), col_('discount', 'Discount', 'money', 1), col_('total', 'Total', 'money', 1), col_('paid', 'Paid', 'money', 1), col_('due', 'Due at purchase', 'money', 1), col_('due_now', 'Due now', 'money', 1), col_('user', 'Staff'), col_('status', 'Status')];
@@ -7832,10 +7922,10 @@ function reportsRaw_(p, user) {
     function d_(k) { return days[k] = days[k] || { date: k, invoices: 0, items: 0, item_quantities: {}, sales: 0, returns: 0, purchases: 0, purchase_returns: 0, expenses: 0, profit: 0 }; }
     var sIt = {}; all_('SaleItems').forEach(function (i) { var u=i.unit || 'pcs', units=sIt[i.sale_id]=sIt[i.sale_id] || {}; units[u]=(units[u] || 0)+i.qty; });
     all_('Sales').forEach(function (s) { if (s.status === 'active' && ownSale(s) && inRange_(s.date, from, to)) { var r = d_(s.date); r.invoices++; Object.keys(sIt[s.id] || {}).forEach(function(u) { r.item_quantities[u]=(r.item_quantities[u] || 0)+sIt[s.id][u]; }); r.sales += s.total; r.profit += s.profit; } });
-    all_('SalesReturns').forEach(function (s) { if (s.status === 'active' && ownSale(saleOf(s.sale_id)) && inRange_(s.date, from, to)) { var r = d_(s.date); r.returns += s.total; r.profit -= returnProfit_(s); } });
-    all_('Purchases').forEach(function (s) { if (s.status === 'active' && inRange_(s.date, from, to)) d_(s.date).purchases += s.total; });
-    all_('PurchaseReturns').forEach(function (s) { if (s.status === 'active' && inRange_(s.date, from, to)) d_(s.date).purchase_returns += s.total; });
-    all_('Expenses').forEach(function (s) { if (s.status === 'active' && inRange_(s.date, from, to)) { var r = d_(s.date); r.expenses += s.amount; r.profit -= s.amount; } });
+    all_('SalesReturns').forEach(function (s) { var os = saleOf(s.sale_id); if (s.status === 'active' && !!os && (can_(user, 'sales.all') || os.user_id === user.id) && branchSees_('SalesReturns', s.id) && inRange_(s.date, from, to)) { var r = d_(s.date); r.returns += s.total; r.profit -= returnProfit_(s); } });
+    all_('Purchases').forEach(function (s) { if (s.status === 'active' && inRange_(s.date, from, to) && branchSees_('Purchases', s.id)) d_(s.date).purchases += s.total; });
+    all_('PurchaseReturns').forEach(function (s) { if (s.status === 'active' && inRange_(s.date, from, to) && branchSees_('PurchaseReturns', s.id)) d_(s.date).purchase_returns += s.total; });
+    all_('Expenses').forEach(function (s) { if (s.status === 'active' && inRange_(s.date, from, to) && branchSees_('Expenses', s.id)) { var r = d_(s.date); r.expenses += s.amount; r.profit -= s.amount; } });
     var adjD = stockAdjustValue_(from, to, function (d) { return d; });
     Object.keys(adjD).forEach(function (k) { var r = d_(k); r.stock_adjust = round_(adjD[k]); r.profit += adjD[k]; });
     var dc = [col_('date', 'Date', 'date'), col_('invoices', 'Invoices', 'num', 1), col_('items', 'Items Sold', 'text', 1), col_('sales', 'Sales', 'money', 1), col_('returns', 'Sales Returns', 'money', 1), col_('purchases', 'Purchases', 'money', 1), col_('purchase_returns', 'Purchase Returns', 'money', 1), col_('expenses', 'Expenses', 'money', 1)];
@@ -7847,7 +7937,7 @@ function reportsRaw_(p, user) {
   if (T === 'payment_methods') {
     var accs = indexBy_(all_('Accounts')), pm = {};
     all_('AccountTxns').forEach(function (t) {
-      if (t.voided || !inRange_(t.date, from, to) || (p.account_id && t.account_id !== p.account_id)) return;
+      if (t.voided || !inRange_(t.date, from, to) || (p.account_id && t.account_id !== p.account_id) || !seesAccount(t.account_id)) return;
       if (t.ref_type === 'transfer' || t.ref_type === 'manual') return;
       var k = bucket_(t.date, group === 'invoice' ? 'daily' : group) + '|' + t.account_id;
       var r = pm[k] = pm[k] || { period: bucket_(t.date, group === 'invoice' ? 'daily' : group), account: accs[t.account_id] ? accs[t.account_id].name : '?', received: 0, paid: 0, net: 0 };

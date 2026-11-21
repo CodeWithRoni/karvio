@@ -19,13 +19,13 @@ const TXT = {
     title: 'Customer Ledger Adjust', who: 'Customer', invoice: 'Sale invoice', report: '/customer-ledger-report', prefix: 'CLA', rev: 'cadjust',
     sub: 'Raise or lower what a customer owes — write off a small leftover due, give a late discount or correct a mistake. No cash, bank or MFS money moves.',
     add: 'Customer owes more', ded: 'Write off / discount', owes: 'owes', adv: 'advance',
-    effect: 'A deduction shows as Customer dues written off in the profit report.'
+    effect: 'A deduction shows as Customer dues written off in the profit report. A Missed charge or Other addition counts as income there; a Correction only fixes the balance.'
   },
   supplier: {
     title: 'Supplier Ledger Adjust', who: 'Supplier', invoice: 'Purchase invoice', report: '/supplier-ledger-report', prefix: 'SLA', rev: 'sadjust',
     sub: 'Raise or lower what we owe a supplier — rebates, discounts and corrections. No cash, bank or MFS money moves.',
     add: 'We owe more', ded: 'Rebate / discount', owes: 'we owe', adv: 'advance paid',
-    effect: 'A deduction shows as Supplier rebates in the profit report.'
+    effect: 'A deduction shows as Supplier rebates in the profit report. A Missed charge or Other addition counts as a cost there; a Correction only fixes the balance.'
   }
 };
 const blank = (dir = 'ded') => ({ party_id: '', invoice_id: '', date: today(), ref: '', dir, type: '', promised: false, expected: '', amount: '', reason: '', pending_id: '' });

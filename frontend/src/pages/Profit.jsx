@@ -72,6 +72,8 @@ function Report({ d, group, setGroup, view, setView }) {
           {!!s.stock_adjust && <tr><td>{s.stock_adjust < 0 ? '− Stock / warranty loss' : '+ Stock / warranty recovery'} <small className="muted">(stock adjustments at cost)</small></td><td className="r num">{money(s.stock_adjust, false)}</td></tr>}
           {!!s.rebates && <tr><td>+ Supplier rebates <small className="muted">(discounts suppliers gave after the purchase)</small></td><td className="r num">{money(s.rebates, false)}</td></tr>}
           {!!s.writeoffs && <tr><td>− Customer dues written off <small className="muted">(Customer Ledger Adjust deductions)</small></td><td className="r num">{money(-s.writeoffs, false)}</td></tr>}
+          {!!s.customer_charges && <tr><td>+ Charges added to customers <small className="muted">(Party Ledger Adjust: missed charges and other additions)</small></td><td className="r num">{money(s.customer_charges, false)}</td></tr>}
+          {!!s.supplier_charges && <tr><td>− Charges added by suppliers <small className="muted">(Party Ledger Adjust: missed charges and other additions)</small></td><td className="r num">{money(-s.supplier_charges, false)}</td></tr>}
           <tr className={`sub total ${tone(s.net)}`}><td><b>= Net profit</b></td><td className="r num"><b>{money(s.net, false)}</b></td></tr>
         </tbody></table>
       </div>
@@ -94,6 +96,7 @@ function Report({ d, group, setGroup, view, setView }) {
             { key: 'stock_adjust', label: 'Stock adjust', type: 'money', sum: true },
             { key: 'rebates', label: 'Rebates', type: 'money', sum: true },
             { key: 'writeoffs', label: 'Dues written off', type: 'money', sum: true },
+            ...(d.timeline.some((r) => r.customer_charges || r.supplier_charges) ? [{ key: 'customer_charges', label: 'Customer charges', type: 'money', sum: true }, { key: 'supplier_charges', label: 'Supplier charges', type: 'money', sum: true }] : []),
             { key: 'net', label: 'Net profit', type: 'money', sum: true, className: 'profit-net' }
           ]} />}
         {view === 'products' && <DataTable title={`Profit by product ${d.from} to ${d.to}`} rows={d.products} empty={<Empty title="Nothing sold in this period" />}

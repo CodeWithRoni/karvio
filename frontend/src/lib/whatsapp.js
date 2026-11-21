@@ -18,7 +18,9 @@ export const firstPhone = (phones) => splitList(phones || '')[0] || '';
 /** The invoice message for a customer, from the wording in Settings. */
 export function invoiceMessage(settings, sale, customer, link) {
   const tpl = settings.whatsapp_template || DEFAULT_WHATSAPP;
-  const vars = { name: customer?.name || sale.customer_name || '', shop: settings.shop_name || '', invoice: sale.invoice_no, total: lakh(sale.total), paid: lakh(sale.paid),
-    due: lakh(sale.due_now ?? sale.due), link: link || '', shop_phone: firstPhone(settings.shop_phone || settings.shop_tel) };
+  // Due is what is still owed now; Paid is the rest of the total (at the sale, advance used and collected later), so the two add up.
+  const due = Math.max(roundDecimal(Number(sale.due_now ?? sale.due) || 0, 2), 0);
+  const vars = { name: customer?.name || sale.customer_name || '', shop: settings.shop_name || '', invoice: sale.invoice_no, total: lakh(sale.total), paid: lakh(Math.max((Number(sale.total) || 0) - due, 0)),
+    due: lakh(due), link: link || '', shop_phone: firstPhone(settings.shop_phone || settings.shop_tel) };
   return tpl.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m)).replace(/\n{3,}/g, '\n\n').trim();
 }

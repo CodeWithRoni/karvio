@@ -634,7 +634,7 @@ function DatabaseReset({ onDone }) {
           <div className="form">
             <div className="wide reset-warn">
               <b>This deletes everything:</b> products and stock, serial numbers, purchases, sales, returns, customers, suppliers, dues and ledgers,
-              accounts and their balances, expenses, warranty claims, SMS log, invoice links and history. Invoice numbers start again from 1.
+              accounts and their balances, expenses, warranty claims, saved quotations, online orders, approval requests, SMS log, invoice links and history. Invoice numbers start again from 1.
               <div style={{ marginTop: 6 }}>Your Administrator account stays, with the same password. {offline ? 'The previous data file is kept on this computer.' : 'Before deleting, a full safety backup is saved in your backend — if it cannot be saved, nothing is deleted.'}</div>
             </div>
             <label className="check wide"><input type="checkbox" checked={f.keep_settings} onChange={(e) => setF({ ...f, keep_settings: e.target.checked })} /> Keep shop settings (shop name, invoice, SMS gateway, dashboard)</label>

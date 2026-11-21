@@ -62,6 +62,7 @@ function OrderForm({ initial, sources, couriers, onClose, onSaved }) {
     courier: initial.courier_choice || '', weight: initial.weight || '0.5', note: initial.note || ''
   }));
   const [busy, run] = useAction();
+  const booked = Number(initial.advance_booked) || 0; // advance already received and saved on the customer's account
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const add = (p) => {
     if (f.items.some((i) => i.product_id === p.id)) return setF({ ...f, items: f.items.map((i) => (i.product_id === p.id ? { ...i, qty: String((Number(i.qty) || 0) + 1) } : i)) });
@@ -75,13 +76,13 @@ function OrderForm({ initial, sources, couriers, onClose, onSaved }) {
   const save = async () => {
     const o = await run(() => api('order.save', { id: initial.id, source: f.source, customer: { name: f.name, phone: f.phone, address: f.address, area: f.area },
       items: f.items.map((i) => ({ product_id: i.product_id, qty: i.qty, price: i.price })), delivery_charge: f.delivery_charge, discount: f.discount,
-      advance: f.advance, advance_account_id: Number(f.advance) > 0 ? f.advance_account_id : '', courier: f.courier, weight: f.weight, note: f.note }), initial.id ? 'Order updated' : 'Order saved');
+      advance: f.advance, advance_account_id: Number(f.advance) > 0 ? f.advance_account_id || initial.advance_account_id || '' : '', courier: f.courier, weight: f.weight, note: f.note }), initial.id ? 'Order updated' : 'Order saved');
     if (o) onSaved(o);
   };
   const stockOf = (id) => products.find((p) => p.id === id);
   return (
     <Modal open size="lg" title={initial.id ? `Edit ${initial.no}` : 'New online order'} onClose={onClose}
-      footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={save} disabled={!f.items.length || f.items.some((i) => !(Number(i.price) > 0))}>Save order</Btn></>}>
+      footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={save} disabled={!f.items.length || f.items.some((i) => !(Number(i.price) > 0)) || Number(f.advance || 0) < booked - 0.004}>Save order</Btn></>}>
       <div className="oo-form">
         <div className="oo-cols">
           <Field label="Order from"><select value={f.source} onChange={set('source')} aria-label="Order from">{sources.map((s) => <option key={s}>{s}</option>)}</select></Field>
@@ -103,8 +104,10 @@ function OrderForm({ initial, sources, couriers, onClose, onSaved }) {
         <div className="oo-cols four">
           <Field label="Delivery charge"><input type="number" min="0" value={f.delivery_charge} onChange={set('delivery_charge')} placeholder="0" aria-label="Delivery charge" /></Field>
           <Field label="Discount"><input type="number" min="0" value={f.discount} onChange={set('discount')} placeholder="0" aria-label="Discount" /></Field>
-          <Field label="Advance paid"><input type="number" min="0" value={f.advance} onChange={set('advance')} placeholder="0" aria-label="Advance paid" /></Field>
-          <Field label="Advance received in"><select value={f.advance_account_id} onChange={set('advance_account_id')} disabled={!(Number(f.advance) > 0)} aria-label="Advance received in">{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></Field>
+          <Field label="Advance paid" hint={booked > 0 ? `${money(booked)} already received — it can only go up here` : 'Saved into the account now, as the customer\'s advance'}
+            error={booked > 0 && Number(f.advance || 0) < booked - 0.004 ? `At least ${money(booked)}: cancel the order to pay the advance back` : undefined}>
+            <input type="number" min={booked || 0} value={f.advance} onChange={set('advance')} placeholder="0" aria-label="Advance paid" /></Field>
+          <Field label={booked > 0 ? 'More advance received in' : 'Advance received in'}><select value={f.advance_account_id} onChange={set('advance_account_id')} disabled={!(Number(f.advance) > booked + 0.004)} aria-label="Advance received in">{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></Field>
         </div>
         <div className="oo-cols three">
           <Field label="Courier (plan)"><select value={f.courier} onChange={set('courier')} aria-label="Courier plan"><option value="">Decide later</option>{couriers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
@@ -127,7 +130,10 @@ function OrderView({ o, couriers, onClose, onChanged, onEdit }) {
   const act = async (action, payload, msg) => { const r = await run(() => api(action, { id: o.id, ...payload }), msg); if (r) onChanged(r); return r; };
   const serialItems = o.items.filter((i) => i.serial);
   const confirm = async () => act('order.confirm', { serials }, `Invoice made for ${o.no}`);
-  const cancel = async () => { if (await ask({ title: `Cancel ${o.no}?`, message: 'The order stays in the list as cancelled. Stock is not touched (no invoice was made).', confirmLabel: 'Cancel order' })) act('order.cancel', { reason: 'Cancelled' }, 'Order cancelled'); };
+  const cancel = async () => {
+    if (Number(o.advance_booked) > 0) return setDlg('cancel'); // the advance: pay it back or keep it as credit
+    if (await ask({ title: `Cancel ${o.no}?`, message: 'The order stays in the list as cancelled. Stock is not touched (no invoice was made).', confirmLabel: 'Cancel order' })) act('order.cancel', { reason: 'Cancelled' }, 'Order cancelled');
+  };
   const [st, tone] = STATUS[o.status] || [o.status, 'muted'];
   return (
     <Modal open size="lg" title={`${o.no} — ${o.customer.name}`} onClose={onClose}
@@ -150,7 +156,9 @@ function OrderView({ o, couriers, onClose, onChanged, onEdit }) {
             {o.delivery_charge > 0 && <tr><td>Delivery charge</td><td /><td className="r num">{tk(o.delivery_charge)}</td></tr>}
             {o.discount > 0 && <tr><td>Discount</td><td /><td className="r num">−{tk(o.discount)}</td></tr>}
             <tr><th>Total</th><th /><th className="r num">{money(o.total)}</th></tr>
-            {o.advance > 0 && <tr><td>Advance paid</td><td /><td className="r num">−{tk(o.advance)}</td></tr>}
+            {o.advance > 0 && <tr><td>Advance paid{o.advance_entries?.length ? <small className="muted"> ({o.advance_entries.map((x) => `${x.receipt_no} · ${x.account_name}`).join(', ')})</small> : ''}</td><td /><td className="r num">−{tk(o.advance)}</td></tr>}
+            {o.credit_used !== undefined && o.credit_used + 0.004 < o.advance && <tr><td colSpan={3} className="muted">The invoice used {tk(o.credit_used)} of the advance; the rest went to an older due of this customer, so the invoice shows more due. The cash on delivery stays the same.</td></tr>}
+            {o.advance_refund && <tr><td>Advance returned ({o.advance_refund.receipt_no} · {o.advance_refund.account_name})</td><td /><td className="r num">{tk(o.advance_refund.amount)}</td></tr>}
             <tr><th>Cash on delivery</th><th /><th className="r num">{money(o.cod)}</th></tr></tbody></table>
           {o.note && <p><b>Note:</b> {o.note}</p>}
           {o.status === 'new' && serialItems.length > 0 && <div className="oo-serials">
@@ -169,6 +177,7 @@ function OrderView({ o, couriers, onClose, onChanged, onEdit }) {
       {dlg === 'ship' && <ShipDialog o={o} couriers={couriers} onClose={() => setDlg('')} onDone={(r) => { setDlg(''); onChanged(r); }} />}
       {dlg === 'settle' && <SettleDialog o={o} onClose={() => setDlg('')} onDone={(r) => { setDlg(''); onChanged(r); }} />}
       {dlg === 'return' && <ReturnDialog o={o} onClose={() => setDlg('')} onDone={(r) => { setDlg(''); onChanged(r); }} />}
+      {dlg === 'cancel' && <CancelDialog o={o} onClose={() => setDlg('')} onDone={(r) => { setDlg(''); onChanged(r); }} />}
       {confirmUI}
     </Modal>
   );
@@ -288,6 +297,35 @@ function ReturnDialog({ o, onClose, onDone }) {
         <Field label="Return charge to the courier" wide><input type="number" min="0" value={charge} onChange={(e) => setCharge(e.target.value)} placeholder="0" aria-label="Return charge" /></Field>
         {Number(charge) > 0 && <Field label="Paid from" wide><select value={account} onChange={(e) => setAccount(e.target.value)} aria-label="Paid from">{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></Field>}
         <Field label="Why" wide><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Customer refused" aria-label="Why it came back" /></Field>
+      </div>
+    </Modal>
+  );
+}
+
+function CancelDialog({ o, onClose, onDone }) {
+  const { accounts } = useStore();
+  const canRefund = useStore((s) => s.can('customers'));
+  const [refund, setRefund] = useState('keep');
+  const [account, setAccount] = useState(o.advance_entries?.[0]?.account_id || accounts[0]?.id || '');
+  const [reason, setReason] = useState('');
+  const [busy, run] = useAction();
+  const submit = async () => {
+    const r = await run(() => api('order.cancel', { id: o.id, reason: reason.trim() || 'Cancelled', refund_account_id: refund === 'return' ? account : '' }), 'Order cancelled');
+    if (r) onDone(r);
+  };
+  return (
+    <Modal open size="sm" title={`Cancel ${o.no}?`} onClose={onClose}
+      footer={<><Btn onClick={onClose}>Back</Btn><Btn kind="danger" busy={busy} disabled={refund === 'return' && !account} onClick={submit}>Cancel order</Btn></>}>
+      <div className="form">
+        <p className="muted wide">The order stays in the list as cancelled. Stock is not touched (no invoice was made).</p>
+        <div className="field wide" role="radiogroup" aria-label="Advance">
+          <span className="field-label">Advance {money(o.advance_booked)}</span>
+          {!canRefund && <small className="muted">Returning money requires Customers &amp; dues permission.</small>}
+          <label className="check"><input type="radio" name="oo-adv" disabled={!canRefund} checked={refund === 'return'} onChange={() => setRefund('return')} /> Give it back to the customer now</label>
+          <label className="check"><input type="radio" name="oo-adv" checked={refund === 'keep'} onChange={() => setRefund('keep')} /> Keep it on the customer's account (credit for later)</label>
+        </div>
+        {refund === 'return' && <Field label="Paid back from" wide><select value={account} onChange={(e) => setAccount(e.target.value)} aria-label="Paid back from">{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></Field>}
+        <Field label="Why (optional)" wide><input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Customer changed the plan" aria-label="Why it is cancelled" /></Field>
       </div>
     </Modal>
   );
