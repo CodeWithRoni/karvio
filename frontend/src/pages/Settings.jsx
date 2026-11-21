@@ -565,16 +565,17 @@ function ApiSettings() {
   const [cfg, setCfg] = useState(getApiConfig());
   const [busy, run] = useAction();
   const save = async () => {
-    const url = (cfg.proxyUrl || cfg.scriptUrl || DEFAULT_API_URL || '').trim();
+    // The old Apps Script address field is gone: saving here always uses the built-in server (or the proxy).
+    const next = { ...cfg, scriptUrl: '' };
+    const url = (next.proxyUrl || DEFAULT_API_URL || '').trim();
     const r = await run(() => testConnection(url));
-    setApiConfig(cfg);
+    setApiConfig(next); setCfg(next);
     useStore.getState().toast(`Connected to ${r.app} v${r.version}`);
   };
   return (
     <div className="card form">
-      <p className="muted wide" style={{ margin: 0 }}>Stored on this device only. Change it here after redeploying the Apps Script — no rebuild needed.</p>
-      <Field label="Apps Script Web App URL" wide hint="Leave empty to use the built-in server address."><input value={cfg.scriptUrl || ''} onChange={(e) => setCfg({ ...cfg, scriptUrl: e.target.value })} placeholder={DEFAULT_API_URL || 'https://script.google.com/macros/s/…/exec'} /></Field>
-      <Field label="Custom proxy domain (optional)" wide hint="When set, requests go here instead of the script URL."><input value={cfg.proxyUrl || ''} onChange={(e) => setCfg({ ...cfg, proxyUrl: e.target.value })} placeholder="https://api.yourshop.com" /></Field>
+      <p className="muted wide" style={{ margin: 0 }}>Karvio connects to its built-in server by itself. Stored on this device only.</p>
+      <Field label="Custom proxy domain (optional)" wide hint="When set, requests go here instead of the built-in server."><input value={cfg.proxyUrl || ''} onChange={(e) => setCfg({ ...cfg, proxyUrl: e.target.value })} placeholder="https://api.yourshop.com" /></Field>
       <div className="wide row end"><Btn kind="primary" busy={busy} onClick={save}>Test & save</Btn></div>
     </div>
   );
