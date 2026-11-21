@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { api } from '../lib/api';
-import { money, fdate, fdatetime, today } from '../lib/format';
+import { money, fdate, fdatetime, today, round2 } from '../lib/format';
 import DataTable from '../components/DataTable';
 import { useApi, PageHead, Btn, Field, ErrorBox, Badge, Loading, useAction, Modal, Tabs, useConfirm } from '../components/ui';
 import { ProductSearch } from '../components/widgets';
@@ -68,9 +68,10 @@ function OrderForm({ initial, sources, couriers, onClose, onSaved }) {
     setF({ ...f, items: [...f.items, { product_id: p.id, name: p.name, qty: '1', price: String(p.sale_price || 0) }] });
   };
   const setItem = (id, k, v) => setF({ ...f, items: f.items.map((i) => (i.product_id === id ? { ...i, [k]: v } : i)) });
-  const subtotal = f.items.reduce((s, i) => s + (Number(i.qty) || 0) * (Number(i.price) || 0), 0);
-  const total = subtotal + (Number(f.delivery_charge) || 0) - (Number(f.discount) || 0);
-  const cod = total - (Number(f.advance) || 0);
+  // As order.save works it out: each price to 2 decimals, the products added up, then rounded.
+  const subtotal = round2(f.items.reduce((s, i) => s + (Number(i.qty) || 0) * round2(Number(i.price) || 0), 0));
+  const total = round2(subtotal + round2(Number(f.delivery_charge) || 0) - round2(Number(f.discount) || 0));
+  const cod = round2(total - round2(Number(f.advance) || 0));
   const save = async () => {
     const o = await run(() => api('order.save', { id: initial.id, source: f.source, customer: { name: f.name, phone: f.phone, address: f.address, area: f.area },
       items: f.items.map((i) => ({ product_id: i.product_id, qty: i.qty, price: i.price })), delivery_charge: f.delivery_charge, discount: f.discount,

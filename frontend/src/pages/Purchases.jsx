@@ -496,7 +496,7 @@ function EditPurchase({ detail, onClose, onDone }) {
   };
   const set = (i, patch) => setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const count = (l) => (l.serial ? splitList(l.serials).length : Number(l.qty) || 0);
-  const subtotal = round2(lines.reduce((t, l) => t + count(l) * (Number(l.cost) || 0), 0));
+  const subtotal = round2(lines.reduce((t, l) => t + round2(count(l) * (Number(l.cost) || 0)), 0)); // each line rounded, as the server does
   const total = round2(subtotal - (Number(discount) || 0));
   const paid = round2(pays.reduce((t, x) => t + (Number(x.amount) || 0), 0));
   const due = round2(total - paid);
@@ -575,13 +575,17 @@ function PReturnForm({ detail, onClose, onDone }) {
     <Modal open onClose={onClose} size="lg" title={`Return to supplier — ${purchase.invoice_no}`} footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} disabled={!lines.some(l => Number(l.qty) > 0)} onClick={save}>Record return</Btn></>}>
       <div className="dt"><div className="dt-scroll"><table>
         <thead><tr><th>Item</th><th className="r">Bought</th><th style={{ width: 110 }} className="r">Return qty</th><th>Serials</th></tr></thead>
-        <tbody>{items.map((it, i) => (
+        <tbody>{items.map((it, i) => {
+          // Only serials still in stock from this purchase can go back (an older server sends none: show every serial).
+          const sers = Array.isArray(it.serials_left) ? it.serials_left : splitList(it.serials);
+          return (
           <tr key={it.id}><td>{it.name}</td><td className="r num">{fqty(it.qty, it.unit)}</td>
             <td><input type="number" min="0" max={Math.max(0, it.qty - (it.returned_qty || 0))} step="any" value={lines[i].qty} onChange={(e) => set(i, { qty: e.target.value })} onWheel={noWheel} /></td>
-            <td>{splitList(it.serials).length > 0 && <div className="serial-grid">{splitList(it.serials).map((sn) => (
+            <td>{it.serials && !sers.length && <span className="muted">No serial left in stock from this purchase</span>}{sers.length > 0 && <div className="serial-grid">{sers.map((sn) => (
               <button type="button" key={sn} className={lines[i].serials.includes(sn) ? 'on' : ''} onClick={() => { const c = lines[i].serials; const n = c.includes(sn) ? c.filter((x) => x !== sn) : [...c, sn]; set(i, { serials: n, qty: n.length || '' }); }}>{sn}</button>
             ))}</div>}</td></tr>
-        ))}</tbody>
+          );
+        })}</tbody>
       </table></div></div>
       <div className="form" style={{ marginTop: 14 }}>
         <Field label="Return value"><input readOnly value={money(value)} /></Field>

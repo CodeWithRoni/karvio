@@ -133,9 +133,17 @@ function Builder() {
       useStore.getState().toast(`${savedId ? 'Quotation updated' : 'Quotation saved'} — ${meta.customer.trim()}`);
     }).catch(() => {});
   };
-  // Send the quotation to the customer's mobile: an SMS with a private link that works for 3 days.
+  // Send the quotation to the customer's mobile: an SMS with a private link, valid as set in Settings → Invoice → Link validity.
   const smsOn = settings.sms_enabled === 'true';
-  const sendTitle = !smsOn ? 'Turn on SMS in Settings to send quotations' : !phoneOk ? 'Enter the customer\'s mobile number (01XXXXXXXXX)' : 'Send this quotation to the customer by SMS (link valid 3 days)';
+  const linkDays = (() => {
+    const v = String(settings.quote_link_days ?? '').trim().toLowerCase();
+    if (!v) return 3;
+    if (v === 'life' || v === 'lifetime' || v === '0') return 0;
+    const n = Math.round(Number(v));
+    return n >= 1 && n <= 3650 ? n : 3;
+  })();
+  const linkLife = linkDays ? `valid ${linkDays} day${linkDays === 1 ? '' : 's'}` : 'never expires';
+  const sendTitle = !smsOn ? 'Turn on SMS in Settings to send quotations' : !phoneOk ? 'Enter the customer\'s mobile number (01XXXXXXXXX)' : `Send this quotation to the customer by SMS (link ${linkLife})`;
   const clearAll = async () => {
     const used = filled.length || meta.customer.trim() || meta.phone.trim() || meta.note.trim() || String(meta.discount).trim();
     if (used && !await ask({ title: 'Clear this quotation?', message: `Every part, the customer and the notes on the ${KINDS[kind].label} tab are cleared. Saved quotations are not touched.`, confirmLabel: 'Clear' })) return;
@@ -144,7 +152,7 @@ function Builder() {
   const toCustomer = async () => {
     if (!pricing.valid) return useStore.getState().toast(pricing.error, 'err');
     if (!needCustomer()) return;
-    if (!await ask({ title: 'Send quotation by SMS?', message: <>Send <b>{meta.title || 'this quotation'}</b> ({money(total)}) to <b>{meta.phone}</b>? The customer gets a link that works for <b>3 days</b>; then it is deleted.</>, confirmLabel: 'Send SMS' })) return;
+    if (!await ask({ title: 'Send quotation by SMS?', message: <>Send <b>{meta.title || 'this quotation'}</b> ({money(total)}) to <b>{meta.phone}</b>? {linkDays ? <>The customer gets a link that works for <b>{linkDays} day{linkDays === 1 ? '' : 's'}</b>; then it is deleted.</> : <>The customer gets a link that <b>never expires</b>.</>}</>, confirmLabel: 'Send SMS' })) return;
     try {
       const r = await runSend(() => api('quote.send', {
         customer: meta.customer, phone: meta.phone, title: meta.title, valid_days: Number(meta.validDays) || 7, discount: Number(meta.discount) || 0, note: meta.note,

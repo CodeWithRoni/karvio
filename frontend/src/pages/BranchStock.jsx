@@ -28,6 +28,8 @@ export default function BranchStock() {
   if (!on) return <><PageHead title="Branch stock" /><Empty icon="box" title="Branches are off">An admin can add branches in Settings → Branches.</Empty></>;
 
   const branches = d?.branches || [];
+  // Card totals keep each selling unit apart (pcs and meters are not added together).
+  const unitTotal = (key) => { const t = stockQuantityTotal(flat, key); return typeof t === 'number' ? fqty(t) : t; };
   const cell = (n) => (n ? <b>{fqty(n)}</b> : <span className="bs-zero">0</span>);
   const where = (id) => (id === TRANSIT ? 'On the way' : (branches.find((b) => b.id === id) || {}).name || id);
   const cols = [
@@ -51,13 +53,13 @@ export default function BranchStock() {
         <div className="bs-sum">
           {branches.map((b) => (
             <button type="button" key={b.id} className={`card bs-card ${f.branch === b.id ? 'on' : ''} ${b.id === here ? 'here' : ''}`} onClick={() => setF({ ...f, branch: f.branch === b.id ? '' : b.id })} aria-pressed={f.branch === b.id} title="Show only the products this branch has">
-              <span>{b.name}{b.id === here ? ' · you are here' : ''}</span><b className="num">{fqty(d.totals.by[b.id] || 0)}</b><small>units</small>
+              <span>{b.name}{b.id === here ? ' · you are here' : ''}</span><b className="num">{unitTotal(`b_${b.id}`)}</b><small>in stock</small>
             </button>
           ))}
           <button type="button" className={`card bs-card transit ${f.branch === TRANSIT ? 'on' : ''}`} onClick={() => setF({ ...f, branch: f.branch === TRANSIT ? '' : TRANSIT })} aria-pressed={f.branch === TRANSIT} title="Show only what is on the way">
-            <span>On the way</span><b className="num">{fqty(d.totals.transit)}</b><small>between branches</small>
+            <span>On the way</span><b className="num">{unitTotal('transit')}</b><small>between branches</small>
           </button>
-          <div className="card bs-card all"><span>All branches</span><b className="num">{fqty(d.totals.total)}</b><small>{d.cost ? `${money(d.totals.value)} at cost` : 'units in the shop'}</small></div>
+          <div className="card bs-card all"><span>All branches</span><b className="num">{unitTotal('total')}</b><small>{d.cost ? `${money(d.totals.value)} at cost` : 'in the shop'}</small></div>
         </div>
         <div className="filters">
           <Field label="Product group"><select value={f.group} onChange={(e) => setF({ ...f, group: e.target.value })}><option value="">All groups</option>{opts('group').map((x) => <option key={x}>{x}</option>)}</select></Field>

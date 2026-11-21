@@ -187,7 +187,7 @@ export default function POS() {
   useEffect(() => onShopDraftsCleared(() => { reset(); setHolds([]); refresh('products').catch(() => {}); }), []);
 
   // Hold: put this cart aside (items, customer, discount, price tier, note) and start a fresh one.
-  const cartTotal = (c, disc) => Math.max(0, c.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.price) || 0), 0) - (Number(disc) || 0));
+  const cartTotal = (c, disc) => { const sub = round2(c.reduce((s, l) => s + round2((Number(l.qty) || 0) * (Number(l.price) || 0)), 0)); return round2(Math.max(0, sub - Math.min(Math.max(Number(disc) || 0, 0), sub))); }; // same as the bill total
   const currentHold = () => ({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: new Date().toISOString(), cart, customerId, discount, tier, note,
     label: customer?.name || 'Cash sale', items: cart.length, total: cartTotal(cart, discount) });
   const putHolds = (list) => { try { saveHolds(list, cartKey.current); setHolds(list); return true; } catch (e) { toast(e.message, 'err'); return false; } };

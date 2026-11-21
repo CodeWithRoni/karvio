@@ -78,6 +78,7 @@ function ProfitBreakdown({ p }) {
 export default function Dashboard() {
   const { data: d, loading, error, reload } = useApi('dashboard', {}, [], { refreshMs: 30000 });
   const can = useStore((s) => s.can);
+  const role = useStore((s) => s.user?.role);
   const on = useCardOn();
   const [lb, setLb] = useState('month');
   const [scope, setScopeState] = useState(readScope);
@@ -99,7 +100,7 @@ export default function Dashboard() {
 
   const claimsOpen = d.claims ? d.claims.pending + d.claims.vendor + d.claims.ready : 0;
   const attention = [
-    on('low_stock') && { key: 'low', label: 'Low stock items', n: d.low_stock.length, tone: 'warn', to: '/products?low=1' },
+    on('low_stock') && { key: 'low', label: 'Low stock items', n: d.low_stock_count ?? d.low_stock.length, tone: 'warn', to: '/products?low=1' },
     on('reminders') && Array.isArray(d.reminders) && { key: 'dues', label: 'Payments due or overdue', n: d.reminders.length, tone: 'bad', to: '#reminders' },
     d.services_done !== undefined && { key: 'services', label: 'Service jobs done — complete & invoice', n: d.services_done, tone: 'info', to: '/service?tab=Work%20done' },
     d.repairs_waiting !== undefined && { key: 'repairs', label: 'Repairs waiting for pickup', n: d.repairs_waiting, tone: 'aqua', to: '/repairs' },
@@ -119,7 +120,7 @@ export default function Dashboard() {
         sub={<span className="dash-when">{fdate(d.date)}{d.limited ? ' — your own sales' : ''}<LiveClock compact /></span>}>
         <NotesButton notes={notes} />
         <Btn onClick={reload} busy={loading}>Refresh</Btn>
-        {can('repairs') && <Link to="/service" className="btn">New service</Link>}
+        {can('service') && role !== 'technician' && <Link to="/service" className="btn">New service</Link>}
         {can('repairs') && <Link to="/repairs?new=1" className="btn">New repair</Link>}
         {can('pos') && <Link to="/pos" className="btn btn-primary">New sale</Link>}
       </PageHead>

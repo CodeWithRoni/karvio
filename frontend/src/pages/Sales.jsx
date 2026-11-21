@@ -180,7 +180,7 @@ function EditInvoice({ detail, onClose, onDone }) {
   };
   const set = (i, patch) => setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const count = (l) => (l.serial ? splitList(l.serials).length : Number(l.qty) || 0);
-  const subtotal = round2(lines.reduce((t, l) => t + count(l) * (Number(l.price) || 0), 0));
+  const subtotal = round2(lines.reduce((t, l) => t + round2(count(l) * (Number(l.price) || 0)), 0)); // each line rounded, as the server does
   const total = round2(subtotal - (Number(discount) || 0));
   const paid = round2(pays.reduce((t, p) => t + (Number(p.amount) || 0), 0) + (Number(s.credit_used) || 0));
   const due = round2(total - paid);

@@ -134,25 +134,36 @@ function UserForm({ initial, onClose, onDone }) {
 }
 
 function RolePerms() {
-  const { permLabels, settings } = useStore();
+  const { permLabels, settings, rolePerms } = useStore();
   const [cfg, setCfg] = useState(null);
   const [busy, run] = useAction();
   useEffect(() => {
+    // The server sends what each role may do right now (its defaults, a role added later, a permission added later).
+    if (rolePerms && typeof rolePerms === 'object') {
+      setCfg(Object.fromEntries(['manager', 'sales', 'technician'].map((r) => [r, Array.isArray(rolePerms[r]) ? rolePerms[r] : []])));
+      return;
+    }
+    // An older server without that list: the same defaults and rules as the server.
     let c = null;
     try { c = JSON.parse(settings.role_perms || 'null'); } catch {}
-    // the same defaults as the server; a role added later (technician) starts with its defaults
     const def = {
-      manager: ['pos', 'sales.all', 'sales.return', 'purchase', 'products', 'cost', 'customers', 'suppliers', 'accounts', 'expenses', 'warranty', 'repairs', 'reports'],
+      manager: ['pos', 'sales.all', 'sales.return', 'purchase', 'products', 'cost', 'customers', 'suppliers', 'accounts', 'expenses', 'warranty', 'repairs', 'service', 'reports'],
       sales: ['pos', 'warranty'],
-      technician: ['repairs']
+      technician: ['repairs', 'service']
     };
-    setCfg({ ...def, ...(c || {}), technician: (c && Array.isArray(c.technician)) ? c.technician : def.technician });
-  }, [settings.role_perms]);
+    if (!c) { setCfg(def); return; }
+    const added = ['service'];
+    const known = Array.isArray(c.known) ? c.known : Object.keys(permLabels).filter((k) => !added.includes(k));
+    setCfg(Object.fromEntries(Object.keys(def).map((r) => {
+      const list = Array.isArray(c[r]) ? c[r] : def[r];
+      return [r, [...list, ...def[r].filter((k) => !known.includes(k) && !list.includes(k))]];
+    })));
+  }, [rolePerms, settings.role_perms, permLabels]);
   if (!cfg) return null;
   const toggle = (role, p) => setCfg({ ...cfg, [role]: cfg[role].includes(p) ? cfg[role].filter((x) => x !== p) : [...cfg[role], p] });
   const save = async () => {
-    await run(() => api('rolePerms.save', cfg), 'Permissions saved — they apply on the next request');
-    useStore.setState((s) => ({ settings: { ...s.settings, role_perms: JSON.stringify(cfg) } }));
+    const saved = await run(() => api('rolePerms.save', cfg), 'Permissions saved — they apply on the next request');
+    if (saved) useStore.setState((s) => ({ rolePerms: saved, settings: { ...s.settings, role_perms: JSON.stringify(saved) } }));
   };
   return (
     <div className="card">

@@ -1,6 +1,6 @@
 import { clearShopDrafts } from '../lib/shopStorage';
 import { useEffect, useState } from 'react';
-import { useStore } from '../lib/store';
+import { useStore, shopDay } from '../lib/store';
 import { api, getApiConfig, setApiConfig, testConnection, isOffline, getToken } from '../lib/api';
 import { DEFAULT_API_URL } from '../config';
 import { fdatetime, fdate } from '../lib/format';
@@ -163,8 +163,8 @@ function BranchSettings() {
       <section className="card">
         <div className="card-head"><h2>Branches</h2><Btn kind="primary" onClick={() => setEdit({ name: '', address: '', phone: '', active: true })}>+ Add branch</Btn></div>
         {!d.on && <p className="muted">Branches are off. When you add the first branch, your shop as it is today becomes the <b>Main Branch</b> (with all its stock) and the new branch is added beside it. Then move stock with Branch transfer.</p>}
-        {d.list.length > 0 && <table className="dc-hist"><thead><tr><th>Branch</th><th>Address</th><th>Phone</th><th className="r">Stock (units)</th><th /></tr></thead>
-          <tbody>{d.list.map((b) => <tr key={b.id}><td><b>{b.name}</b> {b.main && <Badge tone="ok">Main</Badge>}{!b.active && <Badge tone="muted">closed</Badge>}</td><td>{b.address}</td><td>{b.phone}</td><td className="r num">{d.stock_units[b.id] || 0}</td>
+        {d.list.length > 0 && <table className="dc-hist"><thead><tr><th>Branch</th><th>Address</th><th>Phone</th><th className="r">Stock</th><th /></tr></thead>
+          <tbody>{d.list.map((b) => <tr key={b.id}><td><b>{b.name}</b> {b.main && <Badge tone="ok">Main</Badge>}{!b.active && <Badge tone="muted">closed</Badge>}</td><td>{b.address}</td><td>{b.phone}</td><td className="r num">{d.stock_text ? d.stock_text[b.id] || 0 : d.stock_units[b.id] || 0}</td>
             <td className="r"><Btn size="sm" onClick={() => setEdit({ ...b })}>Edit</Btn></td></tr>)}</tbody></table>}
       </section>
       {d.on && ub && ab && <div className="dc-grid" style={{ marginTop: 12 }}>
@@ -260,8 +260,7 @@ function ShiftSettings() {
 /* ---------------- Close books: nothing dated on or before this day can be entered or cancelled ---------------- */
 function BooksSettings() {
   const { f, setF, save, busy } = useSettingsForm(['books_locked_until', 'day_close_lock']);
-  const d = new Date(); d.setDate(d.getDate() - 1);
-  const yesterday = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const yesterday = shopDay(-1); // the shop's yesterday (server time zone), not this computer's clock
   return (
     <div className="card form">
       <Field label="Books closed up to" wide hint="After you have checked a month, close it: purchases, payments, expenses and account entries dated on or before this day can no longer be added, and nothing from then can be cancelled. Leave empty to keep every day open.">

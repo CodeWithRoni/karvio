@@ -61,6 +61,7 @@ export default function Service() {
         {m?.manage && <Select value={tech} onChange={setTech} options={m.technicians} placeholder="All technicians" aria-label="Technician" />}
       </div>
       <DataTable title="Service jobs" loading={list.loading && !list.data} rows={rows} onRowClick={setSel} empty="No service jobs here"
+        sumFilter={(r) => r.status !== 'Cancelled'} rowClass={(r) => (r.status === 'Cancelled' ? 'dim' : '')}
         columns={[
           { key: 'job_no', label: 'Job #' }, { key: 'date', label: 'Date', type: 'date' },
           { key: 'customer_name', label: 'Customer', render: (r) => <>{r.customer_name}<small className="muted" style={{ display: 'block' }}>{r.phone}</small></> },

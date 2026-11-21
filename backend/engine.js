@@ -2438,6 +2438,14 @@ function inDocumentBranch_(table, id, run) {
 }
 function docBranch_(table, id) { var r = branchGet_('d|' + table + '|' + id); return r && r.text ? r.text : branchDefault_(); }
 
+/** Stock quantities kept apart by selling unit ("12 pcs · 30.5 meter"): pieces and meters must not be added together. */
+function unitQtyText_(m) {
+  var keys = Object.keys(m || {}).filter(function (u) { return Math.abs(m[u]) > 1e-9; }).sort();
+  if (!keys.length) return '0';
+  if (keys.length === 1 && keys[0] === 'pcs') return String(round_(m.pcs, 4));
+  return keys.map(function (u) { return round_(m[u], 4) + ' ' + u; }).join(' · ');
+}
+function addUnitQty_(maps, id, unit, n) { var m = maps[id] || (maps[id] = {}); unit = unit || 'pcs'; m[unit] = round_((m[unit] || 0) + n, 4); }
 /* ---- Branch admin: list, add, change; who works where; which account belongs to which branch. */
 function branchesInfo_(user) {
   var on = branchesOn_();
@@ -2445,8 +2453,10 @@ function branchesInfo_(user) {
 }
 function branchesGet_(p, user) {
   var b = branchesInfo_(user), stock = {};
-  branchRows_().rows.forEach(function (r) { if (r.key.indexOf('s|') === 0) { var bid = r.key.split('|')[2]; stock[bid] = round_((stock[bid] || 0) + r.num, 4); } });
-  b.stock_units = stock; b.user_branches = userBranches_(); b.account_branches = accountBranches_();
+  var units = {}, prods = indexBy_(all_('Products'));
+  branchRows_().rows.forEach(function (r) { if (r.key.indexOf('s|') === 0) { var k = r.key.split('|'), bid = k[2]; stock[bid] = round_((stock[bid] || 0) + r.num, 4); addUnitQty_(units, bid, (prods[k[1]] || {}).unit, r.num); } });
+  b.stock_units = stock;
+  b.stock_text = {}; Object.keys(units).forEach(function (bid) { b.stock_text[bid] = unitQtyText_(units[bid]); }); b.user_branches = userBranches_(); b.account_branches = accountBranches_();
   b.users = all_('Users').filter(function (u) { return u.active; }).map(function (u) { return { id: u.id, name: u.name, role: u.role }; });
   b.accounts = all_('Accounts').filter(function (a) { return a.active; }).map(function (a) { return { id: a.id, name: a.name, type: a.type }; });
   return b;
@@ -2594,7 +2604,7 @@ function branchReport_(p, user) {
   });
   all_('Purchases').filter(inRange).forEach(function (r) { var b = docBranch_('Purchases', r.id); add(b, 'purchases', num_(r.total)); add(b, 'purchase_count', 1); });
   all_('Expenses').filter(inRange).forEach(function (r) { add(docBranch_('Expenses', r.id), 'expenses', num_(r.amount)); });
-  var pmap = indexBy_(all_('Products')), transit = { qty: 0, value: 0 }, serialCosts = {};
+  var pmap = indexBy_(all_('Products')), transit = { qty: 0, value: 0 }, serialCosts = {}, units = {};
   all_('SerialItems').forEach(function (sn) {
     if (sn.status !== 'in_stock') return;
     var k = sn.product_id + '|' + serialBranch_(sn.id); serialCosts[k] = (serialCosts[k] || 0) + num_(sn.cost);
@@ -2603,15 +2613,19 @@ function branchReport_(p, user) {
     if (r.key.indexOf('s|') !== 0 || !r.num) return;
     var k = r.key.split('|'), pr = pmap[k[1]]; if (!pr) return;
     var v = isSerialProduct_(pr) ? (serialCosts[k[1] + '|' + k[2]] || 0) : r.num * num_(pr.cost_price);
-    if (k[2] === BRANCH_TRANSIT) { transit.qty = round_(transit.qty + r.num, 4); transit.value = round_(transit.value + v); return; }
+    if (k[2] === BRANCH_TRANSIT) { transit.qty = round_(transit.qty + r.num, 4); transit.value = round_(transit.value + v); addUnitQty_(units, 'transit', pr.unit, r.num); return; }
     add(k[2], 'stock_qty', r.num); add(k[2], 'stock_value', v);
+    addUnitQty_(units, k[2], pr.unit, r.num); addUnitQty_(units, 'all', pr.unit, r.num);
   });
+  // Quantities by unit for the screen (stock_qty adds pieces and meters together and stays only for older screens).
+  ids.concat(['all']).forEach(function (id) { if (out[id]) out[id].stock_text = unitQtyText_(units[id]); });
+  transit.text = unitQtyText_(units.transit);
   var ab = accountBranches_(), unassigned = 0;
   accountsList_().filter(function (a) { return a.active; }).forEach(function (a) { if (ab[a.id]) add(ab[a.id], 'cash', num_(a.balance)); else unassigned = round_(unassigned + num_(a.balance)); });
   out.all.cash = round_(out.all.cash + unassigned);
   var rows = branchesAll_().map(function (b) { return Object.assign({ id: b.id, name: b.name, active: b.active }, out[b.id]); });
   if (!showCost) rows.concat([out.all]).forEach(function (r) { delete r.profit; delete r.stock_value; });
-  return { from: from, to: to, branches: rows, all: out.all, transit: showCost ? transit : { qty: transit.qty }, shared_cash: unassigned };
+  return { from: from, to: to, branches: rows, all: out.all, transit: showCost ? transit : { qty: transit.qty, text: transit.text }, shared_cash: unassigned };
 }
 
 /* ---- Approvals: chosen staff / managers send purchases, supplier payments, collections, expenses and branch
@@ -4346,6 +4360,8 @@ function bootstrap_(p, user) {
   var cats = all_('Categories').map(function (c) { return { id: c.id, name: c.name, parent_id: c.parent_id }; });
   return {
     user: pubUser_(user), perms: permsFor_(user.role), permLabels: PERMS, apiCapabilities: API_CAPABILITIES,
+    // What each staff role may do, as the server applies it (so the Role permissions screen starts from the real values).
+    rolePerms: can_(user, 'users') ? rolePerms_() : undefined,
     settings: settings,
     accounts: accounts, categories: cats,
     brands: all_('Brands').map(function (b) { return { id: b.id, name: b.name }; }),
@@ -4609,6 +4625,7 @@ function purchaseDetail_(p) {
   returns.forEach(function(r) { if (r.status === 'active') retIds[r.id] = true; });
   all_('PurchaseReturnItems').forEach(function(i) { if (retIds[i.return_id]) { retQty[i.purchase_item_id] = (retQty[i.purchase_item_id] || 0) + num_(i.qty); retValue[i.purchase_item_id] = (retValue[i.purchase_item_id] || 0) + num_(i.total); } });
   var items = all_('PurchaseItems').filter(function(i) { return i.purchase_id === pur.id; });
+  var sidx = items.some(function (i) { return i.serials; }) ? serialIndex_() : {};
   return {
     purchase: Object.assign({}, pur, { due_now: purchaseOpenDues_()[pur.id] || 0 }),
     items: items.map(function (i) {
@@ -4616,6 +4633,8 @@ function purchaseDetail_(p) {
       o.description = pr ? pr.description || '' : ''; o.sku = pr ? pr.sku || '' : '';
       try { o.supplier_warranty_expiry = JSON.parse(i.valuation || '{}').supplier_warranty_expiry || ''; } catch(e) { o.supplier_warranty_expiry = ''; }
       o.returned_qty = retQty[i.id] || 0; o.returned_value = retValue[i.id] || 0; o.net_total = invoiceLineNet_(i, items, pur);
+      // Serials that can still go back to the supplier: in stock and from this purchase (not sold or already returned).
+      if (i.serials) o.serials_left = parseList_(i.serials).filter(function (sn) { var rec = sidx[i.product_id + '|' + sn]; return rec && rec.status === 'in_stock' && rec.purchase_id === pur.id; });
       return o;
     }),
     supplier: pur.supplier_id ? all_('Suppliers').filter(function (s) { return s.id === pur.supplier_id; })[0] || null : null,
@@ -7109,7 +7128,9 @@ function dashboard_(p, user) {
   out.recent = sales.slice(-8).reverse().map(function (s) { return { id: s.id, invoice_no: s.invoice_no, customer_name: s.customer_name, total: s.total, due: s.due, date: s.date }; });
 
   var thDef = num_(getSetting_('low_stock_default', '5'));
-  out.low_stock = all_('Products').filter(function (x) { return x.active && !isService_(x) && x.stock <= (x.low_stock > 0 ? x.low_stock : thDef); })
+  var lowAll = all_('Products').filter(function (x) { return x.active && !isService_(x) && x.stock <= (x.low_stock > 0 ? x.low_stock : thDef); });
+  out.low_stock_count = lowAll.length; // the list below shows the 40 lowest; the count is every low-stock product
+  out.low_stock = lowAll
     .sort(function (a, b) { return a.stock - b.stock; }).slice(0, 40)
     .map(function (x) { return { id: x.id, name: x.name, stock: x.stock, unit: x.unit, threshold: x.low_stock > 0 ? x.low_stock : thDef }; });
   if (!full) return out;

@@ -130,8 +130,8 @@ function ProductForm({ initial, onClose }) {
   };
   const remove = async () => {
     if (!(await ask({ title: 'Delete product?', message: 'Delete this unused product? Products with history cannot be deleted.' }))) return;
-    const r = await run(() => api('product.delete', { id: f.id }));
-    useStore.getState().toast(r.deleted ? 'Product deleted' : 'Product has history — it was deactivated');
+    // The server refuses a product with stock or history (the reason is shown as a message) and changes nothing.
+    try { await run(() => api('product.delete', { id: f.id }), 'Product deleted'); } catch { return; }
     await refresh('products'); onClose();
   };
   return (

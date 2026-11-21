@@ -98,6 +98,7 @@ export default function Repairs() {
         <Select value={tech} onChange={setTech} options={meta.data?.technicians || []} placeholder="All technicians" aria-label="Technician" />
       </div>
       <DataTable title="Repair jobs" loading={list.loading} rows={rows} onRowClick={setSel}
+        sumFilter={(r) => r.status !== 'Cancelled'} rowClass={(r) => (r.status === 'Cancelled' ? 'dim' : '')}
         columns={[
           { key: 'job_no', label: 'Job #' }, { key: 'date', label: 'Received', type: 'date' },
           { key: 'customer_name', label: 'Customer' }, { key: 'phone', label: 'Phone' },

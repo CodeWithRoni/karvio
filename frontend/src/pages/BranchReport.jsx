@@ -15,10 +15,11 @@ export default function BranchReport() {
   const cols = [
     { key: 'name', label: 'Branch' }, { key: 'sales_count', label: 'Invoices' }, { key: 'sales', label: 'Sales', type: 'money' }, { key: 'paid', label: 'Received', type: 'money' },
     { key: 'due', label: 'Due', type: 'money' }, { key: 'returns', label: 'Returns', type: 'money' }, ...(cost ? [{ key: 'profit', label: 'Gross profit', type: 'money' }] : []),
-    { key: 'purchases', label: 'Purchases', type: 'money' }, { key: 'expenses', label: 'Expenses', type: 'money' }, { key: 'stock_qty', label: 'Stock (units)' },
+    { key: 'purchases', label: 'Purchases', type: 'money' }, { key: 'expenses', label: 'Expenses', type: 'money' }, { key: 'stock_text', label: 'Stock' },
     ...(cost ? [{ key: 'stock_value', label: 'Stock value', type: 'money' }] : []), { key: 'cash', label: 'Cash & accounts', type: 'money' }
   ];
-  const rows = d ? [...d.branches, { ...d.all, name: 'All branches', id: 'all' }] : [];
+  // Stock is shown per unit (pcs and meters are not added together); an older server sends only one number.
+  const rows = d ? [...d.branches, { ...d.all, name: 'All branches', id: 'all' }].map((r) => ({ ...r, stock_text: r.stock_text ?? r.stock_qty })) : [];
   const title = d ? `Branch report ${fdate(d.from)} – ${fdate(d.to)}` : 'Branch report';
   return (
     <>
@@ -32,7 +33,7 @@ export default function BranchReport() {
           <div className="card"><span>Sales — all branches</span><b className="num">{money(d.all.sales)}</b><small>{d.all.sales_count} invoices</small></div>
           <div className="card"><span>Purchases</span><b className="num">{money(d.all.purchases)}</b><small>{d.all.purchase_count} purchases</small></div>
           <div className="card out"><span>Expenses</span><b className="num">{money(d.all.expenses)}</b></div>
-          <div className="card"><span>Stock on the way</span><b className="num">{d.transit.qty}</b><small>{cost ? `${money(d.transit.value || 0)} at cost` : 'units between branches'}</small></div>
+          <div className="card"><span>Stock on the way</span><b className="num">{d.transit.text ?? d.transit.qty}</b><small>{cost ? `${money(d.transit.value || 0)} at cost` : 'units between branches'}</small></div>
         </div>
         <section className="card">
           <div className="dt-scroll"><table className="dc-hist br-table">
