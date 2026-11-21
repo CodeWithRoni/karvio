@@ -57,7 +57,13 @@ export function useAction() {
     setBusy(true);
     const work = Promise.resolve().then(fn);
     pending.current = work;
-    try { const r = await work; if (okMsg) toast(okMsg); return r; }
+    try {
+      const r = await work;
+      // Held for an admin (Approval): nothing was saved yet, so not the usual "saved" message.
+      if (r && r.pending_approval) toast(`Sent to admin for approval (${r.approval?.no || ''}) — it is saved only after an admin approves it`, 'ok');
+      else if (okMsg) toast(okMsg);
+      return r;
+    }
     catch (e) { if (!e.quiet) toast(e.message, 'err'); throw e; } // quiet = the user chose to stop
     finally { pending.current = null; setBusy(false); }
   };

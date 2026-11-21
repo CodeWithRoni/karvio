@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { money, qty as fqty, fdate } from '../lib/format';
 import { Tabs, Btn, Empty } from './ui';
 import DateInput from './DateInput';
+import { ApprovalDialog } from '../pages/Approvals';
 
 // Dates in the shop's time zone (from the server), as yyyy-mm-dd.
 const addDays = (n) => shopDay(n);
@@ -106,6 +107,34 @@ export function RepairAlerts({ list, onChanged }) {
           </div>
         ))}
       </div>
+    </section>
+  );
+}
+
+/** Admins: work from staff waiting for approval (Approval menu), like the due reminders. */
+export function ApprovalAlerts({ list, onChanged }) {
+  const [open, setOpen] = useState(null);
+  if (!list || !list.length) return null;
+  return (
+    <section className="card reminders" aria-label="Waiting for approval">
+      <div className="card-head">
+        <h2><span className="rem-bell" aria-hidden="true">✅</span> Waiting for approval <span className="rem-count">{list.length}</span></h2>
+        <Link to={`/approvals/${list[0].kind}`} className="link">Open approvals</Link>
+      </div>
+      <div className="rem-list">
+        {list.map((a) => (
+          <div className="rem-row" key={a.id}>
+            <div className="rem-who">
+              <b>{a.kind_label} · {a.no}</b>
+              <small>{a.user_name}{a.branch_name ? ` · ${a.branch_name}` : ''} · {a.summary?.party || ''}</small>
+            </div>
+            <div className="rem-when"><span className="rem-tag">Waiting</span><small>{fdate(a.created_at)}</small></div>
+            <div className="rem-amt">{a.summary?.amount ? <b className="num">{money(a.summary.amount)}</b> : <small>{(a.summary?.lines || []).length} items</small>}</div>
+            <div className="rem-act"><Btn size="sm" kind="primary" onClick={() => setOpen(a)}>Review</Btn></div>
+          </div>
+        ))}
+      </div>
+      {open && <ApprovalDialog a={open} admin onClose={() => setOpen(null)} onDone={() => { setOpen(null); onChanged?.(); }} />}
     </section>
   );
 }

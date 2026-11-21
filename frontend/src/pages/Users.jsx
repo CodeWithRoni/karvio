@@ -30,6 +30,7 @@ export default function Users() {
               { key: 'role', label: 'Role', value: (r) => ROLE[r.role] || r.role },
               { key: 'phone', label: 'Phone' },
               ...(branches?.on ? [{ key: 'branch_id', label: 'Branch', value: (r) => bName(r.branch_id) || 'Any branch' }] : []),
+              { key: 'approvals', label: 'Needs approval', value: (r) => (r.role === 'admin' || !(r.approvals || []).length ? '—' : APPROVAL_KINDS.filter(([k]) => r.approvals.includes(k)).map(([, l]) => l.replace(/ \(.*\)/, '')).join(', ')) },
               { key: 'access', label: 'Working hours', value: (r) => (r.role !== 'admin' && r.access_limit ? hoursText(r) : 'Any time') },
               { key: 'active', label: 'Status', render: (r) => <Badge tone={r.active ? 'ok' : 'muted'}>{r.active ? 'Active' : 'Disabled'}</Badge> }
             ]} />
@@ -80,6 +81,21 @@ function WorkingHours({ f, setF }) {
   );
 }
 
+/** Approvals (admins only): which of this person's work waits for an admin before it is saved. */
+const APPROVAL_KINDS = [['purchase', 'Purchase'], ['payment', 'Supplier payment'], ['collection', 'Collection'], ['expense', 'Expenses'], ['transfer', 'Branch transfer']];
+function ApprovalPicker({ value, onChange }) {
+  const has = (k) => value.includes(k);
+  return (
+    <fieldset className="wide apr-pick">
+      <legend>Needs admin approval</legend>
+      <p className="muted">Ticked work is checked and sent to Approval; nothing is saved until an admin approves it. Leave all unticked to save straight away.</p>
+      <div className="apr-pick-grid">
+        {APPROVAL_KINDS.map(([k, l]) => <label key={k} className="check"><input type="checkbox" checked={has(k)} onChange={(e) => onChange(e.target.checked ? [...value, k] : value.filter((x) => x !== k))} /> {l}</label>)}
+      </div>
+    </fieldset>
+  );
+}
+
 function UserForm({ initial, onClose, onDone }) {
   const [f, setF] = useState(initial);
   const [busy, run] = useAction();
@@ -111,6 +127,7 @@ function UserForm({ initial, onClose, onDone }) {
           </select></Field>}
         {f.id && <label className="check"><input type="checkbox" checked={f.active} onChange={(e) => setF({ ...f, active: e.target.checked })} /> Can sign in</label>}
         {f.role === 'admin' ? <p className="wide muted" style={{ margin: 0, fontSize: 12.5 }}>Admins can sign in at any time (working hours apply to managers and sales staff).</p> : <WorkingHours f={f} setF={setF} />}
+        {meAdmin && f.role !== 'admin' && <ApprovalPicker value={f.approvals || []} onChange={(approvals) => setF({ ...f, approvals })} />}
       </div>}
     </Modal>
   );

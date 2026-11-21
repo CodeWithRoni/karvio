@@ -613,7 +613,8 @@ function loginFailed_(name) {
 function clearLoginFails_(name) { try { CacheService.getScriptCache().remove(loginKey_(name)); } catch (e) {} }
 function pubUser_(u) {
   return { id: u.id, name: u.name, username: u.username, role: u.role, active: u.active, owner: isOwner_(u), phone: u.phone || '',
-    access_limit: !!u.access_limit, access_from: u.access_from || '', access_to: u.access_to || '', access_days: u.access_days || '' };
+    access_limit: !!u.access_limit, access_from: u.access_from || '', access_to: u.access_to || '', access_days: u.access_days || '',
+    approvals: u.role === 'admin' ? [] : approvalKindsOf_(u.id) };
 }
 /** The built-in Administrator account (username "admin", made by setup). Only this account may reset the database;
  *  other admins cannot change it, so they cannot take it over. */
@@ -2617,6 +2618,136 @@ function branchReport_(p, user) {
   return { from: from, to: to, branches: rows, all: out.all, transit: showCost ? transit : { qty: transit.qty }, shared_cash: unassigned };
 }
 
+/* ---- Approvals: chosen staff / managers send purchases, supplier payments, collections, expenses and branch
+ * transfers to an admin. The work is checked exactly as if it were saved, then held (stock, cash, dues and ledgers do
+ * not change) until an admin approves it — then it is saved as that person's work — or rejects it with a reason. */
+var APPROVAL_SHEET = '__KarvioApprovals', APPROVAL_MAX = 20000;
+var APPROVAL_KINDS = { purchase: 'Purchase', payment: 'Supplier payment', collection: 'Collection', expense: 'Expense', transfer: 'Branch transfer' };
+var APPROVAL_ROUTE = { 'purchase.create': 'purchase', 'supplier.payment': 'payment', 'customer.payment': 'collection', 'expense.create': 'expense', 'branch.transfer.send': 'transfer' };
+var DEFAULT_APPROVAL_SMS = '{staff} sent a {kind} for approval: {details}. Open Karvio → Approval. {shop}';
+function approvalUsers_() { try { var m = JSON.parse(getSetting_('approval_users', '{}') || '{}'); return m && typeof m === 'object' ? m : {}; } catch (e) { return {}; } }
+function approvalKindsOf_(uid) { var k = approvalUsers_()[uid]; return Array.isArray(k) ? k.filter(function (x) { return APPROVAL_KINDS[x]; }) : []; }
+function approvalKindsSet_(uid, kinds) {
+  var list = (Array.isArray(kinds) ? kinds : String(kinds || '').split(',')).map(function (x) { return String(x).trim(); }).filter(function (x, i, a) { return APPROVAL_KINDS[x] && a.indexOf(x) === i; });
+  var m = approvalUsers_(); if (list.length) m[uid] = list; else delete m[uid];
+  setSetting_('approval_users', JSON.stringify(m));
+  return list;
+}
+function approvalNeeded_(user, kind) { return user.role !== 'admin' && approvalKindsOf_(user.id).indexOf(kind) >= 0; }
+function approvalRows_() {
+  if (_mem.__approvalRows) return _mem.__approvalRows;
+  // Reading never makes the sheet (a read must not write); the first request creates it.
+  var sh = ss_().getSheetByName(APPROVAL_SHEET), last = sh ? sh.getLastRow() : 0, rows = [];
+  if (last) sh.getRange(1, 1, last, 3).getValues().forEach(function (r, i) { if (r[0]) { try { var o = JSON.parse(r[2]); o.id = String(r[0]); rows.push({ pos: i + 1, o: o }); } catch (e) { /* damaged row: skipped */ } } });
+  _mem.__approvalRows = { sh: sh, rows: rows };
+  return _mem.__approvalRows;
+}
+function approvalWrite_(o) {
+  var all = approvalRows_(), row = all.rows.filter(function (r) { return r.o.id === o.id; })[0];
+  if (!all.sh) all.sh = privateSheet_(APPROVAL_SHEET);
+  var copy = Object.assign({}, o); delete copy.id;
+  if (row) { all.sh.getRange(row.pos, 1, 1, 3).setValues([[o.id, Date.now(), JSON.stringify(copy)]]); row.o = o; }
+  else {
+    if (all.rows.length >= APPROVAL_MAX) fail_('There are ' + APPROVAL_MAX + ' approval requests. Contact support to archive old ones');
+    var pos = all.sh.getLastRow() + 1; ensureRows_(all.sh, pos);
+    all.sh.getRange(pos, 1, 1, 3).setValues([[o.id, Date.now(), JSON.stringify(copy)]]);
+    all.rows.push({ pos: pos, o: o });
+  }
+  flush_();
+}
+/** Undo everything a checked-but-held request staged: no row, SMS or cached change of it survives. */
+function approvalDiscard_() {
+  if (_txn) { Object.keys(_txn.rows).forEach(function (k) { delete _txn.rows[k]; }); _txn.sms.length = 0; }
+  _mem = {};
+}
+function approvalMoney_(v) { return 'Tk ' + smsAmt_(v); }
+/** What the request is, in a few words and lines, for the list, the SMS and the dashboard. */
+function approvalSummary_(kind, p, r) {
+  var name = function (table, id) { var x = all_(table).filter(function (y) { return y.id === id; })[0]; return x ? x.name : ''; };
+  if (kind === 'purchase') {
+    var pu = (r && r.purchase) || {};
+    return { party: (r && r.supplier && r.supplier.name) || pu.supplier_name || name('Suppliers', p.supplier_id), amount: num_(pu.total), date: String(pu.date || p.date || '').slice(0, 10),
+      lines: ((r && r.items) || []).map(function (i) { return { name: i.name, qty: num_(i.qty), price: num_(i.cost), total: num_(i.total), serials: String(i.serials || '') }; }),
+      paid: num_(pu.paid), note: p.note || '', ref: p.supplier_invoice || '' };
+  }
+  if (kind === 'payment') return { party: name('Suppliers', p.supplier_id), amount: round_(num_(p.amount)), date: String(p.date || '').slice(0, 10), account: name('Accounts', p.account_id), note: p.note || '', direction: p.direction || 'pay' };
+  if (kind === 'collection') return { party: (r && r.customer) || name('Customers', p.customer_id), amount: round_(num_(p.amount)), date: String((r && r.date) || p.date || '').slice(0, 10), account: (r && r.account) || name('Accounts', p.account_id), note: p.note || '', direction: p.direction || 'receive' };
+  if (kind === 'expense') return { party: p.category || (r && r.category) || '', amount: round_(num_(p.amount)), date: String((r && r.date) || p.date || '').slice(0, 10), account: name('Accounts', p.account_id), note: p.note || '' };
+  var t = r || {};
+  return { party: (t.from_name || '') + ' → ' + (t.to_name || ''), amount: 0, date: String(t.date || '').slice(0, 10), note: p.note || '',
+    lines: (t.lines || []).map(function (l) { return { name: l.name, qty: num_(l.qty), serials: (l.serials || []).join ? l.serials.join(', ') : String(l.serials || '') }; }) };
+}
+function approvalText_(a) {
+  var s = a.summary || {}, parts = [s.party];
+  if (s.amount) parts.push(approvalMoney_(s.amount));
+  if (a.kind === 'transfer' && s.lines) parts.push(s.lines.length + ' item' + (s.lines.length === 1 ? '' : 's'));
+  return parts.filter(Boolean).join(', ');
+}
+function approvalHold_(kind, req, route, user) {
+  var payload = req.payload || {};
+  var preview = route.fn(payload, user, req.token); // every check of the real save runs here
+  var branch = _branch;
+  approvalDiscard_();
+  _branch = branch;
+  var a = { id: uid_(), no: '', kind: kind, action: req.action, payload: payload, branch: branch || '', user_id: user.id, user_name: user.name, user_role: user.role,
+    created_at: now_(), status: 'pending', summary: approvalSummary_(kind, payload, preview) };
+  var n = approvalRows_().rows.length + 1; a.no = 'APR-' + ('00000' + n).slice(-6);
+  approvalWrite_(a);
+  audit_(user, 'approval_request', { no: a.no, kind: APPROVAL_KINDS[kind], details: approvalText_(a) });
+  var sms = null;
+  if (smsOn_('approval')) {
+    var numbers = smsAdminNumbers_('sms_approval_numbers');
+    if (numbers.length) sms = smsToAll_(numbers, fillTpl_(getSetting_('sms_approval_template') || DEFAULT_APPROVAL_SMS,
+      { staff: user.name, kind: APPROVAL_KINDS[kind], details: approvalText_(a), no: a.no, branch: branch ? branchName_(branch) : '', shop: getSetting_('shop_name') }, 'raw'));
+  }
+  return { pending_approval: true, approval: approvalOut_(a), sms: sms };
+}
+function approvalOut_(a) {
+  return { id: a.id, no: a.no, kind: a.kind, kind_label: APPROVAL_KINDS[a.kind], status: a.status, created_at: a.created_at, user_id: a.user_id, user_name: a.user_name,
+    branch: a.branch, branch_name: a.branch ? branchName_(a.branch) : '', summary: a.summary, details: approvalText_(a),
+    decided_at: a.decided_at || '', decided_by: a.decided_by || '', reason: a.reason || '', result_no: a.result_no || '' };
+}
+/** Admins see every request; everyone else sees their own. */
+function approvalsList_(p, user) {
+  var admin = user.role === 'admin', kind = APPROVAL_KINDS[p.kind] ? p.kind : '', status = ['pending', 'approved', 'rejected'].indexOf(p.status) >= 0 ? p.status : '';
+  var list = approvalRows_().rows.map(function (r) { return r.o; }).filter(function (a) {
+    return (admin || a.user_id === user.id) && (!kind || a.kind === kind) && (!status || a.status === status);
+  }).sort(function (a, b) { return String(b.created_at).localeCompare(String(a.created_at)); });
+  var counts = {}; approvalRows_().rows.forEach(function (r) { var a = r.o; if (a.status === 'pending' && (admin || a.user_id === user.id)) counts[a.kind] = (counts[a.kind] || 0) + 1; });
+  return { rows: list.slice(0, 1000).map(approvalOut_), pending: counts, admin: admin };
+}
+function approvalPending_() {
+  return approvalRows_().rows.map(function (r) { return r.o; }).filter(function (a) { return a.status === 'pending'; })
+    .sort(function (a, b) { return String(b.created_at).localeCompare(String(a.created_at)); }).map(approvalOut_);
+}
+/** Approve: saved now as the staff member's own work (in their branch); Reject: a reason is required. */
+function approvalDecide_(p, user) {
+  if (user.role !== 'admin') fail_('Only an admin can approve or reject');
+  var row = approvalRows_().rows.filter(function (r) { return r.o.id === String(p.id || ''); })[0];
+  if (!row) fail_('Approval request not found');
+  var a = row.o;
+  if (a.status !== 'pending') fail_('This request was already ' + a.status + (a.decided_by ? ' by ' + a.decided_by : ''));
+  if (p.decision === 'reject') {
+    var reason = String(p.reason || '').trim().slice(0, 300); if (!reason) fail_('Write why it is rejected');
+    a = Object.assign({}, a, { status: 'rejected', decided_at: now_(), decided_by: user.name, reason: reason });
+    audit_(user, 'approval_reject', { no: a.no, kind: APPROVAL_KINDS[a.kind], by: a.user_name, reason: reason });
+    approvalWrite_(a);
+    return approvalOut_(a);
+  }
+  if (p.decision !== 'approve') fail_('Choose approve or reject');
+  var route = ROUTES[a.action]; if (!route) fail_('This kind of work can no longer be saved');
+  var staff = all_('Users').filter(function (u) { return u.id === a.user_id; })[0] || { id: a.user_id, name: a.user_name, role: a.user_role || 'manager' };
+  var here = _branch, who = _reqUser, result;
+  _branch = a.branch || ''; _reqUser = staff;
+  try { result = route.fn(a.payload || {}, staff); }
+  finally { _branch = here; _reqUser = who; }
+  var no = (result && result.purchase && result.purchase.invoice_no) || (result && result.receipt_no) || (result && result.no) || (result && result.id) || '';
+  a = Object.assign({}, a, { status: 'approved', decided_at: now_(), decided_by: user.name, result_no: String(no) });
+  audit_(user, 'approval_approve', { no: a.no, kind: APPROVAL_KINDS[a.kind], by: a.user_name, saved: a.result_no });
+  approvalWrite_(a);
+  return Object.assign(approvalOut_(a), { result: result });
+}
+
 /* ---- Branch stock: every product with how much each branch holds, what is on the way, and the shop total.
  * Read only. Quantities come from the branch rows (the same numbers each branch sells from); serial products also
  * list which serial numbers are in which branch. Cost value only for users who may see cost. */
@@ -2735,7 +2866,10 @@ function userSave_(p, user) {
   // Branch (admins only, when branches are on): the same setting as Settings → Branches, so both places agree.
   var setBranch = p.branch_id !== undefined && user.role === 'admin' && branchesOn_(), bid = String(p.branch_id || '');
   if (setBranch && bid && !branchActive_(bid) && !(p.id && userBranches_()[p.id] === bid)) fail_('Choose an open branch');
+  // Approvals (admins only): which of this person's work waits for an admin (Users & Roles).
+  var setApprovals = p.approvals !== undefined && user.role === 'admin';
   var keepBranch = function (u) {
+    if (setApprovals) u.approvals = approvalKindsSet_(u.id, row.role === 'admin' ? [] : p.approvals);
     if (!setBranch) return u;
     var ub = userBranches_(); if (bid) ub[u.id] = bid; else delete ub[u.id];
     setSetting_('user_branches', JSON.stringify(ub)); u.branch_id = bid; return u;
@@ -3129,7 +3263,7 @@ function settingsSave_(p, user) {
     'sms_invoice_link', 'invoice_link_base', 'books_locked_until', 'shop_logo', 'invoice_qr', 'daily_summary_enabled', 'daily_summary_phones', 'daily_summary_hour', 'day_close_lock', 'whatsapp_template', 'shift_mode', 'shift_required',
     'courier_steadfast_key', 'courier_steadfast_secret', 'courier_pathao_client_id', 'courier_pathao_client_secret', 'courier_pathao_username', 'courier_pathao_password', 'courier_pathao_store_id', 'courier_pathao_sandbox', 'courier_redx_token', 'courier_redx_sandbox',
     'sms_on_sale', 'sms_on_due_reminder', 'sms_on_quote', 'sms_on_repair_done', 'sms_on_repair_tech', 'sms_on_service_tech', 'sms_on_service_done', 'sms_due_template',
-    'invoice_link_days', 'quote_link_days', 'sms_repair_done_numbers'];
+    'invoice_link_days', 'quote_link_days', 'sms_repair_done_numbers', 'sms_on_approval', 'sms_approval_template', 'sms_approval_numbers'];
   var vals = Object.assign({}, p.values || {});
   if (vals.shop_logo !== undefined) {
     var logo = String(vals.shop_logo || '');
@@ -3151,7 +3285,7 @@ function settingsSave_(p, user) {
   if (vals.day_close_lock !== undefined) vals.day_close_lock = String(vals.day_close_lock) === 'false' ? 'false' : 'true';
   if (vals.shift_mode !== undefined) vals.shift_mode = vals.shift_mode === 'shared' ? 'shared' : 'cashier';
   if (vals.shift_required !== undefined) vals.shift_required = String(vals.shift_required) === 'true' ? 'true' : 'false';
-  ['sms_on_sale', 'sms_on_due_reminder', 'sms_on_quote', 'sms_on_repair_done', 'sms_on_repair_tech', 'sms_on_service_tech', 'sms_on_service_done'].forEach(function (k) { if (vals[k] !== undefined) vals[k] = String(vals[k]) === 'false' ? 'false' : 'true'; });
+  ['sms_on_sale', 'sms_on_due_reminder', 'sms_on_quote', 'sms_on_repair_done', 'sms_on_repair_tech', 'sms_on_service_tech', 'sms_on_service_done', 'sms_on_approval'].forEach(function (k) { if (vals[k] !== undefined) vals[k] = String(vals[k]) === 'false' ? 'false' : 'true'; });
   if (vals.sms_due_template !== undefined) { vals.sms_due_template = String(vals.sms_due_template || '').trim(); if (vals.sms_due_template.length > 480) fail_('The due reminder message is too long (keep it under 480 letters)'); }
   ['courier_pathao_sandbox', 'courier_redx_sandbox'].forEach(function (k) { if (vals[k] !== undefined) vals[k] = String(vals[k]) === 'true' ? 'true' : 'false'; });
   ['courier_steadfast_key', 'courier_steadfast_secret', 'courier_pathao_client_id', 'courier_pathao_client_secret', 'courier_pathao_username', 'courier_pathao_password', 'courier_pathao_store_id', 'courier_redx_token'].forEach(function (k) {
@@ -3164,6 +3298,11 @@ function settingsSave_(p, user) {
   if (vals.daily_summary_phones !== undefined) vals.daily_summary_phones = smsPhoneList_(vals.daily_summary_phones, 'Daily summary');
   if (vals.sms_service_done_numbers !== undefined) vals.sms_service_done_numbers = smsPhoneList_(vals.sms_service_done_numbers, 'Service done');
   if (vals.sms_repair_done_numbers !== undefined) vals.sms_repair_done_numbers = smsPhoneList_(vals.sms_repair_done_numbers, 'Repair completed');
+  if (vals.sms_approval_numbers !== undefined) vals.sms_approval_numbers = smsPhoneList_(vals.sms_approval_numbers, 'Approval request');
+  if ((vals.sms_on_approval !== undefined || vals.sms_approval_numbers !== undefined)
+      && String(vals.sms_on_approval !== undefined ? vals.sms_on_approval : getSetting_('sms_on_approval', 'true')) !== 'false'
+      && !String(vals.sms_approval_numbers !== undefined ? vals.sms_approval_numbers : getSetting_('sms_approval_numbers', '')).trim()) fail_('Approval request: add at least 1 admin number (up to 20), or turn this SMS off');
+  if (vals.sms_approval_template !== undefined) { vals.sms_approval_template = String(vals.sms_approval_template || '').trim(); if (vals.sms_approval_template.length > 500) fail_('The approval SMS is too long (500 letters at most)'); }
   if ((vals.sms_on_service_done !== undefined || vals.sms_service_done_numbers !== undefined)
       && String(vals.sms_on_service_done !== undefined ? vals.sms_on_service_done : getSetting_('sms_on_service_done', 'true')) !== 'false'
       && !String(vals.sms_service_done_numbers !== undefined ? vals.sms_service_done_numbers : getSetting_('sms_service_done_numbers', '')).trim()) fail_('Service done: add at least 1 admin / manager number (up to 20), or turn this SMS off');
@@ -3281,7 +3420,7 @@ function smsAmt_(v) { return (Math.round(num_(v) * 100) / 100).toLocaleString('e
 function smsMessage_(tplKey, vars) { return fillTpl_(getSetting_(tplKey), vars, 'raw'); }
 /** SMS features (Settings → SMS settings): each one can be turned off; all need the gateway switched on. */
 var SMS_FEATURES = { sale: 'Sale invoice SMS', due_reminder: 'Due reminder SMS', quote: 'Quotation SMS', repair_done: 'Repair completed SMS', repair_tech: 'Repair technician SMS',
-  service_tech: 'Service technician SMS', service_done: 'Service done SMS', daily_summary: 'Daily summary SMS' };
+  service_tech: 'Service technician SMS', service_done: 'Service done SMS', daily_summary: 'Daily summary SMS', approval: 'Approval request SMS' };
 function smsOn_(feature) { return getSetting_('sms_enabled', 'false') === 'true' && getSetting_('sms_on_' + feature, 'true') !== 'false'; }
 function smsNeed_(feature) {
   if (getSetting_('sms_enabled', 'false') !== 'true') fail_('Turn on the SMS gateway first (Settings → SMS gateway)');
@@ -6953,6 +7092,7 @@ function dashboard_(p, user) {
   if (user.role === 'admin') out.repair_alerts = repairAlerts_();
   // "Needs attention": finished repair jobs (fixed or failed) still waiting for the customer to collect them.
   if (can_(user, 'expenses')) out.recurring_due = recurringList_().due;
+  if (user.role === 'admin') out.approvals = approvalPending_().slice(0, 30);
   if (can_(user, 'suppliers')) { var waiting = rebatesPending_(); out.rebates_pending = { count: waiting.length, amount: round_(sum_(waiting, function (r) { return r.amount; })) }; }
   if (can_(user, 'service') && user.role !== 'technician') out.services_done = all_('Repairs').filter(function (r) { return isServiceJob_(r) && r.status === 'Work done' && branchSees_('Repairs', r.id); }).length;
   if (can_(user, 'repairs')) out.repairs_waiting = all_('Repairs').filter(function (r) { var st = repairStatusOf_(r); return !isServiceJob_(r) && (st === 'Completed' || st === 'Failed') && branchSees_('Repairs', r.id); }).length;
@@ -7768,6 +7908,8 @@ var ROUTES = {
   'branch.transfer.cancel':  r_('products', function (p, u) { return branchTransferFinish_(p, u, false); }, true),
   'branch.report':    r_('reports', branchReport_),
   'branch.stock':     r_('reports', branchStock_),
+  'approvals.list':   r_(null, approvalsList_),
+  'approval.decide':  r_(null, approvalDecide_, true),
   daybook:            r_('accounts', daybook_),
   'dashboard.below_cost': r_(null, belowCostCard_),
   'notes.list':       r_(null, notesList_),
@@ -7945,7 +8087,9 @@ function doPost(e) {
           return saved.data;
         }
       }
-      var result = route.fn(req.payload || {}, user, req.token);
+      // Work an admin must approve first (Users & Roles → Approvals): checked in full, then held — nothing is saved.
+      var kind = user && APPROVAL_ROUTE[req.action];
+      var result = kind && approvalNeeded_(user, kind) ? approvalHold_(kind, req, route, user) : route.fn(req.payload || {}, user, req.token);
       branchFlush_();
       return result;
     };

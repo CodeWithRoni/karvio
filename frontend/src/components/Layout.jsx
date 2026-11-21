@@ -76,6 +76,12 @@ export const NAV = [
   { to: '/expenses', label: 'Expenses', perm: 'expenses' },
   { to: '/profit', label: 'Profit', perm: ['reports', 'cost'] },
   { to: '/reports', label: 'Reports Hub', perm: 'reports', key: '9' },
+  { group: 'Approval' },
+  { to: '/approvals/purchase', label: 'Purchase Approval', approval: 'purchase' },
+  { to: '/approvals/payment', label: 'Payment Approval', approval: 'payment' },
+  { to: '/approvals/collection', label: 'Collection Approval', approval: 'collection' },
+  { to: '/approvals/expense', label: 'Expenses Approval', approval: 'expense' },
+  { to: '/approvals/transfer', label: 'Branch Transfer Approval', approval: 'transfer' },
   { group: 'Admin' },
   { to: '/users', label: 'Users & Roles', perm: 'users' },
   { to: '/activity', label: 'Activity Log', perm: 'users' },
@@ -132,12 +138,14 @@ export default function Layout() {
   }, []);
 
   const branchesOn = useStore((s) => !!s.branches?.on);
-  const items = NAV.filter((n) => (n.group || !n.perm || can(n.perm)) && (!n.branches || branchesOn));
+  // Approval pages: admins see all of them; a staff member sees the kinds of work that wait for an admin's approval
+  const mineToApprove = user?.role === 'admin' ? null : user?.approvals || [];
+  const items = NAV.filter((n) => (n.group || !n.perm || can(n.perm)) && (!n.branches || branchesOn) && (!n.approval || !mineToApprove || mineToApprove.includes(n.approval)));
   // drop empty groups, then bundle each group with its links so every group is its own card
   const visible = items.filter((n, i) => !n.group || (items[i + 1] && !items[i + 1].group));
   const groups = [];
   visible.forEach((n) => { if (n.group) groups.push({ title: n.group, links: [] }); else if (groups.length) groups[groups.length - 1].links.push(n); });
-  const tone = { Home: 'g-search', Sales: 'g-daily', Purchase: 'g-purchase', Stock: 'g-stock', 'Service & Warranty': 'g-service', 'Party Ledger': 'g-adjust', 'Money & Reports': 'g-money', Admin: 'g-admin' };
+  const tone = { Home: 'g-search', Sales: 'g-daily', Purchase: 'g-purchase', Stock: 'g-stock', 'Service & Warranty': 'g-service', 'Party Ledger': 'g-adjust', 'Money & Reports': 'g-money', Approval: 'g-approval', Admin: 'g-admin' };
 
   return (
     <div className={`shell ${open ? 'nav-open' : ''} ${hidden ? 'nav-hidden' : ''} ${showKeys ? 'show-keys' : ''}`} onClick={(e) => open && e.target === e.currentTarget && setOpen(false)}>

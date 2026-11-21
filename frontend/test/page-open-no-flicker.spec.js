@@ -14,7 +14,7 @@ for (const preload of [false, true]) test(`menu never leaves the screen when a p
   await expect(page.locator('nav a', { hasText: 'Dashboard' })).toBeVisible();
   if (preload) await page.waitForTimeout(6000);
   for (const name of ['Make Purchase', 'Reports Hub', 'Expenses', 'Cash, Bank & MFS']) {
-    await page.locator('nav a', { hasText: name }).click();
+    await page.locator('nav').getByRole('link', { name: new RegExp(`^${name}( Alt \\d)?$`) }).click(); // the name, maybe with its shortcut key
     await expect(page.locator('.page-head h1')).not.toHaveText('Dashboard');
     await page.waitForTimeout(300);
   }

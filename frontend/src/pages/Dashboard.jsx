@@ -6,7 +6,7 @@ import { useApi, PageHead, Tabs, ErrorBox, Btn, Empty } from '../components/ui';
 import { DashboardSkeleton } from '../components/Skeleton';
 import LiveClock from '../components/LiveClock';
 import { useCardOn } from '../lib/dashboardCards';
-import { CollectionReminders, RepairAlerts, InventoryHealth, TopProducts } from '../components/DashboardExtras';
+import { CollectionReminders, RepairAlerts, ApprovalAlerts, InventoryHealth, TopProducts } from '../components/DashboardExtras';
 import SalesChart from '../components/SalesChart';
 import { useNotes, NotesButton, NoteReminders } from '../components/DashNotes';
 
@@ -106,11 +106,12 @@ export default function Dashboard() {
     d.claims && can('warranty') && { key: 'claims', label: 'Open warranty claims', n: claimsOpen, tone: 'violet', to: '/warranty' },
     d.recurring_due !== undefined && { key: 'monthly', label: 'Monthly expenses due', n: d.recurring_due, tone: 'warn', to: '/expenses?tab=monthly' },
     d.rebates_pending && { key: 'rebates', label: 'Promised supplier rebates to collect', n: d.rebates_pending.count, tone: 'warn', to: can('*') ? '/supplier-ledger-adjustment' : '/reports?type=supplier_rebates' },
+    d.approvals && { key: 'approvals', label: 'Waiting for approval', n: d.approvals.length, tone: 'warn', to: d.approvals[0] ? `/approvals/${d.approvals[0].kind}` : '/approvals/purchase' },
     d.stock_summary && { key: 'oos', label: 'Out of stock products', n: d.stock_summary.out_of_stock, tone: 'muted', to: '/stock?qty=0' }
   ].filter(Boolean);
 
   const showChart = on('chart');
-  const alerts = [on('reminders') && d.reminders?.length, d.repair_alerts?.length].filter(Boolean).length;
+  const alerts = [on('reminders') && d.reminders?.length, d.repair_alerts?.length, d.approvals?.length].filter(Boolean).length;
 
   return (
     <>
@@ -128,6 +129,7 @@ export default function Dashboard() {
         <div className={`dash-alerts ${alerts > 1 ? 'two' : ''}`}>
           {on('reminders') && <CollectionReminders list={d.reminders} onChanged={reload} />}
           {d.repair_alerts && <RepairAlerts list={d.repair_alerts} onChanged={reload} />}
+          {d.approvals && <ApprovalAlerts list={d.approvals} onChanged={reload} />}
         </div>
       )}
 

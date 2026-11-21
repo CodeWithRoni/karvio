@@ -290,7 +290,7 @@ function PaymentForm({ kind, id, name, balance, accounts, onClose, onDone }) {
   const partPaid = rest > 0.004;
   const save = async () => {
     const r = await run(() => api(c.payment, { [c.key]: id, ...f, amount: Number(f.amount), next_payment_date: partPaid ? f.next_payment_date : '' }), partPaid && f.next_payment_date ? `Payment recorded · reminder set for ${fdate(f.next_payment_date)}` : 'Payment recorded');
-    if (print && kind === 'customer' && f.direction === 'receive') printMoneyReceipt(r);
+    if (print && !r?.pending_approval && kind === 'customer' && f.direction === 'receive') printMoneyReceipt(r); // held for an admin: no receipt yet
     refresh(kind === 'customer' ? 'customers' : 'suppliers');
     onDone(); onClose();
   };

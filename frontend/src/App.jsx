@@ -47,6 +47,7 @@ const BranchTransfer = page(() => import('./pages/BranchTransfer'));
 const BranchReport = page(() => import('./pages/BranchReport'));
 const BranchStock = page(() => import('./pages/BranchStock'));
 const ProductSetup = page(() => import('./pages/ProductSetup'));
+const Approvals = page(() => import('./pages/Approvals'));
 const Expenses = page(() => import('./pages/Expenses'));
 const Profit = page(() => import('./pages/Profit'));
 const Reports = page(() => import('./pages/Reports'));
@@ -137,6 +138,7 @@ export default function App() {
               <Route path="suppliers/:id" element={<Guard perm="suppliers"><Suppliers /></Guard>} />
               <Route path="stock" element={<Stock />} />
               <Route path="product-setup" element={<Guard perm="products"><ProductSetup /></Guard>} />
+              <Route path="approvals/:kind" element={<Approvals />} />
               <Route path="barcodes" element={<Barcodes />} />
               <Route path="prices" element={<Guard perm="products"><Prices /></Guard>} />
               <Route path="purchases" element={<Guard perm="purchase"><Purchases /></Guard>} />
