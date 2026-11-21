@@ -8,7 +8,7 @@ test('master list checkboxes export only marked rows and delete together after c
  token=(await call('login',{username:'admin',password:'admin123'})).token;
  await call('master.save',{kind:'brand',name:'Marked Alpha'});await call('master.save',{kind:'brand',name:'Marked Beta'});
  await page.addInitScript(({endpoint,token})=>{localStorage.setItem('erp_api_config',JSON.stringify({scriptUrl:endpoint}));localStorage.setItem('erp_token',token);},{endpoint,token});
- await page.goto('/#/stock');await page.getByRole('tab',{name:'Categories, brands & warranty'}).click();
+ await page.goto('/#/stock');await page.evaluate(() => { location.hash = '#/product-setup'; });
  await page.setViewportSize({width:1920,height:1200});
  await page.screenshot({path:'../verification/master-import-export-icons-review.png',fullPage:true,animations:'disabled'});
  const panel=page.locator('.md-panel').filter({has:page.getByRole('heading',{name:'Brands',exact:true})});

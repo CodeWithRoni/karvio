@@ -53,7 +53,7 @@ test('a pending purchase remains disabled and rapid clicks add stock only once',
   const before = (await call(request, 'bootstrap')).products.find((p) => p.id === product.id).stock;
   const purchasesBefore = (await call(request, 'purchases.list', { supplier_id: supplier.id, page: 1 })).total;
   await page.goto('/#/purchases');
-  await page.getByRole('tab', { name: 'New purchase', exact: true }).click();
+  await page.evaluate(() => { location.hash = '#/purchase-new'; });
   await page.getByRole('combobox', { name: 'Supplier', exact: true }).selectOption(supplier.id);
   const search = page.getByRole('combobox', { name: 'Search product', exact: true });
   await search.fill(product.barcode); await search.press('Enter');
@@ -118,7 +118,7 @@ test('a committed purchase with a lost response retries with one request ID and 
   const before = (await call(request, 'bootstrap')).products.find((p) => p.id === product.id).stock;
   const purchasesBefore = (await call(request, 'purchases.list', { supplier_id: supplier.id, page: 1 })).total;
   await page.goto('/#/purchases');
-  await page.getByRole('tab', { name: 'New purchase', exact: true }).click();
+  await page.evaluate(() => { location.hash = '#/purchase-new'; });
   await page.getByRole('combobox', { name: 'Supplier', exact: true }).selectOption(supplier.id);
   const search = page.getByRole('combobox', { name: 'Search product', exact: true });
   await search.fill(product.barcode); await search.press('Enter');

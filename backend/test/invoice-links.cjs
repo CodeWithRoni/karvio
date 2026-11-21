@@ -85,16 +85,16 @@ same(s4.sms.ok, false, 'gateway refused');
 same(links().length, before, 'no link left behind when the SMS was not sent');
 sandbox.UrlFetchApp.fetch = realFetch;
 
-/* ---- links off, and old templates without {link} ---- */
+/* ---- the link comes from {link} in the message (Settings → SMS settings has no on/off for it any more) ---- */
 Q('settings.save', { values: { sms_invoice_link: 'false' } });
 sell();
 let last = decodeURIComponent(fetchLog[fetchLog.length - 1].url.split('msg=')[1]);
-same(last.indexOf('#/i/'), -1, 'no link when turned off');
-truthy(!/View:\\s*$/.test(last), 'no dangling "View:" — ' + last);
+truthy(/#\\/i\\/[A-Za-z0-9]{22}$/.test(last), 'the message has {link}: link added (the old switch no longer matters) — ' + last);
 Q('settings.save', { values: { sms_invoice_link: 'true', sms_template: 'Thanks {name}! Invoice {invoice}.' } });
 sell();
 last = decodeURIComponent(fetchLog[fetchLog.length - 1].url.split('msg=')[1]);
-truthy(/Invoice INV-\\d+\\. Invoice: https:\\/\\/codewithroni\\.github\\.io\\/karvio\\/#\\/i\\/[A-Za-z0-9]{22}$/.test(last), 'link added to a template without {link}: ' + last);
+same(last.indexOf('#/i/'), -1, 'no {link} in the message: no link');
+truthy(/Invoice INV-\\d+\\.$/.test(last), 'the message as written — ' + last);
 Q('settings.save', { values: { invoice_link_base: 'https://shop.example.com/app' } });
 const sl = Q('sale.link', { id: sale.sale.id });
 truthy(/^https:\\/\\/shop\\.example\\.com\\/app\\/#\\/i\\/[A-Za-z0-9]{22}$/.test(sl.url) && sl.days === 15, 'own web address used: ' + sl.url);

@@ -307,7 +307,7 @@ function LinkDays({ label, hint, value, def, onChange }) {
 }
 
 function InvoiceSettings() {
-  const { f, setF, bind, save, busy } = useSettingsForm(['invoice_template', 'invoice_paper', 'invoice_custom_width', 'invoice_custom_height', 'invoice_note', 'shop_footer', 'receipt_width', 'invoice_qr', 'invoice_link_days', 'quote_link_days']);
+  const { f, setF, bind, save, busy } = useSettingsForm(['invoice_template', 'invoice_paper', 'invoice_custom_width', 'invoice_custom_height', 'invoice_note', 'shop_footer', 'receipt_width', 'invoice_qr', 'invoice_link_days', 'quote_link_days', 'invoice_link_base']);
   const settings = useStore((s) => s.settings);
   const paper = f.invoice_paper || String(f.receipt_width || 80);
   const tpl = f.invoice_template || 'classic';
@@ -338,6 +338,8 @@ function InvoiceSettings() {
           <small className="muted">How long a link sent to a customer keeps working. New links only — links already sent keep their date.</small>
           <LinkDays label="Online invoice link" hint="Sent with the sale SMS or shared from Sales" value={f.invoice_link_days} def={15} onChange={(v) => setF({ ...f, invoice_link_days: v })} />
           <LinkDays label="Quotation link" hint="Sent by SMS from the PC builder / Quotation" value={f.quote_link_days} def={3} onChange={(v) => setF({ ...f, quote_link_days: v })} />
+          <details className="lv-base"><summary className="muted">Web address of the invoice page</summary>
+            <input value={f.invoice_link_base || ''} onChange={(e) => setF({ ...f, invoice_link_base: e.target.value })} placeholder={DEFAULT_LINK_BASE} aria-label="Invoice page web address" /></details>
         </section>
       </div>
       <Field label="Paper size" hint="Used by Complete & print in the POS.">
@@ -470,8 +472,8 @@ const SMS_SAMPLE = { name: 'Rahim', shop: 'Your Shop', items: 'Router x1', invoi
 const SMS_CARDS = [
   { on: 'sms_on_sale', tpl: 'sms_template', title: 'Sale invoice SMS', who: 'To the customer after every sale with a named customer (cash sales never get one).', vars: '{name} {shop} {items} {invoice} {total} {paid} {due} {date} {link}', link: true },
   { on: 'sms_on_due_reminder', tpl: 'sms_due_template', title: 'Due reminder SMS', who: 'Sent from Collection → Remind, to the customers you tick.', vars: '{name} {due} {shop} {shop_phone}', def: DEFAULT_DUE_SMS },
-  { on: 'sms_on_quote', tpl: 'sms_quote_template', title: 'Quotation SMS', who: 'Quotation → Send to customer. The link works for 3 days.', vars: '{name} {shop} {title} {total} {days} {link}', def: DEFAULT_QUOTE_SMS },
-  { on: 'sms_on_repair_done', tpl: 'sms_repair_template', title: 'Repair completed SMS', who: 'To the customer when a repair job is marked Completed.', vars: '{name} {device} {job} {shop} {total} {advance} {due}' },
+  { on: 'sms_on_quote', tpl: 'sms_quote_template', title: 'Quotation SMS', who: 'Quotation → Send to customer.', quoteLink: true, vars: '{name} {shop} {title} {total} {days} {link}', def: DEFAULT_QUOTE_SMS },
+  { on: 'sms_on_repair_done', tpl: 'sms_repair_template', title: 'Repair completed SMS', who: 'To the customer when a repair job is marked Completed — and the same SMS to the admin / manager numbers below.', vars: '{name} {device} {job} {shop} {total} {advance} {due}', numbers: 'sms_repair_done_numbers', numbersOptional: true },
   { on: 'sms_on_repair_tech', tpl: 'sms_technician_template', title: 'Repair — technician assigned', who: 'To the technician when a repair job is given to them.', vars: '{technician} {job} {device} {problem} {name} {phone} {shop}' },
   { on: 'sms_on_service_tech', tpl: 'sms_service_tech_template', title: 'Service — technician assigned', who: 'To the technician when a service job is given to them.', vars: '{technician} {job} {service} {details} {name} {phone} {address} {shop}' },
   { on: 'sms_on_service_done', tpl: 'sms_service_done_template', title: 'Service done — to admin / manager', who: 'When the technician presses Work done.', vars: '{job} {service} {name} {phone} {address} {technician} {note} {shop}', numbers: 'sms_service_done_numbers' }
@@ -490,28 +492,27 @@ function SmsFeatures() {
   );
 }
 function SmsCard({ c, gateway }) {
-  const keys = [c.on, c.tpl, ...(c.numbers ? [c.numbers] : []), ...(c.link ? ['sms_invoice_link', 'invoice_link_base'] : [])];
+  const keys = [c.on, c.tpl, ...(c.numbers ? [c.numbers] : [])];
   const { f, setF, bind, save, busy } = useSettingsForm(keys);
   const saved = useStore((s) => s.settings);
   const dirty = keys.some((k) => String(f[k] || '') !== String(saved[k] || ''));
   const on = f[c.on] !== 'false';
-  const linkOn = f.sms_invoice_link !== 'false';
-  let sample = String(f[c.tpl] || c.def || '').replace(/\{(\w+)\}/g, (m, k) => SMS_SAMPLE[k] ?? m);
-  if (c.link && linkOn && !/\{link\}/.test(f[c.tpl] || '')) sample += ' Invoice: ' + SMS_SAMPLE.link;
+  const linkDays = (v, def) => (String(v || '').toLowerCase() === 'life' ? 0 : Number(v) || def);
+  const qDays = linkDays(saved.quote_link_days, 3), iDays = linkDays(saved.invoice_link_days, 15);
+  const sample = String(f[c.tpl] || c.def || '').replace(/\{(\w+)\}/g, (m, k) => (k === 'days' && c.quoteLink ? (qDays || 'unlimited') : SMS_SAMPLE[k] ?? m));
+  const nums = c.numbers ? String(f[c.numbers] || '').split(/[,;\n]+/).map((x) => x.trim()).filter(Boolean).length : 0;
+  const lifeNote = (d) => (d ? `works for ${d} day${d === 1 ? '' : 's'}` : 'never expires');
   const parts = smsParts(sample);
   return (
     <section className={`card smsf-card ${on ? 'on' : 'off'}`}>
       <div className="smsf-head">
-        <div><h2>{c.title}</h2><p className="muted">{c.who}</p></div>
+        <div><h2>{c.title}</h2><p className="muted">{c.who}{c.quoteLink && ` The link ${lifeNote(qDays)} (Settings → Invoice → Link validity).`}{c.link && ` {link} adds the invoice link — it ${lifeNote(iDays)} (Settings → Invoice → Link validity).`}</p></div>
         <label className="tgl" title={on ? 'On' : 'Off'}><input type="checkbox" checked={on} onChange={(e) => setF({ ...f, [c.on]: String(e.target.checked) })} aria-label={`${c.title} on`} /><span /></label>
       </div>
       <Field label="Message" wide hint={`Placeholders: ${c.vars}`}><textarea rows={3} {...bind(c.tpl)} placeholder={c.def || ''} aria-label={`${c.title} message`} disabled={!on} /></Field>
-      {c.numbers && <Field label="Send to" wide hint="Admin / manager mobile numbers, separated by commas."><input {...bind(c.numbers)} placeholder="01XXXXXXXXX, 01XXXXXXXXX" inputMode="tel" aria-label={`${c.title} numbers`} disabled={!on} /></Field>}
-      {c.link && <div className="sms-link">
-        <label className="check"><input type="checkbox" checked={linkOn} onChange={(e) => setF({ ...f, sms_invoice_link: String(e.target.checked) })} disabled={!on} /> Add a link to the invoice (works 15 days)</label>
-        {linkOn && <details style={{ marginTop: 6 }}><summary className="muted" style={{ cursor: 'pointer', fontSize: 12.5 }}>Web address of the invoice page</summary>
-          <input {...bind('invoice_link_base')} placeholder={DEFAULT_LINK_BASE} aria-label="Invoice page web address" style={{ marginTop: 6, width: '100%' }} /></details>}
-      </div>}
+      {c.numbers && <Field label={<>Send to admin / manager <span className={`sms-count ${nums > 20 ? 'over' : ''}`}>{nums} / 20</span></>} wide
+        hint={`${c.numbersOptional ? 'Optional — ' : ''}1 to 20 mobile numbers, separated by commas. Every number gets this SMS.`}>
+        <textarea rows={2} {...bind(c.numbers)} placeholder="01XXXXXXXXX, 01XXXXXXXXX, 01XXXXXXXXX" inputMode="tel" aria-label={`${c.title} numbers`} disabled={!on} /></Field>}
       {sample && <div className="note sms-preview">Preview ({[...sample].length} characters · {parts.count} SMS{parts.unicode ? ' · Bangla' : ''}): {sample}</div>}
       <div className="row end smsf-foot"><Badge tone={on && gateway ? 'ok' : on ? 'warn' : 'muted'}>{on ? (gateway ? 'Sending' : 'On — gateway off') : 'Off'}</Badge><span className="spacer" />
         <Btn kind="primary" size="sm" disabled={!dirty} busy={busy} onClick={() => save().catch(() => {})}>{dirty ? 'Save' : 'Saved'}</Btn></div>
@@ -536,13 +537,14 @@ function DailySummary() {
   const pv = useApi('summary.preview', {});
   const [sending, run] = useAction();
   const on = f.daily_summary_enabled === 'true';
+  const dsCount = String(f.daily_summary_phones || '').split(/[,;\n]+/).map((x) => x.trim()).filter(Boolean).length;
   return (
     <div className="card ds-card">
       <div className="card-head"><h2>Daily summary to the owner</h2>{pv.data?.last_sent && <span className="muted">Last sent {fdate(pv.data.last_sent)}</span>}</div>
       <div className="ds-grid">
         <div className="form" style={{ alignContent: 'start' }}>
           <label className="check wide"><input type="checkbox" checked={on} onChange={(e) => setF({ ...f, daily_summary_enabled: String(e.target.checked) })} /> Send today's summary by SMS every evening</label>
-          <Field label="Phone numbers" wide hint="Up to 3, separated by commas."><input inputMode="tel" value={f.daily_summary_phones || ''} onChange={(e) => setF({ ...f, daily_summary_phones: e.target.value })} placeholder="01XXXXXXXXX" /></Field>
+          <Field label={<>Phone numbers <span className={`sms-count ${dsCount > 20 ? 'over' : ''}`}>{dsCount} / 20</span></>} wide hint="1 to 20 mobile numbers, separated by commas. Every number gets the summary."><textarea rows={2} inputMode="tel" value={f.daily_summary_phones || ''} onChange={(e) => setF({ ...f, daily_summary_phones: e.target.value })} placeholder="01XXXXXXXXX, 01XXXXXXXXX" aria-label="Daily summary phone numbers" /></Field>
           <Field label="Send at"><select value={f.daily_summary_hour || '21'} onChange={(e) => setF({ ...f, daily_summary_hour: e.target.value })}>{[17, 18, 19, 20, 21, 22, 23].map((h) => <option key={h} value={h}>{h > 12 ? h - 12 : h}:00 PM</option>)}</select></Field>
           {!gateway && <p className="wide muted" style={{ margin: 0 }}>Turn on and save the SMS gateway above first.</p>}
           <div className="wide row" style={{ gap: 8, justifyContent: 'flex-end' }}>

@@ -3129,7 +3129,7 @@ function settingsSave_(p, user) {
     'sms_invoice_link', 'invoice_link_base', 'books_locked_until', 'shop_logo', 'invoice_qr', 'daily_summary_enabled', 'daily_summary_phones', 'daily_summary_hour', 'day_close_lock', 'whatsapp_template', 'shift_mode', 'shift_required',
     'courier_steadfast_key', 'courier_steadfast_secret', 'courier_pathao_client_id', 'courier_pathao_client_secret', 'courier_pathao_username', 'courier_pathao_password', 'courier_pathao_store_id', 'courier_pathao_sandbox', 'courier_redx_token', 'courier_redx_sandbox',
     'sms_on_sale', 'sms_on_due_reminder', 'sms_on_quote', 'sms_on_repair_done', 'sms_on_repair_tech', 'sms_on_service_tech', 'sms_on_service_done', 'sms_due_template',
-    'invoice_link_days', 'quote_link_days'];
+    'invoice_link_days', 'quote_link_days', 'sms_repair_done_numbers'];
   var vals = Object.assign({}, p.values || {});
   if (vals.shop_logo !== undefined) {
     var logo = String(vals.shop_logo || '');
@@ -3160,12 +3160,13 @@ function settingsSave_(p, user) {
   if (vals.courier_pathao_store_id && !/^\d{1,12}$/.test(vals.courier_pathao_store_id)) fail_('The Pathao store ID is a number');
   if (vals.whatsapp_template !== undefined) { vals.whatsapp_template = String(vals.whatsapp_template || '').trim(); if (vals.whatsapp_template.length > 700) fail_('The WhatsApp message is too long (700 letters at most)'); }
   if (vals.daily_summary_enabled !== undefined) vals.daily_summary_enabled = String(vals.daily_summary_enabled) === 'true' ? 'true' : 'false';
-  if (vals.daily_summary_phones !== undefined) {
-    var phones = parseList_(String(vals.daily_summary_phones || '')).map(function (x) { return x.replace(/[^0-9+]/g, ''); }).filter(Boolean);
-    if (phones.length > 3) fail_('Daily summary: up to 3 phone numbers');
-    phones.forEach(function (x) { if (!smsNumber_(x)) fail_('Daily summary: ' + x + ' is not a valid mobile number'); });
-    vals.daily_summary_phones = phones.join(', ');
-  }
+  // Admin / manager numbers (1 to 20, separated by commas): every one of them gets the SMS.
+  if (vals.daily_summary_phones !== undefined) vals.daily_summary_phones = smsPhoneList_(vals.daily_summary_phones, 'Daily summary');
+  if (vals.sms_service_done_numbers !== undefined) vals.sms_service_done_numbers = smsPhoneList_(vals.sms_service_done_numbers, 'Service done');
+  if (vals.sms_repair_done_numbers !== undefined) vals.sms_repair_done_numbers = smsPhoneList_(vals.sms_repair_done_numbers, 'Repair completed');
+  if ((vals.sms_on_service_done !== undefined || vals.sms_service_done_numbers !== undefined)
+      && String(vals.sms_on_service_done !== undefined ? vals.sms_on_service_done : getSetting_('sms_on_service_done', 'true')) !== 'false'
+      && !String(vals.sms_service_done_numbers !== undefined ? vals.sms_service_done_numbers : getSetting_('sms_service_done_numbers', '')).trim()) fail_('Service done: add at least 1 admin / manager number (up to 20), or turn this SMS off');
   if (vals.daily_summary_hour !== undefined) { var hr = Math.round(Number(vals.daily_summary_hour)); if (!(hr >= 17 && hr <= 23)) fail_('Daily summary time must be between 17:00 and 23:00'); vals.daily_summary_hour = String(hr); }
   if (vals.daily_summary_enabled === 'true' && !String(vals.daily_summary_phones !== undefined ? vals.daily_summary_phones : getSetting_('daily_summary_phones', '')).trim()) fail_('Daily summary: add the phone number that should receive it');
   if (vals.expense_categories !== undefined) {
@@ -3289,15 +3290,13 @@ function smsNeed_(feature) {
 function sendSaleSms_(sale, lines, customer) {
   if (!smsOn_('sale') || !customer) return null;
   var phone = parseList_(customer.phones)[0]; if (!phone) return null;
-  // a private link to this invoice, valid for LINK_DAYS days (deleted afterwards)
-  var link = getSetting_('sms_invoice_link', 'true') === 'true' ? invoiceLinkCreate_(sale.id) : null;
+  // A private link to this invoice when the message has {link}; how long it works is set in Settings → Invoice → Link validity.
   var tpl = getSetting_('sms_template');
+  var link = String(tpl).indexOf('{link}') >= 0 ? invoiceLinkCreate_(sale.id) : null;
   var msg = fillTpl_(tpl, {
     name: customer.name, shop: getSetting_('shop_name'), items: itemsSummary_(lines), invoice: sale.invoice_no,
     total: smsAmt_(sale.total), paid: smsAmt_(sale.paid), due: smsAmt_(sale.due), date: sale.date, link: link ? link.url : ''
   }, 'raw');
-  if (link && String(tpl).indexOf('{link}') < 0) msg += ' Invoice: ' + link.url; // older templates without {link}
-  if (!link) msg = msg.replace(/\s*(View|Invoice|Link):?\s*$/i, ''); // template ends with "View: {link}" but links are off
   // the SMS log keeps the message without the working link
   var r = sendSms_(phone, msg, link ? msg.split(link.url).join(maskLink_(link.url)) : null);
   if (_txn && link) _txn.sms[_txn.sms.length - 1].linkId = link.id;
@@ -3582,7 +3581,34 @@ function dailySummaryText_(date) {
   if (low) lines.push('Low stock: ' + low + ' item' + (low === 1 ? '' : 's'));
   return lines.join('\n');
 }
-function summaryPhones_() { return parseList_(getSetting_('daily_summary_phones', '')).filter(Boolean).slice(0, 3); }
+function summaryPhones_() { return parseList_(getSetting_('daily_summary_phones', '')).filter(Boolean).slice(0, SMS_PHONES_MAX); }
+var SMS_PHONES_MAX = 20;
+/** A list of mobile numbers typed with commas: each must be a valid mobile number, at most 20, repeats dropped. */
+function smsPhoneList_(raw, label) {
+  var seen = {}, phones = String(raw || '').split(/[,;\n]+/).map(function (x) { return x.replace(/[^0-9+]/g, ''); }).filter(function (x) {
+    if (!x || seen[phoneKey_(x)]) return false; seen[phoneKey_(x)] = 1; return true; });
+  if (phones.length > SMS_PHONES_MAX) fail_(label + ': up to ' + SMS_PHONES_MAX + ' phone numbers');
+  // a Bangladesh mobile (01XXXXXXXXX, with or without 880) or an international number written with +
+  phones.forEach(function (x) { var d = x.replace(/\D/g, ''); if (!(/^(?:880|0)?1[3-9]\d{8}$/.test(d) || (x.charAt(0) === '+' && d.length >= 10 && d.length <= 15))) fail_(label + ': ' + x + ' is not a valid mobile number'); });
+  return phones.join(', ');
+}
+/** Admin / manager numbers saved in Settings → SMS settings (as typed, at most 20). */
+function smsAdminNumbers_(key) {
+  return String(getSetting_(key, '') || '').split(/[,;\s]+/).map(function (x) { return x.trim(); }).filter(function (x) { return phoneKey_(x).length >= 10; }).slice(0, SMS_PHONES_MAX);
+}
+/** Send one message to several numbers; the result counts what went out. */
+function smsToAll_(numbers, msg) {
+  var out = { ok: true, status: 'sent', sent: 0, queued: 0, to: numbers.length }, failed = false;
+  numbers.forEach(function (n) {
+    try {
+      var x = sendSms_(n, msg);
+      if (x && x.ok) out.sent++;
+      else if (x && x.status === 'queued') { out.queued++; if (!failed) { out.ok = false; out.status = 'queued'; out.response = x.response; } } // the outbox sends it
+      else { failed = true; out.ok = false; out.status = x ? x.status : 'failed'; out.response = x ? x.response : ''; }
+    } catch (e) { failed = true; out.ok = false; out.status = 'failed'; out.response = String(e.message || e); }
+  });
+  return out;
+}
 function summaryPreview_() {
   return { text: dailySummaryText_(), phones: summaryPhones_(), last_sent: getSetting_('daily_summary_last', ''), gateway: getSetting_('sms_enabled') === 'true' };
 }
@@ -3856,7 +3882,12 @@ function repairStatus_(p, user) {
   var out = repairOut_(upd), sms = null;
   if (to === 'Completed' && p.send_sms !== false && smsOn_('repair_done') && r.phone) {
     var msg = smsMessage_('sms_repair_template', { name: r.customer_name, device: r.device, job: r.job_no, shop: getSetting_('shop_name'), total: smsAmt_(out.total), advance: smsAmt_(r.advance), due: smsAmt_(out.due) });
-    if (String(msg).trim()) { try { sms = sendSms_(r.phone, msg); } catch (e) { sms = { ok: false, status: 'failed', response: String(e.message || e) }; } }
+    if (String(msg).trim()) {
+      try { sms = sendSms_(r.phone, msg); } catch (e) { sms = { ok: false, status: 'failed', response: String(e.message || e) }; }
+      // the same message to the admin / manager numbers set on the Repair completed card (optional, up to 20)
+      var staffNos = smsAdminNumbers_('sms_repair_done_numbers').filter(function (n) { return phoneKey_(n) !== phoneKey_(r.phone); });
+      if (staffNos.length) out.sms_staff = smsToAll_(staffNos, msg);
+    }
   }
   out.sms = sms;
   return out;
@@ -4098,13 +4129,11 @@ function serviceStatus_(p, user) {
 }
 function serviceDoneSms_(r, note) {
   if (!smsOn_('service_done')) return null;
-  var numbers = String(getSetting_('sms_service_done_numbers', '') || '').split(/[,;\s]+/).map(function (x) { return x.trim(); }).filter(function (x) { return phoneKey_(x).length >= 10; });
+  var numbers = smsAdminNumbers_('sms_service_done_numbers');
   if (!numbers.length) return { ok: false, status: 'skipped', response: 'No number for "service done" SMS in Settings → SMS settings' };
   var msg = fillTpl_(getSetting_('sms_service_done_template') || DEFAULT_SERVICE_DONE_SMS, { job: r.job_no, service: r.device, name: r.customer_name, phone: r.phone,
     address: r.accessories, technician: r.technician_name || r.result_by || '', note: note || '', shop: getSetting_('shop_name') }, 'raw');
-  var out = { ok: true, status: 'sent', sent: 0 };
-  numbers.forEach(function (n) { try { var x = sendSms_(n, msg); if (x && x.ok) out.sent++; else { out.ok = false; out.status = x ? x.status : 'failed'; out.response = x ? x.response : ''; } } catch (e) { out.ok = false; out.status = 'failed'; out.response = String(e.message || e); } });
-  return out;
+  return smsToAll_(numbers, msg);
 }
 /** Complete: what was used stays on the job (the rest goes back to stock) and becomes a normal sale invoice
  *  together with the service charge. */

@@ -236,6 +236,7 @@ function JobDetail({ job, meta, onClose, onEdit, onDone }) {
   const status = async (to) => {
     const r = await run(() => api('repair.status', { id: job.id, status: to, note: report, send_sms: to === 'Completed' && smsOn ? sms : false }), `Job ${job.job_no} is ${to}`);
     smsNote(r.sms, 'the customer');
+    smsNote(r.sms_staff, 'the admin / manager numbers');
     onDone(r);
   };
   const invoice = async () => printInvoice(await run(() => api('sale.detail', { id: job.sale_id })));

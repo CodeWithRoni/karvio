@@ -22,15 +22,15 @@ test('menu groups fold away, stay folded after a reload, and shortcuts show on h
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.goto('/#/');
   const stock = page.locator('.nav-card', { hasText: 'Stock' });
-  await expect(stock.getByRole('link', { name: /Products & Stock/ })).toBeVisible();
+  await expect(stock.getByRole('link', { name: /^Product(?! Setup)/ })).toBeVisible();
   await stock.getByRole('button', { name: 'Stock menu group' }).click();
   await expect(stock.getByRole('link')).toHaveCount(0);
-  await expect(stock.locator('.nav-count')).toHaveText('4');
+  await expect(stock.locator('.nav-count')).toHaveText('5');
   await page.reload();
   await expect(page.locator('.nav-card', { hasText: 'Stock' }).getByRole('link')).toHaveCount(0);
   // The group of the open page never stays folded.
   await page.goto('/#/stock');
-  await expect(page.locator('.nav-card', { hasText: 'Stock' }).getByRole('link', { name: /Products & Stock/ })).toBeVisible();
+  await expect(page.locator('.nav-card', { hasText: 'Stock' }).getByRole('link', { name: /^Product(?! Setup)/ })).toBeVisible();
   await page.locator('.nav-card', { hasText: 'Stock' }).getByRole('button', { name: 'Stock menu group' }).click(); // unfold for later tests
   const pos = page.getByRole('link', { name: /Point Of Sale/ });
   await expect(pos.locator('kbd')).toHaveCSS('opacity', '0');

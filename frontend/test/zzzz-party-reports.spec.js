@@ -113,7 +113,7 @@ test('hover card on the POS customer and the purchase supplier', async ({ page }
   await expect(card).toContainText('due');
   await card.screenshot({ path: 'test-results/party-card-customer.png' });
   await page.goto('/#/purchases');
-  await page.getByRole('tab', { name: 'New purchase', exact: true }).click();
+  await page.evaluate(() => { location.hash = '#/purchase-new'; });
   const sel = page.getByRole('combobox', { name: 'Supplier' });
   await sel.selectOption(ids.sup.id);
   await sel.hover();

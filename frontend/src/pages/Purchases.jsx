@@ -5,19 +5,26 @@ import { purchaseDetails } from '../lib/purchaseDetails';
 import { Pager, DEFAULT_PAGE_SIZE } from '../components/Pager';
 import { returnValue } from '../lib/returnValue';
 import { useEffect, useRef, useState, Fragment } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useStore, shopDay } from '../lib/store';
 import { api } from '../lib/api';
 import { money, qty as fqty, fdate, monthStart, today, splitList, round2, isDecimalUnit } from '../lib/format';
 import DataTable from '../components/DataTable';
-import { useApi, PageHead, Tabs, DateRange, Badge, statusTone, Modal, Btn, Field, Loading, ErrorBox, useAction, useConfirm, Select, noWheel } from '../components/ui';
+import { useApi, PageHead, DateRange, Badge, statusTone, Modal, Btn, Field, Loading, ErrorBox, useAction, useConfirm, Select, noWheel } from '../components/ui';
 import { ProductSearch, PaymentSplit, cleanPays, defaultPay, ReverseDialog } from '../components/widgets';
 import { excelPurchases, pdfPurchases, printPurchases } from '../lib/purchaseDocs';
 import DateInput from '../components/DateInput';
 
-export default function Purchases() {
+/** Purchase, Purchase Return and Make Purchase — three pages in the menu; mode says which one this is. */
+const PURCHASE_PAGES = {
+  list: ['Purchase', 'Stock coming in from suppliers. Open a purchase to return items to the supplier.'],
+  returns: ['Purchase return', 'Items sent back to suppliers.'],
+  new: ['Make purchase', 'Record stock bought from a supplier.']
+};
+export default function Purchases({ mode = 'list' }) {
   const can = useStore((s) => s.can);
-  const [tab, setTab] = useState('list');
+  const nav = useNavigate();
+  const tab = mode;
   const [range, setRange] = useState({ from: monthStart(), to: today() });
   // Purchase invoices: newest first, 20 per page by default (20 / 50 / 100 / custom); narrow by supplier and / or dates.
   const [lf, setLf] = useState({ supplier_id: '', from: '', to: '', q: '', page: 1, per: DEFAULT_PAGE_SIZE });
@@ -28,10 +35,8 @@ export default function Purchases() {
 
   return (
     <>
-      <PageHead title="Purchases" sub="Stock coming in from suppliers, and returns going back.">
-        <Tabs tabs={[['list', 'Purchase invoices'], ['returns', 'Purchase returns'], ['new', 'New purchase']]} value={tab} onChange={setTab} />
-      </PageHead>
-      {tab === 'new' ? <NewPurchase onDone={() => setTab('list')} /> : (
+      <PageHead title={PURCHASE_PAGES[mode][0]} sub={PURCHASE_PAGES[mode][1]} />
+      {tab === 'new' ? <NewPurchase onDone={() => nav('/purchases')} /> : (
         <>
           {tab === 'list' ? <PurchaseList list={list} f={lf} setF={setLf} onOpen={setOpen} /> : <div className="filters"><DateRange {...range} onChange={setRange} /></div>}
           {tab === 'list' ? null : (

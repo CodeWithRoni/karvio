@@ -5,11 +5,10 @@ import { api } from '../lib/api';
 import { money, qty as fqty, isDecimalUnit } from '../lib/format';
 import DataTable from '../components/DataTable';
 import { stockQuantityTotal, stockMoneyTotal } from '../lib/stockTotals';
-import MasterData from '../components/MasterData';
 import ProductImport, { exportProducts } from '../components/ProductImport';
 import PriceList from '../components/PriceList';
 import { Link } from 'react-router-dom';
-import { PageHead, Tabs, Modal, Btn, Field, Badge, Select, Empty, useAction, useConfirm, noWheel } from '../components/ui';
+import { PageHead, Modal, Btn, Field, Badge, Select, Empty, useAction, useConfirm, noWheel } from '../components/ui';
 
 const blank = { name: '', sku: '', barcode: '', category_id: '', subcategory_id: '', brand_id: '', unit: 'pcs', roll_length: '', cost_price: '', sale_price: '', wholesale_price: '', low_stock: '', has_warranty: false, warranty_type: 'serial', warranty_days: 0, active: true, service: false, description: '' };
 // Auto name = Brand + Product group + Category + Model + optional # description.
@@ -18,7 +17,6 @@ export const nameKey = (s) => String(s || '').trim().replace(/\s+/g, ' ').toLowe
 export default function Stock() {
   const { products, categories, brands, can } = useStore();
   const [params] = useSearchParams();
-  const [tab, setTab] = useState('stock');
   const [f, setF] = useState({ cat: '', sub: '', brand: '', qty: params.get('qty') ?? '', low: params.get('low') === '1', inactive: false });
   const [edit, setEdit] = useState(null);
   const [adj, setAdj] = useState(null);
@@ -58,8 +56,7 @@ export default function Stock() {
 
   return (
     <>
-      <PageHead title="Products & stock" sub="Filter by product group, category, brand or an exact stock quantity — 0 shows everything out of stock.">
-        {can('products') && <Tabs tabs={[['stock', 'Stock explorer'], ['master', 'Categories, brands & warranty']]} value={tab} onChange={setTab} />}
+      <PageHead title="Product" sub="Filter by product group, category, brand or an exact stock quantity — 0 shows everything out of stock.">
         <Btn onClick={() => setDialog('prices')}>Price list</Btn>
         {can('products') && <Btn onClick={() => exportProducts(products, categories, brands)} title="All products in the import layout">Export</Btn>}
         {can('products') && <Btn onClick={() => setDialog('import')}>Import</Btn>}
@@ -68,8 +65,7 @@ export default function Stock() {
       {dialog === 'import' && <ProductImport onClose={() => setDialog('')} />}
       {dialog === 'prices' && <PriceList onClose={() => setDialog('')} />}
 
-      {tab === 'stock' ? (
-        <>
+      <>
           <div className="filters">
             <Field label="Product group"><Select value={f.cat} onChange={(v) => setF({ ...f, cat: v, sub: '' })} options={tops} placeholder="All groups" /></Field>
             <Field label="Category"><Select value={f.sub} onChange={(v) => setF({ ...f, sub: v })} options={subs.map((c) => ({ ...c, name: f.cat ? c.name : `${catMap[c.parent_id]} / ${c.name}` }))} placeholder="All categories" /></Field>
@@ -81,10 +77,9 @@ export default function Stock() {
           </div>
           <DataTable title="Stock report" rows={rows} columns={cols} sumFilter={(r) => !r.service} onRowClick={can('products') ? (r) => setEdit(r) : undefined}
             empty={products.length ? <Empty icon="search" title="No products match these filters">Clear a filter above, or tick "Show inactive" to include hidden products.</Empty>
-              : <Empty icon="box" title="No products yet" action={<>{can('products') && <Btn onClick={() => setDialog('import')}>Import from Excel</Btn>}{can('purchase') && <Link to="/purchases" className="btn">Record a purchase</Link>}{can('products') && <Btn kind="primary" onClick={() => setEdit({ ...blank, low_stock: '' })}>Add product</Btn>}</>}>Add your first product. Its cost comes from purchases; the selling price from a purchase or the Price manager.</Empty>} />
+              : <Empty icon="box" title="No products yet" action={<>{can('products') && <Btn onClick={() => setDialog('import')}>Import from Excel</Btn>}{can('purchase') && <Link to="/purchase-new" className="btn">Record a purchase</Link>}{can('products') && <Btn kind="primary" onClick={() => setEdit({ ...blank, low_stock: '' })}>Add product</Btn>}</>}>Add your first product. Its cost comes from purchases; the selling price from a purchase or the Price manager.</Empty>} />
           <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>Totals include all matching stock products across pages and table search. Quantities are grouped by unit; services are excluded. Cost and Stock value totals = stock × unit cost; Price total = stock × selling price, including reserved stock.</p>
-        </>
-      ) : <MasterData />}
+      </>
 
       {edit && <ProductForm initial={edit} onClose={() => setEdit(null)} />}
       {adj && <AdjustForm product={adj} onClose={() => setAdj(null)} />}

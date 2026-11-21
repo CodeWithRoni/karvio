@@ -63,7 +63,7 @@ test('dashboard refreshes another counter sale automatically and retains data on
 test('master data confirmation can cancel and then delete a brand', async ({ page, request }) => {
   const brand = await call(request, 'master.save', { kind: 'brand', name: 'Confirmation Test Brand' });
   await page.goto('/#/stock');
-  await page.getByRole('tab', { name: 'Categories, brands & warranty' }).click();
+  await page.evaluate(() => { location.hash = '#/product-setup'; });
   await page.getByRole('button', { name: 'Delete Confirmation Test Brand', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Delete Confirmation Test Brand', exact: true })).toBeVisible();
@@ -140,7 +140,7 @@ test('product groups contain categories across master data, products, stock filt
   const testBrand = await call(request, 'master.save', { kind: 'brand', name: `INTEL TEST ${Date.now()}` });
   await page.setViewportSize({ width: 1920, height: 1000 });
   await page.goto('/#/stock');
-  await page.getByRole('tab', { name: 'Categories, brands & warranty' }).click();
+  await page.evaluate(() => { location.hash = '#/product-setup'; });
   const groups = page.locator('.md-panel').filter({ has: page.getByRole('heading', { name: 'Product groups', exact: true }) });
   const categories = page.locator('.md-panel').filter({ has: page.getByRole('heading', { name: 'Categories', exact: true }) });
   await expect(page.locator('.md-panel')).toHaveCount(5);
@@ -166,6 +166,7 @@ test('product groups contain categories across master data, products, stock filt
   await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(page.getByText('This item is in use and cannot be deleted', { exact: true })).toBeVisible();
   await expect(groups.getByText('PROCESSOR', { exact: true })).toBeVisible();
+  await page.evaluate(() => { location.hash = '#/stock'; }); // Add product is on the Product page
   await page.getByRole('button', { name: 'Add product', exact: true }).click();
   const form = page.getByRole('dialog');
   await form.getByLabel('Product name', { exact: true }).fill('Core i5 Test');
@@ -182,7 +183,7 @@ test('product groups contain categories across master data, products, stock filt
   await form.getByLabel('Product name', { exact: true }).fill('Core i5 Test');
   await form.getByRole('button', { name: 'Add product', exact: true }).click();
   await expect(form).toHaveCount(0);
-  await page.getByRole('tab', { name: 'Stock explorer' }).click();
+  await page.evaluate(() => { location.hash = '#/stock'; });
   await page.getByRole('combobox', { name: 'Product group', exact: true }).selectOption(group.id);
   await page.getByRole('combobox', { name: 'Category', exact: true }).selectOption(intel.id);
   await expect(page.locator('tbody tr').filter({ hasText: 'Core i5 Test' })).toContainText('PROCESSOR');
@@ -197,7 +198,7 @@ test('product groups contain categories across master data, products, stock filt
   await page.reload();
   await expect(page.getByLabel('Processor product').locator('option').filter({ hasText: 'Core i5 Test' })).toHaveCount(1);
   await page.goto('/#/stock');
-  await page.getByRole('tab', { name: 'Categories, brands & warranty' }).click();
+  await page.evaluate(() => { location.hash = '#/product-setup'; });
   await groups.getByRole('textbox', { name: 'Search Product groups' }).fill('PROCESSOR');
   await categories.getByRole('textbox', { name: 'Search Categories' }).fill('PROCESSOR');
   await expect(page.locator('.toasts > *')).toHaveCount(0, { timeout: 8000 });
@@ -343,7 +344,7 @@ test('purchase shows the last purchase price and the new average cost', async ({
   const p = await call(request, 'product.save', { name: 'Average Test Monitor', unit: 'pcs' });
   await call(request, 'purchase.create', { supplier_id: sup.id, items: [{ product_id: p.id, qty: 4, cost: 10000, sale_price: 12000 }], payments: [] });
   await page.goto('/#/purchases');
-  await page.getByRole('tab', { name: /New purchase/ }).click();
+  await page.evaluate(() => { location.hash = '#/purchase-new'; });
   await page.getByRole('combobox', { name: 'Supplier', exact: true }).selectOption(sup.id);
   await page.getByRole('combobox', { name: 'Search product' }).fill('Average Test Monitor');
   await page.keyboard.press('Enter');
@@ -365,9 +366,9 @@ test('side menu cards: Home, Sales, Purchase, Stock, Service & Warranty, Party L
   expect((await cards.locator('.nav-group').allInnerTexts()).map((t) => t.trim().toLowerCase())).toEqual(['home', 'sales', 'purchase', 'stock', 'service & warranty', 'party ledger', 'money & reports', 'admin']);
   const links = async (title) => (await page.locator('.nav-card', { has: page.locator('.nav-group', { hasText: new RegExp(`^${title}$`, 'i') }) }).getByRole('link').allInnerTexts()).map((t) => t.split('\n')[0].trim());
   expect(await links('Home')).toEqual(['Dashboard', 'Advanced Search']);
-  expect(await links('Sales')).toEqual(['Point Of Sale', 'Sales & Returns', 'Online Orders', 'Quotation', 'Customers', 'Collection']);
-  expect(await links('Purchase')).toEqual(['Purchases & Returns', 'Suppliers', 'Payment']);
-  expect(await links('Stock')).toEqual(['Products & Stock', 'Price Manager', 'Barcode Labels', 'Stock Count']);
+  expect(await links('Sales')).toEqual(['Point Of Sale', 'Sales', 'Sales Return', 'Sales Exchange', 'Online Orders', 'Quotation', 'Customers', 'Collection']);
+  expect(await links('Purchase')).toEqual(['Purchase', 'Purchase Return', 'Make Purchase', 'Suppliers', 'Payment']);
+  expect(await links('Stock')).toEqual(['Product', 'Product Setup', 'Price Manager', 'Barcode Labels', 'Stock Count']);
   expect(await links('Service & Warranty')).toEqual(['Repairs', 'Service', 'Warranty Claims']);
   expect(await links('Money & Reports')).toEqual(['Cash, Bank & MFS', 'Shift & Day Close', 'Day Book', 'Expenses', 'Profit', 'Reports Hub']);
   expect(await links('Admin')).toEqual(['Users & Roles', 'Activity Log', 'Settings']);
@@ -569,7 +570,7 @@ test('purchase: supplier invoice no. is its own field, warns on a repeat, and is
   const supInv = 'ST-' + Date.now();
   const buy = async () => {
     await page.goto('/#/purchases');
-    await page.getByRole('tab', { name: /New purchase/ }).click();
+    await page.evaluate(() => { location.hash = '#/purchase-new'; });
     await page.getByRole('combobox', { name: 'Supplier', exact: true }).selectOption(sup.id);
     await page.getByRole('combobox', { name: 'Search product' }).fill(pr.name);
     await page.keyboard.press('Enter');
@@ -600,7 +601,7 @@ test('purchase: supplier invoice no. is its own field, warns on a repeat, and is
   expect((await call(request, 'purchases.list', { q: supInv, page: 1, per: 10 })).total).toBe(2);
 
   // list column + search box, detail, Advanced search
-  await page.getByRole('tab', { name: 'Purchase invoices' }).click();
+  await page.evaluate(() => { location.hash = '#/purchases'; });
   await page.getByLabel('Search purchases').fill(supInv);
   await expect(page.locator('.pl-table tbody tr')).toHaveCount(2);
   await expect(page.locator('.pl-table tbody tr').first()).toContainText(supInv);

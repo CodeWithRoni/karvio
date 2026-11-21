@@ -26,7 +26,7 @@ test('purchase return uses exact net line allocation and current supplier due is
  const supplier=await call(request,'supplier.save',{name:'Current due UI'});
  const purchase=await call(request,'purchase.create',{supplier_id:supplier.id,discount:100,items:products.map(p=>({product_id:p.id,qty:1,cost:100})),payments:[]});
  await call(request,'supplier.payment',{supplier_id:supplier.id,account_id:cash,amount:200});
- await page.goto('/#/purchases');await page.getByRole('tab',{name:'Purchase invoices',exact:true}).click();
+ await page.goto('/#/purchases');await page.evaluate(() => { location.hash = '#/purchases'; });
  await expect(page.locator('table tfoot tr')).toBeVisible();expect(await page.locator('table tfoot tr').evaluate(tr=>[...tr.cells].reduce((n,c)=>n+c.colSpan,0))).toBe(11);
  await page.locator('table').getByText(purchase.purchase.invoice_no,{exact:true}).click();
  const detail=page.getByRole('dialog',{name:`Purchase ${purchase.purchase.invoice_no}`});await expect(detail.locator('.kv').getByText('Due at purchase',{exact:true})).toBeVisible();

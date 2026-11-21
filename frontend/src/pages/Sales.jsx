@@ -15,11 +15,17 @@ import { returnValue } from '../lib/returnValue';
 import DateInput from '../components/DateInput';
 import WhatsAppBtn from '../components/WhatsAppBtn';
 
-export default function Sales() {
+/** Sales (invoices), Sales Return and Sales Exchange — three pages in the menu; mode says which one this is. */
+const SALES_PAGES = {
+  sales: ['Sales', 'Every invoice, with cancellations. Open one to return or exchange items.'],
+  returns: ['Sales return', 'Items customers brought back for a refund or credit.'],
+  exchanges: ['Sales exchange', 'Items customers swapped for other products.']
+};
+export default function Sales({ mode = 'sales' }) {
   const { id } = useParams();
   const nav = useNavigate();
   const can = useStore((s) => s.can);
-  const [tab, setTab] = useState('sales');
+  const tab = mode === 'sales' ? 'sales' : 'returns';
   const [range, setRange] = useState({ from: monthStart(), to: today() });
   const [status, setStatus] = useState('');
   const sales = useApi('sales.list', { ...range, status }, [], { skip: tab !== 'sales' });
@@ -28,9 +34,7 @@ export default function Sales() {
 
   return (
     <>
-      <PageHead title="Sales & returns" sub="Every invoice, with returns, exchanges and cancellations.">
-        <Tabs tabs={[['sales', 'Invoices'], ...(can('sales.return') ? [['returns', 'Returns & exchanges']] : [])]} value={tab} onChange={setTab} />
-      </PageHead>
+      <PageHead title={SALES_PAGES[mode][0]} sub={SALES_PAGES[mode][1]} />
       <div className="filters">
         <DateRange {...range} onChange={setRange} />
         {tab === 'sales' && <Select value={status} onChange={setStatus} options={[{ id: 'active', name: 'Active' }, { id: 'cancelled', name: 'Cancelled' }]} placeholder="All statuses" />}
@@ -57,16 +61,16 @@ export default function Sales() {
       ) : (
         <>
           <ErrorBox error={rets.error} onRetry={rets.reload} />
-          <DataTable title="Sales returns" sumFilter={(r) => r.status === 'active'} loading={rets.loading} rows={rets.data || []} rowClass={(r) => (r.status === 'cancelled' ? 'dim' : '')}
+          <DataTable title={mode === 'exchanges' ? 'Sales exchanges' : 'Sales returns'} sumFilter={(r) => r.status === 'active'} loading={rets.loading}
+            rows={(rets.data || []).filter((r) => (mode === 'exchanges' ? r.type === 'exchange' : r.type !== 'exchange'))} rowClass={(r) => (r.status === 'cancelled' ? 'dim' : '')}
             columns={[
               { key: 'date', label: 'Date', type: 'date' },
-              { key: 'return_no', label: 'Return #' },
+              { key: 'return_no', label: mode === 'exchanges' ? 'Exchange #' : 'Return #' },
               { key: 'invoice_no', label: 'Invoice' },
               { key: 'customer_name', label: 'Customer' },
-              { key: 'type', label: 'Type' },
               { key: 'items_text', label: 'Items', className: 'clip' },
               { key: 'total', label: 'Value', type: 'money', sum: true },
-              { key: 'refund', label: 'Cash refund', type: 'money', sum: true },
+              { key: 'refund', label: mode === 'exchanges' ? 'Cash back' : 'Cash refund', type: 'money', sum: true },
               { key: 'status', label: 'Status', render: (r) => <Badge tone={statusTone(r.status)}>{r.status}</Badge> },
               ...(can('cancel') ? [{ key: 'act', label: '', noSort: true, noExport: true, render: (r) => r.status === 'active' && <Btn size="sm" kind="danger" onClick={(e) => { e.stopPropagation(); setRev({ type: 'sreturn', id: r.id, label: `return ${r.return_no}` }); }}>Cancel</Btn> }] : [])
             ]} />
@@ -94,7 +98,7 @@ function SaleDetail({ id, onClose, onChanged }) {
     try {
       const l = await api('sale.link', { id: s.id });
       setLink(l);
-      try { await navigator.clipboard.writeText(l.url); toast('Customer link copied — valid for 15 days', 'ok'); } catch { toast('Customer link ready — copy it below', 'ok'); }
+      try { await navigator.clipboard.writeText(l.url); toast(`Customer link copied — ${l.days ? `valid for ${l.days} day${l.days === 1 ? '' : 's'}` : 'it never expires'}`, 'ok'); } catch { toast('Customer link ready — copy it below', 'ok'); }
     } catch (e) { toast(e.message, 'err'); } finally { setLinkBusy(false); }
   };
   const pays = s ? (Array.isArray(s.payments) ? s.payments : (() => { try { return JSON.parse(s.payments); } catch { return []; } })()) : [];
@@ -105,7 +109,7 @@ function SaleDetail({ id, onClose, onChanged }) {
         {can('cancel') && s.status === 'active' && <Btn kind="danger" onClick={() => setRev(true)}>Cancel invoice</Btn>}
         {can('cancel') && s.status === 'active' && <Btn kind="primary" onClick={() => setEditing(true)} title="Change items, prices, payments or the customer — the invoice keeps its number">✎ Edit</Btn>}
         {can('sales.return') && s.status === 'active' && <Btn onClick={() => setRet(true)}>Return / exchange</Btn>}
-        {can('pos') && s.customer_id && <Btn busy={linkBusy} onClick={makeLink} title="A private link to this invoice for the customer (WhatsApp, Messenger…). Works for 15 days.">Customer link</Btn>}
+        {can('pos') && s.customer_id && <Btn busy={linkBusy} onClick={makeLink} title="A private link to this invoice for the customer (WhatsApp, Messenger…). How long it works: Settings → Invoice → Link validity.">Customer link</Btn>}
         {can('pos') && <WhatsAppBtn data={data} link={link} onLink={setLink} />}
         <span className="spacer" />
         <div className="seg">

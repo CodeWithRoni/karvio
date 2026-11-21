@@ -46,6 +46,7 @@ const OnlineOrders = page(() => import('./pages/OnlineOrders'));
 const BranchTransfer = page(() => import('./pages/BranchTransfer'));
 const BranchReport = page(() => import('./pages/BranchReport'));
 const BranchStock = page(() => import('./pages/BranchStock'));
+const ProductSetup = page(() => import('./pages/ProductSetup'));
 const Expenses = page(() => import('./pages/Expenses'));
 const Profit = page(() => import('./pages/Profit'));
 const Reports = page(() => import('./pages/Reports'));
@@ -119,6 +120,8 @@ export default function App() {
               <Route path="pos" element={<Guard perm="pos"><POS /></Guard>} />
               <Route path="sales" element={<Guard perm="pos"><Sales /></Guard>} />
               <Route path="sales/:id" element={<Guard perm="pos"><Sales /></Guard>} />
+              <Route path="sales-returns" element={<Guard perm="sales.return"><Sales key="returns" mode="returns" /></Guard>} />
+              <Route path="sales-exchanges" element={<Guard perm="sales.return"><Sales key="exchanges" mode="exchanges" /></Guard>} />
               <Route path="pc-builder" element={<Guard perm="pos"><PCBuilder /></Guard>} />
               <Route path="customers" element={<Customers />} />
               <Route path="customers/:id" element={<Customers />} />
@@ -133,9 +136,12 @@ export default function App() {
               <Route path="suppliers" element={<Guard perm="suppliers"><Suppliers /></Guard>} />
               <Route path="suppliers/:id" element={<Guard perm="suppliers"><Suppliers /></Guard>} />
               <Route path="stock" element={<Stock />} />
+              <Route path="product-setup" element={<Guard perm="products"><ProductSetup /></Guard>} />
               <Route path="barcodes" element={<Barcodes />} />
               <Route path="prices" element={<Guard perm="products"><Prices /></Guard>} />
               <Route path="purchases" element={<Guard perm="purchase"><Purchases /></Guard>} />
+              <Route path="purchase-returns" element={<Guard perm="purchase"><Purchases key="returns" mode="returns" /></Guard>} />
+              <Route path="purchase-new" element={<Guard perm="purchase"><Purchases key="new" mode="new" /></Guard>} />
               <Route path="warranty" element={<Guard perm="warranty"><Warranty /></Guard>} />
               <Route path="repairs" element={<Guard perm="repairs"><Repairs /></Guard>} />
               <Route path="repairs/:id" element={<Guard perm="repairs"><Repairs /></Guard>} />

@@ -41,7 +41,7 @@ test('selected purchase export contains all 201 invoices across page boundaries'
 
 test('cancelled return remains visible while table and selected Excel totals exclude it',async({page})=>{
  await page.route(endpoint,async route=>{const req=route.request().postDataJSON();if(req.action==='sreturns.list')return route.fulfill({json:{ok:true,data:[{id:'cancelled-return',return_no:'SR-CANCEL',invoice_no:'INV-CANCEL',date:'2026-11-11',total:200,refund:200,status:'cancelled'},{id:'active-return',return_no:'SR-ACTIVE',invoice_no:'INV-ACTIVE',date:'2026-11-11',total:200,refund:200,status:'active'}]}});return route.continue();});
- await page.goto('/#/sales');await page.getByRole('tab',{name:'Returns & exchanges'}).click();await expect(page.locator('tfoot')).toContainText('200');await expect(page.getByText('SR-CANCEL',{exact:true})).toBeVisible();
+ await page.goto('/#/sales');await page.evaluate(() => { location.hash = '#/sales-returns'; });await expect(page.locator('tfoot')).toContainText('200');await expect(page.getByText('SR-CANCEL',{exact:true})).toBeVisible();
  await page.getByLabel('Select row',{exact:true}).first().check();const dl=page.waitForEvent('download');await page.getByRole('button',{name:'Excel',exact:true}).click();const wb=XLSX.read(await fs.readFile(await (await dl).path()));const rows=XLSX.utils.sheet_to_json(wb.Sheets.Report,{header:1});const totalIndex=rows[0].indexOf('Value');expect(rows.at(-1)[totalIndex]).toBe(0);
 });
 

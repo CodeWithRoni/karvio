@@ -12,9 +12,9 @@ import { useNotes, NotesButton, NoteReminders } from '../components/DashNotes';
 
 // History tabs after "Sales": [field, tab label, counted thing, colour, link]
 const HISTORY = [
-  ['sales_returns', 'Sales returns', 'return', 'warn', ['/sales', 'Open sales & returns', 'pos']],
+  ['sales_returns', 'Sales returns', 'return', 'warn', ['/sales-returns', 'Open sales returns', 'sales.return']],
   ['purchases', 'Purchases', 'purchase', '', ['/purchases', 'Open purchases', 'purchase']],
-  ['purchase_returns', 'Purchase returns', 'return', '', ['/purchases', 'Open purchases', 'purchase']],
+  ['purchase_returns', 'Purchase returns', 'return', '', ['/purchase-returns', 'Open purchase returns', 'purchase']],
   ['expenses', 'Expenses', 'expense', '', ['/expenses', 'Open expenses', 'expenses']],
   ['gross_profit', 'Gross profit', '', 'pl', null],
   ['net_profit', 'Net profit', '', 'pl', null],

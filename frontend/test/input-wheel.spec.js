@@ -16,7 +16,7 @@ test('wheel leaves custom warranty and low-stock values unchanged inside a produ
  }
 });
 test('global wheel guard covers new numeric/date fields while preserving scrolling and text focus',async({page})=>{
- await page.goto('/#/stock');await expect(page.getByRole('heading',{name:'Products & stock',exact:true})).toBeVisible();
+ await page.goto('/#/stock');await expect(page.getByRole('heading',{name:'Product',exact:true})).toBeVisible();
  // New native controls have no component-level onWheel handler: this verifies future coverage.
  await page.evaluate(()=>{
   const box=document.createElement('div');box.id='wheel-fixture';box.style.cssText='position:fixed;top:100px;left:250px;width:260px;height:180px;overflow:auto;z-index:99999;background:white;padding:10px';
