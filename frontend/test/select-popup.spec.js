@@ -8,7 +8,7 @@ test('every dropdown opens showing 10 options and scrolls for the rest; mouse an
  const brands=Array.from({length:17},(_,i)=>({id:'SPB'+i,name:'Popup brand '+String(i).padStart(2,'0'),active:true}));
  const prods=brands.map((b,i)=>({id:'SPP'+i,name:'Popup product '+i,brand_id:b.id,unit:'pcs',stock:1,active:true,cost_price:10,sale_price:20}));
  await page.route(endpoint,async route=>{const req=route.request().postDataJSON();if(req.action==='bootstrap'){const res=await route.fetch(),body=await res.json();body.data.brands=brands;body.data.products=prods;return route.fulfill({json:body});}if(req.action==='products.list')return route.fulfill({json:{ok:true,data:prods}});return route.continue();});
- await page.goto('/#/prices');
+ await page.goto('/#/price-manager');
  const brand=page.getByRole('combobox',{name:'Brand'}).or(page.locator('.field',{hasText:'Brand'}).locator('select')).first();
  await brand.click();
  const pop=page.locator('.select-pop');await expect(pop).toBeVisible();

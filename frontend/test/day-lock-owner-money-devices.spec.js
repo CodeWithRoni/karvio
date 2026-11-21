@@ -18,7 +18,7 @@ test('a closed day is locked for that account until an admin reopens it', async 
   await call(request, 'dayclose.save', { account_id: acc.id, date: today, counted: 500, note: '' });
   const blocked = await raw(request, 'account.entry', { kind: 'deposit', account_id: acc.id, amount: 10, date: today });
   expect(blocked.error).toMatch(/is closed for Lock/);
-  await page.goto('/#/accounts?tab=dayclose');
+  await page.goto('/#/cash-bank?tab=dayclose');
   await page.getByLabel('Account to close').selectOption(acc.id);
   await expect(page.getByText('Closed · locked', { exact: true })).toBeVisible();
   await expect(page.locator('.dc-lock')).toContainText('This day is locked');
@@ -35,7 +35,7 @@ test('a closed day is locked for that account until an admin reopens it', async 
 
 test("owner's money lists what the owner put in and took out", async ({ page, request }) => {
   const before = await call(request, 'owner.money', {});
-  await page.goto('/#/accounts');
+  await page.goto('/#/cash-bank');
   await page.getByRole('tab', { name: "Owner's money" }).click();
   await page.getByRole('button', { name: 'Owner put money in' }).click();
   const dlg = page.getByRole('dialog', { name: 'Deposit or withdraw' });

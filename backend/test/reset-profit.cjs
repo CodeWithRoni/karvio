@@ -177,11 +177,11 @@ eval(harness + scenario);
 {
   const assert = require('node:assert/strict');
   const os = require('node:os');
-  const { OfflineRuntime } = require('./gs-runtime.cjs');
+  const { OfflineRuntime } = require('./engine-runtime.cjs');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'karvio-reset-test-'));
   let n = 0;
   try {
-    const app = new OfflineRuntime({ dataDir: dir, codePath: path.join(__dirname, '..', 'Code.gs') });
+    const app = new OfflineRuntime({ dataDir: dir, codePath: path.join(__dirname, '..', 'engine.js') });
     let token;
     const call = (action, payload = {}) => app.execute({ action, payload, token });
     token = call('login', { username: 'admin', password: 'admin123' }).data.token;
@@ -193,7 +193,7 @@ eval(harness + scenario);
     assert.equal(call('products.list').data.length, 0); n++;
     const prev = JSON.parse(fs.readFileSync(app.previousFile, 'utf8'));
     assert.equal(prev.sheets.Products.rows.filter((row) => row[0]).length, 2, 'previous file still has the product'); n++;
-    const again = new OfflineRuntime({ dataDir: dir, codePath: path.join(__dirname, '..', 'Code.gs') });
+    const again = new OfflineRuntime({ dataDir: dir, codePath: path.join(__dirname, '..', 'engine.js') });
     token = again.execute({ action: 'login', payload: { username: 'admin', password: 'admin123' } }).data.token;
     assert.equal(again.execute({ action: 'products.list', payload: {}, token }).data.length, 0, 'reset survives a restart'); n++;
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }

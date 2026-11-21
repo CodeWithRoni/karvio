@@ -40,7 +40,7 @@ test('date fields show 15 Nov 2026, take typed dates and have a calendar', async
   const y = new Date(Date.parse(today + 'T12:00:00Z') - 864e5).toISOString().slice(0, 10);
   await expect(from).toHaveValue(pretty(y));
   // Day close cannot go past today: later days are disabled.
-  await page.goto('/#/accounts?tab=dayclose');
+  await page.goto('/#/cash-bank?tab=dayclose');
   const day = page.getByLabel('Day to close');
   await expect(day).toHaveValue(pretty(today));
   await day.click();

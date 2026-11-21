@@ -21,7 +21,7 @@ test('menu: each list is its own page', async ({ page }) => {
   await page.setViewportSize({ width: 1500, height: 1000 });
   await page.goto('/#/');
   const nav = page.locator('nav');
-  const HREF = { Sales: 'sales', 'Sales Return': 'sales-returns', 'Sales Exchange': 'sales-exchanges', Purchase: 'purchases', 'Purchase Return': 'purchase-returns', 'Make Purchase': 'purchase-new', Product: 'stock', 'Product Setup': 'product-setup' };
+  const HREF = { Sales: 'sales', 'Sales Return': 'sales-returns', 'Sales Exchange': 'sales-exchanges', Purchase: 'purchases', 'Purchase Return': 'purchase-returns', 'Make Purchase': 'purchase-new', Product: 'products', 'Product Setup': 'product-setup' };
   const go = async (name, title) => { const a = nav.locator(`a[href="#/${HREF[name]}"]`); await expect(a).toContainText(name); await a.click(); await expect(page.locator('.page-head h1')).toHaveText(title); };
   await go('Sales', 'Sales');
   await expect(page.locator('.page-head [role="tablist"]')).toHaveCount(0);

@@ -10,7 +10,7 @@ Online shop management and point of sale for computer, IT, electronics and netwo
 
 The web, desktop and mobile apps connect to the same online shop through the Supabase API. Internet access and an existing shop account are required. There is no offline sales mode, local shop database or automatic import of old offline data. Older local databases are left untouched.
 
-The current online backend is **Supabase Edge Functions + PostgreSQL**. `backend/Code.gs` (originally a Google Apps Script backend) holds the business rules: it is generated into the Supabase engine and run by the regression tests through `backend/test/gs-runtime.cjs`. Google Sheets is not used as a database.
+The current online backend is **Supabase Edge Functions + PostgreSQL**. `backend/engine.js` holds the business rules: it is generated into the Supabase engine and run by the regression tests through `backend/test/engine-runtime.cjs`. Google Sheets is not used as a database.
 
 ## Downloads
 
@@ -36,11 +36,7 @@ Download installers from the [release page](https://github.com/CodeWithRoni/karv
 - **Reports:** business dashboard, profit, expenses, stock and transaction reports with Excel/PDF/print exports.
 - **Administration:** role permissions, working hours, shop/invoice settings, configurable SMS gateway, backups/restore and owner-only reset. Used products, parties, accounts and expense history are retained; closed books protect opening balances.
 
-The **Service** menu is currently a placeholder for future work, not a completed service-management workflow.
-
 Mobile/tablet camera scanning is available in POS, purchase product/serial entry and Advance Search. Desktop devices keep keyboard/scanner entry. Camera permission is required; frames are decoded locally. Purchase product names now use the full card width on phones/tablets.
-
-Read [v1.2.7 release notes](RELEASE-1.2.7.md) for the latest corrections.
 
 ## Sign in and setup
 
@@ -76,7 +72,7 @@ Browser tests use Microsoft Edge locally by default. CI installs Chromium and se
 
 - frontend/src — React UI, API transport and document/export rendering.
 - frontend/desktop — online Electron wrapper.
-- backend/Code.gs — authoritative ERP business rules (with supabase/engine-overrides.txt).
+- backend/engine.js — authoritative ERP business rules (with supabase/engine-overrides.txt).
 - supabase/functions/karvio-api — generated business engine and hosted gateway/runtime.
 - supabase/migrations — versioned PostgreSQL schema and private transactional storage.
 - backend/test and frontend/test — accounting, access, recovery and browser regressions.

@@ -44,7 +44,7 @@ test('edit a purchase: same number, new quantity and cost', async ({ page, reque
 
 test('a new stock product needs group, category, brand, model and unit', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
-  await page.goto('/#/stock');
+  await page.goto('/#/products');
   await page.getByRole('button', { name: 'Add product', exact: true }).click();
   const dlg = page.getByRole('dialog', { name: 'Add product' });
   for (const l of ['Product group', 'Category', 'Brand', 'SKU / model', 'Selling unit']) await expect(dlg.locator('.field-label', { hasText: l }).locator('.req')).toHaveText('*');

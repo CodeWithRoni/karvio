@@ -1,4 +1,4 @@
-// Test harness: runs backend/Code.gs (the business rules) in Node with a JSON file as the database.
+// Test harness: runs backend/engine.js (the business rules) in Node with a JSON file as the database.
 // Formerly the offline desktop runtime; the desktop app is online-only now, so only tests use it.
 const fs = require('node:fs');
 const path = require('node:path');
@@ -100,7 +100,7 @@ class OfflineRuntime {
       UrlFetchApp: { fetch() { throw new Error('SMS is unavailable in offline mode. No message was sent.'); } },
       Utilities: { getUuid: () => crypto.randomUUID(), DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' }, computeDigest: (_, text) => Array.from(crypto.createHash('sha256').update(String(text)).digest()).map((b) => b > 127 ? b - 256 : b), formatDate }
     });
-    vm.runInContext(fs.readFileSync(codePath, 'utf8'), this.context, { filename: 'Code.gs', timeout: 10000 });
+    vm.runInContext(fs.readFileSync(codePath, 'utf8'), this.context, { filename: 'engine.js', timeout: 10000 });
     this.context.setupDatabase(); this.context.setSetting_('sms_enabled', 'false'); this.persist();
     if (this.savedText === undefined) this.savedText = JSON.stringify(this.state);
   }

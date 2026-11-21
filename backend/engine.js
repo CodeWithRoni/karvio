@@ -1,15 +1,11 @@
 /**
  * ============================================================================
- *  Karvio — Code.gs  (Google Apps Script backend)
- *  Google Sheets = database  |  This Web App = REST / JSON API
+ *  Karvio — engine.js  (the ERP's business rules)
+ *  Runs on Supabase: scripts/generate-supabase.cjs turns this file (with
+ *  supabase/engine-overrides.txt) into supabase/functions/karvio-api/engine.mjs,
+ *  where the Edge Function gives it its database (PostgreSQL) through a
+ *  spreadsheet-like runtime. The same rules once ran on Google Apps Script.
  * ============================================================================
- *  FIRST-TIME SETUP
- *   1. Run  setupDatabase()  once from the Apps Script editor (authorize it).
- *   2. Deploy > New deployment > Web app
- *        Execute as: Me      Who has access: Anyone
- *   3. Paste the Web App URL into the React app (Settings > API connection).
- *   4. Default login:  admin / admin123   (change it immediately!)
- *
  *  Every request is:  POST  { action, token, payload }   (Content-Type: text/plain)
  *  Every response is: { ok:true, data } | { ok:false, error }
  * ============================================================================

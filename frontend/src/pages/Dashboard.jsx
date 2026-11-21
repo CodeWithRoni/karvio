@@ -99,7 +99,7 @@ export default function Dashboard() {
 
   const claimsOpen = d.claims ? d.claims.pending + d.claims.vendor + d.claims.ready : 0;
   const attention = [
-    on('low_stock') && { key: 'low', label: 'Low stock items', n: d.low_stock.length, tone: 'warn', to: '/stock?low=1' },
+    on('low_stock') && { key: 'low', label: 'Low stock items', n: d.low_stock.length, tone: 'warn', to: '/products?low=1' },
     on('reminders') && Array.isArray(d.reminders) && { key: 'dues', label: 'Payments due or overdue', n: d.reminders.length, tone: 'bad', to: '#reminders' },
     d.services_done !== undefined && { key: 'services', label: 'Service jobs done — complete & invoice', n: d.services_done, tone: 'info', to: '/service?tab=Work%20done' },
     d.repairs_waiting !== undefined && { key: 'repairs', label: 'Repairs waiting for pickup', n: d.repairs_waiting, tone: 'aqua', to: '/repairs' },
@@ -107,7 +107,7 @@ export default function Dashboard() {
     d.recurring_due !== undefined && { key: 'monthly', label: 'Monthly expenses due', n: d.recurring_due, tone: 'warn', to: '/expenses?tab=monthly' },
     d.rebates_pending && { key: 'rebates', label: 'Promised supplier rebates to collect', n: d.rebates_pending.count, tone: 'warn', to: can('*') ? '/supplier-ledger-adjustment' : '/reports?type=supplier_rebates' },
     d.approvals && { key: 'approvals', label: 'Waiting for approval', n: d.approvals.length, tone: 'warn', to: d.approvals[0] ? `/approvals/${d.approvals[0].kind}` : '/approvals/purchase' },
-    d.stock_summary && { key: 'oos', label: 'Out of stock products', n: d.stock_summary.out_of_stock, tone: 'muted', to: '/stock?qty=0' }
+    d.stock_summary && { key: 'oos', label: 'Out of stock products', n: d.stock_summary.out_of_stock, tone: 'muted', to: '/products?qty=0' }
   ].filter(Boolean);
 
   const showChart = on('chart');
@@ -245,7 +245,7 @@ export default function Dashboard() {
           )}
           {on('balances') && d.accounts && (
             <section className="card">
-              <div className="card-head"><h2>Live balances</h2>{can('accounts') && <Link to="/accounts" className="link">Manage accounts</Link>}</div>
+              <div className="card-head"><h2>Live balances</h2>{can('accounts') && <Link to="/cash-bank" className="link">Manage accounts</Link>}</div>
               <div className="bal-list">
                 {/* Every account, those holding money first; the list scrolls inside the card so it never outgrows Profit. */}
                 <div className="bal-scroll-wrap"><div className="bal-scroll" tabIndex={0} aria-label="Account balances">
@@ -293,7 +293,7 @@ export default function Dashboard() {
         {on('top_products') && d.top_products && <TopProducts data={d.top_products} showProfit={can('cost') && !d.limited} />}
 
         {on('low_stock') && <div className="card">
-          <div className="card-head"><h2>Low stock</h2><Link to="/stock?low=1" className="link">Open stock explorer</Link></div>
+          <div className="card-head"><h2>Low stock</h2><Link to="/products?low=1" className="link">Open stock explorer</Link></div>
           {d.low_stock.length ? (
             <div className="trio-body rank-list low">
               {d.low_stock.map((p) => (

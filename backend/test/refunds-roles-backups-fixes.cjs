@@ -200,11 +200,11 @@ eval(harness + scenario);
 /* ---------- 15. offline: no whole-database copy per request, old daily copies pruned ---------- */
 {
   const assert = require('assert/strict');
-  const { OfflineRuntime } = require('./gs-runtime.cjs');
+  const { OfflineRuntime } = require('./engine-runtime.cjs');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'karvio-review-'));
   let n = 0;
   try {
-    const app = new OfflineRuntime({ dataDir: dir, codePath: path.join(__dirname, '..', 'Code.gs') });
+    const app = new OfflineRuntime({ dataDir: dir, codePath: path.join(__dirname, '..', 'engine.js') });
     const tok = app.execute({ action: 'login', payload: { username: 'admin', password: 'admin123' } }).data.token;
     const bad = app.execute({ action: 'product.save', payload: { name: '' }, token: tok });
     assert.equal(bad.ok, false); n++;

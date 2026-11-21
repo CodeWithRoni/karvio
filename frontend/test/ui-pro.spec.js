@@ -29,7 +29,7 @@ test('menu groups fold away, stay folded after a reload, and shortcuts show on h
   await page.reload();
   await expect(page.locator('.nav-card', { hasText: 'Stock' }).getByRole('link')).toHaveCount(0);
   // The group of the open page never stays folded.
-  await page.goto('/#/stock');
+  await page.goto('/#/products');
   await expect(page.locator('.nav-card', { hasText: 'Stock' }).getByRole('link', { name: /^Product(?! Setup)/ })).toBeVisible();
   await page.locator('.nav-card', { hasText: 'Stock' }).getByRole('button', { name: 'Stock menu group' }).click(); // unfold for later tests
   const pos = page.getByRole('link', { name: /Point Of Sale/ });
@@ -136,7 +136,7 @@ test('empty and loading states are shaped, not blank', async ({ page }) => {
   await page.goto('/#/sales');
   await expect(page.locator('.sk-row').first()).toBeVisible();
   await expect(page.locator('.sk-row')).toHaveCount(0, { timeout: 8000 });
-  await page.goto('/#/stock');
+  await page.goto('/#/products');
   await page.getByLabel('Exact stock qty').fill('987654');
   await expect(page.locator('.empty .empty-ic')).toBeVisible();
   await expect(page.getByText('No products match these filters')).toBeVisible();
@@ -145,7 +145,7 @@ test('empty and loading states are shaped, not blank', async ({ page }) => {
 test('browser tab title is the open page name in capitals', async ({ page }) => {
   await page.goto('/#/barcodes');
   await expect(page).toHaveTitle('BARCODE LABELS');
-  await page.goto('/#/accounts?tab=dayclose'); // Day close moved to Shift & day close
+  await page.goto('/#/cash-bank?tab=dayclose'); // Day close moved to Shift & day close
   await expect(page).toHaveTitle('SHIFT & DAY CLOSE');
   await page.goto('/#/');
   await expect(page).toHaveTitle('DASHBOARD');

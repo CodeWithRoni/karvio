@@ -8,7 +8,7 @@ All four local migration versions now match the hosted migration history, avoidi
 
 Publication validation: 1,343 regular assertions and 63 Supabase adapter checks passed; all 54 browser cases passed together. Production build/assets passed. Security advisor has no WARN/ERROR findings, only intentional deny-all RLS INFO findings. No real SMS or test sale was sent to the shop.
 
-Project: `svqhlotlzgmwjneuphpe`, **Karvio's Org**, Singapore. GearGrid and the current Apps Script shop were not changed.
+Project: `svqhlotlzgmwjneuphpe`, **Karvio's Org**, Singapore.
 
 API: `https://svqhlotlzgmwjneuphpe.supabase.co/functions/v1/karvio-api`
 
@@ -20,7 +20,7 @@ Once initialized, connect the ERP using **Change API connection** and the API ad
 
 ## Storage and authorization
 
-29 named PostgreSQL business tables follow `backend/Code.gs`. `Categories.parent_id` represents groups/categories; shop details remain in Settings. Numeric and boolean fields keep their types. Dates and JSON-bearing columns retain their original text representation for ERP/backup compatibility. `_position` preserves stable row addresses used by the existing engine. Referential/business validation remains in the existing ERP rules rather than new foreign keys that could break reset/restore or optional references.
+29 named PostgreSQL business tables follow `backend/engine.js`. `Categories.parent_id` represents groups/categories; shop details remain in Settings. Numeric and boolean fields keep their types. Dates and JSON-bearing columns retain their original text representation for ERP/backup compatibility. `_position` preserves stable row addresses used by the existing engine. Referential/business validation remains in the existing ERP rules rather than new foreign keys that could break reset/restore or optional references.
 
 Every table has RLS enabled. Browser roles have no table or storage-RPC grants and no permissive policies. The security advisor's informational **RLS Enabled No Policy** notices are intentional denial of direct client access. The gateway retains Karvio's username/password roles, work-hour restrictions, permission checks and credential-bound sessions. It does not create Supabase Auth accounts. PBKDF2-SHA256 uses 600,000 iterations; server credentials remain in Supabase's injected Edge environment. Never put service-role keys in the frontend.
 
@@ -52,4 +52,4 @@ Owner-setup follow-up: the first real browser setup was blocked by PostgREST's s
 
 ## Rebuilding
 
-`backend/Code.gs` remains the authoritative business-rule source. After any change, run `node scripts/generate-supabase.cjs`, `npm run test:supabase` in frontend, the regular ERP/browser suites and rebuild. The generated static engine uses no eval/vm in Edge. Do not hand-edit engine.mjs. Applied SQL migration files are historical: after initial provisioning, create a new migration with the Supabase CLI for subsequent schema changes rather than editing/reapplying the initial migration. Deploy all relative function modules together. Setup tokens, local owner pages, service keys and private exports must remain outside source control.
+`backend/engine.js` remains the authoritative business-rule source. After any change, run `node scripts/generate-supabase.cjs`, `npm run test:supabase` in frontend, the regular ERP/browser suites and rebuild. The generated static engine uses no eval/vm in Edge. Do not hand-edit engine.mjs. Applied SQL migration files are historical: after initial provisioning, create a new migration with the Supabase CLI for subsequent schema changes rather than editing/reapplying the initial migration. Deploy all relative function modules together. Setup tokens, local owner pages, service keys and private exports must remain outside source control.

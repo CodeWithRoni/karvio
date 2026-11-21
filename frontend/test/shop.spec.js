@@ -29,7 +29,7 @@ test.beforeEach(async ({ page }) => {
 
 test('all main screens load without browser errors', async ({ page }) => {
   const errors = []; page.on('pageerror', (e) => errors.push(e.message));
-  const routes = ['', 'pos', 'sales', 'pc-builder', 'customers', 'repairs', 'service', 'expenses', 'stock', 'purchases', 'suppliers', 'warranty', 'history', 'accounts', 'reports', 'users', 'settings'];
+  const routes = ['', 'pos', 'sales', 'quotation', 'customers', 'repairs', 'service', 'expenses', 'products', 'purchases', 'suppliers', 'warranty', 'advanced-search', 'cash-bank', 'reports', 'users', 'settings'];
   for (const route of routes) {
     await page.goto('/#/' + route);
     await expect(route === 'pos' ? page.getByRole('combobox', { name: 'Search product' }) : page.locator('.page-head h1')).toBeVisible();
@@ -37,7 +37,7 @@ test('all main screens load without browser errors', async ({ page }) => {
   }
   expect(errors).toEqual([]);
   await page.setViewportSize({width:1920,height:1080});
-  await page.goto('/#/stock');
+  await page.goto('/#/products');
   await expect(page.locator('.page-head h1')).toBeVisible();
   expect(await page.locator('.nav-item-label').evaluateAll(labels=>labels.filter(el=>el.scrollWidth>el.clientWidth+1).map(el=>el.textContent))).toEqual([]);
   await page.screenshot({path:'../verification/sidebar-icons-review.png',fullPage:true,animations:'disabled'});
@@ -62,7 +62,7 @@ test('dashboard refreshes another counter sale automatically and retains data on
 
 test('master data confirmation can cancel and then delete a brand', async ({ page, request }) => {
   const brand = await call(request, 'master.save', { kind: 'brand', name: 'Confirmation Test Brand' });
-  await page.goto('/#/stock');
+  await page.goto('/#/products');
   await page.evaluate(() => { location.hash = '#/product-setup'; });
   await page.getByRole('button', { name: 'Delete Confirmation Test Brand', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click();
@@ -76,7 +76,7 @@ test('master data confirmation can cancel and then delete a brand', async ({ pag
 
 test('Bengali stock PDF and Excel download and thermal receipts keep their fonts', async ({ page }) => {
   const errors = []; page.on('pageerror', (e) => errors.push(e.message));
-  await page.goto('/#/stock');
+  await page.goto('/#/products');
   await page.getByPlaceholder('Search this table').fill('বাংলা'); // 20 rows per page: find the Bengali product
   await expect(page.getByText('বাংলা কেবল', { exact: true })).toBeVisible();
   const pdfDownload = page.waitForEvent('download');
@@ -111,7 +111,7 @@ test('Bengali stock PDF and Excel download and thermal receipts keep their fonts
 
 test('mobile screens fit a 390px viewport', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  for (const route of ['', 'pos', 'stock', 'pc-builder', 'reports']) {
+  for (const route of ['', 'pos', 'products', 'quotation', 'reports']) {
     await page.goto('/#/' + route);
     await expect(route === 'pos' ? page.getByRole('combobox', { name: 'Search product' }) : page.locator('.page-head h1')).toBeVisible();
     const size = await page.evaluate(() => ({ document: document.documentElement.scrollWidth, viewport: innerWidth }));
@@ -123,7 +123,7 @@ test('mobile screens fit a 390px viewport', async ({ page }) => {
 });
 
 test('long Bengali PDF reports paginate with repeated table headings', async ({ page }) => {
-  await page.goto('/#/stock');
+  await page.goto('/#/products');
   await expect(page.locator('.page-head h1')).toBeVisible();
   const download = page.waitForEvent('download');
   await page.evaluate(async () => {
@@ -139,7 +139,7 @@ test('long Bengali PDF reports paginate with repeated table headings', async ({ 
 test('product groups contain categories across master data, products, stock filters and PC builder', async ({ page, request }) => {
   const testBrand = await call(request, 'master.save', { kind: 'brand', name: `INTEL TEST ${Date.now()}` });
   await page.setViewportSize({ width: 1920, height: 1000 });
-  await page.goto('/#/stock');
+  await page.goto('/#/products');
   await page.evaluate(() => { location.hash = '#/product-setup'; });
   const groups = page.locator('.md-panel').filter({ has: page.getByRole('heading', { name: 'Product groups', exact: true }) });
   const categories = page.locator('.md-panel').filter({ has: page.getByRole('heading', { name: 'Categories', exact: true }) });
@@ -166,7 +166,7 @@ test('product groups contain categories across master data, products, stock filt
   await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(page.getByText('This item is in use and cannot be deleted', { exact: true })).toBeVisible();
   await expect(groups.getByText('PROCESSOR', { exact: true })).toBeVisible();
-  await page.evaluate(() => { location.hash = '#/stock'; }); // Add product is on the Product page
+  await page.evaluate(() => { location.hash = '#/products'; }); // Add product is on the Product page
   await page.getByRole('button', { name: 'Add product', exact: true }).click();
   const form = page.getByRole('dialog');
   await form.getByLabel('Product name', { exact: true }).fill('Core i5 Test');
@@ -183,21 +183,21 @@ test('product groups contain categories across master data, products, stock filt
   await form.getByLabel('Product name', { exact: true }).fill('Core i5 Test');
   await form.getByRole('button', { name: 'Add product', exact: true }).click();
   await expect(form).toHaveCount(0);
-  await page.evaluate(() => { location.hash = '#/stock'; });
+  await page.evaluate(() => { location.hash = '#/products'; });
   await page.getByRole('combobox', { name: 'Product group', exact: true }).selectOption(group.id);
   await page.getByRole('combobox', { name: 'Category', exact: true }).selectOption(intel.id);
   await expect(page.locator('tbody tr').filter({ hasText: 'Core i5 Test' })).toContainText('PROCESSOR');
   await page.getByRole('combobox', { name: 'Product group', exact: true }).selectOption('');
   await expect(page.getByRole('combobox', { name: 'Category', exact: true })).toHaveValue('');
   // PC builder lists only parts in stock: an unstocked product is hidden until it is purchased.
-  await page.goto('/#/pc-builder');
+  await page.goto('/#/quotation');
   await expect(page.getByLabel('Processor product').locator('option').filter({ hasText: 'Core i5 Test' })).toHaveCount(0);
   const i5 = (await call(request, 'products.list')).find((x) => x.name === 'Core i5 Test');
   const sup = await call(request, 'supplier.save', { name: `PC builder supplier ${Date.now()}` });
   await call(request, 'purchase.create', { supplier_id: sup.id, items: [{ product_id: i5.id, qty: 2, cost: 15000, sale_price: 17500 }], payments: [] });
   await page.reload();
   await expect(page.getByLabel('Processor product').locator('option').filter({ hasText: 'Core i5 Test' })).toHaveCount(1);
-  await page.goto('/#/stock');
+  await page.goto('/#/products');
   await page.evaluate(() => { location.hash = '#/product-setup'; });
   await groups.getByRole('textbox', { name: 'Search Product groups' }).fill('PROCESSOR');
   await categories.getByRole('textbox', { name: 'Search Categories' }).fill('PROCESSOR');
@@ -212,7 +212,7 @@ test('product groups contain categories across master data, products, stock filt
 test('price manager filters products and saves retail and wholesale prices', async ({ page, request }) => {
   const boot = await call(request, 'bootstrap');
   const p = boot.products.find((x) => x.active);
-  await page.goto('/#/prices');
+  await page.goto('/#/price-manager');
   await page.getByPlaceholder('Name, model or barcode').fill(p.name);
   await page.getByLabel(`Retail price for ${p.name}`).fill('12345');
   await page.getByLabel(`Wholesale price for ${p.name}`).fill('11000');
@@ -373,7 +373,7 @@ test('side menu cards: Home, Sales, Purchase, Stock, Service & Warranty, Party L
   expect(await links('Money & Reports')).toEqual(['Cash, Bank & MFS', 'Shift & Day Close', 'Day Book', 'Expenses', 'Profit', 'Reports Hub']);
   expect(await links('Admin')).toEqual(['Users & Roles', 'Activity Log', 'Settings']);
   await page.keyboard.press('Alt+8');
-  await expect(page).toHaveURL(/#\/history/);
+  await expect(page).toHaveURL(/#\/advanced-search/);
 });
 
 test('SMS preset box keeps showing the chosen provider, also after saving and reloading', async ({ page, request }) => {
@@ -442,7 +442,7 @@ test('barcode labels: create a shop barcode, custom size, A4 start position, pur
   await page.addInitScript(() => { try { if (!sessionStorage.getItem('lbl_reset')) { localStorage.removeItem('karvio_label_opts'); sessionStorage.setItem('lbl_reset', '1'); } } catch {} });
 
   // menu: under Products & stock and Price manager
-  await page.goto('/#/stock');
+  await page.goto('/#/products');
   await expect(page.locator('.rail a', { hasText: 'Barcode Labels' })).toBeVisible();
   const links = await page.locator('.rail a').allTextContents();
   const i = links.findIndex((t) => t.includes('Price Manager'));
@@ -609,7 +609,7 @@ test('purchase: supplier invoice no. is its own field, warns on a repeat, and is
   await expect(page.locator('.modal .kv')).toContainText(supInv);
   await expect(page.locator('.modal .kv')).toContainText('Delivered by Rahim');
   await page.keyboard.press('Escape');
-  await page.goto('/#/history');
+  await page.goto('/#/advanced-search');
   await page.getByPlaceholder(/Serial \/ IMEI/).fill(supInv);
   await page.keyboard.press('Enter');
   await expect(page.getByText('Supplier invoice', { exact: true })).toBeVisible();

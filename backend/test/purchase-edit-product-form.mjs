@@ -128,4 +128,4 @@ note('Sign in: an unknown branch is refused', !lbad.ok);
   note('Returned serials are no longer returnable', det2.items[0].serials_left.length === 0, JSON.stringify(det2.items[0].serials_left));
 }
 
-console.log(`features-15: ${checks} checks passed`);
+console.log(`Purchase edit and product form: ${checks} checks passed`);

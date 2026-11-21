@@ -137,11 +137,11 @@ eval(harness + scenario);
 {
   const assert = require('node:assert/strict');
   const os = require('node:os');
-  const { OfflineRuntime } = require('./gs-runtime.cjs');
+  const { OfflineRuntime } = require('./engine-runtime.cjs');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'karvio-backup-test-'));
   let n = 0;
   try {
-    const opts = { dataDir: dir, codePath: path.join(__dirname, '..', 'Code.gs') };
+    const opts = { dataDir: dir, codePath: path.join(__dirname, '..', 'engine.js') };
     const app = new OfflineRuntime(opts);
     let token;
     const call = (action, payload = {}) => app.execute({ action, payload, token });

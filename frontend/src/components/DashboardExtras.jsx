@@ -144,7 +144,7 @@ export function InventoryHealth({ stock, product }) {
   if (!stock && !product) return null;
   return (
     <section className="card inv-health" aria-label="Inventory health">
-      <div className="card-head"><h2>Inventory health</h2><div className="row" style={{ gap: 16 }}><Link to="/stock" className="link">Open products</Link><Link className="link" to="/reports?type=stock_summary">Open stock report</Link></div></div>
+      <div className="card-head"><h2>Inventory health</h2><div className="row" style={{ gap: 16 }}><Link to="/products" className="link">Open products</Link><Link className="link" to="/reports?type=stock_summary">Open stock report</Link></div></div>
       {stock && <StockSummary s={stock} />}
       {product && <ProductSummary data={product} />}
     </section>

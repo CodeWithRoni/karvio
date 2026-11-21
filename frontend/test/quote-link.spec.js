@@ -7,7 +7,7 @@ test('PC builder sends a quotation by SMS; the customer opens it without signing
  await call(request,'settings.save',{values:{sms_enabled:'true',sms_method:'GET',sms_url:'https://sms.example.com/send?to={number}&text={message}'}});
  try {
   await page.addInitScript(({endpoint,token})=>{localStorage.setItem('erp_api_config',JSON.stringify({scriptUrl:endpoint}));localStorage.setItem('erp_token',token);},{endpoint,token});
-  await page.goto('/#/pc-builder');
+  await page.goto('/#/quotation');
   const send=page.getByRole('button',{name:'Send to customer',exact:true});
   await expect(send).toBeDisabled();
   await page.getByLabel('Processor typed by hand').fill('E2E Quote Ryzen 7');

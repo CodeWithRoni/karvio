@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useStore } from './lib/store';
 import { endpoint } from './lib/api';
 import Layout from './components/Layout';
@@ -23,22 +23,22 @@ function preloadPages() {
 const Dashboard = page(() => import('./pages/Dashboard'));
 const POS = page(() => import('./pages/POS'));
 const Sales = page(() => import('./pages/Sales'));
-const PCBuilder = page(() => import('./pages/PCBuilder'));
+const Quotation = page(() => import('./pages/Quotation'));
 const Customers = page(() => import('./pages/Customers'));
 const Collection = page(() => import('./pages/Collection'));
 const Payment = page(() => import('./pages/Payment'));
 const LedgerAdjustment = page(() => import('./pages/LedgerAdjustment'));
 const LedgerReport = page(() => import('./pages/LedgerReport'));
 const Suppliers = page(() => import('./pages/Suppliers'));
-const Stock = page(() => import('./pages/Stock'));
+const Products = page(() => import('./pages/Products'));
 const Purchases = page(() => import('./pages/Purchases'));
-const Prices = page(() => import('./pages/Prices'));
+const PriceManager = page(() => import('./pages/PriceManager'));
 const Barcodes = page(() => import('./pages/Barcodes'));
 const Warranty = page(() => import('./pages/Warranty'));
 const Repairs = page(() => import('./pages/Repairs'));
 const Service = page(() => import('./pages/Service'));
-const History = page(() => import('./pages/History'));
-const Accounts = page(() => import('./pages/Accounts'));
+const AdvancedSearch = page(() => import('./pages/AdvancedSearch'));
+const CashBank = page(() => import('./pages/CashBank'));
 const Shifts = page(() => import('./pages/Shifts'));
 const DayBook = page(() => import('./pages/DayBook'));
 const StockCount = page(() => import('./pages/StockCount'));
@@ -67,6 +67,12 @@ const quoteToken = () => (/^#\/q\/([A-Za-z0-9]{1,64})\/?$/.exec(window.location.
 function UnknownRoute() {
   return linkToken() || quoteToken() ? null : <Navigate to="/" replace />;
 }
+/** An old page address: open the new one, keeping ?filters. */
+function Moved({ to }) {
+  const { search } = useLocation();
+  return <Navigate replace to={to + search} />;
+}
+
 function Guard({ perm, children }) {
   const can = useStore((s) => s.can);
   if (perm && !can(perm)) return <div className="empty"><b>You don't have access to this page</b><div>Ask an admin to grant the permission in Users & roles.</div></div>;
@@ -123,7 +129,7 @@ export default function App() {
               <Route path="sales/:id" element={<Guard perm="pos"><Sales /></Guard>} />
               <Route path="sales-returns" element={<Guard perm="sales.return"><Sales key="returns" mode="returns" /></Guard>} />
               <Route path="sales-exchanges" element={<Guard perm="sales.return"><Sales key="exchanges" mode="exchanges" /></Guard>} />
-              <Route path="pc-builder" element={<Guard perm="pos"><PCBuilder /></Guard>} />
+              <Route path="quotation" element={<Guard perm="pos"><Quotation /></Guard>} />
               <Route path="customers" element={<Customers />} />
               <Route path="customers/:id" element={<Customers />} />
               <Route path="collection" element={<Guard perm="customers"><Collection /></Guard>} />
@@ -136,11 +142,11 @@ export default function App() {
               <Route path="supplier-ledger-report" element={<Guard perm="*"><LedgerReport kind="supplier" /></Guard>} />
               <Route path="suppliers" element={<Guard perm="suppliers"><Suppliers /></Guard>} />
               <Route path="suppliers/:id" element={<Guard perm="suppliers"><Suppliers /></Guard>} />
-              <Route path="stock" element={<Stock />} />
+              <Route path="products" element={<Products />} />
               <Route path="product-setup" element={<Guard perm="products"><ProductSetup /></Guard>} />
               <Route path="approvals/:kind" element={<Approvals />} />
               <Route path="barcodes" element={<Barcodes />} />
-              <Route path="prices" element={<Guard perm="products"><Prices /></Guard>} />
+              <Route path="price-manager" element={<Guard perm="products"><PriceManager /></Guard>} />
               <Route path="purchases" element={<Guard perm="purchase"><Purchases /></Guard>} />
               <Route path="purchase-returns" element={<Guard perm="purchase"><Purchases key="returns" mode="returns" /></Guard>} />
               <Route path="purchase-new" element={<Guard perm="purchase"><Purchases key="new" mode="new" /></Guard>} />
@@ -149,8 +155,10 @@ export default function App() {
               <Route path="repairs/:id" element={<Guard perm="repairs"><Repairs /></Guard>} />
               <Route path="service" element={<Guard perm="service"><Service /></Guard>} />
               <Route path="service/:id" element={<Guard perm="service"><Service /></Guard>} />
-              <Route path="history" element={<History />} />
-              <Route path="accounts" element={<Guard perm="accounts"><Accounts /></Guard>} />
+              <Route path="advanced-search" element={<AdvancedSearch />} />
+              <Route path="cash-bank" element={<Guard perm="accounts"><CashBank /></Guard>} />
+              {/* old addresses (bookmarks) open the renamed pages */}
+              {[['stock', '/products'], ['pc-builder', '/quotation'], ['history', '/advanced-search'], ['prices', '/price-manager'], ['accounts', '/cash-bank']].map(([from, to]) => <Route key={from} path={from} element={<Moved to={to} />} />)}
               <Route path="branch-transfer" element={<Guard perm="products"><BranchTransfer /></Guard>} />
               <Route path="branch-stock" element={<Guard perm="reports"><BranchStock /></Guard>} />
               <Route path="branch-report" element={<Guard perm="reports"><BranchReport /></Guard>} />

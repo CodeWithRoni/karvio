@@ -54,7 +54,7 @@ test('tables open newest first; Date turns it round', async ({ page }) => {
 test('switching the working branch shows that branch\'s stock at once, without a browser reload', async ({ page }) => {
   await page.setViewportSize({ width: 1500, height: 950 });
   await page.addInitScript((id) => { if (!sessionStorage.getItem('t_once')) { sessionStorage.setItem('t_once', '1'); localStorage.setItem('karvio_branch', id); } }, ids.main);
-  await page.goto('/#/stock');
+  await page.goto('/#/products');
   const row = page.locator('.dt tbody tr', { hasText: ids.fan });
   const stockCell = async () => { const heads = await page.locator('.dt thead th').allInnerTexts(); const i = heads.findIndex((h) => /^Stock/.test(h.trim())); return (await row.locator('td').nth(i).innerText()).trim(); };
   await expect(row).toHaveCount(1);

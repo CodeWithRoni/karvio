@@ -1,6 +1,6 @@
 // Regression checks for: promised payment dates + collection reminders, sales-return costing,
 // dashboard stock summary / best sellers, and the POS price history.
-// Runs the real Code.gs on the in-memory spreadsheet harness from simulate.js.
+// Runs the real engine.js on the in-memory spreadsheet harness from simulate.js.
 const fs = require('fs');
 const path = require('path');
 const harness = fs.readFileSync(path.join(__dirname, 'simulate.js'), 'utf8').split('/* ---------------- scenario ---------------- */')[0];

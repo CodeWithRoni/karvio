@@ -91,10 +91,10 @@ const date=load('../src/lib/format.js',{'./store':{useStore:settings,shopDay:()=
 eq(date.today(),'2026-11-11');
 const {desktopMode}=require('../desktop/mode.cjs');const dir=fs.mkdtempSync(path.join(os.tmpdir(),'karvio-mode-'));
 try { const opts={args:[],appData:dir};eq(desktopMode(opts),'online');fs.mkdirSync(path.join(dir,'Karvio Offline'));fs.writeFileSync(path.join(dir,'Karvio Offline','karvio.json'),'{}');eq(desktopMode(opts),'online');eq(desktopMode({...opts,args:['--online']}),'online');eq(desktopMode({args:['--offline'],appData:dir}),'online');eq(desktopMode({args:[],appData:'unused',defaultMode:'offline'}),'online'); } finally {fs.rmSync(dir,{recursive:true,force:true});}
-const {OfflineRuntime}=require('../../backend/test/gs-runtime.cjs');
+const {OfflineRuntime}=require('../../backend/test/engine-runtime.cjs');
 const migrationDir=fs.mkdtempSync(path.join(os.tmpdir(),'karvio-snapshot-upgrade-'));
 try {
-  const options={dataDir:migrationDir,codePath:path.resolve(__dirname,'../../backend/Code.gs')};
+  const options={dataDir:migrationDir,codePath:path.resolve(__dirname,'../../backend/engine.js')};
   const runtime=new OfflineRuntime(options);
   const tk=runtime.execute({action:'login',payload:{username:'admin',password:'admin123'}}).data.token;
   const service=runtime.execute({action:'product.save',payload:{name:'Legacy service',service:true,sale_price:100},token:tk}).data;

@@ -47,7 +47,7 @@ Range.prototype.setValues=function(v){if(this.sh.name==='Products')throw Error('
 same(call('database.restore',restorePayload,token).uncertain,true,'unfinished rollback marked uncertain');
 same(call('bootstrap',{},token).ok,false,'pending recovery blocks reads');
 Range.prototype.setValues=real;
-vm.runInContext(fs.readFileSync(path.join(__dirname,'..','Code.gs'),'utf8'),sandbox);
+vm.runInContext(fs.readFileSync(path.join(__dirname,'..','engine.js'),'utf8'),sandbox);
 same(Q('bootstrap').products.length,2,'next execution recovers before authentication/read');
 same(dump(),before,'restart recovery preserves exact prior database');
 
@@ -122,10 +122,10 @@ eval(harness + scenario);
 // Native offline restore accepts backups made before Repairs was introduced.
 const assert = require('node:assert/strict');
 const os = require('node:os');
-const { OfflineRuntime } = require('./gs-runtime.cjs');
+const { OfflineRuntime } = require('./engine-runtime.cjs');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'karvio-audit-legacy-'));
 try {
-  const options = { dataDir: dir, codePath: path.join(__dirname, '..', 'Code.gs') };
+  const options = { dataDir: dir, codePath: path.join(__dirname, '..', 'engine.js') };
   const app = new OfflineRuntime(options);
   const token = app.execute({ action: 'login', payload: { username: 'admin', password: 'admin123' } }).data.token;
   app.execute({ action: 'product.save', payload: { name: 'Preserved legacy product' }, token });

@@ -54,7 +54,7 @@ const card = (page, name) => page.getByRole('region', { name });
 test('a serial: six cards, and every number opens its document', async ({ page }) => {
   const errors = []; page.on('pageerror', (e) => errors.push(e.message));
   await signIn(page);
-  await page.goto('/#/history');
+  await page.goto('/#/advanced-search');
   await search(page, SN(2).toLowerCase());
   // the cards, in order
   await expect(page.locator('.hcard h2')).toHaveText(['Product', 'Purchased from', 'Sold to', 'Sales returns', 'Purchase returns', 'Warranty claims']);
@@ -132,7 +132,7 @@ test('a serial: six cards, and every number opens its document', async ({ page }
 test('a product by part of its name, an invoice, and the sales return document', async ({ page, request }) => {
   const errors = []; page.on('pageerror', (e) => errors.push(e.message));
   await signIn(page);
-  await page.goto('/#/history');
+  await page.goto('/#/advanced-search');
   await search(page, `hc mouse op-620d ${T}`.slice(0, 9));
   await expect(page.getByRole('heading', { name: 'Which product?' })).toBeVisible();
   await page.getByRole('button', { name: new RegExp(`HC MOUSE OP-620D ${T}`) }).click();
@@ -179,7 +179,7 @@ test('staff: only what they may open, and the phone layout', async ({ page }) =>
   const errors = []; page.on('pageerror', (e) => errors.push(e.message));
   await page.setViewportSize({ width: 390, height: 844 });
   await signIn(page, staffToken);
-  await page.goto('/#/history');
+  await page.goto('/#/advanced-search');
   await search(page, SN(2));
   await expect(card(page, 'Product')).toContainText(`HC ROUTER AX23 ${T}`);
   // purchases: no permission → the number is plain text and no money is shown
@@ -211,7 +211,7 @@ const docFits = (page) => page.locator('.doc-frame').evaluate((f) => {
 test('phone: an A4 page and a receipt shrink to fit the screen', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await signIn(page);
-  await page.goto('/#/history');
+  await page.goto('/#/advanced-search');
   await search(page, ids.p1.purchase.invoice_no);
   await card(page, 'Purchased from').getByRole('button', { name: ids.p1.purchase.invoice_no }).click();
   await expect(page.frameLocator('.doc-frame').locator('body')).toContainText('PURCHASE INVOICE');

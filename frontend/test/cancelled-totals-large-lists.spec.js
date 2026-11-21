@@ -44,7 +44,7 @@ test('reset and restore cleanup removes all users drafts for this shop only',asy
 
 test('saved quotations are kept on the server: every user and every device sees them',async({page,request})=>{
  const name=`Shared quote ${Date.now()%100000}`;
- await page.goto('/#/pc-builder');await expect(page.locator('.pcb-row')).toHaveCount(12);
+ await page.goto('/#/quotation');await expect(page.locator('.pcb-row')).toHaveCount(12);
  await page.locator('.pcb-row').first().getByLabel('Processor typed by hand').fill('Private PC quote');await page.locator('.pcb-row').first().getByLabel('Price',{exact:true}).fill('100');await page.getByLabel('Customer name').fill(name);await page.getByLabel('Phone',{exact:true}).fill('01712345678');await page.getByRole('button',{name:'Save quotation',exact:true}).click();
  await expect(page.getByText(`Quotation saved — ${name}`)).toBeVisible();
  // another device: this browser's storage is empty, the quotation is still there

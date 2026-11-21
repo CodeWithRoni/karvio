@@ -5,7 +5,7 @@ test('brand leads automatic product name and description is a single trailing su
  token=(await call('login',{username:'admin',password:'admin123'})).token;
  const group=await call('master.save',{kind:'group',name:'MOTHERBOARD'}),cat=await call('master.save',{kind:'category',parent_id:group.id,name:'AMD'}),brand=await call('master.save',{kind:'brand',name:'MSI'});
  await page.addInitScript(({endpoint,token})=>{localStorage.setItem('erp_api_config',JSON.stringify({scriptUrl:endpoint}));localStorage.setItem('erp_token',token);},{endpoint,token});
- await page.setViewportSize({width:1920,height:1080});await page.goto('/#/stock');await page.getByRole('button',{name:'Add product',exact:true}).click();
+ await page.setViewportSize({width:1920,height:1080});await page.goto('/#/products');await page.getByRole('button',{name:'Add product',exact:true}).click();
  const dlg=page.getByRole('dialog');await dlg.getByLabel('Product group').selectOption(group.id);await dlg.getByLabel('Category').selectOption(cat.id);await dlg.getByLabel(/^Brand/).selectOption(brand.id);await dlg.getByLabel('SKU / model').fill('B450M-A PRO MAX II');
  const name=dlg.getByLabel('Product name',{exact:true}),desc=dlg.getByLabel('Short description',{exact:true});
  await desc.fill('DDR4, AM4 Socket');await expect(name).toHaveValue('MSI MOTHERBOARD AMD B450M-A PRO MAX II #DDR4, AM4 Socket');

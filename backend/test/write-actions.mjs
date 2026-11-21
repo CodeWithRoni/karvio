@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 
-const routes = vm.runInNewContext(fs.readFileSync(new URL('../Code.gs', import.meta.url), 'utf8') + ';ROUTES', {console});
+const routes = vm.runInNewContext(fs.readFileSync(new URL('../engine.js', import.meta.url), 'utf8') + ';ROUTES', {console});
 const serverWrites = Object.keys(routes).filter(k => routes[k].write === true).sort();
 const api = fs.readFileSync(new URL('../../frontend/src/lib/api.js', import.meta.url), 'utf8');
 const block = api.slice(api.indexOf('const WRITES = new Set(['), api.indexOf(']);', api.indexOf('const WRITES = new Set([')));

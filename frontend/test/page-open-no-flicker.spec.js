@@ -9,7 +9,7 @@ for (const preload of [false, true]) test(`menu never leaves the screen when a p
     const watch = () => { window.__ticks++; const nav = document.querySelector('nav'); const shown = !!nav && nav.getClientRects().length > 0; if (window.__seen && !shown) window.__gone++; if (shown) window.__seen = true; requestAnimationFrame(watch); };
     requestAnimationFrame(watch);
   }, { endpoint, token });
-  if (!preload) await page.route(/pages\/(Purchases|Reports|Expenses|Accounts)\.jsx|assets\/(Purchases|Reports|Expenses|Accounts)-/, async (route) => { await new Promise((r) => setTimeout(r, 400)); route.continue(); });
+  if (!preload) await page.route(/pages\/(Purchases|Reports|Expenses|CashBank)\.jsx|assets\/(Purchases|Reports|Expenses|CashBank)-/, async (route) => { await new Promise((r) => setTimeout(r, 400)); route.continue(); });
   await page.goto('/#/');
   await expect(page.locator('nav a', { hasText: 'Dashboard' })).toBeVisible();
   if (preload) await page.waitForTimeout(6000);

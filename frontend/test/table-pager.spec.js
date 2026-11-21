@@ -33,7 +33,7 @@ test('purchases and the price manager use the same pager',async({page,request})=
  const pager=page.locator('.pager');
  const total=(await call(request,'purchases.list',{page:1,per:10})).total;
  if(total){await expect(pager.getByLabel(/per page/)).toHaveValue('10');await expect(page.locator('table tbody tr')).toHaveCount(Math.min(total,10));}
- await page.goto('/#/prices');
+ await page.goto('/#/price-manager');
  await expect(page.locator('.price-table tbody tr').first()).toBeVisible();
  await expect(page.locator('.pager').getByLabel(/per page/)).toHaveValue('10');
  const shown=await page.locator('.price-table tbody tr').count();expect(shown).toBeGreaterThan(0);expect(shown).toBeLessThanOrEqual(10);

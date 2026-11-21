@@ -24,7 +24,7 @@ test('fully paid public invoice and its Business print/PDF agree without changin
 
 test('quotation rejects excessive discount for save, POS and print, then accepts a corrected amount',async({page,request})=>{
  const p=await call(request,'product.save',{name:'Followup CPU part',sale_price:100});await call(request,'purchase.create',{items:[{product_id:p.id,qty:1,cost:50}],payments:[{account_id:cash,amount:50}]});
- await page.goto('/#/pc-builder');await page.getByLabel('Processor product').selectOption(p.id);await page.getByLabel('Discount',{exact:true}).fill('150');
+ await page.goto('/#/quotation');await page.getByLabel('Processor product').selectOption(p.id);await page.getByLabel('Discount',{exact:true}).fill('150');
  await expect(page.getByRole('alert')).toContainText('Discount must be between');await expect(page.locator('.totals .grand')).toHaveText('—');
  for(const name of ['Save quotation','Send to POS','Print / PDF quote'])await expect(page.getByRole('button',{name,exact:true})).toBeDisabled();
  await page.getByLabel('Discount',{exact:true}).fill('25');await expect(page.locator('.totals .grand')).toContainText('75');await expect(page.getByRole('button',{name:'Save quotation'})).toBeEnabled();

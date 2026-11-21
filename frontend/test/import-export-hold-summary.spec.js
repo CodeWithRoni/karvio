@@ -20,7 +20,7 @@ test.beforeEach(async ({ page }) => {
 test('import products from Excel: check shows problems, a clean file imports', async ({ page, request }) => {
   const stamp = Date.now();
   const sheet = (rows) => { const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Products'); return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }); };
-  await page.goto('/#/stock');
+  await page.goto('/#/products');
   await page.getByRole('button', { name: 'Import', exact: true }).click();
   const dlg = page.getByRole('dialog', { name: 'Import products from Excel' });
   await dlg.getByLabel('Excel file').setInputFiles({ name: 'bad.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -40,7 +40,7 @@ test('import products from Excel: check shows problems, a clean file imports', a
 test('price list previews the chosen products and prints', async ({ page, request }) => {
   const p = await call(request, 'product.save', { name: `Price list router ${Date.now()}`, sale_price: 3100, wholesale_price: 2900 });
   await call(request, 'purchase.create', { items: [{ product_id: p.id, qty: 2, cost: 2500 }], payments: [{ account_id: cash, amount: 5000 }] });
-  await page.goto('/#/stock');
+  await page.goto('/#/products');
   await page.getByRole('button', { name: 'Price list' }).click();
   const dlg = page.getByRole('dialog', { name: 'Price list' });
   await dlg.getByLabel('Wholesale price').check();
@@ -112,7 +112,7 @@ test('unused accounts can be deleted from the list or the edit window', async ({
   const stamp = Date.now();
   const a1 = await call(request, 'account.save', { name: `Spare bank ${stamp}`, type: 'bank', opening_balance: 0 });
   const a2 = await call(request, 'account.save', { name: `Spare wallet ${stamp}`, type: 'mfs', opening_balance: 0 });
-  await page.goto('/#/accounts');
+  await page.goto('/#/cash-bank');
   const row = (name) => page.locator('tr', { hasText: name });
   await row(a1.name).locator('.dt-check').check();
   await page.getByRole('button', { name: 'Delete selected (1)' }).click();

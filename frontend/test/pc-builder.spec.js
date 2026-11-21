@@ -27,7 +27,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('a part typed by hand goes on the quote but not to the POS', async ({ page }) => {
-  await page.goto('/#/pc-builder');
+  await page.goto('/#/quotation');
   await expect(page.locator('.page-head h1')).toHaveText('Quotation');
   const row = (name) => page.locator('.pcb-row').filter({ has: page.locator('.g', { hasText: new RegExp(`^${name}$`) }) });
 
@@ -93,7 +93,7 @@ test('a part typed by hand goes on the quote but not to the POS', async ({ page 
 test('quotation warranty is kept and replacing an existing POS cart requires confirmation', async ({ page, request }) => {
   const owner = (await call(request, 'bootstrap')).user.id;
   const key = `erp_pos_draft:${encodeURIComponent(endpoint)}:${encodeURIComponent(owner)}`;
-  await page.goto('/#/pc-builder');
+  await page.goto('/#/quotation');
   const row = page.locator('.pcb-row').filter({ has: page.locator('.g', { hasText: /^Mouse$/ }) });
   await row.getByLabel('Mouse product').selectOption(mouse.id);
   await row.getByLabel('Mouse warranty').selectOption('300');
@@ -103,7 +103,7 @@ test('quotation warranty is kept and replacing an existing POS cart requires con
   const dialog = page.getByRole('dialog', {name:'Replace the POS cart?'});
   await dialog.getByRole('button', {name:'Cancel',exact:true}).click();
   expect(await page.evaluate(key=>JSON.parse(localStorage.getItem(key)),key)).toEqual(old);
-  await expect(page).toHaveURL(/#\/pc-builder/);
+  await expect(page).toHaveURL(/#\/quotation/);
   await page.getByRole('button', {name:'Send to POS'}).click();
   await dialog.getByRole('button', {name:'Replace cart',exact:true}).click();
   await expect(page).toHaveURL(/#\/pos/);
@@ -116,7 +116,7 @@ test('CC Camera quote: its own sixteen rows, kept apart from the PC build, saved
   const utp = await call(request, 'product.save', { name: `UTP Cable CAT6 ${stamp}`, sale_price: 35 });
   const acc = (await call(request, 'bootstrap')).accounts[0].id;
   await call(request, 'purchase.create', { items: [{ product_id: dome.id, qty: 10, cost: 1800 }, { product_id: utp.id, qty: 300, cost: 25 }], payments: [{ account_id: acc, amount: 25500 }] });
-  await page.goto('/#/pc-builder');
+  await page.goto('/#/quotation');
   await expect(page.locator('.page-head h1')).toHaveText('Quotation');
   await page.getByLabel('Mouse product').selectOption(mouse.id);
   await page.getByRole('tab', { name: 'CC Camera' }).click();

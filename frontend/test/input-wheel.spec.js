@@ -6,7 +6,7 @@ test.beforeEach(async({page,request})=>{
  await page.addInitScript(({endpoint,token})=>{localStorage.setItem('erp_api_config',JSON.stringify({scriptUrl:endpoint}));localStorage.setItem('erp_token',token);},{endpoint,token});
 });
 test('wheel leaves custom warranty and low-stock values unchanged inside a product dialog',async({page})=>{
- await page.goto('/#/stock');await page.getByRole('button',{name:'Add product',exact:true}).click();
+ await page.goto('/#/products');await page.getByRole('button',{name:'Add product',exact:true}).click();
  const dialog=page.getByRole('dialog');await dialog.getByLabel('Warranty',{exact:true}).check();
  for(const [label,value] of [['Or custom days','11'],['Low-stock alert at','5']]){
   const input=dialog.getByLabel(label);await input.fill(value);await input.focus();await input.hover();
@@ -16,7 +16,7 @@ test('wheel leaves custom warranty and low-stock values unchanged inside a produ
  }
 });
 test('global wheel guard covers new numeric/date fields while preserving scrolling and text focus',async({page})=>{
- await page.goto('/#/stock');await expect(page.getByRole('heading',{name:'Product',exact:true})).toBeVisible();
+ await page.goto('/#/products');await expect(page.getByRole('heading',{name:'Product',exact:true})).toBeVisible();
  // New native controls have no component-level onWheel handler: this verifies future coverage.
  await page.evaluate(()=>{
   const box=document.createElement('div');box.id='wheel-fixture';box.style.cssText='position:fixed;top:100px;left:250px;width:260px;height:180px;overflow:auto;z-index:99999;background:white;padding:10px';

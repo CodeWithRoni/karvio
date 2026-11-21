@@ -1,7 +1,7 @@
 /**
  * Offline simulation of the Apps Script backend.
  * Mocks SpreadsheetApp / CacheService / LockService / UrlFetchApp etc. in memory and
- * runs a full business scenario against Code.gs.
+ * runs a full business scenario against engine.js.
  *
  *   node backend/test/simulate.js
  */
@@ -51,7 +51,7 @@ const sandbox = {
   }
 };
 vm.createContext(sandbox);
-vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'Code.gs'), 'utf8'), sandbox, { filename: 'Code.gs' });
+vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'engine.js'), 'utf8'), sandbox, { filename: 'engine.js' });
 
 function call(action, payload, token) {
   vm.runInContext('_mem = {}', sandbox);

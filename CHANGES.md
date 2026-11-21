@@ -97,7 +97,7 @@ Every page, every tab and the common dialogs were checked at phone width (390px)
 - Download Backup now includes the saved quotations. Streamed backup (Supabase): an extra section "SavedQuotes" after the 29 business tables (migration 20261118052545_karvio_backup_saved_quotes.sql); the safety copy before a restore includes them too. JSON backup: `saved_quotes` rows with their own `quotes_checksum`.
 - Restore puts back exactly the quotations in the file. A backup made before this change (no quotations in it) still restores, and today's saved quotations are kept instead of being cleared.
 - Settings → Database shows "Saved quotes" with the other tables.
-- Tests: bounded-transfers.mjs (streamed backup with quotations, older backup keeps them), features-9.mjs (JSON backup, edited file refused, older backup).
+- Tests: bounded-transfers.mjs (streamed backup with quotations, older backup keeps them), saved-quotations.mjs (JSON backup, edited file refused, older backup).
 
 # 18 November 2026 — Quotation: CC Camera tab
 
@@ -107,7 +107,7 @@ Every page, every tab and the common dialogs were checked at phone width (390px)
 - "Start over" is now a red "Clear" button with an icon; it asks first, then clears the parts, the customer and the notes of that tab (saved quotations stay).
 - "Save quote" is now "Save quotation". Next to it, "See Saved Quotations" (with a count) opens every saved quotation: search by customer, phone or title, filter PC builder / CC Camera, who saved it, Open, Print or Delete (asks first). The saved list no longer sits under the form.
 - Saved quotations are now kept on the server (private sheet __KarvioSavedQuotes; actions quotes.list, quote.save, quote.delete, POS permission): every user sees them on every device and they stay until someone deletes them. An opened quotation is updated in place with "Save changes". Quotations saved earlier in a browser are moved to the server the first time the page opens there. Note: database backups (Settings → Database) hold the business tables, not these saved quotations.
-- Tests: backend/test/features-9.mjs (12 checks); pc-builder.spec.js (CC Camera rows, separate drafts, required customer, Clear, saved quotations window, update and delete); older quotation tests now fill in the customer and read saved quotations from the server.
+- Tests: backend/test/saved-quotations.mjs (12 checks); pc-builder.spec.js (CC Camera rows, separate drafts, required customer, Clear, saved quotations window, update and delete); older quotation tests now fill in the customer and read saved quotations from the server.
 
 # 18 November 2026 — Service jobs
 
@@ -120,7 +120,7 @@ Every page, every tab and the common dialogs were checked at phone width (390px)
   - Cancel service frees the products.
 - New permission "Service jobs", on by default for managers and technicians (also in shops that saved their role settings before; later saves keep the admin's choice).
 - Server: actions services.meta, services.list, service.get, service.save, service.status, service.complete, service.cancel, service.type.save, service.type.delete. Service jobs are kept in the Repairs table with numbers SRV-… and are not shown under Repairs.
-- Tests: backend/test/features-8.mjs (40 checks); service-jobs.spec.js; repairs.cjs now expects technicians to have Service too.
+- Tests: backend/test/service-jobs.mjs (40 checks); service-jobs.spec.js; repairs.cjs now expects technicians to have Service too.
 
 # 17 November 2026 — Party Ledger Adjust and Ledger Report
 
@@ -133,7 +133,7 @@ Every page, every tab and the common dialogs were checked at phone width (390px)
 - Customer Ledger Report / Supplier Ledger Report (admin only): with nobody chosen, every party in the period (opening, sales or purchases, paid + returns, adjusted, closing, oldest due); with one chosen, the full ledger in the app's style — each invoice with its items and serial numbers, the account money went through, adjustments with reason and who saved them, running balance, dues by age. Filters: period (today, this month, last month, this year, all time, custom), entry type, account, invoice / voucher no, items / serials / only invoices with due, hide zero balance, only overdue. Print and PDF give a paper statement with the shop header; Excel; WhatsApp sends the balance message.
 - Names shortened: Party Ledger Adjust, Customer Ledger Adjust, Supplier Ledger Adjust (menu and page titles; the page addresses stay the same). Menu card titles always stay on one line.
 - Server: actions adjust.options, adjust.list, ledger.adjust, ledger.report (all admin only).
-- Tests: backend/test/features-7.mjs (41 checks); party-ledger-adjustment.spec.js; features-5.spec.js now records rebates on Supplier Ledger Adjust; two older tests search their table so rows from other tests cannot push them off the first page.
+- Tests: backend/test/party-ledger-adjust.mjs (41 checks); party-ledger-adjustment.spec.js; supplier-rebates.spec.js now records rebates on Supplier Ledger Adjust; two older tests search their table so rows from other tests cannot push them off the first page.
 
 # 17 November 2026 — Party Ledger Adjustment menu card
 
@@ -150,7 +150,7 @@ Every page, every tab and the common dialogs were checked at phone width (390px)
 - Pay supplier: switching the type to Rebate and back swapped one window for another and replayed the opening animation (a visible flicker). A window that replaces another now appears at once (Modal `instant`).
 - Customers / Suppliers: Edit details opened the form with the profile window still on screen over it. The profile now closes while the form is open and returns after saving.
 - Stock summary report (the dashboard's "Supplier warranty not set" tile opens it): clicking a product opens its purchase (the same window as on the Purchases page) so the supplier warranty can be set for any item of that invoice; when stock comes from several purchases a short list asks which one to open (needs the Purchases permission). Stock rows carry unset_lots.
-- Tests: three more browser tests in features-6.spec.js.
+- Tests: three more browser tests in collection-payment-directories.spec.js.
 
 # 17 November 2026 — Collection and Payment pages; purchase detail layout (pending push)
 
@@ -158,7 +158,7 @@ Every page, every tab and the common dialogs were checked at phone width (390px)
 - Customers and Suppliers are now plain directories: name, phones, address, All / Inactive, add, edit, delete. No balance column, ledger or payment button; a profile window has "Open in Collection" / "Open in Payment". Menu labels are "Customers" and "Suppliers". Dashboard Receivable / Payable and the reminder links go to the new pages.
 - Purchase detail: the item name has its own wide column and the serial numbers sit under the item in a short scrolling box with their count, so 100 serials no longer stretch the window.
 - Collecting less than a customer owes asks for an optional next payment date for the rest. On that day a reminder for everything the customer still owes appears under Collection reminders on the dashboard (Collect / New date / Dismiss); the date also shows in the Collection list and ledger. A later collection with a new date moves it, one without a date or a full payment clears it. Kept in Settings 'customer_promises'; action customer.promise; customer.payment takes next_payment_date.
-- Tests: backend/test/features-6.mjs (13 checks), frontend/test/features-6.spec.js (3 browser tests); older tests follow the new pages.
+- Tests: backend/test/payment-promises.mjs (13 checks), frontend/test/collection-payment-directories.spec.js (3 browser tests); older tests follow the new pages.
 
 # 16 November 2026 — supplier rebates (pending push)
 
@@ -168,7 +168,7 @@ Every page, every tab and the common dialogs were checked at phone width (390px)
 - Reports hub → Supplier rebates: received and promised rebates with totals by supplier and by kind.
 - Safety: every rebate, promise and drop is written to the activity log; a rebate is cancelled with Void (admin password and reason, reverse type 'rebate'); a purchase with a rebate cannot be cancelled until the rebate is voided.
 - Tabs inside a form label were named after the whole label (slow-stock days); they now sit beside the label.
-- Tests: backend/test/features-5.mjs (35 checks), frontend/test/features-5.spec.js (2 browser tests).
+- Tests: backend/test/supplier-rebates.mjs (35 checks), frontend/test/supplier-rebates.spec.js (2 browser tests).
 
 # 16 November 2026 — five features (pending push)
 
@@ -177,21 +177,21 @@ Every page, every tab and the common dialogs were checked at phone width (390px)
 - Day close locks the day: after an account's day is closed, money dated that day cannot be added, changed or cancelled in that account (sales, payments, expenses, transfers, cancellations) until an admin reopens it with the admin password and a reason (dayclose.reopen; history keeps the count, marked reopened). Closed days live in Settings 'day_close_locks'; Settings → Close books has the switch 'day_close_lock' (on by default).
 - Send on WhatsApp (sale detail and the POS "sale saved" window): opens WhatsApp for the customer's number with the invoice message and the customer link filled in — no WhatsApp API. Wording in Settings → SMS ('whatsapp_template'). The due reminder window has a per-customer WhatsApp link too.
 - Devices & logins (Users & roles): devices signed in now with last activity, sign one or all others out (their next request is refused), and the login history with wrong-password attempts. Sign-in sends a device name. Kept in script properties (sessions, log) and the cache (failed attempts); actions sessions.list / sessions.revoke.
-- Tests: backend/test/features-4.mjs (33 checks), frontend/test/features-4.spec.js (5 browser tests).
+- Tests: backend/test/day-lock-owner-money-devices.mjs (33 checks), frontend/test/day-lock-owner-money-devices.spec.js (5 browser tests).
 
 # 16 November 2026 — review fixes (pending push)
 
 - Monthly expenses: a month that was never recorded no longer disappears when the next month starts. Up to 12 earlier months show as "Not recorded for Oct 2026" with their own Record button (date in that month or later; defaults to that month's due day unless the books are closed). They count in the "due" badge and on the dashboard. Each line keeps the months it was recorded for (done) and the month it started (since; older lists use the first save in the activity log). A paused line switched back on counts from that month. expense.recurring.record takes an optional month.
 - Date fields: while typing, a date is applied only once it is whole (4-digit year or yyyy-mm-dd), so "1/1" on the way to "15/11/2026" no longer reloads lists; shorter forms (15/11, 15 Nov) are applied on leaving the field or with Enter (the first Enter applies the date, the next submits the form).
 - Customers & dues: "Send due reminder (n)" counts only the ticked customers under the open tab — the same people the reminder window lists.
-- Tests: features-3.mjs now 23 checks (missed months); features-3.spec.js adds 2 browser tests.
+- Tests: due-reminder-sms.mjs now 23 checks (missed months); dates-lakh-due-reminder.spec.js adds 2 browser tests.
 
 # 15 November 2026 — Bangladeshi number and date format, due reminder SMS (pending push)
 
 - Lakh commas everywhere: the A4 business invoice (unit prices and line totals) now prints 1,25,000.00 instead of 125,000.00, like the rest of the app. Taka amounts in sale, repair and quotation SMS read 1,25,000 instead of 125000.
 - Date fields: every date box (filters, expenses, purchases, day close, next payment date, books lock, supplier warranty…) shows "15 Nov 2026" whatever the computer's language, with the shop's own calendar (month arrows, Today, Yesterday, Clear; days outside the allowed range disabled). Typing works: 15/11/2026, 15-11-26, 15 Nov 2026, 2026-11-15; ↑ / ↓ move one day. New component DateInput (value stays yyyy-mm-dd).
 - Customers & dues: tick customers and "Send due reminder" — one SMS each with {name}, {due}, {shop}, {shop_phone}; every customer's own message is previewed first; customers with nothing due or no phone are skipped; the wording used is kept for next time (setting sms_due_template). Needs the customers permission and the SMS gateway. New action customer.remind (at most 200 at a time; activity log "due_reminder").
-- Tests: backend/test/features-3.mjs (11 checks), frontend/test/features-3.spec.js (3 browser tests); repairs.cjs, shop.spec.js and stock-summary.spec.js follow the new formats.
+- Tests: backend/test/due-reminder-sms.mjs (11 checks), frontend/test/dates-lakh-due-reminder.spec.js (3 browser tests); repairs.cjs, shop.spec.js and stock-summary.spec.js follow the new formats.
 
 # 15 November 2026 — evening fixes (pending push)
 
@@ -210,7 +210,7 @@ Every page, every tab and the common dialogs were checked at phone width (390px)
 - Supplier prices: Reports hub → Supplier prices (per product and supplier: times bought, last / lowest / average cost, cheapest marked; needs cost permission), and the new-purchase form shows the cheapest supplier's last price.
 - Daily summary SMS to the owner (Settings → SMS): today's sales, profit, expenses, dues and cash to up to 3 numbers at a chosen evening hour, plus "Send now". On Supabase a pg_cron job (every 15 minutes, 17:00–23:45 Dhaka) calls the Edge function with a one-time code; migration 20261115120000_karvio_daily_summary adds pg_net, the code table and the endpoint record. The Edge function records its own address on start-up.
 - Server actions: products.import.check, products.import, audit.list, expense.recurring, expense.recurring.save, expense.recurring.record, supplier.prices, summary.preview, summary.send, summary.tick (scheduler only).
-- Tests: backend/test/features-2.mjs (35 checks), frontend/test/features-2.spec.js (6 browser tests).
+- Tests: backend/test/import-activity-monthly-summary.mjs (35 checks), frontend/test/import-export-hold-summary.spec.js (6 browser tests).
 
 # 15 November 2026 — professional look, day close and financial statements (pending push)
 
@@ -235,7 +235,7 @@ Every page, every tab and the common dialogs were checked at phone width (390px)
 - Product-wise sales and Daily summary reports respect "View sales made by other staff", like the Sales report.
 - Native browser confirm boxes (clear cart shortcut, delete product) replaced with the app's confirm dialog.
 - Release workflow: business-rule, database and performance tests run once before any installer is built.
-- Test: backend/test/review-fixes-2.mjs.
+- Test: backend/test/suppliers-quotes-barcodes-fixes.mjs.
 
 # 15 November 2026 — repository cleanup (pending push)
 

@@ -74,9 +74,9 @@ export default function Login() {
         {showApi ? (
           <>
             <h1>Connect your shop</h1>
-            <p className="muted">Paste your Google Apps Script Web App URL or Supabase shop API URL. You can change it later in Settings.</p>
+            <p className="muted">Paste your shop's Karvio server address (Supabase). You can change it later in Settings.</p>
             <form onSubmit={saveApi}>
-              <Field label="Shop API URL"><input value={cfg.scriptUrl || ''} onChange={(e) => setCfg({ ...cfg, scriptUrl: e.target.value })} placeholder="https://…/exec or https://…/functions/v1/karvio-api" autoFocus /></Field>
+              <Field label="Shop API URL"><input value={cfg.scriptUrl || ''} onChange={(e) => setCfg({ ...cfg, scriptUrl: e.target.value })} placeholder="https://…/functions/v1/karvio-api" autoFocus /></Field>
               <Field label="Custom proxy domain (optional)" hint="Only if you route the API through your own domain."><input value={cfg.proxyUrl || ''} onChange={(e) => setCfg({ ...cfg, proxyUrl: e.target.value })} placeholder="https://api.yourshop.com" /></Field>
               {err && <div className="errbox">{err}</div>}
               <Btn kind="primary" size="lg" busy={busy} type="submit">Test & save connection</Btn>
