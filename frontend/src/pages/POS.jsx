@@ -10,7 +10,7 @@ import { Btn, Modal, Field, Tabs, useAction, useHotkeys, useConfirm, noWheel, us
 import { Link } from 'react-router-dom';
 import { OpenShift } from './Shifts';
 import { ProductSearch, PaymentSplit, defaultPay, cleanPays, QuickCustomer, CustomerPicker, SerialChooser } from '../components/widgets';
-import { loadPosDraft, savePosDraft, loadHolds, saveHolds } from '../lib/posDraft';
+import { loadPosDraft, savePosDraft, loadHolds, saveHolds, posDraftKey } from '../lib/posDraft';
 import { onShopDraftsCleared } from '../lib/shopStorage';
 import DateInput from '../components/DateInput';
 import WhatsAppBtn from '../components/WhatsAppBtn';
@@ -64,7 +64,8 @@ export default function POS() {
   const searchRef = useRef();
   const discRef = useRef();
 
-  useEffect(() => { try { savePosDraft({ cart, customerId, discount, editing }); } catch {} }, [cart, customerId, discount, editing]);
+  const cartKey = useRef(posDraftKey()); // this branch's cart (switching branch opens the POS again with that branch's cart)
+  useEffect(() => { try { savePosDraft({ cart, customerId, discount, editing }, cartKey.current); } catch {} }, [cart, customerId, discount, editing]);
 
   const pmap = useMemo(() => Object.fromEntries(products.map((p) => [p.id, p])), [products]);
   const customer = customers.find((c) => c.id === customerId);
@@ -189,7 +190,7 @@ export default function POS() {
   const cartTotal = (c, disc) => Math.max(0, c.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.price) || 0), 0) - (Number(disc) || 0));
   const currentHold = () => ({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: new Date().toISOString(), cart, customerId, discount, tier, note,
     label: customer?.name || 'Cash sale', items: cart.length, total: cartTotal(cart, discount) });
-  const putHolds = (list) => { try { saveHolds(list); setHolds(list); return true; } catch (e) { toast(e.message, 'err'); return false; } };
+  const putHolds = (list) => { try { saveHolds(list, cartKey.current); setHolds(list); return true; } catch (e) { toast(e.message, 'err'); return false; } };
   const hold = () => {
     if (!cart.length) return toast('Add items before holding a sale', 'err');
     if (holds.length >= 20) return toast('20 sales are already on hold; finish or remove one first', 'err');

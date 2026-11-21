@@ -2691,7 +2691,10 @@ function approvalHold_(kind, req, route, user) {
   _branch = branch;
   var a = { id: uid_(), no: '', kind: kind, action: req.action, payload: payload, branch: branch || '', user_id: user.id, user_name: user.name, user_role: user.role,
     created_at: now_(), status: 'pending', summary: approvalSummary_(kind, payload, preview) };
-  var n = approvalRows_().rows.length + 1; a.no = 'APR-' + ('00000' + n).slice(-6);
+  // Next number after the highest one used (never repeats, even if a row is damaged or removed).
+  var top = 0; approvalRows_().rows.forEach(function (r) { var m = /^APR-(\d+)$/.exec(String(r.o.no || '')); if (m) top = Math.max(top, Number(m[1])); });
+  if (approvalRows_().sh) top = Math.max(top, approvalRows_().sh.getLastRow());
+  a.no = 'APR-' + ('00000' + (top + 1)).slice(-6);
   approvalWrite_(a);
   audit_(user, 'approval_request', { no: a.no, kind: APPROVAL_KINDS[kind], details: approvalText_(a) });
   var sms = null;
@@ -2736,7 +2739,11 @@ function approvalDecide_(p, user) {
   }
   if (p.decision !== 'approve') fail_('Choose approve or reject');
   var route = ROUTES[a.action]; if (!route) fail_('This kind of work can no longer be saved');
-  var staff = all_('Users').filter(function (u) { return u.id === a.user_id; })[0] || { id: a.user_id, name: a.user_name, role: a.user_role || 'manager' };
+  var staff = all_('Users').filter(function (u) { return u.id === a.user_id; })[0];
+  // The person must still be allowed to do this work now; otherwise the request can only be rejected.
+  if (!staff) fail_(a.user_name + '\'s account no longer exists. Reject this request');
+  if (!staff.active) fail_(a.user_name + '\'s account is disabled. Reject this request, or enable the account first');
+  if (route.perm && !can_(staff, route.perm)) fail_(a.user_name + ' is no longer allowed to do this (' + (PERMS[route.perm] || route.perm) + '). Reject this request, or give the permission back first');
   var here = _branch, who = _reqUser, result;
   _branch = a.branch || ''; _reqUser = staff;
   try { result = route.fn(a.payload || {}, staff); }
@@ -3563,7 +3570,7 @@ function invoicePublic_(p) {
  *  Rows: [key hash, expiry (ms), quote JSON]. Expired rows are removed when a quote is sent or opened, and
  *  once a day on any save.
  * ========================================================================== */
-var QUOTE_LINK_DAYS = 3, QUOTE_SHEET = '__KarvioQuoteLinks', QUOTE_LINK_MAX = 300;
+var QUOTE_LINK_DAYS = 3, QUOTE_SHEET = '__KarvioQuoteLinks', QUOTE_LINK_MAX = 2000;
 var DEFAULT_DUE_SMS = 'Dear {name}, your due at {shop} is Tk {due}. Please pay at your earliest convenience. Thank you. {shop_phone}';
 var DEFAULT_QUOTE_SMS = 'Dear {name}, your quotation from {shop}: {title}, total {total}. View it here (valid {days} days): {link}';
 function quoteLinkHash_(token) { return hash_('karvio-quote-link', token); }
@@ -3657,7 +3664,13 @@ function quoteSend_(p, user) {
   if (discount > subtotal + 0.005) fail_('Discount cannot be more than the subtotal');
   var validDays = Math.round(num_(p.valid_days)); if (validDays < 1 || validDays > 365) validDays = 7;
   var live = cleanupQuoteLinks_();
-  if (live.length >= QUOTE_LINK_MAX) fail_('Too many quotation links are open right now. Try again after some expire');
+  if (live.length >= QUOTE_LINK_MAX) {
+    // Full: the oldest never-expiring (Lifetime) link makes room; links with an end date are never cut short.
+    var oldest = live.filter(function (r) { return num_(r[1]) >= LIFETIME_MS - 864e5; })[0];
+    if (!oldest) fail_('Too many quotation links are open right now. Try again after some expire');
+    live = live.filter(function (r) { return r !== oldest; });
+    var qs = quoteLinkRows_().sh; qs.clearContents(); if (live.length) qs.getRange(1, 1, live.length, 3).setValues(live); flush_();
+  }
   var qDays = quoteLinkDays_(), token = newLinkToken_(), created = Date.now(), expires = qDays ? created + qDays * 864e5 : LIFETIME_MS;
   var quote = {
     // Date, time and two random digits: does not repeat (the old 7-digit clock suffix repeated every ~2.8 hours).

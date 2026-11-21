@@ -218,7 +218,7 @@ export function IndividualReport({ picker }) {
         {ledger ? <>
           <ErrorBox error={st.error} onRetry={st.reload} />
           {s && <Kpis items={[['Opening balance', money(s.opening), periodLabel(period)], ['Closing balance', money(s.closing), s.closing > 0.004 ? (cust ? 'customer owes' : 'we owe') : s.closing < -0.004 ? 'advance' : 'settled', s.closing > 0.004 ? 'warn' : 'ok'], ['Entries', s.rows.length, 'in this period']]} />}
-          <DataTable title={`${cust ? 'Customer' : 'Supplier'} statement — ${who?.name || ''}`} loading={st.loading} rows={s?.rows || []} columns={ledgerCols}
+          <DataTable keepOrder title={`${cust ? 'Customer' : 'Supplier'} statement — ${who?.name || ''}`} loading={st.loading} rows={s?.rows || []} columns={ledgerCols}
             toolbar={s && <button className="btn" onClick={() => printStatement(party, s, period.from, period.to)}>Print statement</button>} />
         </> : <>
           <ErrorBox error={rep.error} onRetry={rep.reload} />

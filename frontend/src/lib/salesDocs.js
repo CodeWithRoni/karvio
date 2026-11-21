@@ -51,7 +51,9 @@ export const docHead = (title, right) => head(title, right);
 /** A4 documents in the chosen template: one per page, ready to print / show / turn into a PDF. */
 export const docWrap = (blocks) => wrap(blocks, 'a4', isBizTpl());
 export const printDocs = (blocks) => printHtml(docWrap(blocks), fitBizEnd);
-export const pdfDocs = (blocks, filename) => pdfPages(blocks, css + tplCss + (isBizTpl() ? bizCss : ''), filename);
+// A PDF is cut into pages after it is drawn, so its footer cannot know the page count: no "Page 1 of 1" there.
+const PDF_FOOT = '.bdoc .bfoot span:last-child{display:none}';
+export const pdfDocs = (blocks, filename) => pdfPages(blocks, css + tplCss + (isBizTpl() ? bizCss + PDF_FOOT : ''), filename);
 const noteHtml = (settings = useStore.getState().settings) => { const n = String(settings.invoice_note || '').trim(); return n ? `<div class="note-line"><b>Note:</b> ${esc(n)}</div>` : ''; };
 
 /* ---------------- "Business" template: centred letterhead, grey bill bar, boxed info, page footer ---------------- */
@@ -266,7 +268,7 @@ export function fitBizEnd(doc) {
 }
 /** One sale invoice as the full document printSales prints (A4 / A5, with the chosen template). */
 export const saleDocHtml = (d, paper = 'a4') => wrap([saleInvoiceHtml(d)], paper, isBiz([d]));
-export const pdfSales = (list, filename) => pdfPages(list.map(saleInvoiceHtml), css + tplCss + (isBiz(list) ? bizCss : ''), filename);
+export const pdfSales = (list, filename) => pdfPages(list.map(saleInvoiceHtml), css + tplCss + (isBiz(list) ? bizCss + PDF_FOOT : ''), filename);
 export async function excelSales(list, filename) {
   const XLSX = await import('xlsx');
   const a = [['Invoice #', 'Date', 'Status', 'Customer', 'Phone', 'Address', 'Subtotal', 'Discount', 'Total', 'Paid', 'Due', 'Payment', 'Served by', 'Note']];

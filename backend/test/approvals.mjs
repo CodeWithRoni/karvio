@@ -78,4 +78,16 @@ await as('rafiq', 'rafiq-password-1');
 ok(!(await q('expense.create', {date: boot.serverToday, category: 'Other', amount: 5, account_id: cash}, {branch: A})).pending_approval, 'approvals removed: saved at once');
 api.setToken(admin);
 ok(/up to 20/.test((await raw('settings.save', {values: {sms_approval_numbers: Array.from({length: 21}, (_, i) => '0171100' + (1000 + i)).join(',')}})).error), 'approval SMS: up to 20 numbers');
+// Approve re-checks the person: no permission (or disabled) → cannot approve, only reject
+await q('user.save', {...mgr, password: '', approvals: ['expense']});
+await as('rafiq', 'rafiq-password-1');
+const late = await q('expense.create', {date: boot.serverToday, category: 'Other', amount: 7, account_id: cash}, {branch: A});
+ok(late.pending_approval, 'held again');
+api.setToken(admin);
+await q('rolePerms.save', {manager: ['pos'], sales: ['pos'], technician: ['repairs', 'service']});
+ok(/no longer allowed/.test((await raw('approval.decide', {id: late.approval.id, decision: 'approve'})).error), 'permission taken away: cannot approve');
+eq((await q('approval.decide', {id: late.approval.id, decision: 'reject', reason: 'No longer allowed'})).status, 'rejected', 'but can reject');
+// numbers never repeat
+const nos = (await q('approvals.list')).rows.map((r) => r.no);
+eq(new Set(nos).size, nos.length, 'every APR number is different: ' + nos.join(','));
 console.log(`Approvals: ${checks} checks passed`);

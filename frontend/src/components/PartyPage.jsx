@@ -259,7 +259,7 @@ function PartyDetail({ kind, id, onClose, onChanged }) {
               </div>
             </div>
           )}
-          <DataTable title={`${st.data.party} statement`} rows={st.data.rows} searchable={false}
+          <DataTable keepOrder title={`${st.data.party} statement`} rows={st.data.rows} searchable={false}
             columns={[
               { key: 'date', label: 'Date', type: 'date' }, { key: 'ref_no', label: 'Ref' }, { key: 'note', label: 'Details', className: 'clip' },
               { key: 'debit', label: c.debit, type: 'money', sum: true }, { key: 'credit', label: c.credit, type: 'money', sum: true },

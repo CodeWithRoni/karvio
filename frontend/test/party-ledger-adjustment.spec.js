@@ -6,6 +6,7 @@ test('Party Ledger menu card sits above Money & Reports and opens its four pages
   await page.addInitScript(({ endpoint, token }) => { localStorage.setItem('erp_api_config', JSON.stringify({ scriptUrl: endpoint })); localStorage.setItem('erp_token', token); }, { endpoint, token });
   await page.setViewportSize({ width: 1366, height: 1000 });
   await page.goto('/#/');
+  await expect(page.locator('.nav-card .nav-group', { hasText: /^Party Ledger$/i })).toBeVisible(); // the menu has loaded
   const titles = await page.locator('.nav-card .nav-group').allInnerTexts();
   const at = titles.findIndex((t) => /^party ledger$/i.test(t));
   expect(at).toBeGreaterThan(-1);

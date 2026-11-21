@@ -72,3 +72,19 @@ test('POS price card: stock in every branch, the working branch marked', async (
   await expect(chips.filter({ hasText: 'On the way' })).toContainText('2');
   await page.screenshot({ path: 'test-results/pos-branch-card.png' });
 });
+
+test('POS: each branch keeps its own cart', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.addInitScript((id) => { if (!sessionStorage.getItem('t_cart')) { sessionStorage.setItem('t_cart', '1'); localStorage.setItem('karvio_branch', id); } }, ids.main.id);
+  await page.goto('/#/pos');
+  await expect(page.locator('.branch-badge')).toContainText(ids.main.name);
+  await page.getByRole('combobox', { name: 'Search product' }).fill(ids.p.name);
+  await page.locator('.psearch-list li').first().click();
+  const rows = page.locator('.cart td.cn');
+  await expect(rows.filter({ hasText: ids.p.name })).toHaveCount(1);
+  await page.getByRole('combobox', { name: 'Working branch' }).selectOption(ids.second.id);
+  await expect(page.locator('.branch-badge')).toContainText(ids.second.name);
+  await expect(rows.filter({ hasText: ids.p.name })).toHaveCount(0); // the second branch has its own (empty) cart
+  await page.getByRole('combobox', { name: 'Working branch' }).selectOption(ids.main.id);
+  await expect(rows.filter({ hasText: ids.p.name })).toHaveCount(1); // back in Main: its cart is still there
+});

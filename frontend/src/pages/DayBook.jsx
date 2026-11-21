@@ -59,7 +59,7 @@ export default function DayBook() {
         </section>
 
         {d.truncated && <p className="muted">Only the last 5,000 entries are listed — choose fewer days to see all.</p>}
-        <DataTable title={`Day book ${d.from}${oneDay ? '' : ' to ' + d.to}`} rows={d.entries} loading={q.loading}
+        <DataTable keepOrder title={`Day book ${d.from}${oneDay ? '' : ' to ' + d.to}`} rows={d.entries} loading={q.loading}
           empty={<Empty icon="receipt" title="No money moved in or out on these days">Sales, payments, expenses and transfers will show here.</Empty>}
           totals={{ in_amount: d.in, out_amount: d.out }}
           columns={[
