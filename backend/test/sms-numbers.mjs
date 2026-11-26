@@ -7,6 +7,7 @@ const ok = (v, m) => { assert.ok(v, m); checks++; };
 const eq = (a, b, m) => { assert.deepEqual(a, b, m); checks++; };
 const db = await freshDatabase();
 const {q, raw} = await apiClient(db);
+const repairTech = await q('user.save', { name: 'Repair test technician', username: 'repair-fixture-tech', password: 'repair-test-2026', role: 'technician', phone: '01711009901' });
 const nums = (n, start = 100) => Array.from({length: n}, (_, i) => '01711' + String(start + i).padStart(6, '0'));
 const sent = async () => { const l = await q('sms.log'); return l.rows || l; };
 await q('settings.save', {values: {sms_enabled: 'true', sms_url: 'https://sms.example.com/send?to={number}&text={message}', sms_method: 'GET'}});
@@ -39,7 +40,7 @@ eq([wd.sms.sent + wd.sms.queued, wd.sms.to, wd.sms.status === 'failed'], [4, 4, 
 
 // Repair completed: the customer and every admin / manager number get the same SMS
 await q('settings.save', {values: {sms_repair_done_numbers: nums(3, 500).join(', ')}});
-const rj = await q('repair.save', {customer_name: 'Sumon', phone: '01911000001', device: 'Laptop', problem: 'No display', charge: 1000});
+const rj = await q('repair.save', { technician_id: repairTech.id, send_tech_sms: false,customer_name: 'Sumon', phone: '01911000001', device: 'Laptop', problem: 'No display', charge: 1000});
 const before = (await sent()).length;
 const done = await q('repair.status', {id: rj.id, status: 'Completed'});
 ok(done.sms && (done.sms.ok || done.sms.status === 'queued'), 'customer SMS sent');
@@ -48,7 +49,7 @@ const after = await sent();
 eq(after.length - before, 4, '4 SMS in the log');
 ok(after.slice(0, 4).every((x) => x.message === after[0].message), 'the same message to all');
 await q('settings.save', {values: {sms_repair_done_numbers: ''}});
-const rj2 = await q('repair.save', {customer_name: 'Sumon', phone: '01911000001', device: 'Phone', problem: 'Battery', charge: 500});
+const rj2 = await q('repair.save', { technician_id: repairTech.id, send_tech_sms: false,customer_name: 'Sumon', phone: '01911000001', device: 'Phone', problem: 'Battery', charge: 500});
 eq((await q('repair.status', {id: rj2.id, status: 'Completed'})).sms_staff, undefined, 'no staff numbers: only the customer');
 
 // Sale SMS: the link comes from {link} in the message

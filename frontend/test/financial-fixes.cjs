@@ -54,9 +54,9 @@ for (let i = 0; i < 3; i++) {
 }
 
 const customer = Q('customer.save', { name: 'Repair customer', phones: '01711112222' });
-Q('user.save', { name: 'Technician', username: 'techfix', password: 'abcdef12-test-2026', role: 'technician', phone: '01733334444' });
+const repairTech = Q('user.save', { name: 'Technician', username: 'techfix', password: 'abcdef12-test-2026', role: 'technician', phone: '01733334444' });
 const tech = Q('login', { username: 'techfix', password: 'abcdef12-test-2026' }).token;
-const draft = { customer_id: customer.id, device: 'PC', problem: 'Test', parts: [{ product_id: part.id, qty: 3, price: 0 }] };
+const draft = { technician_id: repairTech.id, customer_id: customer.id, device: 'PC', problem: 'Test', parts: [{ product_id: part.id, qty: 3, price: 0 }] };
 reject('repair.save', draft, /POS permission/, tech);
 const job = Q('repair.save', { ...draft, parts: [{ product_id: part.id, qty: 3, price: 100 }] }, tech);
 const before = Q('products.list').find(p => p.id === part.id).stock;
@@ -68,7 +68,7 @@ const delivered = Q('repair.deliver', { id: job.id, payments: [{ account_id: cas
 eq(delivered.sale.total, 300);
 eq(Q('products.list').find(p => p.id === part.id).stock, before - 3);
 
-const advanceJob = Q('repair.save', { customer_id: customer.id, device: 'Laptop', problem: 'Test', advance: 500, account_id: cash.id });
+const advanceJob = Q('repair.save', { technician_id: repairTech.id, send_tech_sms: false, customer_id: customer.id, device: 'Laptop', problem: 'Test', advance: 500, account_id: cash.id });
 Q('sale.create', { customer_id: customer.id, items: [{ product_id: services[0].id, qty: 1, price: 500 }], credit_used: 500, payments: [] });
 const moneyBefore = Q('accounts.list').find(a => a.id === cash.id).balance;
 reject('repair.cancel', { id: advanceJob.id, reason: 'Cancel', refund_account_id: cash.id }, /no longer fully available/);
@@ -76,7 +76,7 @@ eq(Q('accounts.list').find(a => a.id === cash.id).balance, moneyBefore);
 eq(Q('repair.get', { id: advanceJob.id }).status, 'Received');
 Q('repair.cancel', { id: advanceJob.id, reason: 'Keep existing ledger credit' });
 eq(Q('customers.list').find(c => c.id === customer.id).balance, 0);
-const fresh = Q('repair.save', { customer_id: customer.id, device: 'Phone', problem: 'Test', advance: 200, account_id: cash.id });
+const fresh = Q('repair.save', { technician_id: repairTech.id, send_tech_sms: false, customer_id: customer.id, device: 'Phone', problem: 'Test', advance: 200, account_id: cash.id });
 Q('repair.cancel', { id: fresh.id, reason: 'Refund available credit', refund_account_id: cash.id });
 eq(Q('customers.list').find(c => c.id === customer.id).balance, 0);
 reject('repair.cancel', { id: fresh.id, reason: 'Again', refund_account_id: cash.id }, /Cancelled/);

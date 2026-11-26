@@ -477,7 +477,7 @@ function SmsSettings() {
 const DEFAULT_DUE_SMS = 'Dear {name}, your due at {shop} is Tk {due}. Please pay at your earliest convenience. Thank you. {shop_phone}';
 const SMS_SAMPLE = { name: 'Rahim', shop: 'Your Shop', items: 'Router x1', invoice: 'INV-000123', total: '2,500', paid: '2,000', due: '500', date: '19 Nov 2026', link: 'https://…/#/i/Ab12Cd',
   device: 'Laptop', job: 'JOB-000045', advance: '500', technician: 'Karim', problem: 'No display', phone: '01712345678', service: 'CC Camera Installation', details: '4 cameras', address: 'Mirpur 10',
-  note: 'Done', title: 'Gaming PC', days: '3', shop_phone: '01812345678', staff: 'Rafiq', kind: 'Purchase', details: 'Global Brand, Tk 19,000', no: 'APR-000012', branch: 'Main Branch' };
+  note: 'Done', title: 'Gaming PC', days: '3', shop_phone: '01812345678', staff: 'Rafiq', kind: 'Purchase', no: 'APR-000012', branch: 'Main Branch' };
 const DEFAULT_APPROVAL_SMS = '{staff} sent a {kind} for approval: {details}. Open Karvio → Approval. {shop}';
 const SMS_CARDS = [
   { on: 'sms_on_sale', tpl: 'sms_template', title: 'Sale invoice SMS', who: 'To the customer after every sale with a named customer (cash sales never get one).', vars: '{name} {shop} {items} {invoice} {total} {paid} {due} {date} {link}', link: true },
@@ -487,7 +487,7 @@ const SMS_CARDS = [
   { on: 'sms_on_repair_tech', tpl: 'sms_technician_template', title: 'Repair — technician assigned', who: 'To the technician when a repair job is given to them.', vars: '{technician} {job} {device} {problem} {name} {phone} {shop}' },
   { on: 'sms_on_service_tech', tpl: 'sms_service_tech_template', title: 'Service — technician assigned', who: 'To the technician when a service job is given to them.', vars: '{technician} {job} {service} {details} {name} {phone} {address} {shop}' },
   { on: 'sms_on_service_done', tpl: 'sms_service_done_template', title: 'Service done — to admin / manager', who: 'When the technician presses Work done.', vars: '{job} {service} {name} {phone} {address} {technician} {note} {shop}', numbers: 'sms_service_done_numbers' },
-  { on: 'sms_on_approval', tpl: 'sms_approval_template', title: 'Approval request — to admins', who: 'When a staff member sends work to the Approval menu (Users & Roles → Needs admin approval).', vars: '{staff} {kind} {details} {no} {branch} {shop}', def: DEFAULT_APPROVAL_SMS, numbers: 'sms_approval_numbers' },
+  { on: 'sms_on_approval', tpl: 'sms_approval_template', title: 'Approval request — to admins', who: 'When a staff member sends work to the Approval menu (Users & Roles → Needs admin approval).', vars: '{staff} {kind} {details} {no} {branch} {shop}', def: DEFAULT_APPROVAL_SMS, sample: { details: 'Global Brand, Tk 19,000' }, numbers: 'sms_approval_numbers' },
 ];
 function SmsFeatures() {
   const gateway = useStore((s) => s.settings.sms_enabled === 'true');
@@ -510,7 +510,8 @@ function SmsCard({ c, gateway }) {
   const on = f[c.on] !== 'false';
   const linkDays = (v, def) => (String(v || '').toLowerCase() === 'life' ? 0 : Number(v) || def);
   const qDays = linkDays(saved.quote_link_days, 3), iDays = linkDays(saved.invoice_link_days, 15);
-  const sample = String(f[c.tpl] || c.def || '').replace(/\{(\w+)\}/g, (m, k) => (k === 'days' && c.quoteLink ? (qDays || 'unlimited') : SMS_SAMPLE[k] ?? m));
+  const previewValues = { ...SMS_SAMPLE, ...c.sample };
+  const sample = String(f[c.tpl] || c.def || '').replace(/\{(\w+)\}/g, (m, k) => (k === 'days' && c.quoteLink ? (qDays || 'unlimited') : previewValues[k] ?? m));
   const nums = c.numbers ? String(f[c.numbers] || '').split(/[,;\n]+/).map((x) => x.trim()).filter(Boolean).length : 0;
   const lifeNote = (d) => (d ? `works for ${d} day${d === 1 ? '' : 's'}` : 'never expires');
   const parts = smsParts(sample);

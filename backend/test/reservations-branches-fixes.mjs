@@ -4,6 +4,7 @@ import {freshDatabase,apiClient} from './pg-harness.mjs';
 let checks=0;const eq=(a,b,m)=>{assert.deepEqual(a,b,m);checks++;};const ok=(v,m)=>{assert.ok(v,m);checks++;};
 const db=await freshDatabase();let sent=0,mode='ok',failFinishRead=false;
 const api=await apiClient(db,{onCall:call=>{if(failFinishRead&&call.name==='karvio_read'&&call.args.action_name==='courier.finish'){failFinishRead=false;throw Error('Temporary finish read failure');}},handlerOptions:{courierFetch:async()=>{sent++;if(mode==='lost')throw Error('remote accepted but reply lost');return {status:200,text:async()=>JSON.stringify({status:200,consignment:{consignment_id:'BOOK-'+sent,tracking_code:'TRACK-'+sent,status:'in_review'}})};}}});const {q,raw}=api;const admin=api.token,pw='harness-password-1';
+const repairTech = await q('user.save', { name: 'Repair test technician', username: 'repair-fixture-tech', password: 'repair-test-2026', role: 'technician', phone: '01711009901' });
 const boot=await q('bootstrap'),cash=boot.accounts[0].id;
 const supplier=await q('supplier.save',{name:'Audit supplier'}),customer=await q('customer.save',{name:'Audit customer',phones:'01711112222',addresses:'Test road'});
 const part=await q('product.save',{name:'Audit part',sale_price:100});const purchase=await q('purchase.create',{supplier_id:supplier.id,items:[{product_id:part.id,qty:30,cost:50}],payments:[]});
@@ -26,8 +27,8 @@ eq((await q('branch.report')).all.profit,before,'full return removes profit even
 const serial=await q('product.save',{name:'Audit serial',sale_price:500,has_warranty:true,warranty_type:'serial',warranty_days:365});
 await q('purchase.create',{supplier_id:supplier.id,items:[{product_id:serial.id,qty:1,cost:100,serials:'AT-A'}],payments:[]},{branch:A});
 await q('purchase.create',{supplier_id:supplier.id,items:[{product_id:serial.id,qty:1,cost:300,serials:'AT-B'}],payments:[]},{branch:B});
-const bad=await raw('repair.save',{customer_id:customer.id,device:'Wrong branch',problem:'Test',parts:[{product_id:serial.id,qty:1,price:500,serials:'AT-A'}]},{branch:B});ok(!bad.ok&&/branch/i.test(bad.error),'cannot reserve serial from another branch');
-const job=await q('repair.save',{customer_id:customer.id,device:'Repair',problem:'Test',parts:[{product_id:serial.id,qty:1,price:500,serials:'AT-A'}]},{branch:A});
+const bad=await raw('repair.save',{ technician_id: repairTech.id, send_tech_sms: false,customer_id:customer.id,device:'Wrong branch',problem:'Test',parts:[{product_id:serial.id,qty:1,price:500,serials:'AT-A'}]},{branch:B});ok(!bad.ok&&/branch/i.test(bad.error),'cannot reserve serial from another branch');
+const job=await q('repair.save',{ technician_id: repairTech.id, send_tech_sms: false,customer_id:customer.id,device:'Repair',problem:'Test',parts:[{product_id:serial.id,qty:1,price:500,serials:'AT-A'}]},{branch:A});
 const blocked=await raw('branch.transfer.send',{to:B,items:[{product_id:serial.id,serials:'AT-A'}]},{branch:A});ok(!blocked.ok&&/reserved/i.test(blocked.error),'reserved serial cannot transfer');eq((await product(serial.id,A)).stock,1,'failed transfer leaves stock intact');
 eq([(await product(serial.id,A)).reserved,(await product(serial.id,B)).reserved],[1,0],'branch reservations are local');
 // Jobs saved by older releases have no branch tag; keep their stock held until explicitly edited.
@@ -35,7 +36,7 @@ await db.query('delete from karvio_private.private_rows where sheet=$1 and cells
 eq([(await product(serial.id,A)).reserved,(await product(serial.id,B)).reserved],[1,1],'untagged old job is held conservatively');
 await q('repair.save',{id:job.id,device:'Repair',problem:'Test',parts:[{product_id:serial.id,qty:1,price:500,serials:'AT-A'}]},{branch:A});
 eq((await product(serial.id,B)).reserved,0,'editing assigns the legacy job to its verified branch');
-const unitJob=await q('repair.save',{customer_id:customer.id,device:'Unit job',problem:'Test',parts:[{product_id:part.id,qty:2,price:100}]},{branch:A});
+const unitJob=await q('repair.save',{ technician_id: repairTech.id, send_tech_sms: false,customer_id:customer.id,device:'Unit job',problem:'Test',parts:[{product_id:part.id,qty:2,price:100}]},{branch:A});
 const available=(await product(part.id,A)).available;
 const tooMany=await raw('branch.transfer.send',{to:B,items:[{product_id:part.id,qty:available+1}]},{branch:A});ok(!tooMany.ok&&/reserved/i.test(tooMany.error),'nonserial reserved units cannot transfer');
 await q('repair.cancel',{id:unitJob.id,reason:'Done',refund_advance:false});

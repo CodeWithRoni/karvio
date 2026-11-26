@@ -26,7 +26,8 @@ test.beforeAll(async ({ request }) => {
   const sr = await call(request, 'sreturn.create', { sale_id: s.sale.id, items: [{ sale_item_id: s.items[1].id, qty: 1 }], refund: { mode: 'cash', account_id: cash.id, amount: 450 }, type: 'return' });
   const pr = await call(request, 'preturn.create', { purchase_id: p.purchase.id, items: [{ purchase_item_id: p.items[0].id, qty: 1, serials: [SN(3)] }], refund: { mode: 'adjust' } });
   const cl = await call(request, 'claim.create', { sale_id: s.sale.id, sale_item_id: s.items[0].id, serial: SN(1), issue: 'No power' });
-  const job = await call(request, 'repair.save', { customer_name: `DT Rahim ${T}`, phone: '01911000071', device: 'HP laptop', serial: 'HP-15', problem: 'No display', accessories: 'Charger', advance: 500, account_id: cash.id, estimate: 2500 });
+const tech = await call(request, 'user.save', { name: 'Repair test technician', username: 'repair-doc-template-tech', password: 'repair-test-2026', role: 'technician', phone: '01711009901' });
+  const job = await call(request, 'repair.save', { technician_id: tech.id, send_tech_sms: false, customer_name: `DT Rahim ${T}`, phone: '01911000071', device: 'HP laptop', serial: 'HP-15', problem: 'No display', accessories: 'Charger', advance: 500, account_id: cash.id, estimate: 2500 });
   Object.assign(ids, { p, s, sr, pr, cl, job, cust, sup });
 });
 test.afterAll(async ({ request }) => { await call(request, 'settings.save', { values: { invoice_template: ids.saved } }); });

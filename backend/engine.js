@@ -4082,7 +4082,9 @@ function repairSave_(p, user) {
   var device = String(p.device || '').trim(), problem = String(p.problem || '').trim();
   if (!device) fail_('Device is required');
   if (!problem) fail_('Problem is required');
-  var tech = repairTechnician_(p.technician_id, open ? open.technician_id : '');
+  var technicianId = open && p.technician_id === undefined ? open.technician_id : p.technician_id;
+  var tech = repairTechnician_(technicianId, open ? open.technician_id : '');
+  if (!tech) fail_('Technician is required');
   var charge = round_(p.charge); if (charge < 0) fail_('Repair charge cannot be negative');
   var estimate = round_(p.estimate); if (estimate < 0) fail_('Estimate cannot be negative');
   var parts = repairPartsClean_(p.parts, p.id);

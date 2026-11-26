@@ -41,7 +41,7 @@ same(Q('bootstrap', {}, tanvir.token).perms, ['repairs', 'warranty'], 'technicia
 Q('rolePerms.save', { manager: ['repairs'], sales: ['pos'], technician: ['repairs'] });
 Q('user.save', { name: 'Rakib', username: 'rakib', password: 'rakib12-test-2026', role: 'technician', phone: '+880 1700-000092' });
 const meta = Q('repairs.meta', {}, tanvir.token);
-let pre = null; const j3pre = () => pre || (pre = Q('repair.save', { customer_name: 'Pre', phone: '01811000077', device: 'Pre', problem: 'Pre' }));
+let pre = null; const j3pre = () => pre || (pre = Q('repair.save', { technician_id: tUser.id, send_tech_sms: false, customer_name: 'Pre', phone: '01811000077', device: 'Pre', problem: 'Pre' }));
 same(meta.technicians.map((u) => [u.name, u.phone]), [['Tanvir', '01700000091'], ['Rakib', '+880 1700-000092']], 'only technicians, with their numbers');
 same(meta.accounts.length, 2, 'accounts for the page');
 same(meta.statuses, ['Received', 'Completed', 'Failed', 'Delivered', 'Cancelled'], 'statuses');
@@ -49,7 +49,8 @@ same(meta.statuses, ['Received', 'Completed', 'Failed', 'Delivered', 'Cancelled'
 /* ---------- 1. job card with a new customer and an advance ---------- */
 truthy(/Device is required/.test(QF('repair.save', { customer_name: 'Rafi', phone: '01811000001', problem: 'No display' })), 'device required');
 truthy(/Problem is required/.test(QF('repair.save', { customer_name: 'Rafi', phone: '01811000001', device: 'HP laptop' })), 'problem required');
-truthy(/phone is required/.test(QF('repair.save', { customer_name: 'Rafi', device: 'HP laptop', problem: 'No display' })), 'phone required');
+truthy(/Technician is required/.test(QF('repair.save', { customer_name: 'No technician', phone: '01811000881', device: 'Laptop', problem: 'Fault' })), 'technician required');
+truthy(/phone is required/.test(QF('repair.save', { technician_id: tUser.id, send_tech_sms: false, customer_name: 'Rafi', device: 'HP laptop', problem: 'No display' })), 'phone required');
 truthy(/Technician not found/.test(QF('repair.save', { customer_name: 'Rafi', phone: '01811000001', device: 'HP laptop', problem: 'x', technician_id: 'nope' })), 'technician must be a user');
 const adminU = Q('users.list', {}).find((u) => u.username === 'admin');
 truthy(/is not a Technician/.test(QF('repair.save', { customer_name: 'Rafi', phone: '01811000001', device: 'HP laptop', problem: 'x', technician_id: adminU.id })), 'only Technician-role users are assigned');
@@ -62,7 +63,7 @@ same([rafi.phones, custBal(rafi.id), accBal(cash.id) - cash0], ['01811000001', -
 same(Q('customer.statement', { customer_id: rafi.id }).rows.map((r) => [r.type, r.credit]), [['payment', 500]], 'advance in the customer statement');
 
 /* the same phone in another format is the same customer */
-const j2 = Q('repair.save', { customer_name: 'Rafi Ahmed', phone: '+880 1811-000001', device: 'Printer', problem: 'Paper jam' });
+const j2 = Q('repair.save', { technician_id: tUser.id, send_tech_sms: false, customer_name: 'Rafi Ahmed', phone: '+880 1811-000001', device: 'Printer', problem: 'Paper jam' });
 same([j2.customer_id, j2.job_no], [rafi.id, 'JOB-000002'], 'same customer by phone');
 
 /* ---------- 2. parts from stock, charge, technician change, more advance ---------- */
@@ -136,33 +137,33 @@ same(Q('repairs.list', { status: 'Delivered' })[0].sale_status, 'active', 'list 
 same(Q('dashboard', {}).repair_alerts.length, 0, 'delivering the job removes its alert');
 
 /* ---------- 5. delivery with a balance left as due ---------- */
-const j3 = Q('repair.save', { customer_id: rafi.id, device: 'Desktop PC', problem: 'Windows', charge: 800 });
+const j3 = Q('repair.save', { technician_id: tUser.id, send_tech_sms: false, customer_id: rafi.id, device: 'Desktop PC', problem: 'Windows', charge: 800 });
 const d3 = Q('repair.deliver', { id: j3.id, payments: [{ account_id: cash.id, amount: 300 }], next_payment_date: sandbox.addDays_(sandbox.today_(), 3) });
 same([d3.sale.paid, d3.sale.due, custBal(rafi.id)], [300, 500, 500], 'unpaid part is the customer due');
 
 /* ---------- 6. cancel: refund the advance, or keep it as credit ---------- */
-const j4 = Q('repair.save', { customer_name: 'Mitu', phone: '01911000002', device: 'Phone', problem: 'Battery', advance: 400, account_id: bkash.id });
+const j4 = Q('repair.save', { technician_id: tUser.id, send_tech_sms: false, customer_name: 'Mitu', phone: '01911000002', device: 'Phone', problem: 'Battery', advance: 400, account_id: bkash.id });
 const mitu = j4.customer_id, b0 = accBal(bkash.id);
 truthy(/Write why/.test(QF('repair.cancel', { id: j4.id })), 'a reason is needed');
 const k4 = Q('repair.cancel', { id: j4.id, reason: 'Customer took it back', refund_account_id: bkash.id });
 same([k4.status, b0 - accBal(bkash.id), custBal(mitu)], ['Cancelled', 400, 0], 'advance paid back from bKash');
-const j5 = Q('repair.save', { customer_id: mitu, device: 'Tablet', problem: 'Screen', advance: 250, account_id: cash.id });
+const j5 = Q('repair.save', { technician_id: tUser.id, send_tech_sms: false, customer_id: mitu, device: 'Tablet', problem: 'Screen', advance: 250, account_id: cash.id });
 Q('repair.cancel', { id: j5.id, reason: 'Part not available' });
 same(custBal(mitu), -250, 'or kept on the customer account as credit');
 truthy(/Cancelled/.test(QF('repair.deliver', { id: j5.id })), 'a cancelled job cannot be delivered');
 
 /* ---------- 7. free job: no invoice ---------- */
-const j6 = Q('repair.save', { customer_id: mitu, device: 'Mouse', problem: 'Check only' });
+const j6 = Q('repair.save', { technician_id: tUser.id, send_tech_sms: false, customer_id: mitu, device: 'Mouse', problem: 'Check only' });
 const d6 = Q('repair.deliver', { id: j6.id });
 same([d6.status, d6.invoice_no, d6.sale], ['Delivered', '', null], 'nothing to charge, no invoice');
 
 /* ---------- 8. the second job reuses the service product; idempotent retry ---------- */
-const j7 = Q('repair.save', { customer_id: rafi.id, device: 'UPS', problem: 'Battery', charge: 500 });
+const j7 = Q('repair.save', { technician_id: tUser.id, send_tech_sms: false, customer_id: rafi.id, device: 'UPS', problem: 'Battery', charge: 500 });
 Q('repair.deliver', { id: j7.id, payments: [{ account_id: cash.id, amount: 500 }] });
 same(Q('products.list', {}).filter((p) => p.name === 'Repair service').length, 1, 'still one service product');
 const raw = (action, payload, id) => JSON.parse(sandbox.doPost({ postData: { contents: JSON.stringify({ action, payload, token, request_id: id }) } }).getContent());
-const a1 = raw('repair.save', { customer_id: rafi.id, device: 'Router', problem: 'Reset' }, 'repair-retry-0001');
-const a2 = raw('repair.save', { customer_id: rafi.id, device: 'Router', problem: 'Reset' }, 'repair-retry-0001');
+const a1 = raw('repair.save', { technician_id: tUser.id, send_tech_sms: false, customer_id: rafi.id, device: 'Router', problem: 'Reset' }, 'repair-retry-0001');
+const a2 = raw('repair.save', { technician_id: tUser.id, send_tech_sms: false, customer_id: rafi.id, device: 'Router', problem: 'Reset' }, 'repair-retry-0001');
 same([a1.ok, a2.ok, a1.data.job_no === a2.data.job_no, Q('repairs.list', { q: 'router' }).length], [true, true, true, 1], 'a retried save makes one job');
 same(run("all_('AuditLog').filter(function(a){return /^repair_/.test(a.action)}).length") >= 10, true, 'repair actions are audited');
 

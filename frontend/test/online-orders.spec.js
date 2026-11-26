@@ -128,6 +128,7 @@ test('manual challan accepts an unlisted courier and ERP recipients without an o
   expect(expenses.find((e) => e.id === booking.expense_id)).toMatchObject({ category: 'Transport', amount: 125, account_id: cash.id });
   expect((await call(request, 'orders.list')).orders.some((o) => o.id === booking.id)).toBe(false);
   await form.getByRole('button', { name: 'Close', exact: true }).last().click();
+  await expect(page.getByRole('row').filter({ hasText: booking.no })).toHaveCount(1);
   await page.getByRole('link', { name: 'Delivery Report' }).click();
   await page.getByLabel('Delivery source', { exact: true }).selectOption('manual');
   await expect(page.getByRole('row').filter({ hasText: booking.no })).toContainText('2 pcs');

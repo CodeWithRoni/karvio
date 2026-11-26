@@ -40,13 +40,13 @@ Mobile/tablet camera scanning is available in POS, purchase product/serial entry
 
 ## Sign in and setup
 
-Use the same online credentials on every platform. The fresh Supabase shop is initialized with an owner-chosen password; there is **no default online password**. Configure a different shop endpoint through **Settings → API connection** when needed.
+Use the same online credentials on every platform. The fresh Supabase shop is initialized with an owner-chosen password; there is **no default online password**. Configure a different shop endpoint through **Change API connection** on the sign-in screen when needed.
 
 See [SUPABASE-SETUP.md](SUPABASE-SETUP.md) for the authoritative online architecture, fresh setup, private backups and deployment. Installing a new app version does not reset the online shop.
 
 ## Development
 
-Use Node.js 22 and npm. Point development at an isolated API/test shop for sample transactions; the built-in default endpoint is the production Karvio shop.
+Use Node.js 22 and npm. Set VITE_API_URL in frontend/.env.local to an isolated API or use Change API connection on the local sign-in screen. Development waits for an API URL before connecting. The production build defaults to the live Karvio endpoint.
 
 ```sh
 git clone https://github.com/CodeWithRoni/karvio.git
@@ -66,7 +66,7 @@ npm run dev
 | npm run desktop:build:mac | macOS disk images |
 | npm run desktop:build:linux | Debian package |
 
-Browser tests use Microsoft Edge locally by default. CI installs Chromium and sets KARVIO_BROWSER_CHANNEL=chromium. Financial regression fixtures are isolated from the live shop. See [VERIFICATION.md](VERIFICATION.md) for recorded checks.
+Browser tests use Microsoft Edge locally by default. CI installs Chromium and sets KARVIO_BROWSER_CHANNEL=chromium. Financial regression fixtures are isolated from the live shop. Run `npm run check:deploy` from frontend to run the deployment test suite locally.
 
 ## Repository map
 

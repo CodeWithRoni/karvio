@@ -7,6 +7,7 @@ apply(createRuntime(state).initialize({name:'Regression owner',password:'regress
 function call(action,payload={},t=''){return apply(createRuntime(structuredClone(state)).execute({action,payload,token:t,request_id:crypto.randomUUID()}));}
 const token=call('login',{username:'admin',password:'regression-owner-password'}).data.token;
 function q(a,p={},t=token){const r=call(a,p,t);assert.equal(r.ok,true,`${a}: ${r.error}`);return r.data;}
+const repairTech = q('user.save', { name: 'Repair test technician', username: 'repair-fixture-tech', password: 'repair-test-2026', role: 'technician', phone: '01711009901' });
 const cash=q('bootstrap').accounts[0].id, base=structuredClone(state);
 const reset=()=>{state=structuredClone(base);};
 function denied(a,p,t=token,pattern){const before=structuredClone(state.tables),r=call(a,p,t);assert.equal(r.ok,false,`${a} must fail`);if(pattern)assert.match(r.error,pattern);assert.deepEqual(state.tables,before,'Failed action must not change business rows');return r;}
@@ -29,7 +30,7 @@ for (const supplier of [false,true]) {
  reset();const old=q(kind+'.save',{name:'Legacy missing party'});payment=q(kind+'.payment',{[kind+'_id']:old.id,amount:100,account_id:cash});state.tables[supplier?'Suppliers':'Customers']=[];
  denied('reverse',{type:supplier?'spay':'cpay',id:payment.entry.id,password:'regression-owner-password',reason:'Correction'},token,/record is missing/i);
 }
-reset();let c=q('customer.save',{name:'Open repair party',phones:'01711110004'});let job=q('repair.save',{customer_id:c.id,device:'Laptop',problem:'Fault',charge:100,parts:[]});denied('customer.delete',{id:c.id},token,/open repair/i);assert.equal(q('repair.deliver',{id:job.id,expected_credit:0,payments:[{account_id:cash,amount:100}]}).status,'Delivered');
+reset();let c=q('customer.save',{name:'Open repair party',phones:'01711110004'});let job=q('repair.save',{ technician_id: repairTech.id, send_tech_sms: false,customer_id:c.id,device:'Laptop',problem:'Fault',charge:100,parts:[]});denied('customer.delete',{id:c.id},token,/open repair/i);assert.equal(q('repair.deliver',{id:job.id,expected_credit:0,payments:[{account_id:cash,amount:100}]}).status,'Delivered');
 // F02: tracking cannot be disabled after selling all stock; old returns remain serialized.
 reset();let p=product('Serial history',{has_warranty:true,warranty_type:'serial',warranty_days:365});buy(p,1,{serials:'FOLLOW-1'});let sale=sell(p,1,{items:[{product_id:p.id,qty:1,price:200,serials:'FOLLOW-1'}]});
 denied('product.save',{...p,has_warranty:false},token,/serial history/i);

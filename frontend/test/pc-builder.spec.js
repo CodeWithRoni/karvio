@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/print.js';
 
 // PC builder: a part that is not in stock (or not in Karvio) can be typed by hand under the product list.
 const endpoint = 'http://localhost:8787';

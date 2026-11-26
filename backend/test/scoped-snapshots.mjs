@@ -3,6 +3,7 @@ const db=new PGlite();await db.exec('create role anon;create role authenticated;
 await db.query('update karvio_private.runtime set setup_hash=$1',[hash('scope-key')]);const metrics=[];async function rpc(name,p){const out=(await db.query('select public.'+name+'('+Object.keys(p).map((k,i)=>k+' => $'+(i+1)).join(',')+') as r',Object.values(p))).rows[0].r;if(name==='karvio_snapshot_request'||(name==='karvio_read'&&p.kind==='rows'))metrics.push({action:p.action_name,bytes:Buffer.byteLength(JSON.stringify(out)),snapshot:out});return out;}
 const handler=createHandler({rpc});let token='';async function raw(action,payload={}){return(await handler(new Request('http://test',{method:'POST',body:JSON.stringify({action,payload,token,request_id:crypto.randomUUID()})}))).json();}async function q(a,p={}){const r=await raw(a,p);assert.equal(r.ok,true,a+': '+r.error);return r.data;}
 await q('owner.initialize',{name:'Scope owner',password:'scope-test-password',setup_key:'scope-key'});token=(await q('login',{username:'admin',password:'scope-test-password'})).token;
+const repairTech = await q('user.save', { name: 'Repair test technician', username: 'repair-fixture-tech', password: 'repair-test-2026', role: 'technician', phone: '01711009901' });
 const cash=(await q('bootstrap')).accounts[0].id;const customer=await q('customer.save',{name:'Scoped customer',phones:'01711110005',opening_balance:-0.005}),noise=await q('customer.save',{name:'Unrelated customer'}),supplier=await q('supplier.save',{name:'Scoped supplier',opening_balance:40});
 const item=await q('product.save',{name:'Scoped serial',sale_price:100,has_warranty:true,warranty_type:'serial',warranty_days:365});
 const purchase=await q('purchase.create',{supplier_id:supplier.id,items:[{product_id:item.id,qty:3,cost:60,sale_price:100,serials:['SC-n01','SC-n02','SC-n03']}],payments:[{account_id:cash,amount:100}]});
@@ -10,7 +11,7 @@ const sale=await q('sale.create',{customer_id:customer.id,items:[{product_id:ite
 await q('customer.payment',{customer_id:customer.id,account_id:cash,amount:15});
 await q('supplier.payment',{supplier_id:supplier.id,account_id:cash,amount:25});
 await q('sreturn.create',{sale_id:sale.sale.id,items:[{sale_item_id:sale.items[0].id,qty:1,serials:['SC-n01']}],refund:{account_id:cash,amount:0}});
-await q('repair.save',{customer_id:customer.id,device:'Test device',problem:'Test',parts:[{product_id:item.id,qty:1,price:100,serials:['SC-n02']}],charge:0});
+await q('repair.save',{ technician_id: repairTech.id, send_tech_sms: false,customer_id:customer.id,device:'Test device',problem:'Test',parts:[{product_id:item.id,qty:1,price:100,serials:['SC-n02']}],charge:0});
 await db.query('insert into public."CustomerLedger"(_position,id,date,customer_id,type,debit,credit,voided) select (select coalesce(max(_position),1) from public."CustomerLedger")+g,\'noise-ledger-\'||g,\'2026-01-01\',$1,\'payment\',0,1,false from generate_series(1,10000) g',[noise.id]);
 await db.query('insert into public."AuditLog"(_position,id,ts,action,detail) select (select coalesce(max(_position),1) from public."AuditLog")+g,\'noise-audit-\'||g,\'2026-01-01\',\'fixture\',repeat(\'noise\',210) from generate_series(1,18000) g');
 const full=await rpc('karvio_snapshot',{});const fullBytes=Buffer.byteLength(JSON.stringify(full));

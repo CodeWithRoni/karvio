@@ -104,7 +104,7 @@ test('repair job: receive, mark completed, deliver with an invoice', async ({ pa
 });
 
 test('repair job: cancel and give the advance back', async ({ page, request }) => {
-  const made = await call(request, 'repair.save', { customer_name: 'Cancel Test', phone: '01555000222', device: 'Printer', problem: 'Jam', advance: 200, account_id: cash.id });
+  const made = await call(request, 'repair.save', { technician_id: tech.id, send_tech_sms: false, customer_name: 'Cancel Test', phone: '01555000222', device: 'Printer', problem: 'Jam', advance: 200, account_id: cash.id });
   const cash0 = (await call(request, 'accounts.list')).find((a) => a.id === cash.id).balance;
   await page.goto('/#/repairs');
   await page.getByRole('button',{name:'All repair jobs',exact:true}).click();
@@ -168,7 +168,7 @@ test('failed repair: the admin dashboard shows the result until Seen', async ({ 
 
 test('spent repair advance is refreshed before delivery and collected correctly', async ({page,request}) => {
   const customer = await call(request,'customer.save',{name:'Spent advance UI',phones:'01711110007'});
-  const job = await call(request,'repair.save',{customer_id:customer.id,device:'Advance laptop',problem:'Fault',charge:500,advance:500,account_id:cash.id,parts:[]});
+  const job = await call(request,'repair.save',{technician_id: tech.id, send_tech_sms: false, customer_id:customer.id,device:'Advance laptop',problem:'Fault',charge:500,advance:500,account_id:cash.id,parts:[]});
   await page.goto(`/#/repairs/${job.id}`);
   const detail = page.getByRole('dialog',{name:`Repair job ${job.job_no}`});
   await expect(detail).toBeVisible();
@@ -187,7 +187,7 @@ test('spent repair advance is refreshed before delivery and collected correctly'
 });
 
 test('repairs-only technician cannot select cash refund', async ({page,request}) => {
-  const job=await call(request,'repair.save',{customer_name:'Tech refund UI',phone:'01555000777',device:'Printer',problem:'Fault',advance:200,account_id:cash.id});
+  const job=await call(request,'repair.save',{technician_id: tech.id, send_tech_sms: false, customer_name:'Tech refund UI',phone:'01555000777',device:'Printer',problem:'Fault',advance:200,account_id:cash.id});
   const response=await request.post(endpoint,{data:{action:'login',payload:{username:'e2etech',password:'e2etech1-test-2026'}}});
   const login=await response.json();expect(login.ok).toBe(true);
   await page.addInitScript((t)=>localStorage.setItem('erp_token',t),login.data.token);

@@ -7,6 +7,7 @@ apply(createRuntime(state).initialize({name:'Audit regression',password:'audit-p
 function call(action,payload={},t=''){return apply(createRuntime(structuredClone(state)).execute({action,payload,token:t,request_id:crypto.randomUUID()}));}
 const token=call('login',{username:'admin',password:'audit-password-12345'}).data.token;
 function q(a,p={},t=token){const r=call(a,p,t);assert.equal(r.ok,true,a+': '+r.error);return r.data;}
+const repairTech = q('user.save', { name: 'Repair test technician', username: 'repair-fixture-tech', password: 'repair-test-2026', role: 'technician', phone: '01711009901' });
 const cash=q('bootstrap').accounts[0].id;
 const product=(name,extra={})=>q('product.save',{name,sale_price:100,...extra});
 q('rolePerms.save',{sales:['pos','sales.return']});
@@ -26,7 +27,7 @@ assert.equal(x.sale.sale.cost,undefined);assert.equal(x.sale.items[0].cost,undef
 q('master.save',{kind:'unit',name:'meter',label:'Meter',decimal:true});
 const parts=[];for(let i=0;i<3;i++){const pr=product('Repair fractional '+i,{unit:'meter',sale_price:0.01});q('purchase.create',{items:[{product_id:pr.id,qty:1,cost:0.01}],payments:[{account_id:cash,amount:0.01}]});parts.push({product_id:pr.id,qty:0.5,price:0.01});}
 for(const advance of [0,0.03]){
-const job=q('repair.save',{customer_name:'Repair rounding '+advance,phone:advance?'01811000002':'01811000001',device:'PC',problem:'Test',parts,charge:0,advance,account_id:cash});
+const job=q('repair.save',{ technician_id: repairTech.id, send_tech_sms: false,customer_name:'Repair rounding '+advance,phone:advance?'01811000002':'01811000001',device:'PC',problem:'Test',parts,charge:0,advance,account_id:cash});
 assert.equal(job.total,0.03);const done=q('repair.deliver',{id:job.id,expected_credit:advance,payments:advance?[]:[{account_id:cash,amount:0.03}]});assert.equal(done.invoice.sale.total,0.03);assert.equal(done.invoice.sale.due,0);
 }
 const c=q('customer.save',{name:'Unpaid exchange'}),a=product('Old service',{service:true,sale_price:550}),b=product('New service',{service:true,sale_price:700});

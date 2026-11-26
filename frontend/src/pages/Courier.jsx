@@ -144,7 +144,7 @@ function ChallanPreview({ html }) {
     style={{ width: '100%', height: 'min(60vh, 620px)', background: '#fff', border: 0 }} />;
 }
 
-function ManualChallan({ onClose }) {
+function ManualChallan({ onClose, onSaved }) {
   const formId = useId();
   const nextLine = useRef(1);
   const settings = useStore((s) => s.settings);

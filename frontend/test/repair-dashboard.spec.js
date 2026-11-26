@@ -3,7 +3,8 @@ test('repair dashboard has all-time history and drills from status counts into a
  const endpoint='http://localhost:8787';let token;
  const call=async(action,payload={})=>{const r=await request.post(endpoint,{data:{action,payload,token}});const b=await r.json();expect(b.ok,b.error).toBe(true);return b.data;};
  token=(await call('login',{username:'admin',password:'admin123'})).token;
- const job=await call('repair.save',{customer_name:'Dashboard customer',phone:'01755550000',device:'Dashboard laptop',problem:'No display'});
+const tech = await call('user.save', { name: 'Repair test technician', username: 'repair-dashboard-tech', password: 'repair-test-2026', role: 'technician', phone: '01711009901' });
+ const job=await call('repair.save',{ technician_id: tech.id, send_tech_sms: false,customer_name:'Dashboard customer',phone:'01755550000',device:'Dashboard laptop',problem:'No display'});
  await call('repair.status',{id:job.id,status:'Completed',send_sms:false});
  const meta=await call('repairs.meta'),jobs=await call('repairs.list');
  const completed=jobs.filter(j=>j.date===meta.today&&j.status==='Completed').length;
@@ -27,6 +28,9 @@ test('repair dashboard has all-time history and drills from status counts into a
  await page.getByRole('button',{name:'View Last Month repair jobs',exact:true}).click();
  await expect(page.getByText(/Last Month · Received/)).toBeVisible();
  await expect(page.getByLabel('Received period',{exact:true})).toHaveValue('lastMonth');
+ await page.getByRole('searchbox',{name:'Search table'}).fill('no-match');
+ await page.getByRole('button',{name:'Reset filters'}).click();
+ await expect(page.getByRole('searchbox',{name:'Search table'})).toHaveValue('');
  await page.getByRole('searchbox',{name:'Search table'}).fill('no-match');
  await page.locator('.rd-seg').getByRole('button',{name:/^All: /}).click();
  await expect(page.getByRole('searchbox',{name:'Search table'})).toHaveValue('');

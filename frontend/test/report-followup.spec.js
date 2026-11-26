@@ -22,7 +22,13 @@ test('Sales filters by product classification and Reports Hub shows service prof
   await page.getByRole('combobox', { name: 'Customer', exact: true }).selectOption(customer.id);
   await expect(page.locator('tbody tr')).toHaveCount(1);
   await expect(page.locator('tbody')).toContainText(invoice.sale.invoice_no);
+  const from = page.getByRole('textbox', { name: 'From date' });
+  const defaultFrom = await from.inputValue();
+  await from.fill('01 Jan 2000');
+  await from.press('Tab');
+  await expect(from).toHaveValue('1 Jan 2000');
   await page.getByRole('button', { name: 'Clear filters' }).click();
+  await expect(from).toHaveValue(defaultFrom);
   await expect(page.getByRole('combobox', { name: 'Category', exact: true })).toHaveValue('');
 
   await page.goto('/#/reports');

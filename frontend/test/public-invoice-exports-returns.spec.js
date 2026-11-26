@@ -1,4 +1,4 @@
-import {test,expect} from '@playwright/test';
+import {test,expect} from './fixtures/print.js';
 import * as XLSX from 'xlsx';
 import fs from 'node:fs/promises';
 const endpoint='http://localhost:8787';let token,cash;

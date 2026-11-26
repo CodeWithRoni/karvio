@@ -8,6 +8,7 @@ const ok = (v, m) => { assert.ok(v, m); checks++; };
 const eq = (a, b, m) => { assert.deepEqual(a, b, m); checks++; };
 const db = await freshDatabase();
 const api = await apiClient(db), {q, raw} = api, admin = api.token, pw = 'harness-password-1';
+const repairTech = await q('user.save', { name: 'Repair test technician', username: 'repair-fixture-tech', password: 'repair-test-2026', role: 'technician', phone: '01711009901' });
 const cash = (await q('bootstrap')).accounts.find((a) => a.type === 'cash').id;
 const tea = await q('product.save', {name: 'Tea', sale_price: 100});
 const sup = await q('supplier.save', {name: 'Supplier'});
@@ -32,7 +33,7 @@ eq([await stock(A), await stock(B)], [3, 2], 'sale cancelled from B returns the 
 // ---- 2: staff fixed to B do not see or act on A's repairs, online orders or expenses
 const cat = (await q('bootstrap')).settings?.expense_categories;
 const C = (Array.isArray(cat) ? cat : JSON.parse(cat || '[]'))[0];
-const job = await q('repair.save', {customer_id: cust.id, device: 'Laptop', problem: 'No power', parts: [], charge: 100}, {branch: A});
+const job = await q('repair.save', { technician_id: repairTech.id, send_tech_sms: false,customer_id: cust.id, device: 'Laptop', problem: 'No power', parts: [], charge: 100}, {branch: A});
 await q('repair.status', {id: job.id, status: 'Completed'}, {branch: A}).catch(() => {});
 const order = await q('order.save', {source: 'Facebook', customer: {name: 'Rina', phone: '01712345678', address: 'House 1, Dhaka'}, items: [{product_id: tea.id, qty: 1, price: 100}]}, {branch: A});
 const newOrder = await q('order.save', {source: 'Facebook', customer: {name: 'Rina', phone: '01712345678', address: 'House 1, Dhaka'}, items: [{product_id: tea.id, qty: 1, price: 100}]}, {branch: A});

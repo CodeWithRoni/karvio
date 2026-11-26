@@ -1,4 +1,4 @@
-import {test,expect} from '@playwright/test';
+import {test,expect} from './fixtures/print.js';
 const endpoint='http://localhost:8787';let token,cash;
 async function call(request,action,payload={}){const r=await request.post(endpoint,{data:{action,payload,token}}),b=await r.json();expect(b.ok,b.error).toBe(true);return b.data;}
 test.beforeAll(async({request})=>{token=(await call(request,'login',{username:'admin',password:'admin123'})).token;cash=(await call(request,'bootstrap')).accounts[0].id;});

@@ -117,7 +117,7 @@ export default function Repairs() {
         })()}
       </>
       <section className="repair-jobs-section" ref={jobsRef} aria-label="Repair job list">
-      <div className="repair-list-heading"><div><h2>Repair jobs</h2><p className="muted">{activePeriod?`${activePeriod.label} · Received ${fdate(activePeriod.from)} – ${fdate(activePeriod.to)}`:'All received dates'}</p></div><ClearFiltersButton onClick={() => { setPeriod(null); setTech(''); setTab('all'); }}>Reset filters</ClearFiltersButton></div>
+      <div className="repair-list-heading"><div><h2>Repair jobs</h2><p className="muted">{activePeriod?`${activePeriod.label} · Received ${fdate(activePeriod.from)} – ${fdate(activePeriod.to)}`:'All received dates'}</p></div><ClearFiltersButton onClick={() => { setPeriod(null); setTech(''); setTab('all'); setTableReset((value) => value + 1); }}>Reset filters</ClearFiltersButton></div>
       <div className="filters">
         <Tabs tabs={[['open', 'Open'], ['Received', 'Received'], ['Completed', 'Completed'], ['Failed', 'Failed'], ['Delivered', 'Delivered'], ['Cancelled', 'Cancelled'], ['all', 'All']]} value={tab} onChange={setTab} />
         <Select value={period?.key||''} onChange={key=>setPeriod(periods.find(p=>p.key===key)||null)} options={periods.map(p=>({id:p.key,name:p.label}))} placeholder="All received dates" aria-label="Received period" />

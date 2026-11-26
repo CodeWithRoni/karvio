@@ -51,6 +51,7 @@ export default function Sales({ mode = 'sales' }) {
           <Select aria-label="Customer" value={filters.customer_id} onChange={(customer_id) => setFilters({ ...filters, customer_id })}
             options={customers} placeholder="All customers" />
           <ClearFiltersButton onClick={() => {
+            setRange({ from: monthStart(), to: today() });
             setStatus('');
             setFilters({ group_id: '', category_id: '', brand_id: '', customer_id: '' });
           }} />

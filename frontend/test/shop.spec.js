@@ -644,6 +644,7 @@ test('working hours: set in Users, refused at sign-in outside them, and signed o
   await m.getByRole('button', { name: 'Fri' }).click(); // day off
   await expect(m.locator('.wh-sum')).toContainText('Sat, Sun, Mon, Tue, Wed, Thu');
   await m.getByRole('button', { name: 'Save user' }).click();
+  await page.getByRole('searchbox', { name: 'Search table' }).fill(uname);
   await expect(page.locator('.dt tbody tr', { hasText: uname })).toContainText('Sat, Sun, Mon, Tue, Wed, Thu');
   const u = (await call(request, 'users.list')).find((x) => x.username === uname);
   expect([u.access_limit, u.access_from, u.access_to, u.access_days]).toEqual([true, pad(dhakaHour + 2), pad(dhakaHour + 3), 'sat,sun,mon,tue,wed,thu']);
