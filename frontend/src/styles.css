@@ -2431,3 +2431,25 @@ td.bs-total { font-weight: 700; }
   }
   .pos-tree-panel > .pos-product-tree { width: 100%; height: 265px; }
 }
+
+.courier-hub { display: grid; gap: 20px; }
+.courier-hub h2 { margin: 0 0 12px; font-size: 16px; }
+.courier-hub h2 small { margin-inline-start: 8px; font-weight: 400; }
+.courier-hub-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.courier-hub-metric { display: grid; justify-items: start; gap: 6px; color: var(--text); text-decoration: none; }
+.courier-hub-metric:hover { background: var(--panel-2); }
+.courier-hub-metric strong { font-size: 28px; font-variant-numeric: tabular-nums; }
+.courier-hub-search { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto; gap: 10px; align-items: end; }
+.courier-hub-parcel { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; border-top: 1px solid var(--line); padding: 10px 0; overflow-wrap: anywhere; }
+.courier-hub-parcel small, .courier-hub-provider small { display: block; color: var(--muted); }
+.courier-hub-provider { display: flex; flex-direction: column; min-width: 0; gap: 10px; }
+.courier-hub-provider header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px; }
+.courier-hub-provider :is(h3, p) { margin: 0; overflow-wrap: anywhere; }
+.courier-hub-rates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.courier-hub-provider .courier-hub-rates > div { padding: 8px; background: var(--panel-2); border-radius: 7px; }
+.courier-hub-rates dt { color: var(--muted); font-size: 12px; }
+.courier-hub-rates dd { margin: 3px 0 0; font-weight: 650; }
+.courier-hub-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; }
+.courier-hub-rate-form { display: grid; gap: 12px; }
+@media (max-width: 1250px) { .courier-hub-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 620px) { .courier-hub-search, .courier-hub section[aria-label="Courier providers"] .courier-hub-grid { grid-template-columns: 1fr; } }

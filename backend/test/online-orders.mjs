@@ -155,4 +155,15 @@ eq((await q('orders.list', { include_manual: true })).manual.length, 2, 'pending
 await q('approval.decide', { id: held.approval.id, decision: 'approve' });
 eq(await balance(cash), beforeManualCash - 210, 'approval posts the Transport expense');
 eq((await q('orders.list', { include_manual: true })).manual.length, 3, 'approval saves the booking');
+const overview = await q('orders.list', { courier_overview: true });
+eq(overview.orders, [], 'overview omits order rows');
+const activity = await q('orders.list', { delivery_report: true, activity_day: overview.activity_day, activity_status: 'delivered' });
+eq(activity.orders.length, overview.activity_counts.delivered, 'activity total matches report');
+const tracked = await q('orders.list', { tracking_query: '15baeb8a', tracking_courier: 'steadfast' });
+eq(tracked.orders.map((order) => order.id), [o4.id], 'tracking matches case-insensitively');
+await q('settings.save', { values: { courier_rates_steadfast: { inside: 0, outside: '120.50', cod: '1.25' } } });
+const provider = (await q('orders.list', { courier_overview: true })).couriers.find((c) => c.id === 'steadfast');
+eq(provider.rates, { inside: 0, outside: 120.5, cod: 1.25, return_fee: null, terms: '' }, 'saved rates distinguish free from unknown');
+ok(Boolean(provider.checked_at), 'successful connection check is retained');
+ok(!(await raw('settings.save', { values: { courier_rates_steadfast: { cod: 101 } } })).ok, 'out-of-range COD is rejected');
 console.log(`Features 11: ${checks} checks passed (online orders and couriers).`);

@@ -61,7 +61,7 @@ test('take a Facebook order, confirm it, send it with a courier and settle the c
   expect(courierIndex).toBeGreaterThan(0);
   expect(groups.slice(courierIndex - 1, courierIndex + 2)).toEqual(['Sales', 'Courier', 'Purchase']);
   await page.getByRole('link', { name: 'Courier Information' }).click();
-  await expect(page.getByRole('table')).toContainText('Steadfast');
+  await expect(page.getByRole('heading', { name: 'Steadfast', exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Delivery Report' }).click();
   await page.getByLabel('Courier', { exact: true }).selectOption('Sundarban');
   const reportRow = page.getByRole('row').filter({ hasText: tracking });
