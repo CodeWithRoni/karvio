@@ -405,7 +405,14 @@ test('SMS preset box keeps showing the chosen provider, also after saving and re
   await box().selectOption('MRAM (GET)');
   await expect(box()).toHaveValue('MRAM (GET)');
   await expect(url).toHaveValue(/^https:\/\/sms\.mram\.com\.bd\/smsapi\?/);
+  await expect(url).not.toBeEditable();
+  await expect(page.getByText(/MRAM is ready to configure/)).toBeVisible();
+  await page.getByLabel('API key', { exact: true }).fill('fixture-mram-key');
+  await page.getByLabel('Sender ID', { exact: false }).fill('MRAM-FIXTURE');
+  await expect(page.getByRole('button', { name: 'Save SMS settings' })).toBeEnabled();
   // a hand-made address shows as custom, never the empty placeholder
+  await box().selectOption('BulkSMSBD (GET)');
+  await expect(url).toBeEditable();
   await url.fill('https://my-own-gateway.bd/send?key={api_key}');
   await expect(box()).toHaveValue('custom');
   await expect(box().locator('option:checked')).toHaveText('Custom settings (my own)');

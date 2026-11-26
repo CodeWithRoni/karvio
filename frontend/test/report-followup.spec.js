@@ -5,6 +5,36 @@ const endpoint='http://localhost:8787';let token,cash,day;
 async function q(request,action,payload={}){const r=await(await request.post(endpoint,{data:{action,payload,token}})).json();expect(r.ok,r.error).toBe(true);return r.data;}
 test.beforeAll(async({request})=>{token=(await q(request,'login',{username:'admin',password:'admin123'})).token;const b=await q(request,'bootstrap');cash=b.accounts[0].id;day=b.serverToday;});
 test.beforeEach(async({page})=>{await page.addInitScript(({token,endpoint})=>{localStorage.setItem('erp_api_config',JSON.stringify({scriptUrl:endpoint}));localStorage.setItem('erp_token',token);},{token,endpoint});});
+test('Sales filters by product classification and Reports Hub shows service profit', async ({ page, request }) => {
+  const stamp = Date.now();
+  const group = await q(request, 'master.save', { kind: 'group', name: 'Service group ' + stamp });
+  const category = await q(request, 'master.save', { kind: 'category', name: 'Installation ' + stamp, parent_id: group.id });
+  const brand = await q(request, 'master.save', { kind: 'brand', name: 'Service brand ' + stamp });
+  const service = await q(request, 'product.save', { name: 'Installation service ' + stamp, service: true, sale_price: 120,
+    category_id: group.id, subcategory_id: category.id, brand_id: brand.id });
+  const customer = await q(request, 'customer.save', { name: 'Installation customer ' + stamp });
+  const invoice = await q(request, 'sale.create', { customer_id: customer.id, items: [{ product_id: service.id, qty: 2, price: 120 }],
+    discount: 20, payments: [{ account_id: cash, amount: 220 }], send_sms: false });
+  await page.goto('/#/sales');
+  await page.getByRole('combobox', { name: 'Product group', exact: true }).selectOption(group.id);
+  await page.getByRole('combobox', { name: 'Category', exact: true }).selectOption(category.id);
+  await page.getByRole('combobox', { name: 'Brand', exact: true }).selectOption(brand.id);
+  await page.getByRole('combobox', { name: 'Customer', exact: true }).selectOption(customer.id);
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+  await expect(page.locator('tbody')).toContainText(invoice.sale.invoice_no);
+  await page.getByRole('button', { name: 'Clear filters' }).click();
+  await expect(page.getByRole('combobox', { name: 'Category', exact: true })).toHaveValue('');
+
+  await page.goto('/#/reports');
+  const report = page.getByRole('combobox', { name: 'Report', exact: true });
+  await expect(report.locator('option').nth(1)).toHaveText('Service');
+  await report.selectOption('service_sales');
+  await expect(page.getByText('Total service profit', { exact: true })).toBeVisible();
+  await page.getByPlaceholder('Search this table').fill(service.name);
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+  await expect(page.locator('tbody tr')).toContainText(category.name);
+  await expect(page.locator('tbody tr').getByRole('cell').last()).toHaveText('220');
+});
 test('report search and Excel footer follow the matching invoices',async({page,request})=>{
  const customer=await q(request,'customer.save',{name:'Report search reconciliation customer'});
  const sale=async(name,price)=>{const p=await q(request,'product.save',{name,service:true,sale_price:price});return q(request,'sale.create',{customer_id:customer.id,items:[{product_id:p.id,qty:1,price}],payments:[{account_id:cash,amount:price}]});};

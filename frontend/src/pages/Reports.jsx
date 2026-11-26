@@ -12,7 +12,7 @@ import Statement from '../components/Statement';
 import { useApi, PageHead, Field, Select, DateRange, ErrorBox, Tabs, Badge, Modal, Btn } from '../components/ui';
 
 const REPORTS = [
-  ['sales', 'Sales'], ['purchases', 'Purchases'], ['sales_returns', 'Sales returns'], ['purchase_returns', 'Purchase returns'],
+  ['sales', 'Sales'], ['service_sales', 'Service'], ['purchases', 'Purchases'], ['sales_returns', 'Sales returns'], ['purchase_returns', 'Purchase returns'],
   ['daily_summary', 'Daily counts'], ['payment_methods', 'Payment methods'], ['product_sales', 'Product-wise sales'],
   ['expenses', 'Expenses'], ['warranty', 'Warranty status'], ['stock_summary', 'Stock summary']
 ];
@@ -39,7 +39,7 @@ export default function Reports() {
   const PARTY = Object.fromEntries(partyList);
   const list = canStatements ? [...REPORTS, ...partyList, ['slow_stock', 'Slow-moving stock'], ['supplier_prices', 'Supplier prices'], ['supplier_rebates', 'Supplier rebates'], ['below_cost', 'Sales below cost'], ...Object.entries(STATEMENTS).map(([k, v]) => [k, v[1]])] : [...REPORTS, ...partyList];
   const start = params.get('type');
-  const [type, setType] = useState(PARTY[start] ? start : start === 'stock_summary' || (canStatements && (STATEMENTS[start] || start === 'supplier_prices' || start === 'supplier_rebates' || start === 'slow_stock' || start === 'below_cost')) ? start : 'sales');
+  const [type, setType] = useState(list.some(([key]) => key === start) ? start : 'sales');
   const [lots, setLots] = useState(null);
   const [purchase, setPurchase] = useState(null);
   const toast = useStore((x) => x.toast);
@@ -144,11 +144,19 @@ export default function Reports() {
       {r?.summary && (
         <div className="row" style={{ marginBottom: 12 }}>{Object.entries(r.summary).map(([k, v]) => <Badge key={k} tone={k === 'Delivered' ? 'muted' : k === 'Pending' ? 'warn' : 'info'}>{k}: {v}</Badge>)}</div>
       )}
+      {type === 'service_sales' && r?.title.startsWith('Service Sales') && !rep.loading && !rep.error && (
+        <div className="om-kpis">
+          <div className="card"><span>Service sales</span><b>{money(r.totals.revenue)}</b></div>
+          <div className="card"><span>Service returns</span><b>{money(r.totals.refunds)}</b></div>
+          <div className="card"><span>Net service revenue</span><b>{money(r.totals.net)}</b></div>
+          {canStatements && <div className="card"><span>Total service profit</span><b>{money(r.totals.profit)}</b></div>}
+        </div>
+      )}
       {statement ? (r?.lines ? <Statement s={r} shopName={settings.shop_name || 'Karvio'} /> : rep.loading ? <div className="card"><span className="sr-only">Loading…</span><div className="loading-lines"><span className="bone" style={{ height: 14, width: '40%' }} /><span className="bone" style={{ height: 12 }} /><span className="bone" style={{ height: 12, width: '80%' }} /></div></div> : null) : <>
       {r && <h2 style={{ marginBottom: 10 }}>{r.title}</h2>}
       <div className={stock ? 'stock-summary-report' : ''}><DataTable title={r?.title || 'Report'} loading={rep.loading} rows={r?.rows || []} onRowClick={stock && canSetWarranty ? (row) => (row.unset_lots?.length === 1 ? setPurchase(row.unset_lots[0].purchase_id) : row.unset_lots?.length ? setLots(row) : toast(row.warranty_unknown > 0 ? 'This stock has no purchase record, so there is no purchase to put the date on.' : 'Supplier warranty is already set for this stock.', 'ok')) : undefined} totals={stock ? undefined : r?.totals} sumFilter={(row) => row.status === undefined || row.status === 'active'}
         rowClass={(row) => (row.status === 'cancelled' ? 'dim' : row.cheapest ? 'best' : '')}
-        columns={(r?.columns || []).map((c) => ({ ...c, ...(type==='product_sales' && c.key==='qty' ? {total:rows=>quantityTotal(rows)} : type==='daily_summary' && c.key==='items' ? {total:rows=>quantityTotal(rows,'item_quantities')} : {}), ...(stock && c.type==='money' && c.sum ? {total:rows=>Math.round(rows.reduce((n,row)=>n+(Number(row[c.key]) || 0),0)*100)/100} : {}), className: c.key === 'items' || c.key === 'items_text' || c.key === 'issue' ? 'clip' : '' }))} /></div>
+        columns={(r?.columns || []).map((c) => ({ ...c, ...((type === 'product_sales' && c.key === 'qty') || (type === 'service_sales' && ['qty', 'returned_qty'].includes(c.key)) ? { total: rows => quantityTotal(rows, c.key) } : type==='daily_summary' && c.key==='items' ? {total:rows=>quantityTotal(rows,'item_quantities')} : {}), ...(stock && c.type==='money' && c.sum ? {total:rows=>Math.round(rows.reduce((n,row)=>n+(Number(row[c.key]) || 0),0)*100)/100} : {}), className: c.key === 'items' || c.key === 'items_text' || c.key === 'issue' ? 'clip' : '' }))} /></div>
       {stock && canSetWarranty && sf.stock_filter === 'warranty_unknown' && <p className="muted">Click a product to open its purchase and set the supplier warranty date.</p>}
       {lots && !purchase && <WarrantyLots row={lots} onClose={() => setLots(null)} onOpen={setPurchase} />}
       {purchase && <PurchaseDetail id={purchase} onClose={() => { setPurchase(null); setLots(null); }} onChanged={rep.reload} />}

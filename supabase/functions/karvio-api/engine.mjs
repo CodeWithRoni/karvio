@@ -4931,8 +4931,16 @@ function saleDetail_(p, user) {
 }
 
 function salesList_(p, user) {
-  var q = String(p.q || '').toLowerCase(), items = {};
-  all_('SaleItems').forEach(function (i) { (items[i.sale_id] = items[i.sale_id] || []).push(i.name + ' x' + i.qty + (i.serials ? ' [' + i.serials + ']' : '')); });
+  var q = String(p.q || '').toLowerCase(), items = {}, matches = {};
+  var products = p.group_id || p.category_id || p.brand_id ? indexBy_(all_('Products')) : null;
+  all_('SaleItems').forEach(function (i) {
+    (items[i.sale_id] = items[i.sale_id] || []).push(i.name + ' x' + i.qty + (i.serials ? ' [' + i.serials + ']' : ''));
+    var product = products && products[i.product_id];
+    if (product && (!p.group_id || product.category_id === p.group_id) &&
+      (!p.category_id || product.subcategory_id === p.category_id) && (!p.brand_id || product.brand_id === p.brand_id)) {
+      matches[i.sale_id] = true;
+    }
+  });
   var own = !can_(user, 'sales.all'), dueNow = saleOpenDues_();
   var rows = all_('Sales').filter(function (x) {
     if (own && x.user_id !== user.id) return false;
@@ -4942,6 +4950,7 @@ function salesList_(p, user) {
     if (p.status && x.status !== p.status) return false;
     if (p.customer_id && x.customer_id !== p.customer_id) return false;
     if (p.user_id && x.user_id !== p.user_id) return false;
+    if (products && !matches[x.id]) return false;
     if (p.only_due && !(dueNow[x.id] > 0.005)) return false;
     if (q && (x.invoice_no + ' ' + x.customer_name + ' ' + x.user_name + ' ' + (items[x.id] || []).join(' ')).toLowerCase().indexOf(q) < 0) return false;
     return true;
@@ -8032,7 +8041,65 @@ function reportsRaw_(p, user) {
     productReport.totals.qty = Object.keys(unitTotals).sort().map(function(u) { return round_(unitTotals[u],4)+' '+u; }).join(' · ');
     return productReport;
   }
+  if (T === 'service_sales') {
+    return serviceSalesReport_(from, to, period, ownSale, cost);
+  }
   fail_('Unknown report type');
+}
+
+function serviceSalesReport_(from, to, period, ownSale, showCost) {
+  var catalog = indexBy_(all_('Products').filter(function (p) {
+    return isService_(p) && nameKey_(p.name) !== nameKey_(DELIVERY_PRODUCT);
+  }));
+  var categories = indexBy_(all_('Categories')), rows = {};
+  function row(id, unit) {
+    var p = catalog[id], key = id + '|' + unit;
+    return rows[key] || (rows[key] = { id: key, name: p.name, category: (categories[p.subcategory_id] || categories[p.category_id] || {}).name || '',
+      unit: unit, qty: 0, returned_qty: 0, revenue: 0, refunds: 0, net: 0, cost: 0, profit: 0 });
+  }
+  var sales = indexBy_(all_('Sales').filter(function (s) { return s.status === 'active' && ownSale(s); }));
+  var periodSales = indexBy_(Object.keys(sales).map(function (id) { return sales[id]; }).filter(function (s) { return inRange_(s.date, from, to); }));
+  var lines = all_('SaleItems'), saleLines = {}, lineById = indexBy_(lines), seen = {};
+  var costs = reportItemCosts_(lines, periodSales, 'sale_id', function (s) { return s.cost; });
+  lines.forEach(function (i) { if (periodSales[i.sale_id]) (saleLines[i.sale_id] = saleLines[i.sale_id] || []).push(i); });
+  lines.forEach(function (i) {
+    var sale = periodSales[i.sale_id], p = catalog[i.product_id];
+    if (!sale || !p) return;
+    var r = row(i.product_id, i.unit || p.unit || 'pcs'); seen[i.product_id] = true;
+    r.qty += num_(i.qty);
+    r.revenue += invoiceLineNet_(i, saleLines[i.sale_id], sale);
+    r.cost += costs[i.id] || 0;
+  });
+  var returns = indexBy_(all_('SalesReturns').filter(function (r) {
+    return r.status === 'active' && sales[r.sale_id] && branchSees_('SalesReturns', r.id) && inRange_(r.date, from, to);
+  }));
+  var returnLines = all_('SalesReturnItems'), returnCosts = reportItemCosts_(returnLines, returns, 'return_id', function (r) { return round_(r.total - returnProfit_(r)); });
+  returnLines.forEach(function (i) {
+    var p = catalog[i.product_id], original = lineById[i.sale_item_id];
+    if (!returns[i.return_id] || !p) return;
+    var r = row(i.product_id, (original && original.unit) || p.unit || 'pcs'); seen[i.product_id] = true;
+    r.returned_qty += num_(i.qty);
+    r.refunds += num_(i.total);
+    r.cost -= returnCosts[i.id] || 0;
+  });
+  Object.keys(catalog).forEach(function (id) { if (catalog[id].active && !seen[id]) row(id, catalog[id].unit || 'pcs'); });
+  var list = Object.keys(rows).map(function (key) {
+    var r = rows[key];
+    r.qty = round_(r.qty, 4); r.returned_qty = round_(r.returned_qty, 4);
+    r.revenue = round_(r.revenue); r.refunds = round_(r.refunds); r.cost = round_(r.cost);
+    r.net = round_(r.revenue - r.refunds); r.profit = round_(r.net - r.cost);
+    return r;
+  }).sort(function (a, b) { return b.net - a.net || a.name.localeCompare(b.name); });
+  var columns = [col_('name', 'Service'), col_('category', 'Category'), col_('unit', 'Unit'), col_('qty', 'Qty Sold', 'num', 1),
+    col_('returned_qty', 'Qty Returned', 'num', 1), col_('revenue', 'Sales', 'money', 1), col_('refunds', 'Returns', 'money', 1), col_('net', 'Net Revenue', 'money', 1)];
+  if (showCost) columns.push(col_('profit', 'Service Profit', 'money', 1));
+  var report = finishReport_('Service Sales' + period, columns, list);
+  ['qty', 'returned_qty'].forEach(function (key) {
+    var units = {};
+    list.forEach(function (r) { if (r[key]) units[r.unit] = (units[r.unit] || 0) + r[key]; });
+    report.totals[key] = unitQuantityText_(units);
+  });
+  return report;
 }
 /* ============================================================================
  *  22. API ROUTER

@@ -142,6 +142,31 @@ await same('sales.list', {from: day(700), to: day(0)}, 'scoped');
 await same('sreturns.list', {from: day(700), to: day(0)});
 c.setToken(ownerToken);
 
+const serviceGroup = await q('master.save', {kind: 'group', name: 'Service group'});
+const serviceCategory = await q('master.save', {kind: 'category', parent_id: serviceGroup.id, name: 'Installation'});
+const serviceBrand = await q('master.save', {kind: 'brand', name: 'Installation brand'});
+const installation = await q('product.save', {name: 'Installation service', service: true, sale_price: 100,
+  category_id: serviceGroup.id, subcategory_id: serviceCategory.id, brand_id: serviceBrand.id});
+const otherService = await q('product.save', {name: 'Support service', service: true, sale_price: 40});
+const otherBrand = await q('master.save', {kind: 'brand', name: 'Support brand'});
+await q('product.save', {id: otherService.id, name: otherService.name, service: true, sale_price: 40, brand_id: otherBrand.id});
+const unused = await q('product.save', {name: 'Unused service', service: true, sale_price: 50});
+const serviceInvoice = await sell(null, [{product_id: installation.id, qty: 2, price: 100},
+  {product_id: otherService.id, qty: 1, price: 40}], 216, {discount: 24});
+await q('sreturn.create', {sale_id: serviceInvoice.sale.id, items: [{sale_item_id: serviceInvoice.items[0].id, qty: 1}], refund: {account_id: cash}});
+const productFilters = {group_id: serviceGroup.id, category_id: serviceCategory.id, brand_id: serviceBrand.id};
+const {data: filtered} = await same('sales.list', productFilters, 'tables');
+assert.deepEqual(filtered.map((r) => r.id), [serviceInvoice.sale.id]);
+assert.equal(filtered[0].total, 216, 'invoice total still includes all invoice lines');
+assert.deepEqual((await same('sales.list', {...productFilters, brand_id: otherBrand.id}, 'tables')).data, [], 'one line must match every product filter');
+const {data: serviceReport} = await same('reports', {type: 'service_sales'}, 'tables');
+assert.equal(serviceReport.totals.profit, 126, 'service profit reflects discounts and refunds');
+assert.equal(serviceReport.rows.find((r) => r.name === installation.name).category, serviceCategory.name);
+assert.equal(serviceReport.rows.find((r) => r.name === unused.name).qty, 0);
+c.setToken(staff.token);
+assert.deepEqual((await same('sales.list', productFilters, 'tables')).data, [], 'filters preserve invoice ownership');
+c.setToken(ownerToken);
+
 // Edge deployed before its migration: narrow reads fall back to the v1.2.4 path instead of failing.
 const older = await freshDatabase({skip: ['20261114202706_karvio_table_scoped_reads.sql', '20261114204617_karvio_private_rows.sql', '20261115034825_karvio_private_table_grants.sql']});
 const o = await apiClient(older);

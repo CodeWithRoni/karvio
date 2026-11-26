@@ -39,7 +39,10 @@ function remember(map,key,names){const set=map.get(key)||new Set();names.forEach
  *  full   – the whole shop (setup, or a narrow read that turned out too narrow)
  */
 // Reports differ a lot by type, so each report type keeps its own table list.
-export const hintKey=(action,payload)=>action==='reports'&&typeof payload?.type==='string'&&/^[a-z_]{1,40}$/.test(payload.type)?'reports:'+payload.type:action;
+export const hintKey=(action,payload)=>{
+ if(action==='sales.list'&&(payload?.group_id||payload?.category_id||payload?.brand_id))return 'sales.list:products';
+ return action==='reports'&&typeof payload?.type==='string'&&/^[a-z_]{1,40}$/.test(payload.type)?'reports:'+payload.type:action;
+};
 export function planFor(action,options={},state=newScopeState()){
  const plan=basePlan(action,options,state);
  // Private sheets to read with the business rows (the journal is needed by every locked request).
@@ -52,8 +55,8 @@ function basePlan(action,{protocol=2,scopedReads=true,narrowReads=true,payload={
  if(!scopedReads)return {kind:'unscoped'};
  if(action==='owner.initialize')return {kind:'full'};
  if(!narrowReads||unavailable(state,'narrowUnavailable'))return {kind:'rows',key:action}; // v1.2.4 behaviour
- if(NARROW_READ_ACTIONS.has(action))return {kind:'scoped',key:hintKey(action,payload)};
  const key=hintKey(action,payload);
+ if(NARROW_READ_ACTIONS.has(action)&&key===action)return {kind:'scoped',key};
  // No table list yet: the database's own request scoping (it reads the whole shop for unknown actions).
  if(ROW_SCOPED_ACTIONS.has(action)||!Object.hasOwn(TABLE_HINTS,key))return {kind:'rows',key};
  return tablesPlan(key,state);

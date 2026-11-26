@@ -25,10 +25,13 @@ export default function Sales({ mode = 'sales' }) {
   const { id } = useParams();
   const nav = useNavigate();
   const can = useStore((s) => s.can);
+  const { categories, brands, customers } = useStore();
   const tab = mode === 'sales' ? 'sales' : 'returns';
   const [range, setRange] = useState({ from: monthStart(), to: today() });
   const [status, setStatus] = useState('');
-  const sales = useApi('sales.list', { ...range, status }, [], { skip: tab !== 'sales' });
+  const [filters, setFilters] = useState({ group_id: '', category_id: '', brand_id: '', customer_id: '' });
+  const sales = useApi('sales.list', { ...range, status, ...filters }, [], { skip: tab !== 'sales' });
+  const productCategories = categories.filter((c) => c.parent_id && (!filters.group_id || c.parent_id === filters.group_id));
   const rets = useApi('sreturns.list', { ...range }, [], { skip: tab !== 'returns' || !can('sales.return') });
   const [rev, setRev] = useState(null);
 
@@ -37,7 +40,21 @@ export default function Sales({ mode = 'sales' }) {
       <PageHead title={SALES_PAGES[mode][0]} sub={SALES_PAGES[mode][1]} />
       <div className="filters">
         <DateRange {...range} onChange={setRange} />
-        {tab === 'sales' && <Select value={status} onChange={setStatus} options={[{ id: 'active', name: 'Active' }, { id: 'cancelled', name: 'Cancelled' }]} placeholder="All statuses" />}
+        {tab === 'sales' && <>
+          <Select aria-label="Status" value={status} onChange={setStatus} options={[{ id: 'active', name: 'Active' }, { id: 'cancelled', name: 'Cancelled' }]} placeholder="All statuses" />
+          <Select aria-label="Product group" value={filters.group_id} onChange={(group_id) => setFilters({ ...filters, group_id, category_id: '' })}
+            options={categories.filter((c) => !c.parent_id)} placeholder="All groups" />
+          <Select aria-label="Category" value={filters.category_id} onChange={(category_id) => setFilters({ ...filters, category_id })}
+            options={productCategories} placeholder="All categories" />
+          <Select aria-label="Brand" value={filters.brand_id} onChange={(brand_id) => setFilters({ ...filters, brand_id })}
+            options={brands} placeholder="All brands" />
+          <Select aria-label="Customer" value={filters.customer_id} onChange={(customer_id) => setFilters({ ...filters, customer_id })}
+            options={customers} placeholder="All customers" />
+          {(status || Object.values(filters).some(Boolean)) && <Btn onClick={() => {
+            setStatus('');
+            setFilters({ group_id: '', category_id: '', brand_id: '', customer_id: '' });
+          }}>Clear filters</Btn>}
+        </>}
       </div>
 
       {tab === 'sales' ? (

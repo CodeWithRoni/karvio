@@ -66,9 +66,9 @@ function OfflineSettings() {
   </div>;
 }
 
-function useSettingsForm(keys) {
+function useSettingsForm(keys, prepare = (values) => values) {
   const settings = useStore((s) => s.settings);
-  const [f, setF] = useState(Object.fromEntries(keys.map((k) => [k, settings[k] ?? ''])));
+  const [f, setF] = useState(() => prepare(Object.fromEntries(keys.map((k) => [k, settings[k] ?? '']))));
   const [busy, run] = useAction();
   const save = async () => {
     const s = await run(() => api('settings.save', { values: f }), 'Settings saved');
@@ -400,7 +400,10 @@ export function smsParts(text) {
 
 const DEFAULT_QUOTE_SMS = 'Dear {name}, your quotation from {shop}: {title}, total {total}. View it here (valid {days} days): {link}';
 function SmsSettings() {
-  const { f, setF, bind, save, busy } = useSettingsForm(['sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_headers']);
+  const { f, setF, bind, save, busy } = useSettingsForm(
+    ['sms_enabled', 'sms_method', 'sms_url', 'sms_body', 'sms_body_type', 'sms_api_key', 'sms_sender_id', 'sms_number_format', 'sms_headers'],
+    (values) => matchPreset(values) === MRAM ? { ...values, sms_url: PRESETS[MRAM].sms_url } : values
+  );
   const [builderVersion, setBuilderVersion] = useState(0);
   const [showKey, setShowKey] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -410,6 +413,7 @@ function SmsSettings() {
   const configError = mappingError || gatewayError(f);
   const [phone, setPhone] = useState('');
   const preset = matchPreset(f);
+  const isMram = preset === MRAM;
   const [tbusy, run] = useAction();
   const log = useApi('sms.log', {}, [], {refreshMs:5000});
   return (
@@ -434,13 +438,13 @@ function SmsSettings() {
             {preset === 'custom' && <option value="custom" hidden>Custom settings (my own)</option>}
           </select>
         </Field>
-        <p className="muted wide sms-provider-note">{preset.startsWith('Generic') || preset==='custom' ? 'Custom gateway: enter your provider’s URL and match its request fields below. Switching a template changes the draft only; save when ready.' : preset.startsWith('OneCodeSoft') ? 'Use the API address from your OneCodeSoft dashboard. The authorization header and JSON fields are prepared for you.' : 'BulkSMSBD uses a GET request. Enter your API key and approved Sender ID below.'}</p>
-        <Field label="API URL" wide hint="Use the full HTTPS endpoint supplied by your SMS provider."><input aria-label="API URL" {...bind('sms_url')} placeholder="https://your-provider.com/api/send" spellCheck={false} /></Field>
+        <p className="muted wide sms-provider-note">{isMram ? 'MRAM is ready to configure. Enter your MRAM API key and approved Sender ID below.' : preset.startsWith('Generic') || preset==='custom' ? 'Custom gateway: enter your provider’s URL and match its request fields below. Switching a template changes the draft only; save when ready.' : preset.startsWith('OneCodeSoft') ? 'Use the API address from your OneCodeSoft dashboard. The authorization header and JSON fields are prepared for you.' : 'BulkSMSBD uses a GET request. Enter your API key and approved Sender ID below.'}</p>
+        <Field label="API URL" wide hint={isMram ? 'Karvio provides this URL and fills in the request fields automatically.' : 'Use the full HTTPS endpoint supplied by your SMS provider.'}><input aria-label="API URL" {...bind('sms_url')} readOnly={isMram} placeholder="https://your-provider.com/api/send" spellCheck={false} /></Field>
         <Field label="2. API key"><div className="row"><input aria-label="API key" type={showKey?'text':'password'} {...bind('sms_api_key')} autoComplete="off" /><Btn size="sm" aria-label={showKey?'Hide API key':'Show API key'} onClick={()=>setShowKey(v=>!v)}>{showKey?'Hide':'Show'}</Btn></div></Field>
         <Field label="Sender ID" hint="Use the sender name or ID approved by your provider."><input {...bind('sms_sender_id')} /></Field>
-        <Field label="Phone number format"><select {...bind('sms_number_format')}><option value="intl">8801XXXXXXXXX — international</option><option value="local">01XXXXXXXXX — local</option></select></Field>
+        <Field label="Phone number format"><select {...bind('sms_number_format')} disabled={isMram}><option value="intl">8801XXXXXXXXX — international</option><option value="local">01XXXXXXXXX — local</option></select></Field>
         {f.sms_method==='POST' && (preset.startsWith('Generic') || preset==='custom') && <SmsFieldBuilder key={builderVersion+':'+f.sms_body_type} body={f.sms_body} type={f.sms_body_type} onChange={(body,error)=>{setF({...f,sms_body:body});setMappingError(error);}} />}
-        <details className="wide sms-advanced">
+        {!isMram && <details className="wide sms-advanced">
           <summary>Advanced request settings</summary>
           <p className="muted">For custom authentication, GET requests or a provider-specific request format. Available values: {'{api_key} {sender_id} {number} {message}'}</p>
           <div className="form">
@@ -451,7 +455,7 @@ function SmsSettings() {
             </>}
             <Field label="Request headers (optional)" wide hint="One header per line. Example: Authorization: Bearer {api_key}"><textarea {...bind('sms_headers')} rows={2} spellCheck={false} /></Field>
           </div>
-        </details>
+        </details>}
         {configError&&<p className="wide sms-warn" role="status">{configError}</p>}
         <div className="wide row end"><span className="muted">{dirty?'Unsaved changes':'Settings saved'}</span><Btn kind="primary" disabled={!!configError || !dirty} busy={busy} onClick={()=>save().catch(()=>{})}>Save SMS settings</Btn></div>
       </div>
