@@ -157,7 +157,7 @@ same(['1003', '1007', ' 1002 ', '{"response_code":1003,"error_message":"x"}', 'I
 same(['SMS SUBMITTED: ID - 123', '{"response_code":202,"success_message":"SMS Submitted Successfully"}', 'OK', '{"status":"success"}'].map((t) => sandbox.smsReplyFailed_(t)), [false, false, false, false]);
 const realFetch = sandbox.UrlFetchApp.fetch;
 sandbox.UrlFetchApp.fetch = () => ({ getResponseCode: () => 200, getContentText: () => '1003' });
-Q('settings.save', {values:{sms_method:'GET', sms_url:'https://sms.mram.com.bd/smsapi?api_key={api_key}&type=text&contacts={number}&senderid={sender_id}&msg={message}', sms_api_key:'k', sms_sender_id:'s'}});
+Q('settings.save', {values:{sms_method:'GET', sms_url:'https://sms.mram.com.bd/smsapi?api_key={api_key}&type={sms_type}&contacts={number}&senderid={sender_id}&msg={message}&label=transactional', sms_api_key:'k', sms_sender_id:'s'}});
 const smsErr = QF('sms.test', {phone:'01700000000'});
 truthy(/1003/.test(smsErr), 'test SMS shows the gateway error');
 same(Q('sms.log', {})[0].status, 'failed', 'logged as failed, not sent');
@@ -166,6 +166,11 @@ sandbox.UrlFetchApp.fetch = (url) => { seenUrl = url; return { getResponseCode: 
 Q('sms.test', {phone:'01700000000'});
 truthy(seenUrl.indexOf('contacts=8801700000000') > 0 && seenUrl.indexOf('msg=Test%20SMS') > 0, 'number in 8801 format, message url-encoded: ' + seenUrl);
 same(Q('sms.log', {})[0].status, 'sent');
+same(new URL(seenUrl).searchParams.get('type'), 'text');
+const banglaSms = 'বাংলা & SMS';
+sandbox.sendSms_('01700000000', banglaSms);
+const mramParams = new URL(seenUrl).searchParams;
+same([mramParams.get('type'), mramParams.get('msg'), mramParams.get('label')], ['unicode', banglaSms, 'transactional']);
 // OneCodeSoft v3: key in an Authorization header, JSON body, JSON reply (HTTP 200 even on errors)
 const ok1 = '{"status":"success","message":"SMS request processed.","data":{"senderid":"S","total_cost":0.35,"balance":499.65,"results":[{"to":"8801700000000","status":"sent","code":null,"message_id":"x","sms_count":1}]}}';
 const errBal = '{"status":"error","message":"Insufficient balance. Required 0.70, available 0.35."}';

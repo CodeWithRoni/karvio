@@ -31,7 +31,7 @@ const WRITES = new Set(['approval.decide', 'sale.edit', 'purchase.edit', 'note.s
   'purchase.create', 'preturn.create', 'sale.create', 'sreturn.create', 'expense.create',
   'expense.categories', 'reverse', 'claim.create', 'claim.update', 'claim.restock', 'repair.save', 'repair.status', 'repair.deliver', 'repair.cancel', 'user.save',
   'rolePerms.save', 'settings.save', 'sale.link', 'expense.update', 'sale.exchange', 'quote.send',
-  'purchase.warranty', 'repair.seen'
+  'purchase.warranty', 'repair.seen', 'courier.manual.save', 'courier.manual.paid'
 ]);
 const pendingWrites = new Map();
 const PENDING_KEY = 'erp_pending_writes_v1';

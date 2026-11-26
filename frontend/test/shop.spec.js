@@ -386,8 +386,8 @@ test('SMS preset box keeps showing the chosen provider, also after saving and re
   await expect(box()).toHaveValue('OneCodeSoft (Bulk SMS API v3)');
   // the open list holds only real providers: no greyed-out "Choose…" or "Custom" rows
   const listed = () => box().locator('option:not([hidden]):not([disabled])');
-  await expect(box().locator('option')).toHaveCount(4);
-  await expect(listed()).toHaveCount(4);
+  await expect(box().locator('option')).toHaveCount(5);
+  await expect(listed()).toHaveCount(5);
   await expect(box().locator('option[disabled]')).toHaveCount(0);
   await expect(url).toHaveValue(/PASTE-BASE-URL/);
   // the user pastes their own base address: still OneCodeSoft
@@ -402,11 +402,14 @@ test('SMS preset box keeps showing the chosen provider, also after saving and re
   await box().selectOption('BulkSMSBD (GET)');
   await expect(box()).toHaveValue('BulkSMSBD (GET)');
   await expect(url).toHaveValue(/bulksmsbd.net/);
+  await box().selectOption('MRAM (GET)');
+  await expect(box()).toHaveValue('MRAM (GET)');
+  await expect(url).toHaveValue(/^https:\/\/sms\.mram\.com\.bd\/smsapi\?/);
   // a hand-made address shows as custom, never the empty placeholder
   await url.fill('https://my-own-gateway.bd/send?key={api_key}');
   await expect(box()).toHaveValue('custom');
   await expect(box().locator('option:checked')).toHaveText('Custom settings (my own)');
-  await expect(listed()).toHaveCount(4); // the custom label is not offered as a choice
+  await expect(listed()).toHaveCount(5); // the custom label is not offered as a choice
 });
 
 test('dashboard shows leaderboard, top selling, low stock and sales below cost as four equal cards in one row', async ({ page }) => {

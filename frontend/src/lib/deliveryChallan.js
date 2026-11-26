@@ -39,7 +39,7 @@ export function deliveryChallanHtml({ order, items, settings, booking, date, boo
   <article class="challan">
     <header><h1>${esc(name)}</h1><div>${esc(address)}</div></header>
     <h2>DELIVERY CHALLAN</h2>
-    <div class="ref">Order ${esc(order.no)}${order.invoice_no ? ` · Invoice ${esc(order.invoice_no)}` : ''}</div>
+    ${order.no ? `<div class="ref">${order.manual ? 'Challan' : 'Order'} ${esc(order.no)}${order.invoice_no ? ` · Invoice ${esc(order.invoice_no)}` : ''}</div>` : ''}
     <div class="parties">
       ${party('From', name, address, settings.shop_phone || settings.shop_tel)}
       ${party('To', customer.name, [customer.address, customer.area].filter(Boolean).join(', '), customer.phone)}

@@ -509,7 +509,7 @@ function setupDatabase() {
     currency: 'Tk', invoice_prefix: 'INV-', receipt_width: '80', low_stock_default: '5',
     expense_categories: JSON.stringify(['Electricity', 'Internet', 'Food', 'Transport', 'Rent', 'Salary', 'Maintenance', 'Other']),
     sms_enabled: 'false', sms_method: 'GET',
-    sms_url: 'https://bulksmsbd.net/api/smsapi?api_key={api_key}&type=text&number={number}&senderid={sender_id}&message={message}',
+    sms_url: 'https://sms.mram.com.bd/smsapi?api_key={api_key}&type={sms_type}&contacts={number}&senderid={sender_id}&msg={message}&label=transactional',
     sms_body: '', sms_body_type: 'form', sms_api_key: '', sms_sender_id: '', sms_number_format: 'intl', sms_headers: '',
     sms_template: 'Dear {name}, thank you for shopping at {shop}. Items: {items}. Invoice {invoice}, Total {total}, Paid {paid}, Due {due}. View: {link}',
     sms_invoice_link: 'true', invoice_link_base: DEFAULT_LINK_BASE,
@@ -1899,7 +1899,7 @@ function orderRows_() {
 function orderParse_(r) { try { var o = JSON.parse(r.cells[2]); o.id = r.id; return o; } catch (e) { return null; } }
 function orderFind_(id) {
   var all = orderRows_(), row = all.rows.filter(function (r) { return r.id === String(id || ''); })[0];
-  if (!row) fail_('Order not found');
+  if (!row || /^mc_/.test(row.id)) fail_('Order not found');
   var o = orderParse_(row); if (!o) fail_('This order is damaged and cannot be opened');
   if (!orderSees_(o)) fail_('Permission denied: this order belongs to another branch');
   return { all: all, row: row, o: o };
@@ -2152,9 +2152,46 @@ function orderView_(o, sales) {
   v.courier_label = o.courier ? o.courier.label : (o.courier_choice ? COURIERS[o.courier_choice] : '');
   return v;
 }
+function manualCourierSave_(p, user, paid, approvalPreview) {
+  function field(v, max) { return String(v == null ? '' : v).trim().slice(0, max); }
+  var c = p.customer || {}, courier = p.courier || {};
+  var customer = { name: field(c.name, 120), phone: field(c.phone, 60), address: field(c.address, 400) };
+  var label = field(courier.label, 100), tracking = field(courier.tracking, 100);
+  if (!customer.name || !customer.phone || !customer.address || !label) fail_('Enter recipient name, phone, address and courier');
+  var date = field(p.date, 10) || today_();
+  if (!isDate_(date) || date > today_()) fail_('Enter a valid booking date up to today');
+  if (!Array.isArray(p.items) || !p.items.length || p.items.length > 100) fail_('Enter 1 to 100 products');
+  var items = p.items.map(function (i) {
+    var name = field(i && i.name, 160);
+    if (!name) fail_('Enter each product name');
+    var qty = inventoryQuantity_(i.qty, name);
+    if (!(qty > 0)) fail_('Enter a positive quantity for ' + name);
+    return { name: name, qty: qty, unit: field(i.unit, 30) || 'pcs', serials: field(i.serials, 1000) };
+  });
+  var o = { id: 'mc_' + uid_(), no: nextNo_('seq_manual_courier', 'MC-'), manual: true,
+    date: date, created_at: now_(), branch: _branch || '', status: 'shipped',
+    customer: customer, items: items, booking: paid ? 'cash' : 'due',
+    courier: { label: label, tracking: tracking, booked_at: date, booked_by: field(p.booked_by, 100) || user.name } };
+  if (paid) {
+    var amount = Number(p.amount);
+    if (!isFinite(amount) || round_(amount) <= 0) fail_('Enter a positive courier charge');
+    var cats = [];
+    try { cats = JSON.parse(getSetting_('expense_categories', '[]')); } catch (e) {}
+    if (!Array.isArray(cats)) cats = [];
+    if (!cats.some(function (x) { return nameKey_(x) === 'transport'; })) setSetting_('expense_categories', JSON.stringify(cats.concat(['Transport'])));
+    var expense = expenseCreate_({ date: date, category: 'Transport', amount: amount, account_id: p.account_id,
+      note: 'Courier booking ' + o.no + ' — ' + label + (tracking ? ' · ' + tracking : '') }, user);
+    o.expense_id = expense.id; o.category = expense.category; o.courier.charge = expense.amount;
+  }
+  var records = orderRows_();
+  if (records.rows.length >= ORDER_MAX) fail_('The courier booking archive is full');
+  if (!approvalPreview) orderWrite_(records, null, o);
+  return o;
+}
 function ordersList_(p, user) {
   var sales = indexBy_(all_('Sales'));
-  var list = orderRows_().rows.map(orderParse_).filter(function (o) { return o && orderSees_(o); }).map(function (o) { return orderView_(o, sales); })
+  var visible = orderRows_().rows.map(orderParse_).filter(function (o) { return o && orderSees_(o); });
+  var list = visible.filter(function (o) { return !o.manual; }).map(function (o) { return orderView_(o, sales); })
     .sort(function (a, b) { return String(b.created_at).localeCompare(String(a.created_at)); });
   var counts = {}; ORDER_STATUSES.forEach(function (s) { counts[s] = 0; });
   var withCourier = 0, toSettle = 0;
@@ -2163,8 +2200,15 @@ function ordersList_(p, user) {
     if (o.status === 'shipped' || o.status === 'delivered') { withCourier += o.cod; if (o.status === 'delivered') toSettle += o.cod; }
   });
   var from = String(p.from || '').slice(0, 10), to = String(p.to || '').slice(0, 10);
-  if (from || to) list = list.filter(function (o) { return (!from || o.date >= from) && (!to || o.date <= to); });
-  return { orders: list.slice(0, 2000), counts: counts, cod_with_courier: round_(withCourier), cod_delivered: round_(toSettle),
+  function inRange(o) {
+    var date = p.delivery_report ? String(o.courier && o.courier.booked_at || '').slice(0, 10) : o.date;
+    return (!from || date >= from) && (!to || date <= to);
+  }
+  if (p.delivery_report) list = list.filter(function (o) { return !!o.courier; });
+  if (from || to) list = list.filter(inRange);
+  var manual = p.include_manual ? visible.filter(function (o) { return o.manual && inRange(o); })
+    .sort(function (a, b) { return String(b.created_at).localeCompare(String(a.created_at)); }) : [];
+  return { orders: list.slice(0, p.delivery_report ? ORDER_MAX : 2000), manual: manual, counts: counts, cod_with_courier: round_(withCourier), cod_delivered: round_(toSettle),
     sources: ORDER_SOURCES, couriers: Object.keys(COURIERS).map(function (k) { return { id: k, name: COURIERS[k], api: k !== 'other' && courierReady_(k) }; }) };
 }
 
@@ -2673,7 +2717,7 @@ function branchReport_(p, user) {
  * not change) until an admin approves it — then it is saved as that person's work — or rejects it with a reason. */
 var APPROVAL_SHEET = '__KarvioApprovals', APPROVAL_MAX = 20000;
 var APPROVAL_KINDS = { purchase: 'Purchase', payment: 'Supplier payment', collection: 'Collection', expense: 'Expense', transfer: 'Branch transfer' };
-var APPROVAL_ROUTE = { 'purchase.create': 'purchase', 'supplier.payment': 'payment', 'customer.payment': 'collection', 'expense.create': 'expense', 'branch.transfer.send': 'transfer' };
+var APPROVAL_ROUTE = { 'purchase.create': 'purchase', 'supplier.payment': 'payment', 'customer.payment': 'collection', 'expense.create': 'expense', 'courier.manual.paid': 'expense', 'branch.transfer.send': 'transfer' };
 var DEFAULT_APPROVAL_SMS = '{staff} sent a {kind} for approval: {details}. Open Karvio → Approval. {shop}';
 function approvalUsers_() { try { var m = JSON.parse(getSetting_('approval_users', '{}') || '{}'); return m && typeof m === 'object' ? m : {}; } catch (e) { return {}; } }
 function approvalKindsOf_(uid) { var k = approvalUsers_()[uid]; return Array.isArray(k) ? k.filter(function (x) { return APPROVAL_KINDS[x]; }) : []; }
@@ -2737,7 +2781,7 @@ function approvalHold_(kind, req, route, user) {
   var payload = req.payload || {};
   // Work sent for approval keeps the day it was done: a blank date becomes today, not the day an admin approves it.
   if (kind !== 'transfer' && (payload.date === undefined || payload.date === null || String(payload.date).trim() === '')) payload = Object.assign({}, payload, { date: today_() });
-  var preview = route.fn(payload, user, req.token); // every check of the real save runs here
+  var preview = route.fn(payload, user, req.token, true); // check the save without writing private booking records
   var branch = _branch;
   approvalDiscard_();
   _branch = branch;
@@ -3432,6 +3476,11 @@ function smsNumber_(phone) {
   } else if (d.indexOf('8801') === 0 && d.length === 13) return d.slice(2);
   return d;
 }
+function smsRequestVars_(number, message) {
+  // MRAM uses Unicode for messages containing Bangla or other non-ASCII characters.
+  return { api_key: getSetting_('sms_api_key'), sender_id: getSetting_('sms_sender_id'), number: number,
+    message: message, sms_type: /[^\x00-\x7f]/.test(String(message)) ? 'unicode' : 'text' };
+}
 function sendSms_(phone, message, logMessage) {
   if (_txn) {
     var queued = { ok: false, status: 'queued', response: 'Financial changes saved; SMS delivery is not confirmed. Check SMS log before resending.' };
@@ -3440,7 +3489,7 @@ function sendSms_(phone, message, logMessage) {
   }
   var number = smsNumber_(phone);
   if (!number) return { ok: false, status: 'skipped', response: 'No phone number' };
-  var vars = { api_key: getSetting_('sms_api_key'), sender_id: getSetting_('sms_sender_id'), number: number, message: message };
+  var vars = smsRequestVars_(number, message);
   var method = getSetting_('sms_method', 'GET').toUpperCase(), res, status = 'sent', text = '';
   // Extra request headers, one "Name: value" per line (e.g. "Authorization: Bearer {api_key}" for OneCodeSoft v3).
   var headers = {};
@@ -8105,6 +8154,8 @@ var ROUTES = {
 
   'sale.create':      r_('pos', function (p, u) { shiftGate_(u); return saleCreate_(p, u); }, true),
   'orders.list':      r_('pos', ordersList_),
+  'courier.manual.save': r_('pos', function (p, u) { return manualCourierSave_(p, u, false); }, true),
+  'courier.manual.paid': r_('pos', function (p, u, token, approvalPreview) { need_(u, 'expenses'); return manualCourierSave_(p, u, true, approvalPreview); }, true),
   'order.save':       r_('pos', orderSave_, true),
   'order.confirm':    r_('pos', orderConfirm_, true),
   'order.ship':       r_('pos', orderShip_, true),
@@ -8265,7 +8316,7 @@ sendSms_ = function(phone, message, logMessage) {
   }
   var number = smsNumber_(phone);
   if (!number) return {ok:false,status:'skipped',response:'No phone number'};
-  var vars = {api_key:getSetting_('sms_api_key'),sender_id:getSetting_('sms_sender_id'),number:number,message:message};
+  var vars = smsRequestVars_(number, message);
   var method = getSetting_('sms_method','GET').toUpperCase(), type = getSetting_('sms_body_type','form');
   var headers = {};
   String(getSetting_('sms_headers','')).split(/\r?\n/).forEach(function(line){

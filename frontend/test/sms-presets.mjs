@@ -1,6 +1,6 @@
 // node test/sms-presets.mjs — the preset box must show the provider the saved SMS settings belong to.
 import assert from 'node:assert/strict';
-import { PRESETS, matchPreset } from '../src/lib/smsPresets.js';
+import { MRAM, PRESETS, matchPreset } from '../src/lib/smsPresets.js';
 import {readFields,writeFields,gatewayError} from '../src/lib/smsGateway.js';
 let n = 0; const is = (f, want, msg) => { assert.equal(matchPreset(f), want, msg); n++; };
 const OCS = 'OneCodeSoft (Bulk SMS API v3)';
@@ -18,8 +18,9 @@ is({ ...ocs, sms_headers: '' }, 'custom', 'headers removed');
 is({ ...PRESETS['Generic JSON POST'], sms_url: 'https://mygateway.bd/send' }, 'Generic JSON POST', 'generic with own url');
 is({ sms_url: 'not a url', sms_method: 'GET', sms_number_format: 'intl', sms_headers: '' }, 'custom', 'bad url');
 console.log(`sms-presets: ${n} checks passed`);
-assert.equal(Object.keys(PRESETS).length,4);
-assert(!Object.keys(PRESETS).some(k=>/MRAM/.test(k)));
+assert.equal(Object.keys(PRESETS).length,5);
+assert.equal(Object.keys(PRESETS)[0], MRAM);
+assert.equal(gatewayError(PRESETS[MRAM]), '');
 const fields=[{name:'mobile',value:'{number}'},{name:'text',value:'{message}'},{name:'type',value:'বাংলা & text'}];
 for(const type of ['json','form'])assert.deepEqual(readFields(writeFields(fields,type),type),fields);
 assert.equal(readFields('{broken','json'),null);

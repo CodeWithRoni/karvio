@@ -8,7 +8,7 @@ import DataTable from '../components/DataTable';
 import { PageHead, Btn, Field, useAction, Tabs, useApi, Badge, Modal } from '../components/ui';
 import { DASH_CARDS, hiddenCards } from '../lib/dashboardCards';
 import { PAPERS, TEMPLATES, printInvoice } from '../lib/receipt';
-import { PRESETS, matchPreset } from '../lib/smsPresets';
+import { MRAM, PRESETS, matchPreset } from '../lib/smsPresets';
 import SmsFieldBuilder from '../components/SmsFieldBuilder';
 import { gatewayError } from '../lib/smsGateway';
 import { DatabaseTab } from '../components/DatabaseTools';
@@ -420,7 +420,15 @@ function SmsSettings() {
         <Field label="1. Choose your gateway" wide>
           {/* The list shows only real providers. "Choose…" / "Custom" are status labels for the closed box,
               added (hidden) only while they are the current state, so they never appear as dead rows in the list. */}
-          <select value={preset} aria-label="SMS provider preset" onChange={(e) => { if(PRESETS[e.target.value]) {setF({ ...f, sms_body:'', sms_body_type:'form', ...PRESETS[e.target.value] });setBuilderVersion(v=>v+1);setMappingError('');setTestResult(null);} }}>
+          <select value={preset} aria-label="SMS provider preset" onChange={(e) => {
+            const next = e.target.value;
+            if (!PRESETS[next]) return;
+            const credentials = next === MRAM || preset === MRAM ? { sms_api_key: '', sms_sender_id: '' } : {};
+            setF({ ...f, ...credentials, sms_body: '', sms_body_type: 'form', ...PRESETS[next] });
+            setBuilderVersion((v) => v + 1);
+            setMappingError('');
+            setTestResult(null);
+          }}>
             {preset === '' && <option value="" hidden>Choose a provider template…</option>}
             {Object.keys(PRESETS).map((k) => <option key={k} value={k}>{k}</option>)}
             {preset === 'custom' && <option value="custom" hidden>Custom settings (my own)</option>}

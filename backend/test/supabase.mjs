@@ -74,10 +74,15 @@ eq((await call('owner.initialize',{name:'other',password:'test-password-9999',se
 // A different isolate reconstructs sessions and data from durable metadata.
 const other=createRuntime(structuredClone(snapshot));eq(other.execute({action:'bootstrap',token}).response.ok,true);
 // Outgoing SMS stays in a private queue until the financial transaction commits.
-await Q('settings.save',{values:{sms_url:'https://sms.example/send?to={number}&message={message}'}});
+const defaultSms = (await Q('bootstrap')).settings;
+eq(new URL(defaultSms.sms_url).hostname,'sms.mram.com.bd','MRAM is the new-shop gateway');
+eq(defaultSms.sms_enabled,'false','new shops do not send SMS automatically');
+await Q('settings.save',{values:{sms_api_key:'test-key',sms_sender_id:'test-sender'}});
 const smsRuntime=createRuntime(structuredClone(snapshot));
 const queued=smsRuntime.execute({action:'sms.test',payload:{phone:'01700000000'},token});
 eq(queued.response.ok,true);eq(queued.outbox.length,1);eq(queued.changes.SmsLog[0].status,'queued');
+const queuedSmsUrl = new URL(queued.outbox[0].url);
+eq([queuedSmsUrl.hostname,queuedSmsUrl.searchParams.get('contacts'),queuedSmsUrl.searchParams.get('type')],['sms.mram.com.bd','8801700000000','text']);
 let sends=0,finished=[];
 await dispatchSms(async(name,args)=>{
  if(name==='karvio_claim_sms')return queued.outbox;

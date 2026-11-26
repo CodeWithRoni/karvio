@@ -35,7 +35,7 @@ sendSms_ = function(phone, message, logMessage) {
   }
   var number = smsNumber_(phone);
   if (!number) return {ok:false,status:'skipped',response:'No phone number'};
-  var vars = {api_key:getSetting_('sms_api_key'),sender_id:getSetting_('sms_sender_id'),number:number,message:message};
+  var vars = smsRequestVars_(number, message);
   var method = getSetting_('sms_method','GET').toUpperCase(), type = getSetting_('sms_body_type','form');
   var headers = {};
   String(getSetting_('sms_headers','')).split(/\r?\n/).forEach(function(line){

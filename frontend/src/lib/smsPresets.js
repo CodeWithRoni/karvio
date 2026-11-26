@@ -1,5 +1,7 @@
 // SMS gateway presets and detection of which one the saved settings match.
+export const MRAM = 'MRAM (GET)';
 export const PRESETS = {
+  [MRAM]: { sms_headers: '', sms_method: 'GET', sms_url: 'https://sms.mram.com.bd/smsapi?api_key={api_key}&type={sms_type}&contacts={number}&senderid={sender_id}&msg={message}&label=transactional', sms_number_format: 'intl' },
   'OneCodeSoft (Bulk SMS API v3)': { sms_method: 'POST', sms_body_type: 'json', sms_url: 'https://PASTE-BASE-URL-FROM-DASHBOARD/v3/send-sms', sms_body: '{"number":"{number}","message":"{message}","senderid":"{sender_id}"}', sms_headers: 'Authorization: Bearer {api_key}\nAccept: application/json', sms_number_format: 'intl' },
   'BulkSMSBD (GET)': { sms_headers: '', sms_method: 'GET', sms_url: 'https://bulksmsbd.net/api/smsapi?api_key={api_key}&type=text&number={number}&senderid={sender_id}&message={message}', sms_number_format: 'intl' },
   'Generic JSON POST': { sms_headers: '', sms_method: 'POST', sms_body_type: 'json', sms_url: 'https://api.example.com/sms/send', sms_body: '{"api_key":"{api_key}","senderid":"{sender_id}","contacts":"{number}","msg":"{message}"}', sms_number_format: 'intl' },
