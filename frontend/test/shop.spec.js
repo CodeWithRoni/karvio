@@ -359,14 +359,15 @@ test('purchase shows the last purchase price and the new average cost', async ({
   await expect(row.locator('.avg-next')).toContainText('11,000');
 });
 
-test('side menu cards: Home, Sales, Purchase, Stock, Service & Warranty, Party Ledger, Money & Reports, Admin', async ({ page }) => {
+test('side menu cards and links appear in order', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.goto('/#/');
   const cards = page.locator('.nav-card');
-  expect((await cards.locator('.nav-group').allInnerTexts()).map((t) => t.trim().toLowerCase())).toEqual(['home', 'sales', 'purchase', 'stock', 'service & warranty', 'party ledger', 'money & reports', 'approval', 'admin']);
+  expect((await cards.locator('.nav-group').allInnerTexts()).map((t) => t.trim().toLowerCase())).toEqual(['home', 'sales', 'courier', 'purchase', 'stock', 'service & warranty', 'party ledger', 'money & reports', 'approval', 'admin']);
   const links = async (title) => (await page.locator('.nav-card', { has: page.locator('.nav-group', { hasText: new RegExp(`^${title}$`, 'i') }) }).getByRole('link').allInnerTexts()).map((t) => t.split('\n')[0].trim());
   expect(await links('Home')).toEqual(['Dashboard', 'Advanced Search']);
   expect(await links('Sales')).toEqual(['Point Of Sale', 'Sales', 'Sales Return', 'Sales Exchange', 'Online Orders', 'Quotation', 'Customers', 'Collection']);
+  expect(await links('Courier')).toEqual(['Courier Information', 'Delivery Challan', 'Delivery Report']);
   expect(await links('Purchase')).toEqual(['Purchase', 'Purchase Return', 'Make Purchase', 'Suppliers', 'Payment']);
   expect(await links('Stock')).toEqual(['Product', 'Product Setup', 'Price Manager', 'Barcode Labels', 'Stock Count']);
   expect(await links('Service & Warranty')).toEqual(['Repairs', 'Service', 'Warranty Claims']);
