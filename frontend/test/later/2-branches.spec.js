@@ -28,7 +28,7 @@ test('add branches, work in one, send stock to the other and see every branch in
     await expect(page.locator('.dc-hist').first()).toContainText(name);
   }
   await expect(page.locator('.dc-hist').first().locator('tr', { hasText: 'Main branch' })).toContainText('Main');
-  await page.screenshot({ path: '/tmp/branches-main.png' });
+  await page.screenshot({ path: test.info().outputPath('branches-main.png') });
   // the menu now has the picker and the branch pages
   // an admin (any branch) gets the dropdown inside the badge
   await expect(page.locator('.branch-badge')).toContainText('Main branch');
@@ -65,7 +65,7 @@ test('add branches, work in one, send stock to the other and see every branch in
   await uf.getByLabel('Username').fill(`bstaff${stamp}`);
   await uf.getByLabel('Password').fill('long-password-123');
   await uf.getByRole('combobox', { name: 'Branch' }).selectOption(second);
-  await page.screenshot({ path: '/tmp/user-branch.png' });
+  await page.screenshot({ path: test.info().outputPath('user-branch.png') });
   await uf.getByRole('button', { name: 'Save user' }).click();
   await expect(uf).toHaveCount(0);
   await expect(page.locator('tr', { hasText: `Branch staff ${stamp}` })).toContainText('Second branch');
@@ -89,11 +89,11 @@ test('add branches, work in one, send stock to the other and see every branch in
   await fresh.getByLabel('Username').fill(`BSTAFF${stamp}`);
   await fresh.getByLabel('Password').fill('long-password-123');
   await pick.selectOption({ label: 'Second branch' });
-  await fresh.screenshot({ path: '/tmp/login-branch.png' });
+  await fresh.screenshot({ path: test.info().outputPath('login-branch.png') });
   await fresh.getByRole('button', { name: 'Sign in' }).click();
   await expect(fresh.locator('.branch-badge')).toHaveAttribute('data-branch', second);
   await expect(fresh.getByRole('combobox', { name: 'Working branch' })).toHaveCount(1);
-  await fresh.locator('.branch-badge').screenshot({ path: '/tmp/branch-badge.png' });
+  await fresh.locator('.branch-badge').screenshot({ path: test.info().outputPath('branch-badge.png') });
   await fresh.close();
   // staff fixed to a branch: just the name, no dropdown
   const staff = (await call(request, 'users.list')).find((u) => u.username === `bstaff${stamp}`);

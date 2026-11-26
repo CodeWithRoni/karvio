@@ -58,7 +58,7 @@ test('dashboard shows sales below cost and a note reminder pops up with its butt
   await ed2.getByLabel('Note title').fill(`Call the cable supplier ${stamp} today`);
   await ed2.getByRole('button', { name: '✓ Save note' }).click();
   await expect(page.locator('.note-item', { hasText: `Call the cable supplier ${stamp} today` })).toBeVisible();
-  await page.screenshot({ path: '/tmp/notes-list.png' });
+  await page.screenshot({ path: test.info().outputPath('notes-list.png') });
   await page.getByRole('dialog', { name: 'Notes & reminders' }).getByRole('button', { name: 'Close' }).last().click();
   const pop = page.locator('.note-pop', { hasText: `Call the cable supplier ${stamp}` });
   await expect(pop).toBeVisible();

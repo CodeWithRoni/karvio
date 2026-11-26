@@ -44,13 +44,14 @@ test('repair job: receive, mark completed, deliver with an invoice', async ({ pa
 
   await page.getByRole('button', { name: 'New repair job' }).click();
   const dlg = page.getByRole('dialog', { name: 'New repair job' });
-  await dlg.getByLabel('Or new customer name').fill('Repair Test Customer');
+  await dlg.getByLabel('Customer name').fill('Repair Test Customer');
   await dlg.getByLabel('Phone').fill('01555000111');
   await dlg.getByLabel('Device').fill('Dell Inspiron laptop');
   await dlg.getByLabel('Problem').fill('Overheating and shutdown');
   await dlg.getByLabel('Received with').fill('Charger');
   const technicianNames = (await call(request, 'users.list')).filter((u) => u.active && u.role === 'technician').map((u) => u.name);
   await expect(dlg.getByLabel('Technician').locator('option')).toHaveText(['Not assigned', ...technicianNames]); // all and only active Technician-role users
+  await expect(dlg.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
   await dlg.getByLabel('Technician').selectOption({ label: 'E2E Tech' });
   await expect(dlg.getByText('Mobile: 01700000555')).toBeVisible();
   await dlg.getByLabel('Repair charge').fill('700');
@@ -166,7 +167,7 @@ test('failed repair: the admin dashboard shows the result until Seen', async ({ 
 });
 
 test('spent repair advance is refreshed before delivery and collected correctly', async ({page,request}) => {
-  const customer = await call(request,'customer.save',{name:'Spent advance UI'});
+  const customer = await call(request,'customer.save',{name:'Spent advance UI',phones:'01711110007'});
   const job = await call(request,'repair.save',{customer_id:customer.id,device:'Advance laptop',problem:'Fault',charge:500,advance:500,account_id:cash.id,parts:[]});
   await page.goto(`/#/repairs/${job.id}`);
   const detail = page.getByRole('dialog',{name:`Repair job ${job.job_no}`});

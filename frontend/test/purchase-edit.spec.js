@@ -34,7 +34,7 @@ test('edit a purchase: same number, new quantity and cost', async ({ page, reque
   await ed.getByLabel(`Quantity of ${p.name}`).fill('7');
   await ed.getByLabel(`Unit cost of ${p.name}`).fill('55');
   await ed.getByLabel('Admin password').fill('admin123');
-  await page.screenshot({ path: '/tmp/purchase-edit.png' });
+  await page.screenshot({ path: test.info().outputPath('purchase-edit.png') });
   await ed.getByRole('button', { name: 'Save changes' }).click();
   await expect(ed).toHaveCount(0);
   const d = await call(request, 'purchase.detail', { id: pur.purchase.invoice_no });
@@ -51,6 +51,6 @@ test('a new stock product needs group, category, brand, model and unit', async (
   await dlg.getByLabel('Product name').fill('ACCESSORIES ONLY');
   await dlg.getByRole('button', { name: 'Add product', exact: true }).click();
   await expect(dlg.locator('.field-error').first()).toHaveText('Required');
-  await page.screenshot({ path: '/tmp/product-required.png' });
+  await page.screenshot({ path: test.info().outputPath('product-required.png') });
   await expect(dlg).toBeVisible();
 });

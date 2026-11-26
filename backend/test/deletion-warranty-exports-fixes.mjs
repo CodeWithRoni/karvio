@@ -29,7 +29,7 @@ for (const supplier of [false,true]) {
  reset();const old=q(kind+'.save',{name:'Legacy missing party'});payment=q(kind+'.payment',{[kind+'_id']:old.id,amount:100,account_id:cash});state.tables[supplier?'Suppliers':'Customers']=[];
  denied('reverse',{type:supplier?'spay':'cpay',id:payment.entry.id,password:'regression-owner-password',reason:'Correction'},token,/record is missing/i);
 }
-reset();let c=q('customer.save',{name:'Open repair party'});let job=q('repair.save',{customer_id:c.id,device:'Laptop',problem:'Fault',charge:100,parts:[]});denied('customer.delete',{id:c.id},token,/open repair/i);assert.equal(q('repair.deliver',{id:job.id,expected_credit:0,payments:[{account_id:cash,amount:100}]}).status,'Delivered');
+reset();let c=q('customer.save',{name:'Open repair party',phones:'01711110004'});let job=q('repair.save',{customer_id:c.id,device:'Laptop',problem:'Fault',charge:100,parts:[]});denied('customer.delete',{id:c.id},token,/open repair/i);assert.equal(q('repair.deliver',{id:job.id,expected_credit:0,payments:[{account_id:cash,amount:100}]}).status,'Delivered');
 // F02: tracking cannot be disabled after selling all stock; old returns remain serialized.
 reset();let p=product('Serial history',{has_warranty:true,warranty_type:'serial',warranty_days:365});buy(p,1,{serials:'FOLLOW-1'});let sale=sell(p,1,{items:[{product_id:p.id,qty:1,price:200,serials:'FOLLOW-1'}]});
 denied('product.save',{...p,has_warranty:false},token,/serial history/i);

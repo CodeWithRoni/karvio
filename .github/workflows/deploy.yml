@@ -22,10 +22,7 @@ jobs:
         working-directory: frontend
         run: |
           npm ci
-          npm test
-          npm run test:supabase
-          npm run test:performance
-          npm run build
+          npm run check:deploy-build
           touch dist/.nojekyll
       - name: Install browser
         working-directory: frontend

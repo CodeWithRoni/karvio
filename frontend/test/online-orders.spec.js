@@ -102,10 +102,10 @@ test('manual challan accepts an unlisted courier and ERP recipients without an o
   await expect(form.getByLabel('Delivery address')).toHaveValue('Shahzadpur, Sirajganj');
   await form.getByLabel('Delivery address').fill('Supplier warehouse, Sirajganj');
   await form.getByLabel('Courier name').fill('Local Parcel Service');
-  await form.getByLabel('Product name 1').fill('22 Inch Monitor');
+  await form.getByRole('group', { name: 'Product 1', exact: true }).getByLabel('Product name').fill('22 Inch Monitor');
   await form.getByLabel('Serial numbers (optional)').fill('MON-123');
   await form.getByRole('button', { name: '+ Add product' }).click();
-  await form.getByLabel('Product name 2').fill('HDMI Cable');
+  await form.getByRole('group', { name: 'Product 2', exact: true }).getByLabel('Product name').fill('HDMI Cable');
   await form.getByLabel('Booking type').selectOption('cash');
   await form.getByLabel('Courier charge').fill('125');
   const { accounts } = await call(request, 'bootstrap');
@@ -118,7 +118,7 @@ test('manual challan accepts an unlisted courier and ERP recipients without an o
   await expect(preview.getByRole('table')).toContainText('MON-123');
   await expect(preview.getByRole('table')).toContainText('HDMI Cable');
   await form.getByRole('button', { name: 'Edit details' }).click();
-  await expect(form.getByLabel('Product name 2')).toHaveValue('HDMI Cable');
+  await expect(form.getByRole('group', { name: 'Product 2', exact: true }).getByLabel('Product name')).toHaveValue('HDMI Cable');
   await form.getByRole('button', { name: 'Preview challan' }).click();
   await form.getByRole('button', { name: 'Save booking' }).click();
   await expect(form.getByRole('button', { name: 'Print / Save as PDF' })).toBeEnabled();

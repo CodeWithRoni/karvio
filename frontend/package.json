@@ -13,6 +13,8 @@
     "dev": "vite",
     "build": "vite build && node scripts/verify-build.mjs",
     "preview": "vite preview",
+    "check:deploy-build": "npm test && npm run test:supabase && npm run test:performance && npm run build",
+    "check:deploy": "npm run check:deploy-build && npm run test:e2e",
     "desktop": "npm run build && electron . --online",
     "desktop:build": "npm run build && electron-builder --publish never",
     "desktop:build:win": "npm run build && electron-builder --win nsis --x64 --publish never",

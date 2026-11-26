@@ -363,6 +363,7 @@ test('side menu cards and links appear in order', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.goto('/#/');
   const cards = page.locator('.nav-card');
+  await expect(cards.locator('.nav-group')).toHaveCount(10);
   expect((await cards.locator('.nav-group').allInnerTexts()).map((t) => t.trim().toLowerCase())).toEqual(['home', 'sales', 'courier', 'purchase', 'stock', 'service & warranty', 'party ledger', 'money & reports', 'approval', 'admin']);
   const links = async (title) => (await page.locator('.nav-card', { has: page.locator('.nav-group', { hasText: new RegExp(`^${title}$`, 'i') }) }).getByRole('link').allInnerTexts()).map((t) => t.split('\n')[0].trim());
   expect(await links('Home')).toEqual(['Dashboard', 'Advanced Search']);

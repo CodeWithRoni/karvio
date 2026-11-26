@@ -34,7 +34,12 @@ assert.equal(q('invoice.public',{token:linkToken},'').sale.due_now,500);
 assert.equal(q('customers.list').find(x=>x.id===c.id).balance,500);
 q('customer.payment',{customer_id:c.id,account_id:cash,amount:200});assert.equal(q('sale.detail',{id:sale.sale.id}).sale.due_now,300);
 // B03: a repairs-only role may keep credit, but cannot refund money.
-reset();c=q('customer.save',{name:'Repair customer'});let job=q('repair.save',{customer_id:c.id,device:'Laptop',problem:'Fault',advance:500,account_id:cash,parts:[]});
+reset();
+const noPhone=q('customer.save',{name:'Repair customer without a phone'});
+denied('repair.save',{customer_id:noPhone.id,device:'Laptop',problem:'Fault'},token,/Customer phone is required/);
+const withPhone=q('repair.save',{customer_id:noPhone.id,phone:'01711110000',device:'Laptop',problem:'Fault'});
+assert.equal(withPhone.phone,'01711110000');
+c=q('customer.save',{name:'Repair customer',phones:'01711110001'});let job=q('repair.save',{customer_id:c.id,device:'Laptop',problem:'Fault',advance:500,account_id:cash,parts:[]});
 q('rolePerms.save',{technician:['repairs'],sales:['pos','sales.return']});
 q('user.save',{name:'Technician',username:'tech',password:'technician-password',role:'technician',phone:'01700000111',active:true});
 let tech=call('login',{username:'tech',password:'technician-password'}).data.token;
@@ -78,13 +83,13 @@ ledger=q('account.ledger',{account_id:cash,to:'2026-11-05'});assert.equal(ledger
 ledger=q('account.ledger',{account_id:cash,from:'2026-11-20',to:'2026-11-30'});assert.equal(ledger.opening,1400);assert.equal(ledger.closing,1400);assert.equal(ledger.rows.length,0);
 denied('account.ledger',{account_id:cash,from:'2026-11-10',to:'2026-11-05'},token,/From date/i);
 // B09: spent advance is visible and must be acknowledged; stale credit cannot silently create debt.
-reset();c=q('customer.save',{name:'Spent advance'});job=q('repair.save',{customer_id:c.id,device:'Laptop',problem:'Fault',charge:500,advance:500,account_id:cash,parts:[]});p=product('Other service',{service:true});
+reset();c=q('customer.save',{name:'Spent advance',phones:'01711110002'});job=q('repair.save',{customer_id:c.id,device:'Laptop',problem:'Fault',charge:500,advance:500,account_id:cash,parts:[]});p=product('Other service',{service:true});
 assert.equal(q('repair.get',{id:job.id}).available_advance,500);
 sell(p,1,{customer_id:c.id,items:[{product_id:p.id,qty:1,price:500}],credit_used:500,payments:[]});
 let fresh=q('repair.get',{id:job.id});assert.equal(fresh.available_advance,0);assert.equal(fresh.due,500);
 denied('repair.deliver',{id:job.id,payments:[]},token,/advance/i);denied('repair.deliver',{id:job.id,expected_credit:500,payments:[]},token,/advance/i);
 let delivered=q('repair.deliver',{id:job.id,expected_credit:0,payments:[{account_id:cash,amount:500}]});assert.equal(delivered.status,'Delivered');assert.equal(delivered.sale.due,0);assert.equal(delivered.sale.credit_used,0);
-reset();c=q('customer.save',{name:'Available advance'});job=q('repair.save',{customer_id:c.id,device:'Phone',problem:'Fault',charge:500,advance:300,account_id:cash,parts:[]});
+reset();c=q('customer.save',{name:'Available advance',phones:'01711110003'});job=q('repair.save',{customer_id:c.id,device:'Phone',problem:'Fault',charge:500,advance:300,account_id:cash,parts:[]});
 delivered=q('repair.deliver',{id:job.id,expected_credit:300,payments:[{account_id:cash,amount:100}],next_payment_date:'2026-12-01'});assert.equal(delivered.sale.due,100);assert.equal(delivered.sale.credit_used,300);
 console.log('All 9 urgent bug regressions passed, including denied-write rollback and valid operations (local hosted runtime only).');
 

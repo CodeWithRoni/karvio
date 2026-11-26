@@ -82,7 +82,7 @@ test('exchange serial items by typing the quantity: serials are picked, the dial
  await dialog.getByText(ms.name,{exact:false}).last().click();
  await dialog.getByLabel(`Quantity of ${ms.name}`).fill('10');
  await expect(dialog).toContainText('11,000');
- await page.screenshot({path:'/tmp/xch-serial.png'});
+ await page.screenshot({path:test.info().outputPath('xch-serial.png')});
  await dialog.getByRole('button',{name:'Record exchange',exact:true}).click();
  await expect(dialog).toHaveCount(0);
  await expect(page.getByText(/Exchanged: SR-\d+ → /)).toBeVisible();
