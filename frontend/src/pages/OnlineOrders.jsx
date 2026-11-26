@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { api } from '../lib/api';
 import { money, fdate, fdatetime, today, round2 } from '../lib/format';
@@ -13,7 +13,9 @@ const tk = (v) => money(v, false);
 
 /** Sales → Online orders: Facebook / website / phone orders, courier booking and cash on delivery. */
 export default function OnlineOrders() {
-  const q = useApi('orders.list', {}, []);
+  const [params, setParams] = useSearchParams();
+  const courier = params.get('courier') || '';
+  const q = useApi('orders.list', { courier_id: courier });
   const [tab, setTab] = useState('all');
   const [form, setForm] = useState(null);
   const [open, setOpen] = useState(null);
@@ -34,6 +36,16 @@ export default function OnlineOrders() {
           <div className="card in"><span>Delivered, not paid yet</span><b className="num">{money(d.cod_delivered)}</b><small>{d.counts.delivered} parcels — settle when the courier pays</small></div>
         </div>
         <div className="row" style={{ marginBottom: 10 }}>
+          <Field label="Courier"><select value={d.couriers.some((c) => c.id === courier) ? courier : ''}
+            onChange={(event) => {
+              const next = new URLSearchParams(params);
+              if (event.target.value) next.set('courier', event.target.value);
+              else next.delete('courier');
+              setParams(next);
+            }}>
+            <option value="">All couriers</option>
+            {d.couriers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select></Field>
           <Tabs tabs={TABS.map((t) => [t, t === 'all' ? `All · ${d.orders.length}` : `${STATUS[t][0]} · ${d.counts[t] || 0}`])} value={tab} onChange={setTab} />
         </div>
         <DataTable title="Online orders" rows={rows} onRowClick={setOpen}

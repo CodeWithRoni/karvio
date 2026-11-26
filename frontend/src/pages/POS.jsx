@@ -325,12 +325,12 @@ export default function POS() {
         <div className="row">
           {sh?.shift && <Link to="/shifts" className="sh-pos-badge" title="Shift & day close"><Badge tone="ok">Shift open · {sh.shift.user} · since {fdatetime(sh.shift.opened_at)}</Badge></Link>}
           <Btn type="button" className="pos-tree-toggle" aria-expanded={treeOpen}
-            aria-controls={treeOpen ? 'pos-product-tree' : undefined} onClick={() => setTreeOpen((open) => !open)}
+            aria-controls="pos-product-tree" onClick={() => setTreeOpen((open) => !open)}
             id="pos-tree-toggle">
             <ProductTreeIcon /> Tree view
           </Btn>
           {canEdit && <InvoiceSearch current={editing?.invoice_no} onPick={openInvoice} />}
-          <div style={{ flex: 1 }}><ProductSearch camera hover={priceHover} onPick={(p) => add(p)} onCode={addBySerial} placeholder={narrow ? 'Search product by serial or name' : 'Search product by serial, name, model or brand (F2)'} inputRef={searchRef} autoFocus /></div>
+          <div className="pos-product-search"><ProductSearch camera hover={priceHover} onPick={(p) => add(p)} onCode={addBySerial} placeholder={narrow ? 'Search product by serial or name' : 'Search product by serial, name, model or brand (F2)'} inputRef={searchRef} autoFocus /></div>
           <Tabs tabs={[['retail', 'Retail'], ['wholesale', 'Wholesale']]} value={tier} onChange={changeTier} />
           <Btn onClick={hold} disabled={!cart.length || !!editing} title={editing ? 'Save or clear the invoice you are editing first' : 'Put this sale aside and serve the next customer (F7)'}>Hold</Btn>
           <Btn onClick={() => setShowHolds(true)} disabled={!holds.length || !!editing} className={holds.length ? 'held-on' : ''} title="Sales on hold">Held{holds.length ? ` · ${holds.length}` : ''}</Btn>
@@ -354,11 +354,13 @@ export default function POS() {
           </div>
         )}
         <div className={treeOpen ? 'pos-workspace tree-open' : 'pos-workspace'}>
-          {treeOpen && <PosProductTree id="pos-product-tree" products={products} categories={categories} brands={brands}
+          <div className="pos-tree-panel" inert={treeOpen ? undefined : ''} aria-hidden={!treeOpen}>
+            <PosProductTree id="pos-product-tree" products={products} categories={categories} brands={brands}
             onPick={add} onClose={() => {
               setTreeOpen(false);
               document.getElementById('pos-tree-toggle')?.focus();
-            }} />}
+            }} />
+          </div>
           <div className="cart">
           <table>
             <thead><tr><th>Item</th>{canCost && <th style={{ width: 110 }} className="cost-col">Cost</th>}<th style={{ width: 100 }} className="r">Qty</th><th style={{ width: 150 }} className="r">Price</th><th style={{ width: 110 }} className="r">Amount</th><th style={{ width: 30 }} /></tr></thead>

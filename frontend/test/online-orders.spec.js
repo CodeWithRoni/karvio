@@ -61,7 +61,7 @@ test('take a Facebook order, confirm it, send it with a courier and settle the c
   expect(courierIndex).toBeGreaterThan(0);
   expect(groups.slice(courierIndex - 1, courierIndex + 2)).toEqual(['Sales', 'Courier', 'Purchase']);
   await page.getByRole('link', { name: 'Courier Information' }).click();
-  await expect(page.getByRole('table')).toContainText('Steadfast');
+  await expect(page.getByRole('heading', { name: 'Steadfast', exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Delivery Report' }).click();
   await page.getByLabel('Courier', { exact: true }).selectOption('Sundarban');
   const reportRow = page.getByRole('row').filter({ hasText: tracking });
@@ -145,4 +145,55 @@ test('Settings → Courier keeps the API keys and tells when they are missing', 
   await expect(page.getByRole('heading', { name: 'Steadfast' })).toBeVisible();
   await page.locator('.courier-card', { hasText: 'Steadfast' }).getByRole('button', { name: 'Test the keys' }).click();
   await expect(page.getByText(/Steadfast is not set up/)).toBeVisible();
+});
+
+test('courier overview searches bookings, edits rates and opens filtered workflows', async ({ page, request }) => {
+  const stamp = Date.now();
+  const booking = await call(request, 'courier.manual.save', {
+    booking: 'due',
+    customer: { name: 'Courier overview customer', phone: '01712345678', address: 'Pabna' },
+    courier: { label: 'Steadfast', tracking: `HUB-${stamp}` },
+    items: [{ name: 'USB cable', qty: 1, unit: 'pcs' }]
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/#/courier');
+  const provider = page.getByRole('article').filter({ has: page.getByRole('heading', { name: 'Steadfast', exact: true }) });
+  await expect(provider).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+
+  await provider.getByRole('button', { name: 'Edit rates' }).click();
+  const rates = page.getByRole('dialog', { name: 'Rates · Steadfast' });
+  await rates.getByLabel('Inside Dhaka (৳)', { exact: true }).fill('65');
+  await rates.getByLabel('COD fee (%)').fill('1.25');
+  await rates.getByLabel('Terms').fill('Up to 1 kg');
+  await rates.getByRole('button', { name: 'Save rates' }).click();
+  await expect(provider.getByText('Up to 1 kg')).toBeVisible();
+  await expect(provider.getByText('1.25%', { exact: true })).toBeVisible();
+
+  await provider.getByRole('button', { name: 'Track Parcel' }).click();
+  const search = page.getByRole('region', { name: 'Track a parcel' });
+  const input = search.getByRole('searchbox');
+  await expect(input).toBeFocused();
+  await expect(search.getByRole('combobox')).toHaveValue('steadfast');
+  await input.fill(`hub-${stamp}`);
+  await search.getByRole('button', { name: 'Search', exact: true }).click();
+  await expect(search.getByText(booking.no, { exact: true })).toBeVisible();
+  await expect(search.getByText('Booked manually', { exact: true })).toBeVisible();
+
+  await provider.getByRole('link', { name: 'View Orders' }).click();
+  await expect(page).toHaveURL(/online-orders\?courier=steadfast$/);
+  await expect(page.getByRole('combobox', { name: 'Courier', exact: true })).toHaveValue('steadfast');
+
+  await page.goto('/#/courier');
+  await provider.getByRole('link', { name: 'Create Challan' }).click();
+  const challan = page.getByRole('dialog', { name: 'Manual Delivery Challan' });
+  await expect(challan.getByLabel('Courier name')).toHaveValue('Steadfast');
+  await challan.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page).toHaveURL(/delivery-challan$/);
+
+  await page.goto('/#/courier');
+  await page.getByRole('link', { name: /Delivered.*View report/i }).click();
+  await expect(page).toHaveURL(/delivery-report\?activity=delivered&day=\d{4}-\d{2}-\d{2}$/);
+  await expect(page.getByRole('button', { name: 'Clear activity' })).toBeVisible();
 });

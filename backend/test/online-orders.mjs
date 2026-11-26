@@ -155,4 +155,19 @@ eq((await q('orders.list', { include_manual: true })).manual.length, 2, 'pending
 await q('approval.decide', { id: held.approval.id, decision: 'approve' });
 eq(await balance(cash), beforeManualCash - 210, 'approval posts the Transport expense');
 eq((await q('orders.list', { include_manual: true })).manual.length, 3, 'approval saves the booking');
+// Courier overview reuses the same activity predicate as the linked report.
+const overview = await q('orders.list', { courier_overview: true });
+eq(overview.orders, [], 'overview does not download order rows');
+const deliveredToday = await q('orders.list', { delivery_report: true, activity_day: overview.activity_day, activity_status: 'delivered' });
+eq(deliveredToday.orders.length, overview.activity_counts.delivered, 'delivery metric matches its report');
+ok(deliveredToday.orders.some((o) => o.id === o4.id), 'tracking marks the delivery activity');
+const lookup = await q('orders.list', { tracking_query: '15baeb8a', tracking_courier: 'steadfast', include_manual: true });
+eq(lookup.orders.map((o) => o.id), [o4.id], 'tracking lookup is case insensitive and scoped to the selected courier');
+eq((await q('orders.list', { tracking_query: '15BAEB8A', tracking_courier: 'redx' })).tracking_total, 0, 'wrong courier does not match');
+eq((await q('orders.list', { courier_id: 'steadfast' })).orders.every((o) => (o.courier?.name || o.courier_choice) === 'steadfast'), true, 'orders filtered by provider');
+await q('settings.save', { values: { courier_rates_steadfast: { inside: '0', outside: '120.50', cod: '1.25', terms: 'Up to 1 kg' } } });
+const steadfast = (await q('orders.list', { courier_overview: true })).couriers.find((c) => c.id === 'steadfast');
+eq(steadfast.rates, { inside: 0, outside: 120.5, cod: 1.25, return_fee: null, terms: 'Up to 1 kg' }, 'rates retain zero and unknown separately');
+ok(Boolean(steadfast.checked_at), 'successful API check timestamp persisted');
+ok(!(await raw('settings.save', { values: { courier_rates_steadfast: { cod: 101 } } })).ok, 'invalid COD rate rejected');
 console.log(`Features 11: ${checks} checks passed (online orders and couriers).`);

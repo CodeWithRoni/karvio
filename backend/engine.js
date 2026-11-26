@@ -2187,11 +2187,46 @@ function manualCourierSave_(p, user, paid, approvalPreview) {
   if (!approvalPreview) orderWrite_(records, null, o);
   return o;
 }
+var COURIER_ACTIVITY = ['confirmed', 'shipped', 'delivered', 'returned'];
+function courierActivity_(order, day, status) {
+  return (order.history || []).some(function (event) {
+    return event.status === status && String(event.at || '').slice(0, 10) === day;
+  });
+}
+function courierRates_(key) {
+  try { return JSON.parse(getSetting_('courier_rates_' + key, '{}')) || {}; }
+  catch (e) { return {}; }
+}
+function validateCourierRates_(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) fail_('Enter valid courier rates');
+  var rates = {};
+  ['inside', 'outside', 'cod', 'return_fee'].forEach(function (key) {
+    var value = input[key];
+    if (value === undefined || value === null || value === '') { rates[key] = null; return; }
+    if (typeof value !== 'number' && (typeof value !== 'string' || !/^\d+(?:\.\d+)?$/.test(value.trim()))) fail_('Enter a valid courier rate');
+    var limit = key === 'cod' ? 100 : 1000000;
+    var amount = Number(value);
+    if (!isFinite(amount) || amount < 0 || amount > limit) fail_('Courier charges must be between 0 and 1,000,000; COD must be 0–100%');
+    rates[key] = round_(amount);
+  });
+  rates.terms = String(input.terms || '').trim();
+  if (rates.terms.length > 500) fail_('Keep courier terms under 500 characters');
+  return rates;
+}
 function ordersList_(p, user) {
   var sales = indexBy_(all_('Sales'));
   var visible = orderRows_().rows.map(orderParse_).filter(function (o) { return o && orderSees_(o); });
   var list = visible.filter(function (o) { return !o.manual; }).map(function (o) { return orderView_(o, sales); })
     .sort(function (a, b) { return String(b.created_at).localeCompare(String(a.created_at)); });
+  if (p.courier_id && Object.keys(COURIERS).indexOf(p.courier_id) >= 0) {
+    list = list.filter(function (o) { return (o.courier ? o.courier.name : o.courier_choice) === p.courier_id; });
+  }
+  var activityDay = String(p.activity_day || ''), activityStatus = p.activity_status;
+  var activity = !!activityDay && isDate_(activityDay) && COURIER_ACTIVITY.indexOf(activityStatus) >= 0;
+  var today = today_(), activityCounts = {};
+  if (p.courier_overview) COURIER_ACTIVITY.forEach(function (status) {
+    activityCounts[status] = list.filter(function (o) { return courierActivity_(o, today, status); }).length;
+  });
   var counts = {}; ORDER_STATUSES.forEach(function (s) { counts[s] = 0; });
   var withCourier = 0, toSettle = 0;
   list.forEach(function (o) {
@@ -2203,12 +2238,34 @@ function ordersList_(p, user) {
     var date = p.delivery_report ? String(o.courier && o.courier.booked_at || '').slice(0, 10) : o.date;
     return (!from || date >= from) && (!to || date <= to);
   }
-  if (p.delivery_report) list = list.filter(function (o) { return !!o.courier; });
+  if (activity) list = list.filter(function (o) { return courierActivity_(o, activityDay, activityStatus); });
+  else if (p.delivery_report) list = list.filter(function (o) { return !!o.courier; });
   if (from || to) list = list.filter(inRange);
   var manual = p.include_manual ? visible.filter(function (o) { return o.manual && inRange(o); })
     .sort(function (a, b) { return String(b.created_at).localeCompare(String(a.created_at)); }) : [];
-  return { orders: list.slice(0, p.delivery_report ? ORDER_MAX : 2000), manual: manual, counts: counts, cod_with_courier: round_(withCourier), cod_delivered: round_(toSettle),
-    sources: ORDER_SOURCES, couriers: Object.keys(COURIERS).map(function (k) { return { id: k, name: COURIERS[k], api: k !== 'other' && courierReady_(k) }; }) };
+  var query = String(p.tracking_query || '').trim().slice(0, 100).toLowerCase();
+  function matches(o) {
+    return [o.no, o.id, o.courier && o.courier.tracking, o.courier && o.courier.consignment_id].some(function (value) {
+      return !!value && String(value).toLowerCase().indexOf(query) >= 0;
+    });
+  }
+  if (query) {
+    var trackingCourier = Object.keys(COURIERS).indexOf(p.tracking_courier) >= 0 ? p.tracking_courier : '';
+    function matchesCourier(o) {
+      if (!trackingCourier) return true;
+      if (!o.manual) return (o.courier ? o.courier.name : o.courier_choice) === trackingCourier;
+      var label = nameKey_(o.courier && o.courier.label);
+      var key = Object.keys(COURIERS).filter(function (k) { return nameKey_(COURIERS[k]) === label; })[0];
+      return (key || 'other') === trackingCourier;
+    }
+    list = list.filter(function (o) { return matchesCourier(o) && matches(o); });
+    manual = manual.filter(function (o) { return matchesCourier(o) && matches(o); });
+  }
+  return { orders: p.courier_overview ? [] : list.slice(0, query ? 100 : p.delivery_report || activity ? ORDER_MAX : 2000),
+    manual: query ? manual.slice(0, 100) : manual, tracking_total: query ? list.length + manual.length : 0,
+    activity_day: today, activity_counts: activityCounts, counts: counts, cod_with_courier: round_(withCourier), cod_delivered: round_(toSettle),
+    sources: ORDER_SOURCES, couriers: Object.keys(COURIERS).map(function (k) { return { id: k, name: COURIERS[k], api: k !== 'other' && courierReady_(k),
+      rates: courierRates_(k), checked_at: getSetting_('courier_checked_' + k) }; }) };
 }
 
 /* ---- Courier APIs. Requests are described here and sent by the server: Apps Script sends them itself; the
@@ -2295,7 +2352,15 @@ function courierJson_(res) {
 function courierFinish_(p, user, res) {
   if (!res || typeof res.code !== 'number') fail_('The courier could not be reached. Try again');
   var op = p.op, data = courierJson_(res);
-  if (op === 'test') return { ok: true, courier: p.courier, balance: data.current_balance !== undefined ? data.current_balance : null };
+  if (op === 'test') {
+    var verified = p.courier === 'steadfast' ? String(data.status) === '200' && data.current_balance != null
+      : p.courier === 'pathao' ? Array.isArray(data.data && data.data.data)
+      : p.courier === 'redx' && Array.isArray(data.areas);
+    if (!verified) fail_('The courier did not confirm the connection. Check the saved keys and try again');
+    var checkedAt = now_();
+    setSetting_('courier_checked_' + p.courier, checkedAt);
+    return { ok: true, courier: p.courier, checked_at: checkedAt, balance: data.current_balance !== undefined ? data.current_balance : null };
+  }
   if (op === 'cities') return ((data.data && data.data.data) || []).map(function (c) { return { id: c.city_id, name: c.city_name }; });
   if (op === 'zones') return ((data.data && data.data.data) || []).map(function (c) { return { id: c.zone_id, name: c.zone_name }; });
   if (op === 'areas') {
@@ -3389,6 +3454,13 @@ function settingsSave_(p, user) {
     'sms_on_sale', 'sms_on_due_reminder', 'sms_on_quote', 'sms_on_repair_done', 'sms_on_repair_tech', 'sms_on_service_tech', 'sms_on_service_done', 'sms_due_template',
     'invoice_link_days', 'quote_link_days', 'sms_repair_done_numbers', 'sms_on_approval', 'sms_approval_template', 'sms_approval_numbers'];
   var vals = Object.assign({}, p.values || {});
+  Object.keys(COURIERS).forEach(function (key) {
+    var field = 'courier_rates_' + key;
+    if (vals[field] === undefined) return;
+    if (user.role !== 'admin') fail_('Only an admin can edit courier rates');
+    vals[field] = validateCourierRates_(vals[field]);
+    allowed.push(field);
+  });
   if (vals.shop_logo !== undefined) {
     var logo = String(vals.shop_logo || '');
     // A small picture only (the app shrinks it before upload): it travels with every invoice and the sign-in screen.

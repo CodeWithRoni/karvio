@@ -1,13 +1,13 @@
 import { useId, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
 import DateInput from '../components/DateInput';
 import PartyPicker from '../components/PartyPicker';
 import { api } from '../lib/api';
 import { quantityTotal } from '../lib/quantityTotals';
-import { Btn, ClearFiltersButton, ErrorBox, Field, Loading, Modal, PageHead, useAction, useApi } from '../components/ui';
+import { Badge, Btn, ClearFiltersButton, ErrorBox, Field, Loading, Modal, PageHead, useAction, useApi } from '../components/ui';
 import { printHtml, printFonts } from '../lib/export';
-import { fdate, splitList } from '../lib/format';
+import { fdate, fdatetime, money, splitList } from '../lib/format';
 import { shopDay, useStore } from '../lib/store';
 import { deliveryChallanHtml } from '../lib/deliveryChallan';
 
@@ -40,7 +40,176 @@ const REPORT_COLUMNS = [
   { key: 'received', label: 'Received', type: 'money', sum: true, value: (o) => o.settlement?.received ?? 0 }
 ];
 
+const ACTIVITY = [
+  ['confirmed', 'To Ship', 'warn'], ['shipped', 'In Transit', 'info'],
+  ['delivered', 'Delivered', 'ok'], ['returned', 'Returned', 'bad']
+];
+const RATE_FIELDS = [
+  ['inside', 'Inside Dhaka', '৳'], ['outside', 'Outside Dhaka', '৳'],
+  ['cod', 'COD fee', '%'], ['return_fee', 'Return fee', '৳']
+];
+
+function CourierHub() {
+  const overview = useApi('orders.list', { courier_overview: true }, [], { refreshMs: 60000 });
+  const canEditRates = useStore((s) => s.user?.role === 'admin' && s.can('settings'));
+  const canTest = useStore((s) => s.can('settings'));
+  const [query, setQuery] = useState('');
+  const [lookup, setLookup] = useState({ query: '', courier: '' });
+  const [editor, setEditor] = useState(null);
+  const inputRef = useRef(null);
+  const [testing, setTesting] = useState('');
+  const [busy, run] = useAction();
+  const trackingQuery = useApi('orders.list', {
+    include_manual: true, tracking_query: lookup.query, tracking_courier: lookup.courier
+  }, [], { skip: !lookup.query });
+
+  const data = overview.data;
+  const couriers = data?.couriers || [];
+  const results = trackingQuery.data;
+  const parcels = [...(results?.orders || []), ...(results?.manual || [])];
+
+  async function testConnection(courier) {
+    setTesting(courier.id);
+    try {
+      await run(() => api('courier.call', { op: 'test', courier: courier.id }), `${courier.name} connection verified`);
+      await overview.reload();
+    } catch { /* useAction reports the provider error */ }
+    finally { setTesting(''); }
+  }
+
+  async function refreshParcel(parcel) {
+    try {
+      const updated = await run(() => api('courier.call', { op: 'track', id: parcel.id }), 'Tracking updated');
+      if (updated) await Promise.all([trackingQuery.reload(), overview.reload()]);
+    } catch { /* useAction reports the provider error */ }
+  }
+
+  return <>
+    <PageHead title="Courier Information" sub="Track parcels, compare courier rates and see today’s delivery activity.">
+      <Link className="btn" to="/online-orders">Online Orders</Link>
+    </PageHead>
+    <ErrorBox error={overview.error} onRetry={overview.reload} />
+    {!data && overview.loading && <Loading label="Reading courier overview" />}
+    {data && <section className="courier-hub" aria-label="Courier overview">
+      <section aria-label="Today's delivery activity">
+        <div className="courier-section-heading"><h2>Today’s online delivery activity</h2><span className="muted">{fdate(data.activity_day)}</span></div>
+        <div className="courier-metrics">
+          {ACTIVITY.map(([id, label, tone]) => (
+            <Link key={id} className={`card courier-metric courier-metric-${tone}`}
+              to={`/delivery-report?activity=${id}&day=${encodeURIComponent(data.activity_day)}`}>
+              <span>{label}</span><strong>{data.activity_counts?.[id] ?? '—'}</strong><small>View report →</small>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      <section className="card courier-lookup" aria-labelledby="courier-lookup-title">
+        <div className="courier-section-heading"><h2 id="courier-lookup-title">Track a parcel</h2></div>
+        <form className="courier-lookup-form" onSubmit={(event) => {
+          event.preventDefault();
+          const next = query.trim();
+          if (next.length < 2) return;
+          if (next === lookup.query) trackingQuery.reload();
+          else setLookup({ ...lookup, query: next });
+        }}>
+          <Field label="Tracking ID, Order ID or Challan No.">
+            <input ref={inputRef} type="search" value={query} onChange={(e) => setQuery(e.target.value)}
+              maxLength={100} placeholder="Search by tracking or reference number" />
+          </Field>
+          <Field label="Courier">
+            <select value={lookup.courier} onChange={(e) => setLookup({ ...lookup, courier: e.target.value })}>
+              <option value="">All couriers</option>
+              {couriers.map((courier) => <option key={courier.id} value={courier.id}>{courier.name}</option>)}
+            </select>
+          </Field>
+          <Btn kind="primary" type="submit" disabled={query.trim().length < 2} busy={Boolean(lookup.query && trackingQuery.loading)}>Search</Btn>
+        </form>
+        <ErrorBox error={trackingQuery.error} onRetry={trackingQuery.reload} />
+        {lookup.query && !trackingQuery.loading && !trackingQuery.error && results && <div className="courier-lookup-results" aria-live="polite">
+          <p className="muted">{results.tracking_total ? `Showing ${parcels.length} of ${results.tracking_total} matching parcels` : 'No matching parcels found.'}</p>
+          {parcels.map((parcel) => <article key={parcel.id} className="courier-parcel">
+            <div><strong>{parcel.no}</strong><small className="muted">{courierName(parcel) || 'Courier not assigned'}{parcel.courier?.tracking ? ` · ${parcel.courier.tracking}` : ''}</small></div>
+            <div><Badge tone={parcel.status === 'returned' ? 'bad' : ['delivered', 'settled'].includes(parcel.status) ? 'ok' : 'info'}>
+              {parcel.manual ? 'Booked manually' : STATUS[parcel.status] || parcel.status}
+            </Badge>{parcel.courier?.status && <small className="muted">Provider: {parcel.courier.status}</small>}
+              <small className="muted">Updated {fdatetime([parcel.courier?.checked_at, parcel.updated_at, parcel.created_at, parcel.date].filter(Boolean).sort().at(-1))}</small>
+            </div>
+            {parcel.courier?.by_api && <Btn size="sm" disabled={busy} onClick={() => refreshParcel(parcel)}>Refresh status</Btn>}
+          </article>)}
+        </div>}
+      </section>
+
+      <section aria-label="Courier providers">
+        <div className="courier-section-heading"><h2>Courier providers</h2></div>
+        <div className="courier-provider-grid">
+          {couriers.map((courier) => (
+            <article key={courier.id} className="card courier-provider">
+              <header className="courier-section-heading">
+                <h3>{courier.name}</h3><Badge tone={courier.api ? 'ok' : 'muted'}>{courier.api ? 'API configured' : 'Manual'}</Badge>
+              </header>
+              <dl className="courier-rates">
+                {RATE_FIELDS.map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{courier.rates?.[key] == null
+                  ? '—' : key === 'cod' ? `${courier.rates[key]}%` : money(courier.rates[key])}</dd></div>)}
+              </dl>
+              {courier.rates?.terms && <p className="courier-terms">{courier.rates.terms}</p>}
+              {courier.api && <small className="muted">{courier.checked_at ? `Last successful check · ${fdatetime(courier.checked_at)}` : 'Connection has not been checked'}</small>}
+              <div className="courier-provider-actions">
+                <Btn size="sm" onClick={() => {
+                  setLookup({ ...lookup, courier: courier.id });
+                  inputRef.current?.focus();
+                }}>Track Parcel</Btn>
+                <Link className="btn btn-sm" to={`/online-orders?courier=${encodeURIComponent(courier.id)}`}>View Orders</Link>
+                <Link className="btn btn-sm" to={`/delivery-challan?create=${encodeURIComponent(courier.id)}`}>Create Challan</Link>
+                {canEditRates && <Btn size="sm" onClick={() => setEditor(courier)}>Edit rates</Btn>}
+                {canTest && courier.api && <Btn size="sm" busy={testing === courier.id} disabled={busy} onClick={() => testConnection(courier)}>Test API</Btn>}
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+    </section>}
+    {editor && <CourierRatesDialog courier={editor} onClose={() => setEditor(null)} onSaved={overview.reload} />}
+  </>;
+}
+
+function CourierRatesDialog({ courier, onClose, onSaved }) {
+  const [rates, setRates] = useState(courier.rates || {});
+  const [busy, run] = useAction();
+  const formId = useId();
+  async function save(event) {
+    event.preventDefault();
+    try {
+      const result = await run(() => api('settings.save', { values: { [`courier_rates_${courier.id}`]: rates } }), 'Courier rates saved');
+      if (result) { onClose(); onSaved(); }
+    } catch { /* useAction reports the validation error */ }
+  }
+
+  return <Modal open size="sm" title={`Rates · ${courier.name}`} onClose={onClose}
+    footer={<><Btn disabled={busy} onClick={onClose}>Cancel</Btn><Btn kind="primary" type="submit" form={formId} busy={busy}>Save rates</Btn></>}>
+    <form id={formId} className="courier-rate-form" onSubmit={save}>
+      <p className="muted">Reference rates for courier selection. Leave an unknown rate blank.</p>
+      <div className="courier-rates">
+        {RATE_FIELDS.map(([key, label, unit]) => <Field key={key} label={`${label} (${unit})`}>
+          <input type="number" min="0" max={key === 'cod' ? 100 : 1000000} step="0.01" value={rates[key] ?? ''}
+            onChange={(e) => setRates({ ...rates, [key]: e.target.value })} />
+        </Field>)}
+      </div>
+      <Field label="Terms"><textarea rows={3} maxLength={500} value={rates.terms || ''}
+        onChange={(e) => setRates({ ...rates, terms: e.target.value })} /></Field>
+    </form>
+  </Modal>;
+}
+
 export default function Courier({ mode }) {
+  return mode === 'info' ? <CourierHub /> : <CourierDeliveries mode={mode} />;
+}
+
+function CourierDeliveries({ mode }) {
+  const [params, setParams] = useSearchParams();
+  const activity = mode === 'report' && ACTIVITY.find(([id]) => id === params.get('activity'));
+  const activityDay = activity && /^\d{4}-\d{2}-\d{2}$/.test(params.get('day') || '') ? params.get('day') : '';
+  const presetCourier = mode === 'challan' ? params.get('create') : '';
+  const clearPreset = () => setParams({}, { replace: true });
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [courier, setCourier] = useState('');
@@ -50,12 +219,17 @@ export default function Courier({ mode }) {
   const [selected, setSelected] = useState(null);
   const [manual, setManual] = useState(false);
   const report = mode === 'report';
-  const invalidDates = Boolean(from && to && from > to);
-  const q = useApi('orders.list', { ...(report ? { from, to, delivery_report: true } : {}), include_manual: mode !== 'info' }, [], { skip: invalidDates });
+  const invalidDates = Boolean(!activityDay && from && to && from > to);
+  const reportFilters = activityDay
+    ? { activity_day: activityDay, activity_status: activity[0] }
+    : { from, to };
+  const q = useApi('orders.list', {
+    ...(report ? { ...reportFilters, delivery_report: true } : {}), include_manual: !activityDay
+  }, [], { skip: invalidDates });
   const orders = q.data?.orders || [];
   const deliveries = [...(q.data?.manual || []), ...orders.filter((o) => o.status === 'confirmed' || o.courier)];
   const names = [...new Set(deliveries.map(courierName).filter(Boolean))].sort();
-  const rows = report
+  const rows = activityDay ? orders : report
     ? deliveries.filter((o) => (!source || source === (o.manual ? 'manual' : 'online')) &&
         (!courier || courierName(o) === courier) && (!status || status === (o.manual ? 'booked' : o.status)) &&
         (!booking || o.booking === booking))
@@ -67,7 +241,9 @@ export default function Courier({ mode }) {
       {mode === 'challan' && <Btn kind="primary" onClick={() => setManual(true)}>+ Manual Challan</Btn>}
       <Link className="btn" to="/online-orders">Online Orders</Link>
     </PageHead>
-    {report && <div className="card row courier-report-filters">
+    {activityDay && <div className="card row courier-activity-report"><strong>{activity[1]} · {fdate(activityDay)}</strong>
+      <span className="muted">Parcels that reached this stage on the selected day.</span><Btn size="sm" onClick={clearPreset}>Clear activity</Btn></div>}
+    {report && !activityDay && <div className="card row courier-report-filters">
       <Field label="Delivery source"><select aria-label="Delivery source" value={source} onChange={(e) => { setSource(e.target.value); setBooking(''); setStatus(''); }}>
         <option value="">All deliveries</option><option value="online">Online orders</option><option value="manual">Manual bookings</option>
       </select></Field>
@@ -93,18 +269,14 @@ export default function Courier({ mode }) {
       })}
     </div>}
     <ErrorBox error={invalidDates ? 'The start date must be on or before the end date.' : q.error} onRetry={invalidDates ? undefined : q.reload} />
-    {!invalidDates && !q.error && (q.loading ? <Loading /> : q.data && (mode === 'info'
-      ? <DataTable title={TITLES.info} rows={q.data.couriers} exportable={false} searchable={false}
-          columns={[
-            { key: 'name', label: 'Courier' },
-            { key: 'api', label: 'Booking', value: (c) => c.api ? 'API connected · Manual tracking available' : 'Manual tracking' }
-          ]} />
-      : <DataTable title={report ? reportTitle : TITLES[mode]} rows={rows} columns={report ? REPORT_COLUMNS : ORDER_COLUMNS}
+    {!invalidDates && !q.error && (q.loading ? <Loading /> : q.data && <DataTable title={report ? reportTitle : TITLES[mode]} rows={rows} columns={report ? REPORT_COLUMNS : ORDER_COLUMNS}
           exportable={report} onRowClick={mode === 'challan' ? setSelected : undefined}
           empty={report ? 'No deliveries match these filters.' : 'No saved challans or confirmed orders.'}
-          toolbar={mode === 'challan' ? <span className="muted">Select an order or booking to preview its challan.</span> : undefined} />))}
+          toolbar={mode === 'challan' ? <span className="muted">Select an order or booking to preview its challan.</span> : undefined} />)}
     {selected && <Challan order={selected} onClose={() => setSelected(null)} />}
-    {manual && <ManualChallan onClose={() => setManual(false)} onSaved={q.reload} />}
+    {(manual || (presetCourier && q.data?.couriers?.some((c) => c.id === presetCourier))) && <ManualChallan
+      courierName={q.data?.couriers?.find((c) => c.id === presetCourier)?.name}
+      onClose={() => { setManual(false); if (presetCourier) clearPreset(); }} onSaved={q.reload} />}
   </>;
 }
 
@@ -144,7 +316,7 @@ function ChallanPreview({ html }) {
     style={{ width: '100%', height: 'min(60vh, 620px)', background: '#fff', border: 0 }} />;
 }
 
-function ManualChallan({ onClose, onSaved }) {
+function ManualChallan({ onClose, onSaved, courierName: initialCourier }) {
   const formId = useId();
   const nextLine = useRef(1);
   const settings = useStore((s) => s.settings);
@@ -225,7 +397,7 @@ function ManualChallan({ onClose, onSaved }) {
         <Field label="Recipient name"><input name="recipient" required pattern={'.*\\S.*'} {...recipientInput('name')} /></Field>
         <Field label="Recipient phone"><input name="phone" type="tel" required pattern={'.*\\S.*'} {...recipientInput('phone')} /></Field>
         <Field label="Delivery address" wide><input name="address" required pattern={'.*\\S.*'} {...recipientInput('address')} /></Field>
-        <Field label="Courier name"><input name="courier" required pattern={'.*\\S.*'} /></Field>
+        <Field label="Courier name"><input name="courier" defaultValue={initialCourier} required pattern={'.*\\S.*'} /></Field>
         <Field label="Tracking number (optional)"><input name="tracking" /></Field>
         <Field label="Booking by"><input name="bookedBy" defaultValue={userName} /></Field>
         <Field label="Booking type"><select aria-label="Booking type" value={payment} onChange={(e) => setPayment(e.target.value)}>

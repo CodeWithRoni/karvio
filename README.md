@@ -40,7 +40,7 @@ Mobile/tablet camera scanning is available in POS, purchase product/serial entry
 
 ## Sign in and setup
 
-Use the same online credentials on every platform. The fresh Supabase shop is initialized with an owner-chosen password; there is **no default online password**. Configure a different shop endpoint through **Change API connection** on the sign-in screen when needed.
+Use the same online credentials on every platform. The fresh Supabase shop is initialized with an owner-chosen password; there is **no default online password**. For a development instance, configure a different shop endpoint through **Change API connection** on the local sign-in screen.
 
 See [SUPABASE-SETUP.md](SUPABASE-SETUP.md) for the authoritative online architecture, fresh setup, private backups and deployment. Installing a new app version does not reset the online shop.
 
