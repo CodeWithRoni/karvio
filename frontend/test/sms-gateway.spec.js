@@ -8,7 +8,7 @@ test('custom SMS setup maps fields, saves, and reports queued delivery honestly'
  await page.route(endpoint,async route=>{const body=JSON.parse(route.request().postData());if(body.action==='sms.test'){tests++;return route.fulfill({json:{ok:true,data:{ok:false,status:'queued',response:'queued'}}});}return route.continue();});
  await page.goto('/#/settings');await page.getByRole('tab',{name:'SMS gateway',exact:true}).click();
  const provider=page.getByLabel('SMS provider preset');
- expect(await provider.locator('option').allTextContents()).not.toEqual(expect.arrayContaining([expect.stringMatching(/MRAM/)]));
+ await expect(provider.locator('option[value="MRAM (GET)"]')).toHaveText('MRAM (GET)');
  await provider.selectOption('Generic JSON POST');
  await page.getByLabel('API URL',{exact:true}).fill('https://sms.example/send');
  await page.getByLabel('Gateway field 3',{exact:true}).fill('mobile');
