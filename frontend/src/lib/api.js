@@ -70,7 +70,7 @@ export async function api(action, payload = {}, { url, requestId } = {}) {
   if (globalThis.window?.karvio?.offline) throw new ApiError('This offline installer is no longer supported. Install Karvio Online to continue.');
   if (globalThis.navigator?.onLine === false) throw new ApiError('Internet connection required. Reconnect to use Karvio.');
   const target = url || endpoint();
-  if (!target) throw new ApiError('API URL is not configured. Open Settings → API connection.');
+  if (!target) throw new ApiError('API URL is not configured. Open Change API connection on the sign-in screen.');
   const token = getToken(), write = WRITES.has(action) || ['database.transfer.export.begin','database.transfer.export.close','database.transfer.restore.begin','database.transfer.restore.page','database.transfer.restore.finish','database.transfer.abort'].includes(action);
   if (write && !endpointCapabilities.has(target)) {
     // A user may upload the frontend before the backend. Old backends ignore IDs,

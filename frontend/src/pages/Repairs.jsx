@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import { money, fdate, fdatetime, round2 } from '../lib/format';
+import { money, fdate, fdatetime, round2, splitList } from '../lib/format';
 import { esc } from '../lib/export';
 import { printInvoice } from '../lib/receipt';
 import { useStore } from '../lib/store';
 import DataTable from '../components/DataTable';
-import { useApi, PageHead, Tabs, Modal, Btn, Field, Badge, useAction, ErrorBox, Select } from '../components/ui';
+import { useApi, PageHead, Tabs, Modal, Btn, ClearFiltersButton, Field, Badge, useAction, ErrorBox, Select } from '../components/ui';
 import { CustomerPicker, ProductSearch, SerialChooser } from '../components/widgets';
 import {repairPeriods,jobsInPeriod,repairCounts} from '../lib/repairDashboard';
 import DateInput from '../components/DateInput';
@@ -16,6 +16,7 @@ import DateInput from '../components/DateInput';
 // The technician gets the job by SMS; Completed / Failed shows an alert on the admins' dashboard.
 const TONE = { Received: 'warn', Completed: 'info', Failed: 'bad', Delivered: 'ok', Cancelled: 'bad' };
 const OPEN = ['Received', 'Completed', 'Failed'];
+const ALL_REPAIR_PERIOD = { key: 'all', label: 'All' };
 const smsNote = (r, who) => {
   if (!r) return;
   const toast = useStore.getState().toast;
@@ -31,6 +32,14 @@ export default function Repairs() {
   const showJobs = () => requestAnimationFrame(()=>jobsRef.current?.scrollIntoView({block:'start'}));
   const [period,setPeriod]=useState(null);
   const [focus,setFocus]=useState('month');
+  const [tableReset, setTableReset] = useState(0);
+  const showAllHistory = () => {
+    setFocus('all');
+    setTech('');
+    setPeriod(null);
+    setTab('all');
+    setTableReset((value) => value + 1);
+  };
   const meta = useApi('repairs.meta', {}, [], {refreshMs:60000});
   const list = useApi('repairs.list', {}, [], {refreshMs:15000});
   const periods=repairPeriods(meta.data?.today);
@@ -60,7 +69,7 @@ export default function Repairs() {
   return (
     <>
       <PageHead title="Repairs" sub="Job cards for devices left at the shop: receive, repair, mark ready and deliver with an invoice.">
-        <Btn onClick={()=>{setTech('');setPeriod(null);setTab('all');showJobs();}}>All repair jobs</Btn>
+        <Btn onClick={() => { showAllHistory(); showJobs(); }}>All repair jobs</Btn>
         <Btn kind="primary" onClick={() => setForm({})} disabled={!meta.data}>New repair job</Btn>
       </PageHead>
       <ErrorBox error={list.error || meta.error} onRetry={() => { list.reload(); meta.reload(); }} />
@@ -68,19 +77,36 @@ export default function Repairs() {
         <p className="muted">By received date · week starts Saturday · Last 3/6 Months includes the current month. Pending = Received; Complete = Completed. Delivered and Cancelled remain available in each period’s list.</p>
         {meta.loading&&!meta.data&&<p role="status">Loading repair dashboard…</p>}
         {(()=>{
-          const f=periods.find(p=>p.key===focus)||periods[2];
-          if(!f)return null;
-          const busy=list.loading&&!list.data;
-          const jobs=jobsInPeriod(scope,f),c=repairCounts(jobs),total=jobs.length;
-          const open=(status)=>{setPeriod(f);setTab(status);showJobs();};
+          const all = focus === 'all';
+          const f = all ? ALL_REPAIR_PERIOD : periods.find((p) => p.key === focus) || periods[2];
+          if (!f) return null;
+          const busy = list.loading && !list.data;
+          const jobs = all ? list.data || [] : jobsInPeriod(scope, f);
+          const c = repairCounts(jobs), total = jobs.length;
+          const open = (status) => {
+            if (all) {
+              setTech('');
+              setTableReset((value) => value + 1);
+            }
+            setPeriod(all ? null : f);
+            setTab(status);
+            showJobs();
+          };
           const w=(n)=>total?`${n/total*100}%`:'0%';
           return <div className="repair-dashboard" aria-label="Repair overview">
             <div className="rd-seg" role="group" aria-label="Repair period">
-              {periods.map(p=>{const n=jobsInPeriod(scope,p).length;return <button type="button" key={p.key} className={p.key===f.key?'on':''} aria-pressed={p.key===f.key} aria-label={`${p.label}: ${busy?'—':n} jobs`} onClick={()=>setFocus(p.key)}>{p.label}<em>{busy?'—':n}</em></button>;})}
+              {[...periods, ALL_REPAIR_PERIOD].map((p) => {
+                const isAll = p.key === 'all';
+                const count = busy ? '-' : isAll ? (list.data || []).length : jobsInPeriod(scope, p).length;
+                return <button type="button" key={p.key} className={p.key === f.key ? 'on' : ''} aria-pressed={p.key === f.key}
+                  aria-label={`${p.label}: ${count} jobs`} onClick={() => isAll ? showAllHistory() : setFocus(p.key)}>
+                  {p.label}<em>{count}</em>
+                </button>;
+              })}
             </div>
             <div className="rd-body">
               <div className="rd-total">
-                <small>{f.label} · {fdate(f.from)}{f.from!==f.to?` – ${fdate(f.to)}`:''}</small>
+                <small>{all ? 'All received dates' : `${f.label} · ${fdate(f.from)}${f.from !== f.to ? ` - ${fdate(f.to)}` : ''}`}</small>
                 <strong>{busy?'—':total} <span>jobs</span></strong>
                 <div className="rd-bar" aria-hidden="true"><i className="p" style={{width:w(c.pending)}} /><i className="c" style={{width:w(c.complete)}} /><i className="f" style={{width:w(c.failed)}} /><i className="d" style={{width:w(c.delivered)}} /></div>
               </div>
@@ -91,13 +117,13 @@ export default function Repairs() {
         })()}
       </>
       <section className="repair-jobs-section" ref={jobsRef} aria-label="Repair job list">
-      <div className="repair-list-heading"><div><h2>Repair jobs</h2><p className="muted">{activePeriod?`${activePeriod.label} · Received ${fdate(activePeriod.from)} – ${fdate(activePeriod.to)}`:'All received dates'}</p></div><Btn size="sm" onClick={()=>{setPeriod(null);setTech('');setTab('all');}}>Reset filters</Btn></div>
+      <div className="repair-list-heading"><div><h2>Repair jobs</h2><p className="muted">{activePeriod?`${activePeriod.label} · Received ${fdate(activePeriod.from)} – ${fdate(activePeriod.to)}`:'All received dates'}</p></div><ClearFiltersButton onClick={() => { setPeriod(null); setTech(''); setTab('all'); }}>Reset filters</ClearFiltersButton></div>
       <div className="filters">
         <Tabs tabs={[['open', 'Open'], ['Received', 'Received'], ['Completed', 'Completed'], ['Failed', 'Failed'], ['Delivered', 'Delivered'], ['Cancelled', 'Cancelled'], ['all', 'All']]} value={tab} onChange={setTab} />
         <Select value={period?.key||''} onChange={key=>setPeriod(periods.find(p=>p.key===key)||null)} options={periods.map(p=>({id:p.key,name:p.label}))} placeholder="All received dates" aria-label="Received period" />
         <Select value={tech} onChange={setTech} options={meta.data?.technicians || []} placeholder="All technicians" aria-label="Technician" />
       </div>
-      <DataTable title="Repair jobs" loading={list.loading} rows={rows} onRowClick={setSel}
+      <DataTable key={tableReset} title="Repair jobs" loading={list.loading} rows={rows} onRowClick={setSel}
         sumFilter={(r) => r.status !== 'Cancelled'} rowClass={(r) => (r.status === 'Cancelled' ? 'dim' : '')}
         columns={[
           { key: 'job_no', label: 'Job #' }, { key: 'date', label: 'Received', type: 'date' },
@@ -116,7 +142,12 @@ export default function Repairs() {
 }
 
 /* ---------------- New job / edit an open job ---------------- */
+function requiredLabel(label) {
+  return <>{label} <span style={{ color: 'var(--bad)' }} aria-hidden="true">*</span></>;
+}
+
 function JobForm({ job, meta, onClose, onDone }) {
+  const customers = useStore((s) => s.customers);
   const products = useStore((s) => s.products);
   const can = useStore((s) => s.can);
   const pmap = useMemo(() => Object.fromEntries(products.map((p) => [p.id, p])), [products]);
@@ -138,9 +169,14 @@ function JobForm({ job, meta, onClose, onDone }) {
   const techs = job && job.technician_id && !meta.technicians.some((u) => u.id === job.technician_id)
     ? [...meta.technicians, { id: job.technician_id, name: job.technician_name, phone: '' }] : meta.technicians;
   const techPhone = (techs.find((u) => u.id === f.technician_id) || {}).phone;
-  const customerOk = job || f.customer_id || (f.customer_name.trim() && f.phone.trim());
+  const customer = customers.find((item) => item.id === f.customer_id);
+  const savedPhone = splitList(customer?.phones)[0];
+  const customerName = f.customer_id ? customer?.name : f.customer_name;
+  const phone = savedPhone || f.phone;
+  const canSave = Boolean(f.technician_id) && (job || (customerName?.trim() && phone?.trim())) && f.device.trim() && f.problem.trim();
 
   const save = async (print) => {
+    if (!canSave) return;
     const payload = {
       ...(job ? { id: job.id } : { customer_id: f.customer_id, customer_name: f.customer_name, phone: f.phone }),
       device: f.device, serial: f.serial, problem: f.problem, accessories: f.accessories, technician_id: f.technician_id,
@@ -159,8 +195,8 @@ function JobForm({ job, meta, onClose, onDone }) {
     <Modal open onClose={onClose} size="lg" title={job ? `Edit job ${job.job_no}` : 'New repair job'}
       footer={<>
         <Btn onClick={onClose}>Cancel</Btn>
-        {!job && <Btn busy={busy} onClick={() => save(true)} disabled={!customerOk || !f.device.trim() || !f.problem.trim()}>Save & print slip</Btn>}
-        <Btn kind="primary" busy={busy} onClick={() => save(false)} disabled={!customerOk || !f.device.trim() || !f.problem.trim()}>Save</Btn>
+        {!job && <Btn busy={busy} onClick={() => save(true)} disabled={!canSave}>Save & print slip</Btn>}
+        <Btn kind="primary" busy={busy} onClick={() => save(false)} disabled={!canSave}>Save</Btn>
       </>}>
       <div className="form">
         {job ? (
@@ -170,22 +206,22 @@ function JobForm({ job, meta, onClose, onDone }) {
             {/* not a <label>: a click on the chosen customer must not press its remove button */}
             <div className="field wide">
               <span className="field-label">Customer (search a saved customer)</span>
-              <CustomerPicker value={f.customer_id} onChange={(id) => set({ customer_id: id })} onAddNew={(q) => set({ customer_name: /\d{5,}/.test(q) ? '' : q, phone: /\d{5,}/.test(q) ? q : '' })} />
+              <CustomerPicker value={f.customer_id} onChange={(id) => set({ customer_id: id, phone: '' })} onAddNew={(q) => set({ customer_name: /\d{5,}/.test(q) ? '' : q, phone: /\d{5,}/.test(q) ? q : '' })} />
             </div>
-            {!f.customer_id && <>
-              <Field label="Or new customer name"><input value={f.customer_name} onChange={(e) => set({ customer_name: e.target.value })} /></Field>
-              <Field label="Phone" hint="A phone number already saved goes to that customer."><input value={f.phone} inputMode="tel" onChange={(e) => set({ phone: e.target.value })} placeholder="01XXXXXXXXX" /></Field>
-            </>}
+            {!f.customer_id && <Field label={requiredLabel('Customer name')}><input required value={f.customer_name} onChange={(e) => set({ customer_name: e.target.value })} /></Field>}
+            {!savedPhone && <Field label={requiredLabel('Phone number')} hint={f.customer_id ? 'This customer has no saved phone number.' : 'A phone number already saved goes to that customer.'}>
+              <input required type="tel" value={f.phone} onChange={(e) => set({ phone: e.target.value })} placeholder="01XXXXXXXXX" />
+            </Field>}
           </>
         )}
-        <Field label="Device"><input value={f.device} onChange={(e) => set({ device: e.target.value })} placeholder="e.g. HP 15 laptop, desktop PC, printer" /></Field>
+        <Field label={requiredLabel('Device')}><input required value={f.device} onChange={(e) => set({ device: e.target.value })} placeholder="e.g. HP 15 laptop, desktop PC, printer" /></Field>
         <Field label="Serial / model (optional)"><input value={f.serial} onChange={(e) => set({ serial: e.target.value })} /></Field>
-        <Field label="Problem" wide><textarea value={f.problem} onChange={(e) => set({ problem: e.target.value })} placeholder="What the customer says is wrong" /></Field>
+        <Field label={requiredLabel('Problem')} wide><textarea required value={f.problem} onChange={(e) => set({ problem: e.target.value })} placeholder="What the customer says is wrong" /></Field>
         <Field label="Received with (accessories)" wide><input value={f.accessories} onChange={(e) => set({ accessories: e.target.value })} placeholder="e.g. Charger, bag, no battery" /></Field>
-        <Field label="Technician" hint={!techs.length ? 'Add technicians in Users & roles (role: Technician).' : f.technician_id ? (techPhone ? `Mobile: ${techPhone} — gets this job by SMS` : 'No mobile number saved for this person') : undefined}>
-          <Select value={f.technician_id} onChange={(v) => set({ technician_id: v })} options={techs} placeholder="Not assigned" />
+        <Field label={requiredLabel('Technician')} hint={!techs.length ? 'Add technicians in Users & roles (role: Technician).' : f.technician_id ? (techPhone ? `Mobile: ${techPhone} — gets this job by SMS` : 'No mobile number saved for this person') : undefined}>
+          <Select required value={f.technician_id} onChange={(v) => set({ technician_id: v })} options={techs} placeholder="Not assigned" />
         </Field>
-        <Field label="Estimate (told to the customer)"><input type="number" min="0" step="any" value={f.estimate} onChange={(e) => set({ estimate: e.target.value })} /></Field>
+        <Field label="Estimate (optional)"><input type="number" min="0" step="any" value={f.estimate} onChange={(e) => set({ estimate: e.target.value })} /></Field>
         <Field label="Repair charge (service)" hint="Parts from stock are added below and billed separately."><input type="number" min="0" step="any" value={f.charge} onChange={(e) => set({ charge: e.target.value })} /></Field>
         <Field label="Note" wide><input value={f.note} onChange={(e) => set({ note: e.target.value })} /></Field>
       </div>
@@ -214,7 +250,7 @@ function JobForm({ job, meta, onClose, onDone }) {
       <p className="muted" style={{ margin: '6px 0 0' }}>Parts leave stock when the job is delivered (on its invoice).</p>
 
       <div className="form" style={{ marginTop: 14 }}>
-        <Field label={job ? `More advance (paid so far ${money(job.advance)})` : 'Advance received'}><input type="number" min="0" step="any" value={adv.amount} onChange={(e) => setAdv({ ...adv, amount: e.target.value })} /></Field>
+        <Field label={job ? `More advance (paid so far ${money(job.advance)})` : 'Advance received (optional)'}><input type="number" min="0" step="any" value={adv.amount} onChange={(e) => setAdv({ ...adv, amount: e.target.value })} /></Field>
         <Field label="Advance into"><Select value={adv.account_id} onChange={(v) => setAdv({ ...adv, account_id: v })} options={meta.accounts} allowEmpty={false} /></Field>
         <div className="wide totals">
           <span>Parts</span><b className="num">{money(partsTotal(f.parts), false)}</b>

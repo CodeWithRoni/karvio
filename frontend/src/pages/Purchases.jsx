@@ -10,7 +10,7 @@ import { useStore, shopDay } from '../lib/store';
 import { api } from '../lib/api';
 import { money, qty as fqty, fdate, monthStart, today, splitList, round2, isDecimalUnit } from '../lib/format';
 import DataTable from '../components/DataTable';
-import { useApi, PageHead, DateRange, Badge, statusTone, Modal, Btn, Field, Loading, ErrorBox, useAction, useConfirm, Select, noWheel } from '../components/ui';
+import { useApi, PageHead, DateRange, Badge, statusTone, Modal, Btn, ClearFiltersButton, Field, Loading, ErrorBox, useAction, useConfirm, Select, noWheel } from '../components/ui';
 import { ProductSearch, PaymentSplit, cleanPays, defaultPay, ReverseDialog } from '../components/widgets';
 import { excelPurchases, pdfPurchases, printPurchases } from '../lib/purchaseDocs';
 import DateInput from '../components/DateInput';
@@ -90,7 +90,6 @@ function PurchaseList({ list, f, setF, onOpen }) {
         </select></Field>
         <Field label="From"><DateInput value={f.from} onChange={(e) => set({ from: e.target.value })} aria-label="From date" /></Field>
         <Field label="To"><DateInput value={f.to} onChange={(e) => set({ to: e.target.value })} aria-label="To date" /></Field>
-        {(f.supplier_id || f.from || f.to || f.q) && <button className="link" style={{ paddingBottom: 10 }} onClick={() => { setQ(''); setF({ supplier_id: '', from: '', to: '', q: '', page: 1, per: f.per }); }}>Clear filters</button>}
         <span className="spacer" />
         <div className="pl-export">
           <span className="muted">{ids.length ? `${ids.length} selected` : 'Tick invoices to export'}</span>
@@ -101,6 +100,7 @@ function PurchaseList({ list, f, setF, onOpen }) {
             <button disabled={!ids.length || !!busy} onClick={() => out('print')}>{busy === 'print' ? '…' : 'Print'}</button>
           </div>
         </div>
+        <ClearFiltersButton onClick={() => { setQ(''); setF({ supplier_id: '', from: '', to: '', q: '', page: 1, per: f.per }); }} />
       </div>
       <ErrorBox error={list.error} onRetry={list.reload} />
       <div className="dt"><div className="dt-scroll"><table className="pl-table">

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import QuickPicks, { rememberRecent } from '../components/QuickPicks';
 import ProductHover, { clearPriceCards } from '../components/ProductPriceCard';
 import InvoiceSearch from '../components/InvoiceSearch';
+import PosProductTree, { ProductTreeIcon } from '../components/PosProductTree';
 import { useStore, shopDay } from '../lib/store';
 import { api } from '../lib/api';
 import { money, qty as fqty, round2, isDecimalUnit, fdate, fdatetime } from '../lib/format';
@@ -19,7 +20,7 @@ import WhatsAppBtn from '../components/WhatsAppBtn';
 const inDays = (n) => shopDay(n);
 
 export default function POS() {
-  const { products, customers, warrantyPeriods, settings, refresh, toast } = useStore();
+  const { products, categories, brands, customers, warrantyPeriods, settings, refresh, toast } = useStore();
   const draft = loadPosDraft();
   const shiftQ = useApi('shift.mine', {}, []);
   const [openingShift, setOpeningShift] = useState(false);
@@ -45,6 +46,7 @@ export default function POS() {
   const [payPrevious, setPayPrevious] = useState(false);
   const [previousPays, setPreviousPays] = useState(() => defaultPay(''));
   const canPayPrevious = useStore((st) => st.can('customers') && st.apiCapabilities?.saleDuePayment === true);
+  const [treeOpen, setTreeOpen] = useState(false);
   const [tier, setTier] = useState('retail');
   const [note, setNote] = useState('');
   const [sendSms, setSendSms] = useState(false); // SMS to the customer is off unless switched on for this sale
@@ -322,6 +324,11 @@ export default function POS() {
       <div className="pos-left">
         <div className="row">
           {sh?.shift && <Link to="/shifts" className="sh-pos-badge" title="Shift & day close"><Badge tone="ok">Shift open · {sh.shift.user} · since {fdatetime(sh.shift.opened_at)}</Badge></Link>}
+          <Btn type="button" className="pos-tree-toggle" aria-expanded={treeOpen}
+            aria-controls={treeOpen ? 'pos-product-tree' : undefined} onClick={() => setTreeOpen((open) => !open)}
+            id="pos-tree-toggle">
+            <ProductTreeIcon /> Tree view
+          </Btn>
           {canEdit && <InvoiceSearch current={editing?.invoice_no} onPick={openInvoice} />}
           <div style={{ flex: 1 }}><ProductSearch camera hover={priceHover} onPick={(p) => add(p)} onCode={addBySerial} placeholder={narrow ? 'Search product by serial or name' : 'Search product by serial, name, model or brand (F2)'} inputRef={searchRef} autoFocus /></div>
           <Tabs tabs={[['retail', 'Retail'], ['wholesale', 'Wholesale']]} value={tier} onChange={changeTier} />
@@ -346,7 +353,13 @@ export default function POS() {
             <span>{fdate(editing.date)}{editing.user_name ? ` · sold by ${editing.user_name}` : ''} — change items, prices, customer or payments, then <b>Save changes</b>. The invoice keeps its number and date. <b>Clear cart</b> stops editing.</span>
           </div>
         )}
-        <div className="cart">
+        <div className={treeOpen ? 'pos-workspace tree-open' : 'pos-workspace'}>
+          {treeOpen && <PosProductTree id="pos-product-tree" products={products} categories={categories} brands={brands}
+            onPick={add} onClose={() => {
+              setTreeOpen(false);
+              document.getElementById('pos-tree-toggle')?.focus();
+            }} />}
+          <div className="cart">
           <table>
             <thead><tr><th>Item</th>{canCost && <th style={{ width: 110 }} className="cost-col">Cost</th>}<th style={{ width: 100 }} className="r">Qty</th><th style={{ width: 150 }} className="r">Price</th><th style={{ width: 110 }} className="r">Amount</th><th style={{ width: 30 }} /></tr></thead>
             <tbody>
@@ -413,6 +426,7 @@ export default function POS() {
             </tbody>
           </table>
           {!cart.length && <QuickPicks products={products} priceFor={priceFor} onPick={(p) => add(p)} hover={priceHover} />}
+          </div>
         </div>
         <div className="keys">
           <span><kbd>F2</kbd> search</span><span><kbd>F4</kbd> customer</span><span><kbd>F8</kbd> discount</span>

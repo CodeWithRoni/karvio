@@ -8,7 +8,7 @@ import { stockQuantityTotal, stockMoneyTotal } from '../lib/stockTotals';
 import ProductImport, { exportProducts } from '../components/ProductImport';
 import PriceList from '../components/PriceList';
 import { Link } from 'react-router-dom';
-import { PageHead, Modal, Btn, Field, Badge, Select, Empty, useAction, useConfirm, noWheel } from '../components/ui';
+import { PageHead, Modal, Btn, ClearFiltersButton, Field, Badge, Select, Empty, useAction, useConfirm, noWheel } from '../components/ui';
 
 const blank = { name: '', sku: '', barcode: '', category_id: '', subcategory_id: '', brand_id: '', unit: 'pcs', roll_length: '', cost_price: '', sale_price: '', wholesale_price: '', low_stock: '', has_warranty: false, warranty_type: 'serial', warranty_days: 0, active: true, service: false, description: '' };
 // Auto name = Brand + Product group + Category + Model + optional # description.
@@ -73,7 +73,7 @@ export default function Stock() {
             <Field label="Exact stock qty"><input type="number" step="any" value={f.qty} onChange={(e) => setF({ ...f, qty: e.target.value })} onWheel={noWheel} placeholder="e.g. 0" style={{ width: 120, minWidth: 0 }} /></Field>
             <label className="check" style={{ paddingBottom: 8 }}><input type="checkbox" checked={f.low} onChange={(e) => setF({ ...f, low: e.target.checked })} /> Low stock only</label>
             <label className="check" style={{ paddingBottom: 8 }}><input type="checkbox" checked={f.inactive} onChange={(e) => setF({ ...f, inactive: e.target.checked })} /> Show inactive</label>
-            {(f.cat || f.sub || f.brand || f.qty !== '' || f.low) && <button className="link" style={{ paddingBottom: 10 }} onClick={() => setF({ cat: '', sub: '', brand: '', qty: '', low: false, inactive: false })}>Clear filters</button>}
+            <ClearFiltersButton onClick={() => setF({ cat: '', sub: '', brand: '', qty: '', low: false, inactive: false })} />
           </div>
           <DataTable title="Stock report" rows={rows} columns={cols} sumFilter={(r) => !r.service} onRowClick={can('products') ? (r) => setEdit(r) : undefined}
             empty={products.length ? <Empty icon="search" title="No products match these filters">Clear a filter above, or tick "Show inactive" to include hidden products.</Empty>

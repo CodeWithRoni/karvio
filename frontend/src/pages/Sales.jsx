@@ -8,7 +8,7 @@ import DataTable from '../components/DataTable';
 import { excelSales, pdfSales, printSales } from '../lib/salesDocs';
 // Full invoices for ticked rows (fetched in one call).
 const saleDocs = { excel: async (rows) => excelSales(await salesDetails(rows), `invoices-${rows.length}.xlsx`), pdf: async (rows) => pdfSales(await salesDetails(rows), `invoices-${rows.length}.pdf`), print: async (rows) => printSales(await salesDetails(rows)) };
-import { useApi, PageHead, Tabs, DateRange, Badge, statusTone, Modal, Btn, Field, Loading, ErrorBox, useAction, Select, noWheel } from '../components/ui';
+import { useApi, PageHead, Tabs, DateRange, Badge, statusTone, Modal, Btn, ClearFiltersButton, Field, Loading, ErrorBox, useAction, Select, noWheel } from '../components/ui';
 import { ReverseDialog, ProductSearch, SerialChooser, PaymentSplit, defaultPay, cleanPays, CustomerPicker } from '../components/widgets';
 import { salesDetails } from '../lib/salesDetails';
 import { returnValue } from '../lib/returnValue';
@@ -50,10 +50,10 @@ export default function Sales({ mode = 'sales' }) {
             options={brands} placeholder="All brands" />
           <Select aria-label="Customer" value={filters.customer_id} onChange={(customer_id) => setFilters({ ...filters, customer_id })}
             options={customers} placeholder="All customers" />
-          {(status || Object.values(filters).some(Boolean)) && <Btn onClick={() => {
+          <ClearFiltersButton onClick={() => {
             setStatus('');
             setFilters({ group_id: '', category_id: '', brand_id: '', customer_id: '' });
-          }}>Clear filters</Btn>}
+          }} />
         </>}
       </div>
 

@@ -4118,9 +4118,13 @@ function repairSave_(p, user) {
     return outU;
   }
   var customer = repairCustomer_(p, user);
+  var customerName = String(customer.name || '').trim();
+  var phone = parseList_(customer.phones)[0] || String(p.phone || '').trim();
+  if (!customerName) fail_('Customer name is required');
+  if (!phone) fail_('Customer phone is required');
   var row = Object.assign({
-    job_no: nextNo_('seq_repair', 'JOB-'), date: today_(), customer_id: customer.id, customer_name: customer.name,
-    phone: parseList_(customer.phones)[0] || String(p.phone || '').trim(), advance: 0, status: 'Received',
+    job_no: nextNo_('seq_repair', 'JOB-'), date: today_(), customer_id: customer.id, customer_name: customerName,
+    phone: phone, advance: 0, status: 'Received',
     sale_id: '', invoice_no: '', ready_date: '', delivered_date: '', cancel_reason: '', user: user.name, created_at: now_()
   }, fields);
   row.log = [{ ts: now_(), status: 'Received', note: 'Device received' + (row.technician_name ? ' · Technician: ' + row.technician_name : ''), user: user.name }];

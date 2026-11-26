@@ -1,8 +1,7 @@
 import { clearShopDrafts } from '../lib/shopStorage';
 import { useEffect, useState } from 'react';
 import { useStore, shopDay } from '../lib/store';
-import { api, getApiConfig, setApiConfig, testConnection, isOffline, getToken } from '../lib/api';
-import { DEFAULT_API_URL } from '../config';
+import { api, isOffline, getToken } from '../lib/api';
 import { fdatetime, fdate } from '../lib/format';
 import DataTable from '../components/DataTable';
 import { PageHead, Btn, Field, useAction, Tabs, useApi, Badge, Modal } from '../components/ui';
@@ -20,8 +19,8 @@ export default function Settings() {
   const offline = isOffline();
   const admin = useStore((s) => s.user?.role === 'admin');
   const owner = useStore((s) => s.user?.owner === true); // the Administrator account only — not every admin
-  const [tab, setTab] = useState(can('settings') ? 'shop' : offline ? 'me' : 'api');
-  const tabs = [...(can('settings') ? [['shop', 'Shop'], ['invoice', 'Invoice'], ['dashboard', 'Dashboard'], ...(!offline ? [['sms', 'SMS gateway'], ['smsfeatures', 'SMS settings']] : [])] : []), ...(offline ? admin ? [['local', 'Offline data & backup']] : [] : [['api', 'API connection']]), ...(admin && can('settings') ? [['branches', 'Branches'], ['shifts', 'Shift'], ['courier', 'Courier'], ['books', 'Close books']] : []), ['me', 'My password'], ...(owner ? [['database', 'Database']] : [])];
+  const [tab, setTab] = useState(can('settings') ? 'shop' : 'me');
+  const tabs = [...(can('settings') ? [['shop', 'Shop'], ['invoice', 'Invoice'], ['dashboard', 'Dashboard'], ...(!offline ? [['sms', 'SMS gateway'], ['smsfeatures', 'SMS settings']] : [])] : []), ...(offline && admin ? [['local', 'Offline data & backup']] : []), ...(admin && can('settings') ? [['branches', 'Branches'], ['shifts', 'Shift'], ['courier', 'Courier'], ['books', 'Close books']] : []), ['me', 'My password'], ...(owner ? [['database', 'Database']] : [])];
   return (
     <>
       <PageHead title="Settings"><Tabs tabs={tabs} value={tab} onChange={setTab} /></PageHead>
@@ -30,7 +29,6 @@ export default function Settings() {
       {tab === 'dashboard' && <DashboardSettings />}
       {tab === 'sms' && <SmsSettings />}
       {tab === 'smsfeatures' && <SmsFeatures />}
-      {tab === 'api' && <ApiSettings />}
       {tab === 'local' && <OfflineSettings />}
       {tab === 'branches' && admin && <BranchSettings />}
       {tab === 'shifts' && admin && <ShiftSettings />}
@@ -568,26 +566,6 @@ function DailySummary() {
         </div>
         <div><span className="field-label">Today's message</span><pre className="ds-preview">{pv.data?.text || (pv.loading ? 'Loading…' : pv.error || '')}</pre></div>
       </div>
-    </div>
-  );
-}
-
-function ApiSettings() {
-  const [cfg, setCfg] = useState(getApiConfig());
-  const [busy, run] = useAction();
-  const save = async () => {
-    // The old Apps Script address field is gone: saving here always uses the built-in server (or the proxy).
-    const next = { ...cfg, scriptUrl: '' };
-    const url = (next.proxyUrl || DEFAULT_API_URL || '').trim();
-    const r = await run(() => testConnection(url));
-    setApiConfig(next); setCfg(next);
-    useStore.getState().toast(`Connected to ${r.app} v${r.version}`);
-  };
-  return (
-    <div className="card form">
-      <p className="muted wide" style={{ margin: 0 }}>Karvio connects to its built-in server by itself. Stored on this device only.</p>
-      <Field label="Custom proxy domain (optional)" wide hint="When set, requests go here instead of the built-in server."><input value={cfg.proxyUrl || ''} onChange={(e) => setCfg({ ...cfg, proxyUrl: e.target.value })} placeholder="https://api.yourshop.com" /></Field>
-      <div className="wide row end"><Btn kind="primary" busy={busy} onClick={save}>Test & save</Btn></div>
     </div>
   );
 }

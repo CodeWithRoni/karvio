@@ -5,7 +5,7 @@ import DateInput from '../components/DateInput';
 import PartyPicker from '../components/PartyPicker';
 import { api } from '../lib/api';
 import { quantityTotal } from '../lib/quantityTotals';
-import { Btn, ErrorBox, Field, Loading, Modal, PageHead, useAction, useApi } from '../components/ui';
+import { Btn, ClearFiltersButton, ErrorBox, Field, Loading, Modal, PageHead, useAction, useApi } from '../components/ui';
 import { printHtml, printFonts } from '../lib/export';
 import { fdate, splitList } from '../lib/format';
 import { shopDay, useStore } from '../lib/store';
@@ -67,7 +67,7 @@ export default function Courier({ mode }) {
       {mode === 'challan' && <Btn kind="primary" onClick={() => setManual(true)}>+ Manual Challan</Btn>}
       <Link className="btn" to="/online-orders">Online Orders</Link>
     </PageHead>
-    {report && <div className="card row" style={{ flexWrap: 'wrap', marginBottom: 12 }}>
+    {report && <div className="card row courier-report-filters">
       <Field label="Delivery source"><select aria-label="Delivery source" value={source} onChange={(e) => { setSource(e.target.value); setBooking(''); setStatus(''); }}>
         <option value="">All deliveries</option><option value="online">Online orders</option><option value="manual">Manual bookings</option>
       </select></Field>
@@ -83,7 +83,7 @@ export default function Courier({ mode }) {
       {source !== 'online' && <Field label="Booking payment"><select aria-label="Booking payment" value={booking} onChange={(e) => setBooking(e.target.value)}>
         <option value="">Any payment</option><option value="cash">Paid</option><option value="due">Due</option>
       </select></Field>}
-      <Btn onClick={() => { setFrom(''); setTo(''); setCourier(''); setSource(''); setStatus(''); setBooking(''); }}>Clear filters</Btn>
+      <ClearFiltersButton onClick={() => { setFrom(''); setTo(''); setCourier(''); setSource(''); setStatus(''); setBooking(''); }} />
     </div>}
     {report && !invalidDates && !q.loading && !q.error && <div className="db-sum">
       {['online', 'manual'].filter((kind) => !source || kind === source).map((kind) => {
@@ -239,17 +239,33 @@ function ManualChallan({ onClose }) {
           </select></Field>
         </>}
       </div>
-      <h3>Products</h3>
-      {lines.map((id, index) => <div className="form" key={id}>
-        <Field label={`Product name ${index + 1}`} wide><input name={`product-${id}`} required pattern={'.*\\S.*'} /></Field>
-        <Field label="Serial numbers (optional)"><input name={`serials-${id}`} /></Field>
-        <Field label="Quantity"><input name={`qty-${id}`} type="number" min="0.0001" step="0.0001" defaultValue="1" required /></Field>
-        <Field label="Unit"><input name={`unit-${id}`} defaultValue="pcs" maxLength={30} /></Field>
-        {lines.length > 1 && <div className="wide"><Btn type="button" onClick={() => setLines(lines.filter((line) => line !== id))}>
-          Remove product {index + 1}
-        </Btn></div>}
-      </div>)}
-      <Btn type="button" onClick={() => { const id = nextLine.current++; setLines([...lines, id]); }}>+ Add product</Btn>
+      <section className="challan-products" aria-label="Products">
+        <h3>Products</h3>
+        {lines.map((id, index) => <div className="challan-product" key={id} role="group" aria-label={`Product ${index + 1}`}>
+          <div className="challan-product-head">
+            <strong>Product {index + 1}</strong>
+            {lines.length > 1 && (
+              <Btn type="button" kind="danger" className="challan-product-remove"
+                aria-label={`Remove product ${index + 1}`} title={`Remove product ${index + 1}`}
+                onClick={() => setLines((current) => current.filter((line) => line !== id))}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M3 6h18M8 6V3h8v3m3 0-1 14H6L5 6m5 4v6m4-6v6" />
+                </svg>
+              </Btn>
+            )}
+          </div>
+          <div className="challan-product-fields">
+            <Field label="Product name"><input name={`product-${id}`} required pattern={'.*\\S.*'} /></Field>
+            <Field label="Serial numbers (optional)"><input name={`serials-${id}`} /></Field>
+            <Field label="Quantity"><input name={`qty-${id}`} type="number" min="0.0001" step="0.0001" defaultValue="1" required /></Field>
+            <Field label="Unit"><input name={`unit-${id}`} defaultValue="pcs" maxLength={30} /></Field>
+          </div>
+        </div>)}
+        <Btn type="button" className="challan-product-add" onClick={() => {
+          const id = nextLine.current++;
+          setLines((current) => [...current, id]);
+        }}>+ Add product</Btn>
+      </section>
     </form>
     {html && <ChallanPreview html={html} />}
   </Modal>;

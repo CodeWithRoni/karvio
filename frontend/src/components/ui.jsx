@@ -112,6 +112,28 @@ export function Btn({ kind = 'ghost', size, busy, children, className = '', ...p
   );
 }
 
+export function ClearFiltersButton({ onClick, children = 'Clear filters' }) {
+  const toast = useStore((state) => state.toast);
+
+  function clear(event) {
+    const button = event.currentTarget;
+    button.classList.remove('is-clearing');
+    void button.offsetWidth;
+    button.classList.add('is-clearing');
+    onClick();
+    toast('Filters cleared');
+  }
+
+  return (
+    <Btn type="button" className="clear-filters" onClick={clear}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M3 12a9 9 0 1 1 2.6 6.4M3 4v8h8" />
+      </svg>
+      {children}
+    </Btn>
+  );
+}
+
 export function Field({ label, hint, error, children, wide, className = '' }) {
   return (
     <label className={`field ${wide ? 'wide' : ''} ${error ? 'has-error' : ''} ${className}`}>
