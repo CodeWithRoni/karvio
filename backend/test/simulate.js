@@ -127,7 +127,11 @@ eq(sale1.items[0].warranty_expiry > sale1.sale.date, true, 'serial warranty expi
 eq(sale1.items[1].warranty_type, 'invoice', 'invoice-based warranty recorded');
 eq(sale1.sms && sale1.sms.ok, true, 'SMS dispatched for named customer');
 eq(fetchLog.length, 1, 'exactly one SMS fetch');
-eq(fetchLog[0].url.includes('number=8801712345678') && fetchLog[0].url.includes('api_key=KEY123') && fetchLog[0].url.includes('Rahim'), true, 'SMS url has number/api key/customer name');
+const smsUrl = new URL(fetchLog[0].url);
+eq(smsUrl.hostname === 'sms.mram.com.bd' &&
+  smsUrl.searchParams.get('contacts') === '8801712345678' &&
+  smsUrl.searchParams.get('api_key') === 'KEY123' &&
+  smsUrl.searchParams.get('msg').includes('Rahim'), true, 'default MRAM SMS sends recipient, API key and customer message');
 let s1 = bal();
 eq(s1.acc.bKash, 3000, 'bKash credited');
 eq(s1.cust['Rahim Uddin'], 2500, 'customer due (bakir khata)');
