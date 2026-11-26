@@ -107,7 +107,7 @@ export default function Login() {
               {branches.length > 0 && <Field label="Branch"><select value={branch} onChange={(e) => setBranch(e.target.value)} aria-label="Sign in to branch">{branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></Field>}
               {err && <div className="errbox">{err}</div>}
               <Btn kind="primary" size="lg" busy={busy} type="submit">Sign in</Btn>
-              {!isOffline() && <button type="button" className="link" onClick={() => setShowApi(true)}>Change API connection</button>}
+              {import.meta.env.DEV && !isOffline() && <button type="button" className="link" onClick={() => setShowApi(true)}>Change API connection</button>}
             </form>
             {brand && <p className="auth-powered">Powered by <b>Karvio</b></p>}
           </>
