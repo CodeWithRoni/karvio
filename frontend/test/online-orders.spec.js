@@ -15,6 +15,7 @@ test.beforeEach(async ({ page }) => {
 
 test('take a Facebook order, confirm it, send it with a courier and settle the cash on delivery', async ({ page, request }) => {
   const stamp = Date.now();
+  const tracking = `SB-${stamp}`;
   const p = await call(request, 'product.save', { name: `Order kurti ${stamp}`, sale_price: 900 });
   const sup = await call(request, 'supplier.save', { name: `Order supplier ${stamp}` });
   await call(request, 'purchase.create', { supplier_id: sup.id, items: [{ product_id: p.id, qty: 5, cost: 500, sale_price: 900 }], payments: [] });
@@ -41,9 +42,9 @@ test('take a Facebook order, confirm it, send it with a courier and settle the c
   const ship = page.getByRole('dialog').last();
   await ship.getByRole('radio', { name: /Other courier/ }).check();
   await ship.getByLabel('Courier name').fill('Sundarban');
-  await ship.getByLabel('Tracking number').fill('SB-7788');
+  await ship.getByLabel('Tracking number').fill(tracking);
   await ship.getByRole('button', { name: 'Save tracking' }).click();
-  await expect(view).toContainText('SB-7788');
+  await expect(view).toContainText(tracking);
   await view.getByRole('button', { name: 'Courier paid' }).click();
   const settle = page.getByRole('dialog').last();
   await settle.getByLabel('Courier charge').fill('120');
@@ -54,6 +55,26 @@ test('take a Facebook order, confirm it, send it with a courier and settle the c
   await page.keyboard.press('Escape');
   await page.getByRole('tab', { name: /Paid by courier/ }).click();
   await expect(page.locator('table')).toContainText(`Mitu ${stamp}`);
+
+  const groups = await page.locator('.nav-group-label').allTextContents();
+  const courierIndex = groups.indexOf('Courier');
+  expect(courierIndex).toBeGreaterThan(0);
+  expect(groups.slice(courierIndex - 1, courierIndex + 2)).toEqual(['Sales', 'Courier', 'Purchase']);
+  await page.getByRole('link', { name: 'Courier Information' }).click();
+  await expect(page.getByRole('table')).toContainText('Steadfast');
+  await page.getByRole('link', { name: 'Delivery Report' }).click();
+  await page.getByLabel('Courier', { exact: true }).selectOption('Sundarban');
+  const reportRow = page.getByRole('row').filter({ hasText: tracking });
+  await expect(reportRow).toContainText('Paid by courier');
+  await expect(reportRow).toContainText('1,780');
+  await page.getByRole('link', { name: 'Delivery Challan' }).click();
+  await page.getByRole('row').filter({ hasText: tracking }).click();
+  await page.getByLabel('Booking type').selectOption('due');
+  const challan = page.frameLocator('iframe[title="Delivery Challan preview"]');
+  await expect(challan.getByRole('heading', { name: 'DELIVERY CHALLAN' })).toBeVisible();
+  await expect(challan.getByRole('table')).toContainText(p.name);
+  await expect(challan.locator('.booking')).toContainText('✓Due Booking');
+  await expect(page.getByRole('button', { name: 'Print / Save as PDF' })).toBeEnabled();
 });
 
 test('Settings → Courier keeps the API keys and tells when they are missing', async ({ page }) => {

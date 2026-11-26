@@ -43,6 +43,7 @@ const Shifts = page(() => import('./pages/Shifts'));
 const DayBook = page(() => import('./pages/DayBook'));
 const StockCount = page(() => import('./pages/StockCount'));
 const OnlineOrders = page(() => import('./pages/OnlineOrders'));
+const Courier = page(() => import('./pages/Courier'));
 const BranchTransfer = page(() => import('./pages/BranchTransfer'));
 const BranchReport = page(() => import('./pages/BranchReport'));
 const BranchStock = page(() => import('./pages/BranchStock'));
@@ -163,6 +164,9 @@ export default function App() {
               <Route path="branch-stock" element={<Guard perm="reports"><BranchStock /></Guard>} />
               <Route path="branch-report" element={<Guard perm="reports"><BranchReport /></Guard>} />
               <Route path="online-orders" element={<Guard perm="pos"><OnlineOrders /></Guard>} />
+              <Route path="courier" element={<Guard perm="pos"><Courier key="info" mode="info" /></Guard>} />
+              <Route path="delivery-challan" element={<Guard perm="pos"><Courier key="challan" mode="challan" /></Guard>} />
+              <Route path="delivery-report" element={<Guard perm="pos"><Courier key="report" mode="report" /></Guard>} />
               <Route path="stock-count" element={<Guard perm="products"><StockCount /></Guard>} />
               <Route path="daybook" element={<Guard perm="accounts"><DayBook /></Guard>} />
               <Route path="shifts" element={<Guard perm={{ any: ['pos', 'accounts'] }}><Shifts /></Guard>} />
