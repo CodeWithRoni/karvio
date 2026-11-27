@@ -1,4 +1,6 @@
 import {createHash,pbkdf2Sync,timingSafeEqual} from 'node:crypto';
+// Buffer is not a global in the Supabase Edge runtime: always import it.
+import {Buffer} from 'node:buffer';
 import {APP_VERSION} from './release.mjs';
 import {PAGE_PREFIX,checkHeader,encryptionHeader,openPage,sealPage} from './backupCrypto.mjs';
 export const boundedBackup={version:2,maxDataBytes:268435456,maxFileBytes:536870912,maxRowBytes:1048576,maxLineBytes:4194304,maxRows:2000000};
@@ -58,6 +60,8 @@ export async function transferRequest(body,rpc,{backupKey=''}={}){
   const message=String(error.message||'');
   if(message.startsWith('AUTH:'))return {ok:false,error:message,auth:true};
   if(message.startsWith('BACKUP:')||message.startsWith('Backup transfer')||message.startsWith('Only the Administrator'))return {ok:false,error:message.replace(/^BACKUP:\s*/, '')};
+  // Why it failed, for the function log (no payload, token or customer data).
+  console.error('Backup transfer failed',body.action,[error?.name,error?.code,String(error?.dbMessage||message).slice(0,200)].filter(Boolean).join(': '));
   if(error.code==='23505')return {ok:false,error:'Backup contains duplicate IDs, usernames or row positions'};
   if(error.code==='23503')return {ok:false,error:'Backup contains a missing invoice/reference'};
   if(error.code==='22P02'||error.code==='23502')return {ok:false,error:'Backup contains an invalid field value'};

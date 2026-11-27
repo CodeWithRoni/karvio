@@ -15,4 +15,6 @@ const version=JSON.parse(fs.readFileSync('frontend/package.json')).version;
 assert.ok(fs.readFileSync('backend/engine.js','utf8').includes("var APP_VERSION = '"+version+"';"));
 assert.ok(!fs.readFileSync('supabase/functions/karvio-api/index.ts','utf8').includes('x-forwarded-for'));
 assert.ok(!fs.existsSync('backend/parts/01_core.gs'));
+// Buffer is not a global in the Supabase Edge runtime: every function module that uses it imports it.
+for(const f of fs.readdirSync('supabase/functions/karvio-api').filter(n=>/\.(mjs|ts)$/.test(n))){const t=fs.readFileSync('supabase/functions/karvio-api/'+f,'utf8');if(/\bBuffer\./.test(t))assert.match(t,/from 'node:buffer'/,f+' uses Buffer without importing it');}
 console.log('Production configuration passed: gated deploy graph, exact build identity, header-independent limiting and canonical backend.');

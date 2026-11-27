@@ -62,13 +62,14 @@ export async function downloadStreamBackup(options){
  let handle;
  // This optional path writes directly to disk without retaining the archive.
  if(options.directToFile&&typeof window.showSaveFilePicker==='function')handle=await window.showSaveFilePicker({suggestedName:name});
- let pendingHeader=first.value;
- let stream=new ReadableStream({async pull(controller){try{if(pendingHeader!==null){controller.enqueue(encoder.encode(pendingHeader));pendingHeader=null;return;}const r=await iterator.next();if(r.done)controller.close();else controller.enqueue(encoder.encode(r.value));}catch(e){controller.error(e);}},async cancel(){await iterator.return?.();}});
+ let pendingHeader=first.value,failure=null;
+ // A page that fails (server refused it, network lost) stops the download; keep its own message, not the browser's "Failed to fetch".
+ let stream=new ReadableStream({async pull(controller){try{if(pendingHeader!==null){controller.enqueue(encoder.encode(pendingHeader));pendingHeader=null;return;}const r=await iterator.next();if(r.done)controller.close();else controller.enqueue(encoder.encode(r.value));}catch(e){failure=e;controller.error(e);}},async cancel(){await iterator.return?.();}});
  if(gzip)stream=stream.pipeThrough(new CompressionStream('gzip'));
  let bytes=0;stream=stream.pipeThrough(new TransformStream({transform(chunk,controller){bytes+=chunk.byteLength;controller.enqueue(chunk);}}));
- if(handle){const writer=await handle.createWritable();await stream.pipeTo(writer);}
+ if(handle){const writer=await handle.createWritable();try{await stream.pipeTo(writer);}catch(e){throw failure||e;}}
  else{
-  const blob=await new Response(stream).blob();bytes=blob.size;
+  let blob;try{blob=await new Response(stream).blob();}catch(e){throw failure||e;}bytes=blob.size;
   const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
  }
  if(!completed)throw Error('Backup download did not complete');

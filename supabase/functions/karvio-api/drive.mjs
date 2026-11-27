@@ -172,6 +172,7 @@ export async function runDriveBackup(rpc,base,{manual=false}={}){
  }catch(error){
   reconnect=!!error.reconnect;
   last={at:dhaka().stamp,status:'failed',manual,error:cleanError(error)};
+  if(!(error instanceof GoogleError)&&!String(error?.message||'').startsWith('BACKUP:'))console.error('Drive backup failed',error?.name,String(error?.message||'').slice(0,200));
   if(job)await rpc('karvio_drive_export_close',{job_id:job.job_id,uploaded:false}).catch(()=>{});
  }
  // Disconnected (or reconnected) while this ran: keep what the owner did, only report the result.
@@ -236,6 +237,7 @@ export async function driveRequest(body,rpc,base){
   if(message.startsWith('AUTH:'))return {ok:false,error:message,auth:true};
   if(message.startsWith('BACKUP:')||message.startsWith('Only the Administrator'))return {ok:false,error:message.replace(/^BACKUP:\s*/,'').replace('transfer backups','use Google Drive backup')};
   if(error instanceof GoogleError)return {ok:false,error:message};
+  console.error('Drive backup request failed',body.action,[error?.name,error?.code,message.slice(0,200)].filter(Boolean).join(': '));
   return {ok:false,error:'The backup request could not be completed. Try again.'};
  }
 }

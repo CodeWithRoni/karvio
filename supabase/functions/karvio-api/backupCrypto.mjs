@@ -3,6 +3,8 @@
 // The page's table name and its plain SHA-256 are bound to the seal, so a page cannot be moved or swapped.
 import {createCipheriv,createDecipheriv,createHash,hkdfSync,randomBytes} from 'node:crypto';
 import {gzipSync,gunzipSync} from 'node:zlib';
+// Buffer is not a global in the Supabase Edge runtime: always import it.
+import {Buffer} from 'node:buffer';
 
 export const PAGE_PREFIX='kvenc1:';
 const ALG='AES-256-GCM';
