@@ -33,11 +33,22 @@ export function nextRun(state,now=new Date()){
 
 /** What is still missing before the owner can connect Google Drive. */
 export function missingSettings(cfg){
- return [!cfg.backupKey&&'KARVIO_BACKUP_KEY',!cfg.clientId&&'GOOGLE_CLIENT_ID',!cfg.clientSecret&&'GOOGLE_CLIENT_SECRET',!cfg.redirectUri&&'SUPABASE_URL'].filter(Boolean);
+ return [!cfg.backupKey&&'Backup key',!cfg.clientId&&'Google Client ID',!cfg.clientSecret&&'Google Client secret',!cfg.redirectUri&&'Server address'].filter(Boolean);
+}
+export const validClientId=v=>typeof v==='string'&&v.length<=200&&/^[0-9A-Za-z_.-]+\.apps\.googleusercontent\.com$/.test(v);
+export const validClientSecret=v=>typeof v==='string'&&v.length>=10&&v.length<=200&&!/\s/.test(v);
+/** The owner's Google OAuth client (Settings → Database), else the server's GOOGLE_CLIENT_* fallback. */
+export async function withClient(rpc,cfg){
+ let saved=null;try{saved=await rpc('karvio_drive_client',{});}catch{}
+ if(saved?.client_id&&saved.secret&&cfg.backupKey){
+  try{return {...cfg,clientId:saved.client_id,clientSecret:openSecret(cfg.backupKey,'drive-client',saved.secret),clientSaved:true};}catch{return {...cfg,clientId:saved.client_id,clientSecret:'',clientSaved:true};}
+ }
+ return {...cfg,clientSaved:false};
 }
 function statusOf(state,cfg){
  const missing=missingSettings(cfg);
  return {configured:!missing.length,missing,redirect_uri:cfg.redirectUri||'',encrypted:!!cfg.backupKey,
+  google:{client_id:cfg.clientId||'',saved:!!(cfg.clientId&&cfg.clientSecret),entered_here:!!cfg.clientSaved},
   connected:!!state?.refresh,email:state?.email||'',folder:state?.folder_name||'',connected_at:state?.connected_at||'',
   needs_reconnect:!!state?.needs_reconnect,keep:KEEP_BACKUPS,time:timeOf(state),
   ...(state?.refresh&&!state?.needs_reconnect?(n=>({next_at:n.at,due_now:n.due}))(nextRun(state)):{next_at:'',due_now:false}),
@@ -139,8 +150,9 @@ const fileName=(shop,now)=>{const d=dhaka(now),slug=String(shop||'shop').replace
 const cleanError=error=>String(error?.message||'Backup failed').replace(/^BACKUP:\s*/,'').slice(0,300);
 
 /** Make one backup and upload it. Never throws: the result is recorded as the Drive state's "last". */
-export async function runDriveBackup(rpc,cfg,{manual=false}={}){
- if(!cfg.backupKey)return {status:'failed',error:'Set KARVIO_BACKUP_KEY on the server first'};
+export async function runDriveBackup(rpc,base,{manual=false}={}){
+ if(!base.backupKey)return {status:'failed',error:'The server backup key is not available yet. Try again in a minute.'};
+ const cfg=await withClient(rpc,base);
  const state=await rpc('karvio_drive_state',{});
  if(!state?.refresh)return {status:'skipped',error:'Google Drive is not connected'};
  if(state.running_at&&Date.now()-Date.parse(state.running_at)<15*60000)return {status:'busy',error:'A backup is already running. Try again in a few minutes.'};
@@ -170,14 +182,30 @@ export async function runDriveBackup(rpc,cfg,{manual=false}={}){
 }
 
 /* ---------------- Gateway actions (Administrator only) ---------------- */
-export async function driveRequest(body,rpc,cfg){
+export async function driveRequest(body,rpc,base){
  const token=typeof body.token==='string'?body.token:'';
  try{
   await rpc('karvio_transfer_context',{token}); // the Administrator account, signed in
+  const cfg=await withClient(rpc,base);
   switch(body.action){
+   case 'backup.drive.keys.save':{
+    const id=String(body.payload?.client_id||'').trim(),secret=String(body.payload?.client_secret||'').trim();
+    if(!validClientId(id))fail('The Google Client ID looks wrong. It ends with .apps.googleusercontent.com');
+    if(!validClientSecret(secret))fail('Enter the Google Client secret');
+    if(!cfg.backupKey)fail('The server backup key is not available yet. Try again in a minute.');
+    // Another Google project: its sign-in no longer fits. Disconnect first (the owner connects again).
+    const state=await rpc('karvio_drive_state',{});
+    if(state?.refresh&&cfg.clientId&&cfg.clientId!==id){
+     try{await google(cfg.fetch,'https://oauth2.googleapis.com/revoke',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:form({token:openSecret(cfg.backupKey,'drive-refresh',state.refresh)})},{timeout:15000});}catch{}
+     await rpc('karvio_drive_state_save',{state:null});
+    }
+    await rpc('karvio_drive_client_save',{client:{client_id:id,secret:sealSecret(cfg.backupKey,'drive-client',secret),saved_at:dhaka().stamp}});
+    return {ok:true,data:statusOf(await rpc('karvio_drive_state',{}),await withClient(rpc,base))};
+   }
    case 'backup.drive.status':return {ok:true,data:statusOf(await rpc('karvio_drive_state',{}),cfg)};
    case 'backup.drive.connect':{
-    const missing=missingSettings(cfg);if(missing.length)fail('Set '+missing.join(', ')+' on the server first');
+    if(!cfg.backupKey)fail('The server backup key is not available yet. Try again in a minute.');
+    const missing=missingSettings(cfg);if(missing.length)fail('Save your '+missing.join(' and ')+' in Step 2 first');
     const nonce=await rpc('karvio_oauth_state_mint',{});
     const url='https://accounts.google.com/o/oauth2/v2/auth?'+form({client_id:cfg.clientId,redirect_uri:cfg.redirectUri,response_type:'code',scope:SCOPE,access_type:'offline',prompt:'consent',include_granted_scopes:'true',state:nonce});
     return {ok:true,data:{url}};
@@ -221,7 +249,8 @@ function page(title,text,ok){
 <body><main><h1>${esc(title)}</h1><p>${esc(text)}</p><p><small>You can close this window and go back to Karvio.</small></p></main>${ok?'<script>setTimeout(function(){window.close()},2500)</script>':''}</body></html>`;
  return new Response(html,{status:ok?200:400,headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});
 }
-export async function driveCallback(url,rpc,cfg){
+export async function driveCallback(url,rpc,base){
+ const cfg=await withClient(rpc,base);
  const state=url.searchParams.get('state')||'',code=url.searchParams.get('code')||'',denied=url.searchParams.get('error');
  let claimed=false;try{claimed=await rpc('karvio_oauth_state_claim',{nonce:state})===true;}catch{}
  if(!claimed)return page('Link expired','This Google sign-in link was already used or is too old. Press "Connect Google Drive" in Karvio again.',false);

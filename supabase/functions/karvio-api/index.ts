@@ -1,7 +1,7 @@
 import { createHandler, logRequest } from './handler.mjs';
 import { dispatchSms } from './sms.mjs';
 import { driveCallback } from './drive.mjs';
-import { backupSecret } from './backupCrypto.mjs';
+import { keyResolver } from './backupCrypto.mjs';
 const url = Deno.env.get('SUPABASE_URL');
 const secret = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 if (!url || !secret) throw new Error('Server database credentials are unavailable');
@@ -22,8 +22,10 @@ const rpc = async (name: string, body: unknown) => {
  return data;
 };
 const functionUrl=`${url.replace(/\/+$/,'')}/functions/v1/karvio-api`;
-// KARVIO_BACKUP_KEY (32+ characters) encrypts every backup; GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET enable Drive backups.
-const backupKey=backupSecret(Deno.env.get('KARVIO_BACKUP_KEY')||'');
+// Every backup is encrypted: with KARVIO_BACKUP_KEY if set, otherwise with the key the database made for itself.
+// The Google Client ID / secret for Drive backups are entered by the owner in Settings → Database
+// (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET, if set, are only a fallback).
+const backupKey=keyResolver(rpc,Deno.env.get('KARVIO_BACKUP_KEY')||'');
 const drive={clientId:(Deno.env.get('GOOGLE_CLIENT_ID')||'').trim(),clientSecret:(Deno.env.get('GOOGLE_CLIENT_SECRET')||'').trim(),redirectUri:functionUrl,fetch:(input: RequestInfo,init?: RequestInit)=>fetch(input,init)};
 const gateway=createHandler({rpc,log:logRequest,backupKey,drive,background:(work: Promise<unknown>)=>EdgeRuntime.waitUntil(work),
  // Database derives the bucket from a stored, unexpired session, never from
@@ -35,6 +37,6 @@ rpc('karvio_register_endpoint',{endpoint_url:functionUrl}).catch(()=>console.err
 // The Google sign-in window returns here with ?code=…&state=… (the redirect URI set in Google Cloud).
 Deno.serve((request: Request)=>{
  const address=new URL(request.url);
- if(request.method==='GET'&&address.searchParams.has('state'))return driveCallback(address,rpc,{...drive,backupKey});
+ if(request.method==='GET'&&address.searchParams.has('state'))return backupKey().then((key: string)=>driveCallback(address,rpc,{...drive,backupKey:key}));
  return gateway(request);
 });

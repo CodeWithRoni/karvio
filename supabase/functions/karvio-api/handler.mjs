@@ -88,6 +88,8 @@ function snapshotCall(plan,body,protocol,state){
 export const CACHED_READS=new Set(['dashboard','reports','profit.report']);
 export function createHandler({rpc,dispatch=()=>{},backupKey='',drive={},background=async work=>{await work;},protocol=2,scopedReads=true,narrowReads=true,readCache=true,allowRequest=async()=>true,log=logNotable,retryDelay=attempt=>attempt*(25+Math.random()*50),recheckMs=60000,courierFetch=globalThis.fetch}) {
  const scopeState=newScopeState(recheckMs);
+ // The backup key: a fixed string (tests, KARVIO_BACKUP_KEY) or a resolver that asks the database once.
+ const keyOf=typeof backupKey==='function'?backupKey:async()=>backupKey;
  const handle=async(request,internal=false)=>{
   if(request.method==='OPTIONS')return new Response(null,{status:204,headers});
   if(request.method!=='POST')return reply({ok:false,error:'Use POST'},405);
@@ -115,15 +117,16 @@ export function createHandler({rpc,dispatch=()=>{},backupKey='',drive={},backgro
    if(protocol===2&&body.action==='courier.call'&&!internal){const data=await courierGateway(body,b=>handle(new Request('http://internal/',{method:'POST',body:JSON.stringify(b)}),true).then(r=>r.json()),courierFetch);return finish(reply(data),data.ok?'ok':'rejected');}
    // The daily-summary scheduler (pg_cron) must hand over a one-time code the database minted for this call.
    if(body.action==='summary.tick'){let ok=false;try{ok=await call('karvio_cron_claim',{nonce:String(body.payload?.nonce||'')})===true;}catch{}if(!ok)return finish(reply({ok:false,error:'Not allowed'},403),'rejected');}
-   if(protocol===2&&body.action.startsWith('database.transfer.')){const data=await transferRequest(body,call,{backupKey});return finish(reply(data),data.ok?'ok':'rejected');}
+   if(protocol===2&&body.action.startsWith('database.transfer.')){const data=await transferRequest(body,call,{backupKey:await keyOf()});return finish(reply(data),data.ok?'ok':'rejected');}
    // Nightly Google Drive backup (pg_cron with a one-time code), and the Administrator's Automatic backup card.
    if(protocol===2&&body.action==='backup.drive.tick'){
     let ok=false;try{ok=await call('karvio_cron_claim',{nonce:String(body.payload?.nonce||'')})===true;}catch{}
     if(!ok)return finish(reply({ok:false,error:'Not allowed'},403),'rejected');
-    await background(runDriveBackup(rpc,{...drive,backupKey}).catch(()=>console.error('Drive backup failed')));
+    const key=await keyOf();
+    await background(runDriveBackup(rpc,{...drive,backupKey:key}).catch(()=>console.error('Drive backup failed')));
     return finish(reply({ok:true,data:{started:true}}),'ok');
    }
-   if(protocol===2&&body.action.startsWith('backup.drive.')){const data=await driveRequest(body,call,{...drive,backupKey});return finish(reply(data),data.ok?'ok':'rejected');}
+   if(protocol===2&&body.action.startsWith('backup.drive.')){const data=await driveRequest(body,call,{...drive,backupKey:await keyOf()});return finish(reply(data),data.ok?'ok':'rejected');}
    if(body.action==='ping'&&protocol===2){
     const status=await call('karvio_status',{});
     return finish(reply({ok:true,data:{app:'Karvio',version:APP_VERSION,buildId:BUILD_ID,backend:'supabase',requiresSetup:status.requiresSetup,apiCapabilities:{idempotency:true,durableRecovery:true,credentialSessions:true,purchaseDuePayment:true,saleDuePayment:true,rowDeltas:true,boundedBackup,chunkedRestore:{maxBytes:16*1024*1024,partChars:128*1024},driveBackup:true,backupEncryption:!!backupKey}}}));

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {freshDatabase, apiClient, rpcFor} from './pg-harness.mjs';
 import {exportBackupLines, restoreStreamBackup, inspectStreamingBackup, isEncryptedManifest} from '../../frontend/src/lib/backupStream.js';
 import {driveCallback, KEEP_BACKUPS} from '../../supabase/functions/karvio-api/drive.mjs';
-import {sealPage, openPage, keyId} from '../../supabase/functions/karvio-api/backupCrypto.mjs';
+import {sealPage, openPage, keyId, keyResolver} from '../../supabase/functions/karvio-api/backupCrypto.mjs';
 
 const KEY = 'test-backup-key-0123456789-abcdefghijklmnop';
 const OTHER = 'another-backup-key-0123456789-abcdefghijkl';
@@ -20,6 +20,7 @@ async function fakeFetch(input, init = {}) {
     const f = new URLSearchParams(body);
     if (f.get('grant_type') === 'authorization_code') {
       assert.equal(f.get('redirect_uri'), 'https://karvio.test/functions/v1/karvio-api');
+      google.lastClient = [f.get('client_id'), f.get('client_secret')];
       return json({access_token: 'at-1', refresh_token: 'rt-secret-123', scope: 'openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/drive.file', id_token: 'x'});
     }
     if (f.get('refresh_token') === 'rt-secret-123') { google.refreshes++; return json({access_token: 'at-2'}); }
@@ -115,7 +116,7 @@ const owner = await client(KEY);
 let st = await owner.q('backup.drive.status');
 assert.equal(st.configured, true); assert.equal(st.connected, false); assert.equal(st.redirect_uri, drive.redirectUri);
 const notReady = await (await client('')).raw('backup.drive.connect');
-assert.equal(notReady.ok, false); assert.match(notReady.error, /KARVIO_BACKUP_KEY/);
+assert.equal(notReady.ok, false); assert.match(notReady.error, /backup key/);
 const {url} = await owner.q('backup.drive.connect');
 const auth = new URL(url);
 assert.equal(auth.host, 'accounts.google.com');
@@ -215,4 +216,61 @@ await db.exec('set role anon');
 await assert.rejects(() => db.query('select public.karvio_drive_state()'));
 await assert.rejects(() => db.query("select public.karvio_drive_export_begin('x')"));
 await db.exec('reset role');
+
+// ---- 6. No server secrets at all: the database makes its own backup key; the owner enters the Google keys.
+{
+  const db2 = await freshDatabase();
+  const rpc2 = rpcFor(db2);
+  const resolve = keyResolver(rpc2, '');
+  const shop = await apiClient(db2, {handlerOptions: {backupKey: resolve, drive: {redirectUri: drive.redirectUri, fetch: fakeFetch}}});
+  const k1 = await resolve(), k2 = await keyResolver(rpc2, '')();
+  assert.ok(k1.length >= 64 && k1 === k2, 'one stable key, made by the database');
+  await shop.q('customer.save', {name: 'Hidden Customer Karim'});
+  const own = await download(shop);
+  assert.equal(JSON.parse(own[0]).encryption.key_id, keyId(k1), 'backups use the database key');
+  assert.ok(!own.join('').includes('Hidden Customer Karim'));
+  assert.ok(!own.join('').includes(k1), 'the key is never in a backup');
+  const back2 = await restoreStreamBackup(new File(own, 'own.karvio', {lastModified: 9}), {call: (a, p) => shop.q(a, p), credentials: {password: '', confirm: 'RESTORE'}, storage: storage(), key: 'r8', pace: 0, wait: async () => db2.query('select karvio_private.transfer_restore_worker()')}).catch(e => e);
+  assert.match(String(back2?.message || ''), /password/i, 'restore still asks for the Administrator password');
+  const restoredOwn = await restoreStreamBackup(new File(own, 'own.karvio', {lastModified: 10}), {call: (a, p) => shop.q(a, p), credentials: {password: PASSWORD, confirm: 'RESTORE'}, storage: storage(), key: 'r9', pace: 0, wait: async () => db2.query('select karvio_private.transfer_restore_worker()')});
+  assert.equal(restoredOwn.signed_out, true, 'restores with the key the database keeps');
+  assert.equal((await rpc2('karvio_backup_key', {})), k1, 'the key survives a restore');
+  shop.setToken((await shop.q('login', {username: 'admin', password: PASSWORD})).token);
+
+  let s2 = await shop.q('backup.drive.status');
+  assert.equal(s2.configured, false); assert.deepEqual(s2.missing, ['Google Client ID', 'Google Client secret']);
+  assert.equal(s2.google.saved, false); assert.equal(s2.redirect_uri, drive.redirectUri);
+  assert.match((await shop.raw('backup.drive.connect')).error, /Save your Google Client ID and Google Client secret in Step 2/);
+  assert.match((await shop.raw('backup.drive.keys.save', {client_id: 'not-a-client', client_secret: 'GOCSPX-abcdef123'})).error, /Client ID looks wrong/);
+  assert.match((await shop.raw('backup.drive.keys.save', {client_id: '111-a.apps.googleusercontent.com', client_secret: ''})).error, /Client secret/);
+  s2 = await shop.q('backup.drive.keys.save', {client_id: '111-a.apps.googleusercontent.com', client_secret: 'GOCSPX-owner-secret-1'});
+  assert.equal(s2.configured, true); assert.equal(s2.google.saved, true); assert.equal(s2.google.client_id, '111-a.apps.googleusercontent.com');
+  assert.ok(!JSON.stringify(s2).includes('GOCSPX'), 'the secret never comes back to the browser');
+  const raw2 = (await db2.query("select value from karvio_private.config where key='drive_client'")).rows[0].value;
+  assert.ok(!raw2.includes('GOCSPX-owner-secret-1'), 'the Google secret is stored sealed');
+  await shop.q('user.save', {name: 'Sales', username: 's1', role: 'sales', password: 'sales-password-123'});
+  const clerk = await apiClient(db2, {handlerOptions: {backupKey: resolve, drive: {redirectUri: drive.redirectUri, fetch: fakeFetch}}});
+  clerk.setToken((await clerk.q('login', {username: 's1', password: 'sales-password-123'})).token);
+  assert.equal((await clerk.raw('backup.drive.keys.save', {client_id: '222-b.apps.googleusercontent.com', client_secret: 'GOCSPX-x123456'})).ok, false, 'only the Administrator');
+  // Connect with the owner's own Google project.
+  const {url: url2} = await shop.q('backup.drive.connect');
+  assert.equal(new URL(url2).searchParams.get('client_id'), '111-a.apps.googleusercontent.com');
+  const cb = await driveCallback(new URL(drive.redirectUri + '?state=' + new URL(url2).searchParams.get('state') + '&code=c2'), rpc2, {redirectUri: drive.redirectUri, fetch: fakeFetch, backupKey: await resolve()});
+  assert.equal(cb.status, 200);
+  assert.deepEqual(google.lastClient, ['111-a.apps.googleusercontent.com', 'GOCSPX-owner-secret-1'], 'the saved keys are used with Google');
+  assert.equal((await shop.q('backup.drive.status')).connected, true);
+  const uploads = google.uploads.length;
+  await shop.q('backup.drive.run');
+  assert.equal(google.uploads.length, uploads + 1);
+  // A new secret for the same project keeps the connection; another project disconnects it.
+  await shop.q('backup.drive.keys.save', {client_id: '111-a.apps.googleusercontent.com', client_secret: 'GOCSPX-owner-secret-2'});
+  assert.equal((await shop.q('backup.drive.status')).connected, true);
+  const revoked = google.revoked.length;
+  s2 = await shop.q('backup.drive.keys.save', {client_id: '333-c.apps.googleusercontent.com', client_secret: 'GOCSPX-other-project'});
+  assert.equal(s2.connected, false); assert.equal(google.revoked.length, revoked + 1);
+  await db2.exec('set role anon');
+  await assert.rejects(() => db2.query('select public.karvio_backup_key()'));
+  await assert.rejects(() => db2.query('select public.karvio_drive_client()'));
+  await db2.exec('reset role');
+}
 console.log('Encrypted backups and Google Drive automatic backup: all checks passed');

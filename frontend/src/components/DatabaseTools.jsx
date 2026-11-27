@@ -79,7 +79,7 @@ export function DatabaseBackup({ onDone }) {
     <div className="card form db-card">
 <div className="wide db-card-head"><span className="db-ic ok" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M4 17v3h16v-3" /></svg></span><h2>Export Backup</h2></div>
       {saved && <div className="wide note reset-done" role="status"><b>Saved:</b> {saved.name} · {size(saved.size)} · {saved.records.toLocaleString('en-IN')} records{saved.encrypted ? ' · 🔒 encrypted' : ''}</div>}
-      {saved && saved.encrypted === false && <div className="wide errbox" role="alert">This backup is <b>not encrypted</b>: anyone with the file can read it. Set <code>KARVIO_BACKUP_KEY</code> on the server to encrypt backups.</div>}
+      {saved && saved.encrypted === false && <div className="wide errbox" role="alert">This backup is <b>not encrypted</b>: anyone with the file can read it. Update the Karvio server, then download a new backup.</div>}
       {progress&&<p className="wide muted" role="status">{progress}</p>}
       <div className="wide row end db-card-foot">
         <Btn kind="primary" busy={busy} onClick={bounded?streamed:download}>Download Backup</Btn>
@@ -190,13 +190,42 @@ export function DatabaseTab({ Reset }) {
   );
 }
 
-/** Automatic backup: the owner connects their own Google Drive once; every day at the time they set the server saves an encrypted backup there. */
+const CloudIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 8.5a4 4 0 0 1-.5 9.5H7z" /><path d="M12 11v6" /><path d="m9.5 13.5 2.5-2.5 2.5 2.5" /></svg>;
+const shortId = (id = '') => (id.length > 34 ? `${id.slice(0, 18)}…${id.slice(-24)}` : id);
+
+/** Where the owner gets their own Google keys: five steps in Google Cloud, with the redirect address to copy. */
+function GoogleKeysGuide({ redirect }) {
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(redirect); useStore.getState().toast('Address copied'); }
+    catch { useStore.getState().toast('Select the address and copy it', 'err'); }
+  };
+  return (
+    <div className="ab-box">
+      <div className="ab-box-head"><h3>Step 1 — How to get your Google keys</h3><span className="muted">About 10 minutes · free</span></div>
+      <ol className="ab-guide">
+        <li>Open <a href="https://console.cloud.google.com" target="_blank" rel="noreferrer">console.cloud.google.com</a> and sign in with the <b>Google account where the backups should go</b>. At the top, choose <b>Select a project → New project</b>, name it <i>Karvio Backup</i> and press <b>Create</b>.</li>
+        <li>Menu <b>APIs &amp; Services → Library</b>, search <b>Google Drive API</b>, open it and press <b>Enable</b>.</li>
+        <li>Menu <b>APIs &amp; Services → OAuth consent screen</b>: choose <b>External</b>, give the app a name (e.g. your shop name) and your email. Under <b>Scopes</b> add <code>…/auth/drive.file</code>. Then press <b>Publish app</b> so it shows <b>In production</b>.
+          <div className="ab-warn">If it stays in “Testing”, Google stops the backups after 7 days.</div></li>
+        <li>Menu <b>APIs &amp; Services → Credentials → Create credentials → OAuth client ID</b>. Application type: <b>Web application</b>. Under <b>Authorised redirect URIs</b> press <b>Add URI</b> and paste this:
+          <div className="ab-uri"><code>{redirect}</code><Btn size="sm" onClick={copy}>Copy</Btn></div></li>
+        <li>Press <b>Create</b>. Google shows a <b>Client ID</b> and a <b>Client secret</b>. Copy both into Step 2 below.</li>
+      </ol>
+    </div>
+  );
+}
+
+/** Automatic backup: the owner saves their own Google keys, connects their Google Drive once, and every day at the time they set the server saves an encrypted backup there. */
 export function AutoBackup({ q, onChanged }) {
   const d = q.data;
   const [busy, run] = useAction();
   const [waiting, setWaiting] = useState(false);
   const [confirmUI, ask] = useConfirm();
   const [time, setTime] = useState('');
+  const [keys, setKeys] = useState({ client_id: '', client_secret: '' });
+  const [showSecret, setShowSecret] = useState(false);
+  const [editKeys, setEditKeys] = useState(false);
+  const [guide, setGuide] = useState(false);
   useEffect(() => { if (d?.time) setTime(d.time); }, [d?.time]);
   const timer = useRef(null);
   useEffect(() => () => clearInterval(timer.current), []);
@@ -210,11 +239,24 @@ export function AutoBackup({ q, onChanged }) {
     }, 2500);
     return () => clearInterval(timer.current);
   }, [waiting]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (q.loading && !d) return <div className="card db-card db-auto"><Loading label="Checking Google Drive" /></div>;
+  if (!d) return <div className="card db-card db-auto"><ErrorBox error={q.error} onRetry={q.reload} /></div>;
+
+  const saved = !!d.google?.saved, connected = d.connected && !d.needs_reconnect;
   const connect = async () => {
     const popup = window.open('', 'karvio-google', 'width=520,height=680');
     let r; try { r = await run(() => api('backup.drive.connect', {})); } catch { popup?.close(); return; }
     if (popup && !popup.closed) popup.location.href = r.url; else window.location.href = r.url;
     setWaiting(true);
+  };
+  const saveKeys = async () => {
+    const id = keys.client_id.trim();
+    if (!/\.apps\.googleusercontent\.com$/.test(id)) return useStore.getState().toast('The Google Client ID ends with .apps.googleusercontent.com', 'err');
+    if (!keys.client_secret.trim()) return useStore.getState().toast('Enter the Google Client secret', 'err');
+    if (d.connected && d.google?.client_id && d.google.client_id !== id
+      && !(await ask({ title: 'Use another Google project?', message: 'Google Drive will be disconnected. Connect it again after saving. Backups already in Drive stay there.', confirmLabel: 'Save and disconnect' }))) return;
+    try { await run(() => api('backup.drive.keys.save', { client_id: id, client_secret: keys.client_secret.trim() }), 'Google keys saved'); } catch { return; }
+    setKeys({ client_id: '', client_secret: '' }); setShowSecret(false); setEditKeys(false); onChanged();
   };
   const saveTime = async () => {
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return useStore.getState().toast('Choose a backup time', 'err');
@@ -223,40 +265,79 @@ export function AutoBackup({ q, onChanged }) {
   };
   const now = async () => { try { await run(() => api('backup.drive.run', {}), 'Backup saved to Google Drive'); } catch { /* shown */ } onChanged(); };
   const disconnect = async () => {
-    if (!(await ask({ title: 'Disconnect Google Drive?', message: 'Nightly backups stop. Backups already in your Google Drive stay there.', confirmLabel: 'Disconnect' }))) return;
+    if (!(await ask({ title: 'Disconnect Google Drive?', message: 'Daily backups stop. Backups already in your Google Drive stay there.', confirmLabel: 'Disconnect' }))) return;
     try { await run(() => api('backup.drive.disconnect', {}), 'Google Drive disconnected'); } catch { return; }
     onChanged();
   };
-  const last = d?.last;
-  return (
+  const last = d.last;
+  const keysForm = (
+    <div className="ab-box">
+      <h3>Step 2 — Save your Google keys</h3>
+      <Field label="Google Client ID" wide><input value={keys.client_id} onChange={(e) => setKeys({ ...keys, client_id: e.target.value })} placeholder="1234567890-abc123.apps.googleusercontent.com" autoComplete="off" spellCheck={false} aria-label="Google Client ID" /></Field>
+      <Field label="Google Client secret" wide hint="Kept locked on the server. It is never shown again, never sent to other users and never put in a backup.">
+        <div className="ab-secret"><input type={showSecret ? 'text' : 'password'} value={keys.client_secret} onChange={(e) => setKeys({ ...keys, client_secret: e.target.value })} placeholder="GOCSPX-…" autoComplete="off" spellCheck={false} aria-label="Google Client secret" /><Btn onClick={() => setShowSecret(!showSecret)}>{showSecret ? 'Hide' : 'Show'}</Btn></div>
+      </Field>
+      <div className="row end">{saved && <Btn onClick={() => { setEditKeys(false); setKeys({ client_id: '', client_secret: '' }); }}>Cancel</Btn>}<Btn kind="primary" busy={busy} disabled={!keys.client_id.trim() || !keys.client_secret.trim()} onClick={saveKeys}>Save keys</Btn></div>
+    </div>
+  );
+  const keysSaved = (
+    <div className="ab-saved">
+      <span className="ab-check" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5 9-10" /></svg></span>
+      <div className="ab-saved-text"><b>Google keys saved</b><small>Client ID {shortId(d.google.client_id)} · secret hidden</small></div>
+      <Btn size="sm" onClick={() => setEditKeys(true)}>Change keys</Btn>
+      <button type="button" className="link" onClick={() => setGuide(!guide)}>{guide ? 'Hide the steps' : 'How to get the keys'}</button>
+    </div>
+  );
+  const head = (
+    <div className="wide db-card-head"><span className="db-ic aqua" aria-hidden="true"><CloudIcon /></span><h2>Automatic Backup</h2>
+      <span className={`db-badge ${connected ? 'ok' : ''}`} style={{ marginLeft: 'auto' }}>{connected ? 'On · Google Drive' : d.needs_reconnect ? 'Off · Connect again' : 'Off · Not set up'}</span></div>
+  );
+
+  if (connected) return (
     <div className="card form db-card db-auto">
-      <div className="wide db-card-head"><span className="db-ic aqua" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 8.5a4 4 0 0 1-.5 9.5H7z" /><path d="M12 11v6" /><path d="m9.5 13.5 2.5-2.5 2.5 2.5" /></svg></span><h2>Automatic Backup</h2>
-        {d?.connected && !d.needs_reconnect && <span className="db-badge ok">On · Google Drive</span>}</div>
-      <p className="wide muted" style={{ margin: 0 }}>Every day at the time you set{d?.time ? ` (now ${clock12(d.time)})` : ''} an encrypted backup of the whole shop is saved to your own Google Drive, in the “Karvio Backups” folder. The newest {d?.keep || 30} are kept. Karvio can only see the files it saves there.</p>
-      {q.loading && !d && <div className="wide"><Loading label="Checking Google Drive" /></div>}
-      <ErrorBox error={q.error} onRetry={q.reload} />
-      {d && !d.configured && <div className="wide note" role="note">
-        <b>Server setup needed.</b> Set {d.missing.map((m, i) => <span key={m}>{i ? ', ' : ''}<code>{m}</code></span>)} in the Supabase Edge Function secrets.
-        {d.redirect_uri && <> In Google Cloud → Credentials, use this as the authorised redirect URI: <code className="db-uri">{d.redirect_uri}</code></>}
-      </div>}
-      {d?.configured && d.connected && <div className="wide db-stamps">
-        <div className={`db-stamp ${d.needs_reconnect ? 'warn' : 'ok'}`}><span>Google account</span><b>{d.email || 'Connected'}</b><small>{d.needs_reconnect ? 'Access was removed — connect again' : `Folder: ${d.folder || 'Karvio Backups'}`}</small></div>
+      {head}
+      <p className="wide muted ab-intro">Every day at {clock12(d.time)} an encrypted backup of the whole shop is saved to your own Google Drive, in the “Karvio Backups” folder. The newest {d.keep || 30} are kept.</p>
+      <div className="wide db-stamps">
+        <div className="db-stamp ok"><span>Google account</span><b>{d.email || 'Connected'}</b><small>Folder: {d.folder || 'Karvio Backups'}</small></div>
         <div className={`db-stamp ${last?.status === 'failed' ? 'warn' : last ? 'ok' : ''}`}><span>Last backup</span><b>{last ? fdatetime(last.at) : 'Not yet'}</b>
-          <small>{!last ? 'The first one is saved tonight.' : last.status === 'ok' ? `${last.file} · ${size(last.bytes || 0)}` : last.error}</small></div>
+          <small>{!last ? 'The first one is saved at the time below.' : last.status === 'ok' ? `${last.file} · ${size(last.bytes || 0)}` : last.error}</small></div>
         <div className="db-stamp"><span>Next backup</span><b>{d.next_at ? fdatetime(d.next_at) : '—'}</b><small>{d.running ? 'A backup is running now…' : d.due_now ? 'Due now — starts within 5 minutes' : `Every day at ${clock12(d.time)}`}</small></div>
-      </div>}
-      {d?.configured && d.connected && !d.needs_reconnect && <div className="wide row db-time">
+      </div>
+      <div className="wide row db-time">
         <Field label="Daily backup time (Bangladesh time)" hint="The backup starts within 5 minutes of this time. If the shop is offline then, it is tried again later the same day.">
           <input type="time" step="60" value={time} onChange={(e) => setTime(e.target.value)} aria-label="Daily backup time" />
         </Field>
         <Btn busy={busy} disabled={!time || time === d.time} onClick={saveTime}>Save time</Btn>
-      </div>}
+      </div>
+      <div className="wide">{editKeys ? keysForm : keysSaved}</div>
+      {guide && !editKeys && <div className="wide"><GoogleKeysGuide redirect={d.redirect_uri} /></div>}
+      <div className="wide row end db-card-foot">
+        <Btn busy={busy} onClick={disconnect}>Disconnect</Btn>
+        <Btn kind="primary" busy={busy || d.running} onClick={now}>Back up now</Btn>
+      </div>
+      {confirmUI}
+    </div>
+  );
+
+  // Not connected yet (or Google access was removed): the three steps.
+  const step = saved && !editKeys ? 3 : 1;
+  return (
+    <div className="card form db-card db-auto">
+      {head}
+      <p className="wide muted ab-intro">Every day at the time you choose, an encrypted backup of the whole shop is saved to <b>your own Google Drive</b>, in the “Karvio Backups” folder. The newest {d.keep || 30} are kept. It takes three steps, once.</p>
+      {d.needs_reconnect && <div className="wide errbox" role="alert">Google access was removed or expired. Press Connect Google Drive again.</div>}
+      <div className="wide ab-steps">
+        <div className={`ab-step ${step === 1 ? 'on' : 'done'}`}><span>{step === 1 ? 1 : '✓'}</span>Get your Google keys</div>
+        <div className={`ab-step ${step === 1 ? '' : 'done'}`}><span>{step === 1 ? 2 : '✓'}</span>Save them here</div>
+        <div className={`ab-step ${step === 3 ? 'on' : ''}`}><span>3</span>Connect Google Drive</div>
+      </div>
+      {(!saved || editKeys || guide) && <div className="wide"><GoogleKeysGuide redirect={d.redirect_uri} /></div>}
+      <div className="wide">{saved && !editKeys ? keysSaved : keysForm}</div>
+      <div className={`wide ab-box ab-connect ${saved && !editKeys ? '' : 'off'}`}>
+        <div><h3>Step 3 — Connect Google Drive</h3><p className="muted">Opens Google sign-in. Choose the same account and allow Karvio to save its own files.</p></div>
+        <Btn kind={saved && !editKeys ? 'primary' : undefined} busy={busy || waiting} disabled={!saved || editKeys || !d.configured} onClick={connect}>{d.needs_reconnect ? 'Connect again' : 'Connect Google Drive'}</Btn>
+      </div>
       {waiting && <p className="wide muted" role="status">Finish signing in to Google in the window that opened. This card updates by itself.</p>}
-      {d?.configured && <div className="wide row end db-card-foot">
-        {d.connected && <Btn busy={busy} onClick={disconnect}>Disconnect</Btn>}
-        {d.connected && !d.needs_reconnect && <Btn busy={busy || d.running} onClick={now}>Back up now</Btn>}
-        {(!d.connected || d.needs_reconnect) && <Btn kind="primary" busy={busy || waiting} onClick={connect}>{d.needs_reconnect ? 'Connect again' : 'Connect Google Drive'}</Btn>}
-      </div>}
       {confirmUI}
     </div>
   );

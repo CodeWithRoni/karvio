@@ -62,3 +62,13 @@ export function openSecret(secret,purpose,sealed){
  const decipher=createDecipheriv('aes-256-gcm',derive(secret,'karvio-secret',purpose),raw.subarray(0,12));decipher.setAuthTag(raw.subarray(raw.length-16));
  try{return Buffer.concat([decipher.update(raw.subarray(12,raw.length-16)),decipher.final()]).toString('utf8');}catch{fail('Stored secret could not be opened. Was KARVIO_BACKUP_KEY changed? Connect Google Drive again');}
 }
+
+/** The shop's backup key: KARVIO_BACKUP_KEY if the server has one, otherwise the key the database made for
+ * itself (karvio_backup_key, created once and kept out of every backup). Cached once found. */
+export function keyResolver(rpc,envValue=''){
+ let cached=backupSecret(envValue);
+ return async()=>{
+  if(cached)return cached;
+  try{const k=backupSecret(await rpc('karvio_backup_key',{}));if(k)cached=k;return k;}catch{return '';}
+ };
+}
