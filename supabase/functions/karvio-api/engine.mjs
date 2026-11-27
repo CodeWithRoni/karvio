@@ -2682,6 +2682,14 @@ function branchTransfersList_(p, user) {
   return { on: true, current: _branch, transfers: branchTransfers_().filter(function (t) { return !mine || t.from === mine || t.to === mine; }).slice(0, 500).map(function (t) {
     return Object.assign(t, { from_name: branchName_(t.from), to_name: branchName_(t.to) }); }) };
 }
+function branchTransferSerials_(p) {
+  if (!_branch) return [];
+  var reserved = repairReservations_(null, _branch).serial;
+  return all_('SerialItems').filter(function (s) {
+    return s.product_id === p.product_id && s.status === 'in_stock' &&
+      !reserved[s.id] && serialBranch_(s.id) === _branch;
+  }).map(function (s) { return { serial: s.serial }; });
+}
 function branchTransferSend_(p, user) {
   if (!branchesOn_()) fail_('Add branches first');
   var from = _branch, to = String(p.to || ''), reserved = repairReservations_(null, _branch);
@@ -3384,8 +3392,9 @@ function backupSchedule_(p, user) {
   return { enabled: on, keep_days: keep, folder: BACKUP_FOLDER, last: getSetting_('last_daily_backup_at', '') };
 }
 function databaseReset_(p, user) {
-  _branch = '';
   if (!isOwner_(user)) fail_('Only the Administrator account can reset the database');
+  if (_branch && _branch !== branchDefault_()) fail_('Switch to the Main Branch before resetting the database');
+  _branch = '';
   if (!pwCheck_(user, p.password)) fail_('Incorrect password — nothing was reset');
   if (String(p.confirm || '').trim() !== RESET_WORD) fail_('Type RESET to confirm — nothing was reset');
   var keepUsers = p.keep_users === true, keepSettings = p.keep_settings === true;
@@ -3398,7 +3407,9 @@ function databaseReset_(p, user) {
   var users = all_('Users').filter(function (u) { return u.id === user.id || keepUsers; })
     .map(function (u) { var o = {}; cols_('Users').forEach(function (c) { o[c.k] = u[c.k]; }); return o; });
   var sm = settingsMap_();
-  var settings = keepSettings ? Object.keys(sm).filter(function (k) { return k.indexOf('seq_') !== 0; }).map(function (k) { return [k, sm[k]]; }) : [];
+  var settings = keepSettings ? Object.keys(sm).filter(function (k) {
+    return k.indexOf('seq_') !== 0 && ['branches', 'user_branches', 'account_branches'].indexOf(k) < 0;
+  }).map(function (k) { return [k, sm[k]]; }) : [];
 
   wipeAll_(ss);
   writeJsonRows_(BRANCH_SHEET, []); delete _mem.__branchRows; // stock per branch means nothing once the stock is gone
@@ -6932,7 +6943,7 @@ function stockAnalysis_() {
   all_('PurchaseItems').forEach(function(i) {
     var p = purchases[i.purchase_id]; if (!p || p.status !== 'active') return;
     var expiry = ''; try { expiry = supplierWarrantyDate_(JSON.parse(i.valuation || '{}').supplier_warranty_expiry); } catch(e) { /* Unset or legacy invalid metadata is unknown, never inferred from customer warranty. */ }
-    var l = { id: i.id, product_id: i.product_id, purchase_id: p.id, invoice_no: p.invoice_no, supplier: p.supplier_name, date: p.date <= today ? p.date : '', expiry: expiry, qty: i.qty, serials: i.serials, order: i._row };
+    var l = { id: i.id, product_id: i.product_id, purchase_id: p.id, invoice_no: p.invoice_no, supplier: p.supplier_name, date: p.date <= today ? p.date : '', expiry: expiry, qty: i.qty, unit_cost: i.qty > 0 ? purchaseInventoryCost_(i) / i.qty : 0, serials: i.serials, order: i._row };
     (lots[i.product_id] = lots[i.product_id] || []).push(l);
     parseList_(i.serials).forEach(function(sn) { serialLots[p.id + '|' + i.product_id + '|' + sn.toLowerCase()] = l; });
   });
@@ -6948,7 +6959,7 @@ function stockAnalysis_() {
     if (isSerialProduct_(pr)) {
       (serials[pr.id] || []).slice(0, Math.floor(stock)).forEach(function(s) {
         var l = serialLots[s.purchase_id + '|' + pr.id + '|' + String(s.serial).toLowerCase()];
-        if (l) { remaining.push(Object.assign({}, l, { qty: 1, serial: s.serial })); unknown--; }
+        if (l) { remaining.push(Object.assign({}, l, { qty: 1, serial: s.serial, unit_cost: num_(s.cost) })); unknown--; }
       });
     } else {
       var queue=(replay.queues[pr.id] || []).filter(function(l) { return l.qty > 0.00001; }).map(function(l) { return Object.assign({},l); });
@@ -7370,8 +7381,21 @@ function dashboard_(p, user) {
     sale_value: round_(sum_(held, function (x) { return x.stock * x.sale_price; })),
     unpriced: held.filter(function (x) { return !(x.sale_price > 0); }).length
   };
-  out.product_summary = stockQuantitySummary_(stockAnalysis_().rows.filter(function(r) { return r.active && r.stock > 0; }));
+  var stockRows = stockAnalysis_().rows.filter(function(r) { return r.active && r.stock > 0; });
+  out.product_summary = stockQuantitySummary_(stockRows);
   if (showCost) {
+    var costs = { age3: 0, age6: 0, age12: 0, expiring: 0, expired: 0 };
+    var cut3 = stockMonthCutoff_(today, 3), cut6 = stockMonthCutoff_(today, 6), cut12 = stockMonthCutoff_(today, 12), soon = addDays_(today, 30);
+    stockRows.forEach(function (r) { r.lots.forEach(function (l) {
+      var cost = l.qty * num_(l.unit_cost);
+      if (l.date && l.date < cut3) costs.age3 += cost;
+      if (l.date && l.date < cut6) costs.age6 += cost;
+      if (l.date && l.date < cut12) costs.age12 += cost;
+      if (l.expiry && l.expiry < today) costs.expired += cost;
+      else if (l.expiry && l.expiry <= soon) costs.expiring += cost;
+    }); });
+    Object.keys(costs).forEach(function (k) { costs[k] = round_(costs[k]); });
+    out.product_summary_cost = costs;
     out.stock_summary.cost_value = round_(sum_(held, function (x) { return x.stock * x.cost_price; }));
     out.stock_summary.expected_profit = round_(out.stock_summary.sale_value - out.stock_summary.cost_value);
   }
@@ -8218,6 +8242,7 @@ var ROUTES = {
   'branch.save':      r_('settings', branchSave_, true),
   'branch.assign':    r_('settings', branchAssign_, true),
   'branch.transfers': r_('products', branchTransfersList_),
+  'branch.transfer.serials': r_('products', branchTransferSerials_),
   'branch.transfer.send':    r_('products', branchTransferSend_, true),
   'branch.transfer.receive': r_('products', function (p, u) { return branchTransferFinish_(p, u, true); }, true),
   'branch.transfer.cancel':  r_('products', function (p, u) { return branchTransferFinish_(p, u, false); }, true),

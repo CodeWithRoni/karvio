@@ -30,7 +30,8 @@ export const DEFAULT_OPTS = {
   custom: { w: 50, h: 30, cols: 1, rows: 10, top: 10, left: 5, gapX: 2, gapY: 2 },
   show: { shop: true, name: true, brand: true, warranty: false, price: true, code: true, sku: false, line: false, border: false },
   priceType: 'retail', // retail | wholesale | both
-  priceLabel: 'Price', // text before the price; '' = none
+  priceLabel: 'Price', // Tk | Price | MRP | custom
+  customPriceLabel: '',
   line: '', // extra line (phone number, "Thank you", etc.)
   textSize: 1, // 0.85 small · 1 normal · 1.15 large
   dpi: 203, // label printer resolution: 203 (most) or 300
@@ -129,15 +130,15 @@ const fmt = (n) => Number(n || 0).toLocaleString('en-IN', { maximumFractionDigit
 /** One label. item = { name, code, price, wholesale, brand, warranty, sku } */
 export function labelHtml(item, o, ctx) {
   const s = o.show || {};
-  const cur = ctx.currency || 'Tk';
   const meta = [s.brand && item.brand, s.warranty && item.warranty, s.sku && item.sku && `SKU ${item.sku}`].filter(Boolean).join(' · ');
-  const pl = o.priceLabel ? `<small>${esc(o.priceLabel)}</small> ` : '';
+  const priceLabel = o.priceLabel === 'custom' ? String(o.customPriceLabel || '').trim() : o.priceLabel;
+  const pl = priceLabel ? `<small>${esc(priceLabel)}</small> ` : '';
   let price = '';
   if (s.price) {
-    if (o.priceType === 'both') price = `<div class="pr both"><span>${pl}<b>${esc(cur)} ${fmt(item.price)}</b></span>${item.wholesale > 0 ? `<span class="ws"><small>Wholesale</small> ${esc(cur)} ${fmt(item.wholesale)}</span>` : ''}</div>`;
+    if (o.priceType === 'both') price = `<div class="pr both"><span>${pl}<b>${fmt(item.price)}</b></span>${item.wholesale > 0 ? `<span class="ws"><small>Wholesale</small> ${fmt(item.wholesale)}</span>` : ''}</div>`;
     else {
       const v = o.priceType === 'wholesale' && item.wholesale > 0 ? item.wholesale : item.price;
-      price = v > 0 ? `<div class="pr">${pl}<b>${esc(cur)} ${fmt(v)}</b></div>` : '';
+      price = v > 0 ? `<div class="pr">${pl}<b>${fmt(v)}</b></div>` : '';
     }
   }
   return `<div class="lbl"${ctx.L && scanRisk(item.code, ctx.L, o) ? ' data-thin="1"' : ''}>

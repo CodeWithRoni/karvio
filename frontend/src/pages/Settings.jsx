@@ -593,6 +593,8 @@ function MyPassword() {
 const RESET_WORD = 'RESET';
 /** Empties the whole shop database (Administrator account only). The server copies the spreadsheet first. */
 function DatabaseReset({ onDone }) {
+  const branches = useStore((s) => s.branches);
+  const outsideMain = branches?.on && !branches.list.some((b) => b.id === branches.current && b.main);
   const blank = { password: '', confirm: '', keep_settings: false, keep_users: false };
   const [f, setF] = useState(blank);
   const [open, setOpen] = useState(false);
@@ -618,14 +620,14 @@ function DatabaseReset({ onDone }) {
         {done.backup ? <>A full safety backup of the old data was saved as <b>{done.backup.name}</b>{done.backup.url ? <> (<a href={done.backup.url} target="_blank" rel="noreferrer">open the copy</a>)</> : null}.</>
           : offline ? 'The previous data file is kept in the data folder on this computer.' : null}
       </div>}
-      <div className="wide row end db-card-foot"><Btn kind="danger" onClick={() => setOpen(true)}>Reset Database</Btn></div>
+      <div className="wide row end db-card-foot">{outsideMain && <span className="muted">Switch to the Main Branch to reset the database.</span>}<Btn kind="danger" disabled={outsideMain} onClick={() => setOpen(true)}>Reset Database</Btn></div>
       {open && (
         <Modal open size="md" title="Reset the whole database" onClose={() => { setOpen(false); setF(blank); }}
           footer={<><Btn onClick={() => { setOpen(false); setF(blank); }}>Cancel</Btn><Btn kind="danger" busy={busy} disabled={!ready} onClick={reset}>Delete everything</Btn></>}>
           <div className="form">
             <div className="wide reset-warn">
               <b>This deletes everything:</b> products and stock, serial numbers, purchases, sales, returns, customers, suppliers, dues and ledgers,
-              accounts and their balances, expenses, warranty claims, saved quotations, online orders, approval requests, SMS log, invoice links and history. Invoice numbers start again from 1.
+              all branch records and assignments, accounts and their balances, expenses, warranty claims, saved quotations, online orders, approval requests, SMS log, invoice links and history. Invoice numbers start again from 1.
               <div style={{ marginTop: 6 }}>Your Administrator account stays, with the same password. {offline ? 'The previous data file is kept on this computer.' : 'Before deleting, a full safety backup is saved in your backend — if it cannot be saved, nothing is deleted.'}</div>
             </div>
             <label className="check wide"><input type="checkbox" checked={f.keep_settings} onChange={(e) => setF({ ...f, keep_settings: e.target.checked })} /> Keep shop settings (shop name, invoice, SMS gateway, dashboard)</label>

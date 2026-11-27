@@ -141,9 +141,21 @@ same(Q('sale.create', { items: [{ product_id: p2.id, qty: 1, price: 150 }], paym
 // keeping the other users and the shop settings when asked
 Q('settings.save', { values: { shop_name: 'COMPUTER PLUS' } });
 Q('user.save', { name: 'Roni', username: 'roni', password: 'roni123-test-2026', role: 'admin' });
+const branch = Q('branch.save', { name: 'Main Branch' }).list[0];
+const showroom = Q('branch.save', { name: 'Showroom' }).list.find((b) => !b.main);
+const staffRow = Q('users.list', {}).find((u) => u.username === 'roni');
+Q('branch.assign', { users: { [staffRow.id]: showroom.id }, accounts: { [cash2.id]: branch.id } });
+const wrongBranch = JSON.parse(sandbox.doPost({ postData: { contents: JSON.stringify({
+  action: 'database.reset', payload: { password: 'admin123', confirm: 'RESET' }, token, branch: showroom.id
+}) } }).getContent());
+same(wrongBranch.ok, false, 'reset refused from a showroom');
+truthy(/Main Branch/.test(wrongBranch.error), 'reset tells the owner how to proceed');
+same(Q('branches.get', {}).list.length, 2, 'refused reset keeps both branches');
 const r2 = Q('database.reset', { password: 'admin123', confirm: 'RESET', keep_users: true, keep_settings: true });
 same([r2.users, r2.kept_settings], [2, true], 'kept users and settings');
 const boot2 = Q('bootstrap', {});
+const resetBranches = Q('branches.get', {});
+same([resetBranches.on, resetBranches.list, resetBranches.user_branches, resetBranches.account_branches], [false, [], {}, {}], 'reset clears branches and assignments even when settings are kept');
 same(boot2.settings.shop_name, 'COMPUTER PLUS', 'shop name kept');
 same(boot2.products.length, 0, 'business data still cleared');
 login('roni', 'roni123-test-2026'); checks++;

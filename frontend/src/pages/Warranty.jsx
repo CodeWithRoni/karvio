@@ -46,8 +46,15 @@ function NewClaim({ onClose, onDone }) {
   const [pick, setPick] = useState(null);
   const [issue, setIssue] = useState('');
   const [phone, setPhone] = useState('');
-  const [busy, run] = useAction();
-  const search = async (e) => { e?.preventDefault(); setPick(null); setRes(await run(() => api('warranty.lookup', { q }))); };
+  const [finding, lookup] = useAction();
+  const [saving, run] = useAction();
+  const search = async (e) => {
+    e.preventDefault();
+    if (finding || saving || !q.trim()) return;
+    setPick(null);
+    setRes(null);
+    try { setRes(await lookup(() => api('warranty.lookup', { q }))); } catch { /* useAction shows the error. */ }
+  };
   const save = async () => {
     const c = await run(() => api('claim.create', { sale_id: pick.sale_id, sale_item_id: pick.sale_item_id, serial: pick.serial, issue, phone }), 'Warranty claim created');
     printClaimSlip(c);
@@ -55,10 +62,10 @@ function NewClaim({ onClose, onDone }) {
   };
   return (
     <Modal open onClose={onClose} size="lg" title="Receive warranty item"
-      footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} disabled={!pick} onClick={save}>Create claim & print slip</Btn></>}>
+      footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={saving} disabled={!pick || finding} onClick={save}>Create claim & print slip</Btn></>}>
       <form className="row" onSubmit={search}>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Scan serial number or type invoice number" style={{ flex: 1 }} autoFocus />
-        <Btn kind="primary" busy={busy} type="submit">Find</Btn>
+        <Btn kind="primary" busy={finding} disabled={saving || !q.trim()} type="submit">Find</Btn>
       </form>
       {res && !res.length && <Empty icon="search" title="No sold item found">Check the serial or invoice number. Items that were never sold from this shop cannot be claimed.</Empty>}
       {res && res.length > 0 && (

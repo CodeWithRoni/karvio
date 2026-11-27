@@ -74,6 +74,7 @@ test('SMS settings: one card per SMS with its own switch; gateway tab keeps only
   await expect(page.getByText('SMS gateway on')).toBeVisible();
   await expect(page.getByLabel('Sale invoice SMS message')).toHaveCount(0);
   await page.getByRole('tab', { name: 'SMS settings', exact: true }).click();
+  await expect(page.locator('.smsf-grid')).toHaveCSS('grid-template-columns', /^(?:[\d.]+px ){3}[\d.]+px$/);
   for (const t of ['Sale invoice SMS', 'Due reminder SMS', 'Quotation SMS', 'Repair completed SMS', 'Repair — technician assigned', 'Service — technician assigned', 'Service done — to admin / manager'])
     await expect(page.locator('.smsf-card h2', { hasText: t })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Daily summary to the owner' })).toBeVisible();

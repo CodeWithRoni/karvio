@@ -18,6 +18,12 @@ test('add branches, work in one, send stock to the other and see every branch in
   const p = await call(request, 'product.save', { name: `Branch fan ${stamp}`, sale_price: 2500 });
   const sup = await call(request, 'supplier.save', { name: `Branch supplier ${stamp}` });
   await call(request, 'purchase.create', { supplier_id: sup.id, items: [{ product_id: p.id, qty: 6, cost: 1800, sale_price: 2500 }], payments: [] });
+  const serialProduct = await call(request, 'product.save', {
+    name: 'Branch serial router ' + stamp, has_warranty: true, warranty_type: 'serial', warranty_days: 365, sale_price: 2500
+  });
+  await call(request, 'purchase.create', { supplier_id: sup.id, items: [{
+    product_id: serialProduct.id, qty: 2, cost: 1800, sale_price: 2500, serials: ['BT-CLICK', 'BT-SCAN']
+  }], payments: [] });
   await page.setViewportSize({ width: 1400, height: 950 });
   await page.goto('/#/settings');
   await page.getByRole('tab', { name: 'Branches' }).click();
@@ -42,6 +48,13 @@ test('add branches, work in one, send stock to the other and see every branch in
   await dlg.getByPlaceholder(/Add a product/).fill(p.name);
   await dlg.getByPlaceholder(/Add a product/).press('Enter');
   await dlg.getByLabel(`Quantity of ${p.name}`).fill('2');
+  await dlg.getByPlaceholder(/Add a product/).fill(serialProduct.name);
+  await dlg.getByPlaceholder(/Add a product/).press('Enter');
+  await dlg.getByRole('button', { name: 'BT-CLICK', exact: true }).click();
+  const scan = dlg.getByLabel('Scan or type a serial number');
+  await scan.fill('bt-scan');
+  await scan.press('Enter');
+  await expect(dlg.getByRole('button', { name: 'BT-SCAN', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await dlg.getByRole('button', { name: '➜ Send' }).click();
   await expect(page.locator('.bt-list')).toContainText('On the way');
   // switch to the second branch and take it in
@@ -52,6 +65,9 @@ test('add branches, work in one, send stock to the other and see every branch in
   await page.getByRole('tab', { name: 'Done' }).click();
   await expect(page.locator('.bt-list')).toContainText('Received');
   expect((await call(request, 'products.list', {}, { branch: second })).find((x) => x.id === p.id).stock).toBe(2);
+
+  expect((await call(request, 'branch.transfer.serials', { product_id: serialProduct.id }, { branch: second }))
+    .map((row) => row.serial).sort()).toEqual(['BT-CLICK', 'BT-SCAN']);
 
   await page.goto('/#/branch-report');
   await expect(page.locator('.br-table')).toContainText('Second branch');

@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { api } from '../lib/api';
 import { fdatetime, qty as fqty } from '../lib/format';
 import { useApi, PageHead, Btn, Field, ErrorBox, Badge, Empty, Loading, useAction, Modal, Tabs } from '../components/ui';
-import { ProductSearch } from '../components/widgets';
+import { ProductSearch, SerialChooser } from '../components/widgets';
 
 const ST = { in_transit: ['On the way', 'warn'], received: ['Received', 'ok'], cancelled: ['Cancelled', 'muted'] };
 
@@ -39,7 +39,7 @@ export default function BranchTransfer() {
             </div>}
           </section>))}</div>
       ) : <Empty icon="receipt" title={tab === 'open' ? 'Nothing on the way' : 'No finished transfers yet'}>Transfers you send or receive are listed here.</Empty>}
-      {sending && <SendDialog b={b} onClose={() => setSending(false)} onDone={() => { setSending(false); q.reload(); useStore.getState().refresh('products').catch(() => {}); }} />}
+      {sending && <SendDialog key={b.current} b={b} onClose={() => setSending(false)} onDone={() => { setSending(false); q.reload(); useStore.getState().refresh('products').catch(() => {}); }} />}
     </>
   );
 }
@@ -54,9 +54,9 @@ function SendDialog({ b, onClose, onDone }) {
   const add = (p) => {
     if (items.some((i) => i.product_id === p.id)) return;
     const serial = p.has_warranty && p.warranty_type === 'serial' && !p.service;
-    setItems([...items, { product_id: p.id, name: p.name, unit: p.unit, serial, qty: serial ? '' : '1', serials: '' }]);
+    setItems([...items, { product_id: p.id, name: p.name, unit: p.unit, serial, qty: serial ? '' : '1', serials: [] }]);
   };
-  const set = (id, k, v) => setItems(items.map((i) => (i.product_id === id ? { ...i, [k]: v } : i)));
+  const set = (id, k, v) => setItems((current) => current.map((i) => (i.product_id === id ? { ...i, [k]: v } : i)));
   const here = (id) => products.find((p) => p.id === id)?.stock ?? 0;
   const send = async () => {
     const r = await run(() => api('branch.transfer.send', { to, note, items: items.map((i) => ({ product_id: i.product_id, qty: i.qty, serials: i.serials })) }), 'Stock sent');
@@ -64,16 +64,19 @@ function SendDialog({ b, onClose, onDone }) {
   };
   return (
     <Modal open size="lg" title="Send stock to another branch" onClose={onClose}
-      footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={send} disabled={!to || !items.length}>➜ Send</Btn></>}>
+      footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={send} disabled={!to || !items.length || items.some((i) => i.serial ? !i.serials.length : !(Number(i.qty) > 0))}>➜ Send</Btn></>}>
       <div className="form">
         {others.length ? <Field label="Send to" wide><select value={to} onChange={(e) => setTo(e.target.value)} aria-label="Send to">{others.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></Field>
           : <div className="wide sms-warn" role="alert">There is no other open branch to send to — you are working in the only branch. Add the other branch (e.g. Main Branch or Showroom - 2) in <Link to="/settings">Settings → Branches</Link>, then send.</div>}
         <div className="wide"><ProductSearch noServices onPick={add} placeholder="Add a product: search or scan" /></div>
         {items.length > 0 && <table className="dc-hist wide"><thead><tr><th>Product</th><th className="r">Here now</th><th>Send</th><th /></tr></thead>
-          <tbody>{items.map((i) => <tr key={i.product_id}><td>{i.name}</td><td className="r num">{fqty(here(i.product_id), i.unit)}</td>
-            <td>{i.serial ? <input value={i.serials} onChange={(e) => set(i.product_id, 'serials', e.target.value)} placeholder="Serial numbers: SN1, SN2" aria-label={`Serials of ${i.name}`} />
+          <tbody>{items.map((i) => <Fragment key={i.product_id}><tr><td>{i.name}</td><td className="r num">{fqty(here(i.product_id), i.unit)}</td>
+            <td>{i.serial ? <span>{i.serials.length} selected</span>
               : <input className="sc-in" type="number" min="0" step="any" value={i.qty} onChange={(e) => set(i.product_id, 'qty', e.target.value)} aria-label={`Quantity of ${i.name}`} />}</td>
-            <td className="r"><Btn size="sm" kind="danger" onClick={() => setItems(items.filter((x) => x.product_id !== i.product_id))} aria-label={`Remove ${i.name}`}>×</Btn></td></tr>)}</tbody></table>}
+            <td className="r"><Btn size="sm" kind="danger" onClick={() => setItems(items.filter((x) => x.product_id !== i.product_id))} aria-label={`Remove ${i.name}`}>×</Btn></td></tr>
+            {i.serial && <tr><td colSpan={4}><SerialChooser action="branch.transfer.serials" productId={i.product_id}
+              value={i.serials} onChange={(serials) => set(i.product_id, 'serials', serials)} /></td></tr>}
+          </Fragment>)}</tbody></table>}
         <Field label="Note" wide><input value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} placeholder="Optional" aria-label="Note" /></Field>
       </div>
     </Modal>

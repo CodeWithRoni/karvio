@@ -315,7 +315,7 @@ export default function Dashboard() {
       </div>}
 
       {!d.limited && (on('stock_summary') || on('product_summary')) && (
-        <InventoryHealth stock={on('stock_summary') ? d.stock_summary : null} product={on('product_summary') ? d.product_summary : null} />
+        <InventoryHealth stock={on('stock_summary') ? d.stock_summary : null} product={on('product_summary') ? d.product_summary : null} productCost={d.product_summary_cost} />
       )}
       <NoteReminders notes={notes} />
     </>

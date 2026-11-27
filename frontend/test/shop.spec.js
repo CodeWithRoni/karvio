@@ -481,6 +481,10 @@ test('barcode labels: create a shop barcode, custom size, A4 start position, pur
   await page.locator('.bc-opt', { hasText: 'Warranty' }).click();
   await page.locator('.bc-opt', { hasText: 'Extra line' }).click();
   await page.getByLabel('Extra line text').fill('Call 01700000000');
+  const priceLabel = page.getByRole('combobox', { name: 'Price label', exact: true });
+  await expect(priceLabel.locator('option')).toHaveText(['Tk', 'Price', 'MRP', 'Custom']);
+  await priceLabel.selectOption('custom');
+  await page.getByLabel('Custom price label', { exact: true }).fill('Offer');
   await expect(page.locator('.card', { hasText: 'Preview' }).getByText('4 labels · 4 pages · 50 × 30 mm')).toBeVisible();
   await hookPrint();
   await page.getByRole('button', { name: /^Print 4 labels/ }).click();
@@ -488,7 +492,7 @@ test('barcode labels: create a shop barcode, custom size, A4 start position, pur
   let html = await page.evaluate(() => window.__printed);
   expect(html).toContain('size:50mm 30mm');
   expect((html.match(/class="cell"/g) || []).length).toBe(4);
-  for (const t of ['1 Year warranty', 'Call 01700000000', 'Tk 5,250', code, '<svg']) expect(html).toContain(t);
+  for (const t of ['1 Year warranty', 'Call 01700000000', '<small>Offer</small> <b>5,250</b>', code, '<svg']) expect(html).toContain(t);
   expect(html).not.toContain('data-thin');
 
   // A4 sheet, starting at label 3 → two blank cells before the labels
@@ -515,6 +519,31 @@ test('barcode labels: create a shop barcode, custom size, A4 start position, pur
   await page.goto(`/#/barcodes?purchase=${pur.purchase.id}`);
   await expect(page.getByLabel(`Labels for ${pr.name}`)).toHaveValue('3');
   expect(errors).toEqual([]);
+});
+
+test('warranty lookup animates Find without animating Create claim', async ({ page }) => {
+  await page.goto('/#/warranty');
+  await page.getByRole('button', { name: 'Receive warranty item' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Receive warranty item' });
+  let releaseLookup;
+  const waitForLookup = new Promise((resolve) => { releaseLookup = resolve; });
+  await page.route(endpoint + '/**', async (route) => {
+    if (route.request().method() === 'POST' && route.request().postDataJSON().action === 'warranty.lookup') {
+      await waitForLookup;
+    }
+    await route.continue();
+  });
+  await dialog.getByPlaceholder('Scan serial number or type invoice number').fill('NO-SUCH-SOLD-SERIAL');
+  const find = dialog.getByRole('button', { name: 'Find', exact: true });
+  const create = dialog.getByRole('button', { name: 'Create claim & print slip' });
+  try {
+    await find.click();
+    await expect(find).toHaveAttribute('aria-busy', 'true');
+    await expect(create).toBeDisabled();
+    await expect(create.locator('.spin')).toHaveCount(0);
+  } finally { releaseLookup(); }
+  await expect(dialog.getByText('No sold item found')).toBeVisible();
+  await expect(find).toBeEnabled();
 });
 
 test('phone app: clear of status and gesture bars, POS cart fits, back button closes, goes back, then asks before exit', async ({ browser }) => {
@@ -545,7 +574,7 @@ test('phone app: clear of status and gesture bars, POS cart fits, back button cl
 
   // POS: a cart line stays inside the screen
   await page.goto('/#/pos');
-  await page.getByLabel('Search product').fill(product.name);
+  await page.getByRole('combobox', { name: 'Search product', exact: true }).fill(product.name);
   await page.locator('.psearch-list li').first().click();
   await expect(page.locator('.cart tbody tr')).toHaveCount(1);
   const wide = await page.evaluate(() => [...document.querySelectorAll('.pos *')].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.right > innerWidth + 1; }).length);

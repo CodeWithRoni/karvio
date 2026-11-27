@@ -15,7 +15,11 @@ const MAX_LABELS = 2000;
 function loadOpts() {
   try {
     const o = JSON.parse(localStorage.getItem(OPTS_KEY) || 'null');
-    if (o && typeof o === 'object') return { ...DEFAULT_OPTS, ...o, custom: { ...DEFAULT_OPTS.custom, ...o.custom }, show: { ...DEFAULT_OPTS.show, ...o.show } };
+    if (o && typeof o === 'object') {
+      const priceLabel = o.priceLabel === '' ? 'Tk' : o.priceLabel === 'Price:' ? 'Price' : o.priceLabel;
+      return { ...DEFAULT_OPTS, ...o, priceLabel: ['Tk', 'Price', 'MRP', 'custom'].includes(priceLabel) ? priceLabel : DEFAULT_OPTS.priceLabel,
+        custom: { ...DEFAULT_OPTS.custom, ...o.custom }, show: { ...DEFAULT_OPTS.show, ...o.show } };
+    }
   } catch { /* storage blocked: use defaults */ }
   return DEFAULT_OPTS;
 }
@@ -136,11 +140,11 @@ export default function Barcodes() {
   const L = layoutOf(opts);
   const errs = layoutErrors(L);
   const dense = errs.length ? [] : labelItems.filter((i) => i.code && !codeProblem(i.code) && scanRisk(i.code, L, opts));
-  const ctx = { shop: settings.shop_name || '', currency: settings.currency || 'Tk' };
+  const ctx = { shop: settings.shop_name || '' };
   const sample = [{ name: 'Sample product name', code: '2000000000015', price: 1250, wholesale: 1150, brand: 'Brand', warranty: '1 Year warranty', sku: 'SKU-01', count: L.perPage }];
   const zoom = Math.min(3.2, 430 / (L.pageW * 3.78));
   const preview = useMemo(() => pagesHtml(total ? labelItems.filter((i) => i.code && !codeProblem(i.code)) : sample, opts, ctx, { screen: true, maxPages: 1, zoom: errs.length ? 0 : zoom }),
-    [labelItems, opts, ctx.shop, ctx.currency, total]); // eslint-disable-line react-hooks/exhaustive-deps
+    [labelItems, opts, ctx.shop, total]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const assign = async () => {
     await run(async () => {
@@ -304,9 +308,12 @@ export default function Barcodes() {
                 <select value={opts.priceType} onChange={(e) => setOpts({ priceType: e.target.value })}><option value="retail">Retail price</option><option value="wholesale">Wholesale price</option><option value="both">Retail + wholesale</option></select>
               </Field>
               <Field label="Price label">
-                <select value={opts.priceLabel} onChange={(e) => setOpts({ priceLabel: e.target.value })}><option value="Price">Price</option><option value="MRP">MRP</option><option value="Price:">Price:</option><option value="">(none)</option></select>
+                <select value={opts.priceLabel} onChange={(e) => setOpts({ priceLabel: e.target.value })}><option value="Tk">Tk</option><option value="Price">Price</option><option value="MRP">MRP</option><option value="custom">Custom</option></select>
               </Field>
             </>}
+            {opts.show.price && opts.priceLabel === 'custom' && <Field label="Custom price label">
+              <input value={opts.customPriceLabel} maxLength={32} onChange={(e) => setOpts({ customPriceLabel: e.target.value })} />
+            </Field>}
             {opts.show.line && <Field label="Extra line text" wide hint="For example your phone number, website or “Thank you”"><input value={opts.line} maxLength={60} onChange={(e) => setOpts({ line: e.target.value })} placeholder={settings.shop_phone ? `Call ${settings.shop_phone}` : 'Thank you for shopping with us'} /></Field>}
             {!settings.shop_name && opts.show.shop && <p className="wide muted" style={{ margin: 0, fontSize: 12.5 }}>Set your shop name in Settings › Shop to show it on labels.</p>}
           </div>

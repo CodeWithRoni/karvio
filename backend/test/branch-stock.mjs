@@ -26,6 +26,9 @@ ok(!row(fix.id), 'services are not stock');
 
 // Send 10 tea and phone P-2 to Uttara: on the way until received
 const sent = await q('branch.transfer.send', {to: B, items: [{product_id: tea.id, qty: 10}, {product_id: phone.id, serials: 'P-2'}]}, {branch: A});
+const transferSerials = async (branch) => (await q('branch.transfer.serials', { product_id: phone.id }, { branch })).map((row) => row.serial).sort();
+eq(await transferSerials(A), ['P-1', 'P-3'], 'only serials still at source are selectable');
+eq(await transferSerials(B), [], 'serial in transit is not selectable at destination');
 r = await q('branch.stock', {});
 eq([row(tea.id).by, row(tea.id).transit, row(tea.id).total], [{[A]: 40, [B]: 0}, 10, 50], 'tea: 40 here, 10 on the way');
 eq(row(phone.id).serials, {[A]: ['P-1', 'P-3'], __transit: ['P-2']}, 'phone serials by branch and on the way');
@@ -35,6 +38,7 @@ await q('branch.transfer.receive', {id: sent.id}, {branch: B});
 r = await q('branch.stock', {});
 eq([row(tea.id).by, row(tea.id).transit], [{[A]: 40, [B]: 10}, 0], 'received: 10 tea in Uttara');
 eq(row(phone.id).serials, {[A]: ['P-1', 'P-3'], [B]: ['P-2']}, 'P-2 is now in Uttara');
+eq(await transferSerials(B), ['P-2'], 'received serial is selectable at destination');
 // The numbers match what each branch sells from
 const pl = async (br) => (await q('products.list', {}, {branch: br})).find((p) => p.id === tea.id).stock;
 eq([await pl(A), await pl(B)], [row(tea.id).by[A], row(tea.id).by[B]], 'same as the stock each branch sees');

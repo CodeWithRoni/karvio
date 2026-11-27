@@ -140,13 +140,13 @@ export function ApprovalAlerts({ list, onChanged }) {
 }
 
 /** Inventory health: stock summary (counts and values) and stock age / supplier warranty, in one card. */
-export function InventoryHealth({ stock, product }) {
+export function InventoryHealth({ stock, product, productCost }) {
   if (!stock && !product) return null;
   return (
     <section className="card inv-health" aria-label="Inventory health">
       <div className="card-head"><h2>Inventory health</h2><div className="row" style={{ gap: 16 }}><Link to="/products" className="link">Open products</Link><Link className="link" to="/reports?type=stock_summary">Open stock report</Link></div></div>
       {stock && <StockSummary s={stock} />}
-      {product && <ProductSummary data={product} />}
+      {product && <ProductSummary data={product} cost={productCost} />}
     </section>
   );
 }
@@ -167,12 +167,12 @@ function StockSummary({ s }) {
 }
 
 /** Stock age and supplier warranty, each tile opening the matching stock report. */
-function ProductSummary({ data = [] }) {
+function ProductSummary({ data = [], cost }) {
   const cards = [['age3','In stock over 3 months','Includes over 6 months / 1 year'],['age6','In stock over 6 months','Includes over 1 year'],['age12','In stock over 1 year','Current unsold quantity'],['expiring','Supplier warranty ending','Today through the next 30 days'],['expired','Supplier warranty expired','Stock still held in the shop'],['warranty_unknown','Supplier warranty not set','Add the expiry on the purchase']];
   const quantity = key => data.filter(x => x[key] > 0).map(x => `${fqty(x[key])} ${x.unit}`).join(' · ') || '0';
   return <div className="inv-part product-summary" role="region" aria-label="Product Summary">
     <h3>Stock age & supplier warranty</h3>
-    <div className="inv-tiles six">{cards.map(([key,label,note]) => <Link className={`stat stat-link ${key==='expired'?'down':key==='expiring'?'warn':''}`} key={key} to={`/reports?type=stock_summary&filter=${key}`}><span>{label}</span><b>{quantity(key)}</b><small>{note}</small></Link>)}</div>
+    <div className="inv-tiles six">{cards.map(([key,label,note]) => <Link className={`stat stat-link ${key==='expired'?'down':key==='expiring'?'warn':''}`} key={key} to={`/reports?type=stock_summary&filter=${key}`}><span>{label}</span><b>{quantity(key)}</b><small>{note}</small>{cost?.[key] !== undefined && <small className="stock-purchase-cost">Purchase cost · {money(cost[key])}</small>}</Link>)}</div>
     <p className="muted summary-note">Current stock quantities, kept separate by unit. Nonserial stock age and supplier warranty use a FIFO estimate; serial lots use their purchase records. Missing history stays unknown.</p>
   </div>;
 }

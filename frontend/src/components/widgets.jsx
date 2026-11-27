@@ -261,7 +261,7 @@ export function CustomerPicker({ value, onChange, onAddNew }) {
 
 /* Serial chooser: the serials in stock for a product. Click to pick / unpick (any number),
  * or scan a barcode — the scanner types the serial and presses Enter, which picks it. */
-export function SerialChooser({ productId, value, onChange, max, extra }) {
+export function SerialChooser({ productId, value, onChange, max, extra, action = 'serials.list' }) {
   const [list, setList] = useState(null);
   const [q, setQ] = useState('');
   const [note, setNote] = useState(null); // { ok, text } — result of the last scan
@@ -269,11 +269,11 @@ export function SerialChooser({ productId, value, onChange, max, extra }) {
   useEffect(() => {
     let live = true;
     setList(null);
-    api('serials.list', { product_id: productId, status: 'in_stock' })
+    api(action, { product_id: productId, status: 'in_stock' })
       .then((r) => live && setList([...new Set([...(extra || []), ...r.map((x) => x.serial)])])) // extra: serials of the invoice being edited
       .catch(() => live && setList([]));
     return () => { live = false; };
-  }, [productId]);
+  }, [productId, action]);
   useEffect(() => { if (list) inputRef.current?.focus(); }, [list]); // ready for the scanner straight away
   if (!list) return <span className="muted">Loading serials…</span>;
   const full = !!max && value.length >= max;
