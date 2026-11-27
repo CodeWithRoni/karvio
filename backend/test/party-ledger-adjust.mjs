@@ -54,8 +54,6 @@ eq([reb.ref_no, reb.balance], ['SLA-000001', 20000], 'a supplier deduction is a 
 eq((await q('adjust.options', {kind: 'supplier', party_id: s.id})).invoices[0].due, 20000, 'the purchase owes less');
 const sadd = await q('ledger.adjust', {kind: 'supplier', party_id: s.id, dir: 'add', type: 'correction', amount: 850, reason: 'Courier charge missed'});
 eq([sadd.ref_no, sadd.balance], ['SLA-000002', 20850], 'a supplier addition: we owe more');
-const pnlWithCharges = await q('report.pnl', {from: day(-30), to: today});
-eq(pnlWithCharges.lines.filter(l => ['Customer charges', 'Supplier charges'].includes(l.label)).map(l => l.values.current), [300, -850], 'P&L expenses and charges show with the same signs as net profit');
 const promised = await q('ledger.adjust', {kind: 'supplier', party_id: s.id, dir: 'ded', type: 'target', amount: 5000, reason: 'Q4 target', promised: true, expected: day(10), ref: 'Letter 7'});
 eq([promised.promise.amount, promised.promise.ref, (await q('adjust.options', {kind: 'supplier', party_id: s.id})).balance], [5000, 'Letter 7', 20850], 'a promised rebate changes nothing yet');
 const got = await q('ledger.adjust', {kind: 'supplier', party_id: s.id, dir: 'ded', type: 'target', amount: 5000, reason: 'Q4 target', pending_id: promised.promise.id});
@@ -93,6 +91,10 @@ const per = await q('ledger.report', {kind: 'customer', party_id: d.id, from: da
 eq([per.totals.opening, per.totals.closing, per.rows.length], [600, 600, 0], 'opening balance carried into a period');
 rep = await q('ledger.report', {kind: 'supplier', party_id: s.id});
 eq([rep.totals.sales, rep.totals.paid, rep.totals.adjusted, rep.totals.closing, rep.rows[0].items[0].qty, rep.rows[0].supplier_invoice], [50000, 20000, 15000, 15000, 10, 'INV-CC-1042'], 'supplier ledger in full');
+
+await q('ledger.adjust', {kind: 'supplier', party_id: s.id, dir: 'add', type: 'charge', amount: 75, reason: 'Shipping charge not yet recorded'});
+const pnlWithCharges = await q('report.pnl', {from: day(-30), to: today});
+eq(pnlWithCharges.lines.filter(l => ['Customer charges', 'Supplier charges'].includes(l.label)).map(l => l.values.current), [300, -75], 'P&L includes missed charges with the right signs and excludes balance corrections');
 
 // ---- Admin only
 await q('user.save', {name: 'Rep', username: 'rep7', role: 'manager', password: 'rep-password-123'});
