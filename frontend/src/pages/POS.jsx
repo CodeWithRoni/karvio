@@ -149,6 +149,8 @@ export default function POS() {
   const credit = editing ? (customerId && customerId === editing.customer_id ? Math.min(editing.credit_used, total) : 0) : useCredit ? Math.min(advance, total) : 0;
   const paid = round2(cleanPays(pays).reduce((a, p) => a + p.amount, 0) + credit);
   const due = round2(total - paid);
+  const replacesCustomerInvoice = editing && customerId === editing.customer_id;
+  const previousDue = Math.max(round2((Number(customer?.balance) || 0) - (replacesCustomerInvoice ? editing.due_now : 0)), 0);
   const change = paid > total ? round2(paid - total) : 0;
 
   // Until the cashier edits the payment, it follows the bill total (one cash line).
@@ -265,7 +267,7 @@ export default function POS() {
     setCustomerId(s.customer_id || ''); setDiscount(Number(s.discount) ? String(s.discount) : ''); setNote(s.note || ''); setTier('retail');
     setNextPay(s.next_payment_date || '');
     setPaysRaw(pays0.length ? pays0 : defaultPay('')); setPayTouched(true);
-    setEditing({ id: s.id, invoice_no: s.invoice_no, date: s.date, user_name: s.user_name, customer_id: s.customer_id || '', credit_used: Number(s.credit_used) || 0, qty, serials });
+    setEditing({ id: s.id, invoice_no: s.invoice_no, date: s.date, user_name: s.user_name, customer_id: s.customer_id || '', credit_used: Number(s.credit_used) || 0, due_now: Number(s.due_now ?? s.due) || 0, qty, serials });
     d.items.forEach((i) => loadHist(i.product_id));
     toast(`${s.invoice_no} opened for editing`);
   };
@@ -448,11 +450,11 @@ export default function POS() {
                   <input type="checkbox" checked={useCredit} onChange={(e) => setUseCredit(e.target.checked)} /> Use customer advance ({money(advance)})
                 </label>
               )}
-              {(customer.balance > 0.004 || (total > 0 && due > 0.004)) && (
+              {(previousDue > 0.004 || (total > 0 && due > 0.004)) && (
                 <div className="prev-due" role="status">
-                  {customer.balance > 0.004 && <div className="row"><span>Previous due</span><b>{money(customer.balance)}</b></div>}
+                  {previousDue > 0.004 && <div className="row"><span>Previous due</span><b>{money(previousDue)}</b></div>}
                   {total > 0 && due > 0.004 && <div className="row"><span>Due on this sale</span><b>{money(due)}</b></div>}
-                  {customer.balance > 0.004 && total > 0 && due > 0.004 && <div className="row total-due"><span>Total due</span><b>{money(Math.max(customer.balance - previousPaid, 0) + due)}</b></div>}
+                  {previousDue > 0.004 && total > 0 && due > 0.004 && <div className="row total-due"><span>Total due</span><b>{money(Math.max(previousDue - previousPaid, 0) + due)}</b></div>}
                 </div>
               )}
               {customer.balance > 0.004 && canPayPrevious && !editing && <div className="pos-previous-payment" style={{marginTop:10}}>

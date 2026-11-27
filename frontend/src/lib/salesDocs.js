@@ -1,6 +1,6 @@
 // Sales invoices and warranty claims as full A4 documents: print, PDF (one per page) and Excel.
 import { useStore } from './store';
-import { unitPrice, money, qty, fdate, fdatetime, splitList, today, cap1 } from './format';
+import { unitPrice, money, qty, fdate, fdatetime, splitList, today, cap1, round2 } from './format';
 import { printHtml, esc, shopContacts } from './export';
 import { pdfPages } from './pdfPages';
 import { invoiceQr, logoImg } from './qr';
@@ -205,6 +205,16 @@ export function bizDocHtml(m) {
 export const m2fmt = (v) => m2(v);
 
 /* ---------------- Sales invoices ---------------- */
+export function invoicePaymentSummary({ sale, returns }) {
+  const current = sale.status !== 'cancelled' && (sale.live_invoice || sale.due_now != null);
+  const due = Number(current ? (sale.due_now ?? sale.due) : sale.due) || 0;
+  const returned = current ? round2(sale.returned_total ?? (returns || []).reduce((sum, r) =>
+    sum + (r.status === 'active' ? Number(r.total) || 0 : 0), 0)) : 0;
+  const net = round2(sale.net_total ?? Math.max((Number(sale.total) || 0) - returned, 0));
+  const paid = current ? (sale.paid_now ?? round2(Math.max(net - due, 0))) : sale.paid;
+  return { current, due, returned, net, paid };
+}
+
 export function saleInvoiceHtml(d) {
   const s = d.sale, c = d.customer || {};
   const rows = d.items.map((i, n) => {
@@ -216,20 +226,21 @@ export function saleInvoiceHtml(d) {
   const st = d.shop || useStore.getState().settings;
   const tpl = st.invoice_template || 'classic';
   if (tpl === 'business') return businessInvoiceHtml(d);
+  const payment = invoicePaymentSummary(d);
   return `<div class="sdoc tpl-${esc(tpl)}">${head('INVOICE', `<b>${esc(s.invoice_no)}</b><br>${esc(fdatetime(s.created_at || s.date))}<br><span class="sm">Served by ${esc(s.user_name || '')}</span>`, st)}
     ${s.status === 'cancelled' ? `<div class="cx">CANCELLED — ${esc(s.cancel_reason || '')}</div>` : ''}
     <div class="meta">
       <div class="box"><b class="t">Customer</b><b>${esc(s.customer_name || 'Cash')}</b>${c.phones ? `<div>Phone: ${esc(splitList(c.phones).join(', '))}</div>` : ''}${c.addresses ? `<div>${esc(String(c.addresses).split('|').join('; '))}</div>` : ''}</div>
-      <div class="box"><b class="t">${s.live_invoice ? 'Payments at sale' : 'Payment'}</b>${pl.length ? pl.map((x) => `<div>${esc(x.account_name || 'Paid')}: <b>${esc(money(x.amount, false))}</b></div>`).join('') : ''}${s.credit_used ? `<div>Advance used: <b>${esc(money(s.credit_used, false))}</b></div>` : ''}${!pl.length && !s.credit_used ? '<div>Sold on due</div>' : ''}${s.note ? `<div class="sm">Note: ${esc(s.note)}</div>` : ''}</div>
+      <div class="box"><b class="t">${payment.current ? 'Payments at sale' : 'Payment'}</b>${pl.length ? pl.map((x) => `<div>${esc(x.account_name || 'Paid')}: <b>${esc(money(x.amount, false))}</b></div>`).join('') : ''}${s.credit_used ? `<div>Advance used: <b>${esc(money(s.credit_used, false))}</b></div>` : ''}${!pl.length && !s.credit_used ? '<div>Sold on due</div>' : ''}${s.note ? `<div class="sm">Note: ${esc(s.note)}</div>` : ''}</div>
     </div>
     <table><thead><tr><th style="width:28px">#</th><th>Product / serial / warranty</th><th style="width:56px">Unit</th><th class="r" style="width:60px">Qty</th><th class="r" style="width:90px">Price</th><th class="r" style="width:96px">Amount</th></tr></thead><tbody>${rows}</tbody></table>
     <table class="tot">
       <tr><td>Subtotal</td><td class="r">${esc(money(s.subtotal, false))}</td></tr>
       ${s.discount ? `<tr><td>Discount</td><td class="r">-${esc(money(s.discount, false))}</td></tr>` : ''}
       <tr class="g"><td>Total</td><td class="r">${esc(money(s.total))}</td></tr>
-      ${s.live_invoice && s.returned_total > 0 ? `<tr><td>Returned value</td><td class="r">${esc(money(s.returned_total, false))}</td></tr><tr><td>Net invoice amount</td><td class="r">${esc(money(s.net_total, false))}</td></tr>` : ''}
-      <tr><td>${s.live_invoice ? 'Paid now' : 'Paid'}</td><td class="r">${esc(money(s.live_invoice ? (s.paid_now ?? s.paid) : s.paid, false))}</td></tr>
-      ${(s.due_now ?? s.due) > 0 ? `<tr><td><b>Due</b></td><td class="r"><b>${esc(money(s.due_now ?? s.due))}</b></td></tr>` : ''}
+      ${payment.returned > 0 ? `<tr><td>Returned value</td><td class="r">${esc(money(payment.returned, false))}</td></tr><tr><td>Net invoice amount</td><td class="r">${esc(money(payment.net, false))}</td></tr>` : ''}
+      <tr><td>${payment.current ? 'Paid now' : 'Paid'}</td><td class="r">${esc(money(payment.paid, false))}</td></tr>
+      ${payment.due > 0 ? `<tr><td><b>Due</b></td><td class="r"><b>${esc(money(payment.due))}</b></td></tr>` : ''}
       ${d.customer && d.customer.balance !== undefined ? `<tr><td>${d.customer.balance < 0 ? 'Customer advance' : 'Total balance due'}</td><td class="r">${esc(money(Math.abs(d.customer.balance), false))}</td></tr>` : ''}
       ${s.next_payment_date && (s.due_now ?? s.due) > 0 ? `<tr><td>Next payment date</td><td class="r">${esc(fdate(s.next_payment_date))}</td></tr>` : ''}
     </table>

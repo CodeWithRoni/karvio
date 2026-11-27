@@ -97,7 +97,7 @@ eq((await q('products.list', {}, {branch: uttara})).find((p) => p.id === tea.id)
 console.log(`Features 12: ${checks} checks passed (branches).`);
 
 // A fixed-branch staff member with reporting privileges sees branch-specific statistics.
-await q('rolePerms.save', {sales: ['reports', 'pos', 'cost', 'sales.all', 'accounts', 'warranty', 'purchase']});
+await q('rolePerms.save', {sales: ['reports', 'pos', 'cost', 'sales.all', 'accounts', 'warranty', 'purchase', 'repairs', 'service', 'suppliers']});
 await q('account.entry', {kind:'deposit',account_id:cash,amount:500,note:'Main cash'}, {branch:mirpur});
 await q('account.entry', {kind:'deposit',account_id:uttaraCash,amount:100,note:'Local cash'}, {branch:uttara});
 const localSale = (await q('sales.list', {}, {branch:uttara})).find(s=>s.total===9000);
@@ -139,6 +139,29 @@ const localPrices = await q('supplier.prices', supplierFilter);
 const localPriceReport = await q('reports', {type:'supplier_prices', ...supplierFilter});
 eq(localPrices.map(p=>[p.qty,p.spent]), [[20,1200]], 'supplier price API totals only local purchases');
 eq(localPriceReport.rows.map(p=>[p.qty,p.spent]), [[20,1200]], 'supplier price report totals only local purchases');
+const stock = await q('reports', {type:'stock_summary', product_id:tea.id});
+const localTea = (await q('products.list')).find(p=>p.id===tea.id);
+eq(stock.rows[0].stock, localTea.stock, 'stock summary reconciles to stock in the assigned branch');
+const lots = await q('reports', {type:'stock_summary', product_id:tea.id, group:'lots'});
+eq(lots.rows.reduce((sum,row)=>sum+row.stock,0), localTea.stock, 'the branch lot quantities reconcile to the branch inventory');
+const priceHistory = await q('product.history', {product_id:tea.id});
+eq(priceHistory.last_purchase.invoice_no, localPurchase.invoice_no, 'price card finds purchases in the assigned branch');
+eq((await q('repairs.meta')).accounts.map(a=>a.id), [uttaraCash], 'repair form offers branch accounts');
+eq((await q('services.meta')).accounts.map(a=>a.id), [uttaraCash], 'service form offers branch accounts');
+const supplied = await q('reports', {type:'party_items',party:'supplier',party_id:sup.id});
+eq(supplied.rows.map(r=>[r.product_id,r.amount]), [[tea.id,1200]], 'supplier products agree with the local purchase');
+
 api.setToken(admin);
 
 eq((await q('supplier.prices', {product_id:tea.id})).map(p=>[p.qty,p.spent]), [[70,4200]], 'the consolidated supplier price totals are available to the administrator');
+
+const discountedPurchase = await q('purchase.create', {
+  supplier_id:sup.id, items:[{product_id:tea.id,qty:2,cost:60}], discount:20, payments:[]
+}, {branch:uttara});
+await q('supplier.rebate', {supplier_id:sup.id,purchase_id:discountedPurchase.purchase.id,amount:10,note:'Branch purchase rebate'});
+api.setToken((await q('login', {username:'uttara1',password:'uttara-password-1'})).token);
+const discountedSupplied = await q('reports', {type:'party_items',party:'supplier',party_id:sup.id});
+eq(discountedSupplied.rows.find(r=>r.product_id===tea.id).amount, 1300, 'supplier product amounts include the purchase discount');
+const branchRebates = await q('reports', {type:'supplier_rebates',supplier_id:sup.id});
+eq(branchRebates.rebates.received,10,'supplier rebate follows its linked purchase branch');
+api.setToken(admin);

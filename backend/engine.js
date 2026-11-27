@@ -1303,7 +1303,11 @@ function productDelete_(p, user) {
   remove_('Products', p.id); return { deleted: true };
 }
 function serialsList_(p) {
-  return all_('SerialItems').filter(function (s) { return s.product_id === p.product_id && (!p.status || s.status === p.status); })
+  var reserved = (!p.status || p.status === 'in_stock') ? repairReservations_().serial : {};
+  return all_('SerialItems').filter(function (s) {
+    return s.product_id === p.product_id && (!p.status || s.status === p.status) &&
+      (!_branch || serialBranch_(s.id) === _branch) && (s.status !== 'in_stock' || !reserved[s.id]);
+  })
     .map(function (s) { return { serial: s.serial, status: s.status }; });
 }
 /** Find which product a scanned serial number belongs to (case-insensitive). In-stock units win over sold ones. */
@@ -4275,11 +4279,12 @@ function repairAdvance_(r, amount, accountId, user, customer) {
   return amt;
 }
 /** Staff and accounts the repair page needs (also for staff without the users or accounts permissions). */
-function repairsMeta_() {
+function repairsMeta_(p, user) {
+  var allowed = accountScope_(user);
   return {
     today: today_(),
     technicians: all_('Users').filter(function (u) { return u.active && u.role === 'technician'; }).map(function (u) { return { id: u.id, name: u.name, phone: u.phone || '' }; }),
-    accounts: all_('Accounts').filter(function (a) { return a.active; }).map(function (a) { return { id: a.id, name: a.name, type: a.type }; }),
+    accounts: all_('Accounts').filter(function (a) { return a.active && allowed(a.id); }).map(function (a) { return { id: a.id, name: a.name, type: a.type }; }),
     statuses: REPAIR_STATUSES
   };
 }
@@ -4506,12 +4511,12 @@ function serviceOut_(r, sales) {
 }
 /** What the Service page needs: the service types, technicians and accounts. */
 function servicesMeta_(p, user) {
-  var all = serviceTypes_();
+  var all = serviceTypes_(), allowed = accountScope_(user);
   return {
     today: today_(), statuses: SERVICE_STATUSES, manage: user.role !== 'technician', admin: user.role === 'admin',
     types: user.role === 'admin' ? all : all.filter(function (t) { return t.active !== false; }),
     technicians: all_('Users').filter(function (u) { return u.active && u.role === 'technician'; }).map(function (u) { return { id: u.id, name: u.name, phone: u.phone || '' }; }),
-    accounts: user.role === 'technician' ? [] : all_('Accounts').filter(function (a) { return a.active; }).map(function (a) { return { id: a.id, name: a.name, type: a.type }; })
+    accounts: user.role === 'technician' ? [] : all_('Accounts').filter(function (a) { return a.active && allowed(a.id); }).map(function (a) { return { id: a.id, name: a.name, type: a.type }; })
   };
 }
 /** Admin: add or change a service type (name and the usual charge). A type in use can be switched off, not deleted. */
@@ -6586,39 +6591,47 @@ function itemHistory_(p, user) {
   var q = String(p.q || '').trim(); if (!q) fail_('Enter a serial number, barcode or invoice number');
   var ql = q.toLowerCase(), events = all_('ItemEvents'), res = { query: q, kind: 'none', summary: null, items: [], timeline: [], claims: [], returns: [], cards: null };
   var pmap = indexBy_(all_('Products')), sales = indexBy_(all_('Sales')), purs = indexBy_(all_('Purchases').filter(function(d){return branchSees_('Purchases',d.id);}));
-  var returnsById = indexBy_(all_('SalesReturns'));
+  var returnsById = indexBy_(all_('SalesReturns')), claimsById = indexBy_(all_('WarrantyClaims')), fixed = branchFixed_(user);
+  function visibleSerial(s) {
+    return !fixed || (serialBranch_(s.id) === fixed && (!s.sale_id || (!!sales[s.sale_id] && branchSees_('Sales', s.sale_id))));
+  }
+  function stockHere(pr) { return fixed ? branchQty_(pr.id, fixed) : pr.stock; }
   function ownSale(s) { return !s || (branchSees_('Sales', s.id) && (can_(user, 'sales.all') || s.user_id === user.id)); }
   function visibleEv(e) {
     var table = {sale:'Sales',purchase:'Purchases',sreturn:'SalesReturns',preturn:'PurchaseReturns'}[e.ref_type];
     if (table && !branchSees_(table,e.ref_id)) return false;
-    var sale = e.ref_type === 'sale' ? sales[e.ref_id] : (e.ref_type === 'sreturn' && returnsById[e.ref_id] ? sales[returnsById[e.ref_id].sale_id] : null);
-    return ownSale(sale);
+    if (e.ref_type === 'sale') return !!sales[e.ref_id] && ownSale(sales[e.ref_id]);
+    if (e.ref_type === 'sreturn' || e.ref_type === 'claim') {
+      var doc = (e.ref_type === 'sreturn' ? returnsById : claimsById)[e.ref_id];
+      return !!doc && !!sales[doc.sale_id] && ownSale(sales[doc.sale_id]);
+    }
+    return !fixed || !!table || (e.ref_type === 'repair' && branchSees_('Repairs', e.ref_id));
   }
   function cleanEv(e) {
     var costEvent = e.ref_type === 'purchase' || e.ref_type === 'preturn' || e.event === 'purchase' || e.event === 'purchase_return' || e.event === 'stock_adjust';
     return { id: e.id, ts: e.ts, event: e.event, serial: e.serial, product_name: e.product_name, ref_no: e.ref_no, ref_type: e.ref_type, ref_id: e.ref_id, party: e.party, qty: e.qty, amount: !costEvent || can_(user, 'cost') ? e.amount : undefined, note: e.note, user: e.user };
   }
-  function sortEv(list) { return list.filter(visibleEv).sort(function (a, b) { return a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0; }); }
+  function sortEv(list) { return list.filter(visibleEv).sort(function (a, b) { return a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0; }).map(cleanEv); }
 
   // 1) Serial number
-  var serialRecs = p.exact_product ? [] : all_('SerialItems').filter(function (s) { return s.serial.toLowerCase() === ql && s.status !== 'cancelled'; });
+  var serialRecs = p.exact_product ? [] : all_('SerialItems').filter(function (s) { return s.serial.toLowerCase() === ql && s.status !== 'cancelled' && visibleSerial(s); });
   if (serialRecs.length) {
     res.kind = 'serial';
     var rec = serialRecs[serialRecs.length - 1], pr = pmap[rec.product_id] || {};
     var pur = purs[rec.purchase_id], sale = rec.sale_id ? sales[rec.sale_id] : null, si = null;
     if (sale) si = all_('SaleItems').filter(function (i) { return i.sale_id === sale.id && i.product_id === rec.product_id && parseList_(i.serials).indexOf(rec.serial) >= 0; })[0];
-    var inDate = pur ? pur.date : String(rec.created_at).slice(0, 10), outDate = sale ? sale.date : today_();
+    var inDate = pur ? pur.date : fixed ? '' : String(rec.created_at).slice(0, 10), outDate = sale ? sale.date : today_();
     var exp = si ? si.warranty_expiry : '';
     var visibleSale = ownSale(sale) ? sale : null;
     res.summary = {
       serial: rec.serial, product: pr.name || '', status: rec.status, purchase_invoice: pur ? pur.invoice_no : '', supplier: pur ? pur.supplier_name : '',
-      purchase_date: inDate, cost: can_(user, 'cost') ? rec.cost : undefined, sale_invoice: visibleSale ? visibleSale.invoice_no : '', customer: visibleSale ? visibleSale.customer_name : '',
+      purchase_date: inDate, cost: can_(user, 'cost') && (!fixed || pur) ? rec.cost : undefined, sale_invoice: visibleSale ? visibleSale.invoice_no : '', customer: visibleSale ? visibleSale.customer_name : '',
       sale_date: visibleSale ? visibleSale.date : '', sale_price: visibleSale && si ? si.price : undefined, warranty_expiry: exp, in_warranty: !!exp && exp >= today_(), days_left: exp ? daysBetween_(today_(), exp) : null,
-      days_in_inventory: daysBetween_(inDate, outDate)
+      days_in_inventory: inDate ? daysBetween_(inDate, outDate) : null
     };
     var ids = {}; serialRecs.forEach(function (s) { ids[s.product_id] = 1; });
-    res.timeline = sortEv(events.filter(function (e) { return e.serial.toLowerCase() === ql; }).map(cleanEv));
-    res.claims = all_('WarrantyClaims').filter(function (c) { return c.serial.toLowerCase() === ql && ownSale(sales[c.sale_id]); }).map(function (c) { var o = Object.assign({}, c); delete o._row; try { o.log = JSON.parse(c.log || '[]'); } catch (e) { o.log = []; } return o; });
+    res.timeline = sortEv(events.filter(function (e) { return e.serial.toLowerCase() === ql; }));
+    res.claims = all_('WarrantyClaims').filter(function (c) { return c.serial.toLowerCase() === ql && !!sales[c.sale_id] && ownSale(sales[c.sale_id]); }).map(function (c) { var o = Object.assign({}, c); delete o._row; try { o.log = JSON.parse(c.log || '[]'); } catch (e) { o.log = []; } return o; });
     res.cards = historyCards_('serial', { serial: ql, product: pr, summary: res.summary }, user);
     return res;
   }
@@ -6633,8 +6646,8 @@ function itemHistory_(p, user) {
     res.summary = { invoice: sl.invoice_no, date: sl.date, customer: sl.customer_name, total: sl.total, paid: sl.paid, due: sl.due, status: sl.status, staff: sl.user_name };
     res.items = its.map(function (i) { return { name: i.name, qty: i.qty, price: i.price, serials: i.serials, warranty_expiry: i.warranty_expiry, warranty_type: i.warranty_type }; });
     var sers = {}; its.forEach(function (i) { parseList_(i.serials).forEach(function (s) { sers[s] = 1; }); });
-    res.timeline = sortEv(events.filter(function (e) { return e.ref_id === sl.id || (e.serial && sers[e.serial]); }).map(cleanEv));
-    res.returns = all_('SalesReturns').filter(function (r) { return r.sale_id === sl.id; }).map(function (r) { return { return_no: r.return_no, date: r.date, total: r.total, status: r.status }; });
+    res.timeline = sortEv(events.filter(function (e) { return e.ref_id === sl.id || (e.serial && sers[e.serial]); }));
+    res.returns = all_('SalesReturns').filter(function (r) { return r.sale_id === sl.id && branchSees_('SalesReturns', r.id); }).map(function (r) { return { return_no: r.return_no, date: r.date, total: r.total, status: r.status }; });
     res.claims = all_('WarrantyClaims').filter(function (c) { return c.sale_id === sl.id; }).map(function (c) { return { claim_no: c.claim_no, serial: c.serial, product_name: c.product_name, status: c.status, date: c.date, log: (function () { try { return JSON.parse(c.log || '[]'); } catch (e) { return []; } })() }; });
     res.cards = historyCards_('sale', { sale: sl, items: its }, user);
     return res;
@@ -6650,7 +6663,7 @@ function itemHistory_(p, user) {
     res.summary = { invoice: pu.invoice_no, supplier_invoice: pu.supplier_invoice || '', date: pu.date, supplier: pu.supplier_name, total: pu.total, paid: pu.paid, due: pu.due, status: pu.status };
     res.items = pits.map(function (i) { return { name: i.name, qty: i.qty, cost: can_(user, 'cost') ? i.cost : undefined, serials: i.serials }; });
     var ps = {}; pits.forEach(function (i) { parseList_(i.serials).forEach(function (s) { ps[s] = 1; }); });
-    res.timeline = sortEv(events.filter(function (e) { return e.ref_id === pu.id || (e.serial && ps[e.serial]); }).map(cleanEv));
+    res.timeline = sortEv(events.filter(function (e) { return e.ref_id === pu.id || (e.serial && ps[e.serial]); }));
     res.cards = historyCards_('purchase', { purchase: pu, items: pits }, user);
     return res;
   }
@@ -6666,17 +6679,17 @@ function itemHistory_(p, user) {
     else if (like.length > 1) {
       res.kind = 'choose';
       res.total = like.length;
-      res.items = like.slice(0, 40).map(function (x) { return { id: x.id, name: x.name, sku: x.sku || '', barcode: x.barcode || '', stock: x.stock, unit: x.unit, service: isService_(x), active: x.active !== false }; });
+      res.items = like.slice(0, 40).map(function (x) { return { id: x.id, name: x.name, sku: x.sku || '', barcode: x.barcode || '', stock: stockHere(x), unit: x.unit, service: isService_(x), active: x.active !== false }; });
       return res;
     }
   }
   if (prod) {
     res.kind = 'product';
-    var srs = all_('SerialItems').filter(function (s) { return s.product_id === prod.id && s.status !== 'cancelled'; });
+    var srs = all_('SerialItems').filter(function (s) { return s.product_id === prod.id && s.status !== 'cancelled' && visibleSerial(s); });
     var counts = {}; srs.forEach(function (s) { counts[s.status] = (counts[s.status] || 0) + 1; });
-    res.summary = { product: prod.name, barcode: prod.barcode, sku: prod.sku, stock: prod.stock, unit: prod.unit, serials_in_stock: counts.in_stock || 0, serials_sold: counts.sold || 0, serials_returned_supplier: counts.returned_supplier || 0 };
+    res.summary = { product: prod.name, barcode: prod.barcode, sku: prod.sku, stock: stockHere(prod), unit: prod.unit, serials_in_stock: counts.in_stock || 0, serials_sold: counts.sold || 0, serials_returned_supplier: counts.returned_supplier || 0 };
     res.items = srs.slice(-300).map(function (s) { return { serial: s.serial, status: s.status, sale_invoice: s.sale_id && ownSale(sales[s.sale_id]) && sales[s.sale_id] ? sales[s.sale_id].invoice_no : '', purchase_invoice: purs[s.purchase_id] ? purs[s.purchase_id].invoice_no : '' }; });
-    res.timeline = sortEv(events.filter(function (e) { return e.product_id === prod.id; }).slice(-300).map(cleanEv));
+    res.timeline = sortEv(events.filter(function (e) { return e.product_id === prod.id; })).slice(-300);
     res.cards = historyCards_('product', { product: prod }, user);
     return res;
   }
@@ -6694,7 +6707,8 @@ function historyCards_(kind, x, user) {
     cost: can_(user, 'cost'),
     sales: indexBy_(all_('Sales').filter(function(d){return branchSees_('Sales',d.id);})), purs: indexBy_(all_('Purchases').filter(function(d){return branchSees_('Purchases',d.id);})), pmap: indexBy_(all_('Products')),
     cats: indexBy_(all_('Categories')), brands: indexBy_(all_('Brands')),
-    own: function (s) { return !s || can_(user, 'sales.all') || s.user_id === user.id; }
+    fixed: branchFixed_(user),
+    own: function (s) { return !!s && (can_(user, 'sales.all') || s.user_id === user.id); }
   };
   var lower = function (list) { return parseList_(list).map(function (v) { return v.toLowerCase(); }); };
   var serialProduct = function (pr) { return !!pr && !isService_(pr) && pr.has_warranty && pr.warranty_type === 'serial'; };
@@ -6780,7 +6794,7 @@ function historyCards_(kind, x, user) {
   /* ---- sales returns ---- */
   var srets = indexBy_(all_('SalesReturns')), sr = {};
   all_('SalesReturnItems').forEach(function (i) {
-    var r = srets[i.return_id]; if (!r || !cx.own(cx.sales[r.sale_id])) return;
+    var r = srets[i.return_id]; if (!r || !branchSees_('SalesReturns', r.id) || !cx.own(cx.sales[r.sale_id])) return;
     if (kind === 'sale' ? r.sale_id === x.sale.id : match(i, r.date)) (sr[r.id] = sr[r.id] || []).push(kind === 'sale' ? i : part(i));
   });
   cards.sreturns = historyList_(Object.keys(sr).map(function (id) { return historyDoc_('sreturn', srets[id], sr[id], cx, kind === 'sale'); }));
@@ -6788,7 +6802,7 @@ function historyCards_(kind, x, user) {
   /* ---- purchase returns ---- */
   var prets = indexBy_(all_('PurchaseReturns')), pr2 = {};
   all_('PurchaseReturnItems').forEach(function (i) {
-    var r = prets[i.return_id]; if (!r) return;
+    var r = prets[i.return_id]; if (!r || !branchSees_('PurchaseReturns', r.id) || !cx.purs[r.purchase_id]) return;
     if (kind === 'purchase' ? r.purchase_id === x.purchase.id : kind === 'sale' ? lower(i.serials).some(function (v) { return sers[v]; }) : match(i, r.date)) (pr2[r.id] = pr2[r.id] || []).push(kind === 'purchase' ? i : part(i));
   });
   cards.preturns = historyList_(Object.keys(pr2).map(function (id) { return historyDoc_('preturn', prets[id], pr2[id], cx, kind === 'purchase'); }));
@@ -6813,14 +6827,14 @@ function historyCards_(kind, x, user) {
 }
 /** One product for the Product card. */
 function historyProduct_(pr, cx, serialInfo) {
-  var o = { id: pr.id, name: pr.name, sku: pr.sku || '', barcode: pr.barcode || '', unit: pr.unit || 'pcs', stock: pr.stock, service: isService_(pr),
+  var o = { id: pr.id, name: pr.name, sku: pr.sku || '', barcode: pr.barcode || '', unit: pr.unit || 'pcs', stock: cx.fixed ? branchQty_(pr.id, cx.fixed) : pr.stock, service: isService_(pr),
     brand: cx.brands[pr.brand_id] ? cx.brands[pr.brand_id].name : '', group: cx.cats[pr.category_id] ? cx.cats[pr.category_id].name : '',
     category: cx.cats[pr.subcategory_id] ? cx.cats[pr.subcategory_id].name : '', sale_price: pr.sale_price, active: pr.active !== false,
     has_warranty: !!pr.has_warranty, warranty_type: pr.warranty_type || '', warranty_days: pr.warranty_days || 0, description: pr.description || '' };
   if (cx.cost) { o.cost_price = pr.cost_price; o.wholesale_price = pr.wholesale_price; }
   if (pr.has_warranty && pr.warranty_type === 'serial' && pr.created_at !== undefined) {
     var c = { in_stock: 0, sold: 0, returned_supplier: 0 };
-    all_('SerialItems').forEach(function (x) { if (x.product_id === pr.id && c.hasOwnProperty(x.status)) c[x.status]++; });
+    all_('SerialItems').forEach(function (x) { if (x.product_id === pr.id && c.hasOwnProperty(x.status) && (!cx.fixed || (serialBranch_(x.id) === cx.fixed && (!x.sale_id || !!cx.sales[x.sale_id])))) c[x.status]++; });
     o.serials = c;
   }
   if (serialInfo) o.serial = serialInfo;
@@ -6851,6 +6865,7 @@ function historyDoc_route_(p, user) {
     need_(user, 'sales.return');
     var r = all_('SalesReturns').filter(function (x) { return x.id === id || x.return_no === id; })[0]; if (!r) fail_('Sales return not found');
     branchRequire_('SalesReturns',r.id);
+    branchRequire_('Sales', r.sale_id);
     var sale = all_('Sales').filter(function (x) { return x.id === r.sale_id; })[0];
     if (sale && !can_(user, 'sales.all') && sale.user_id !== user.id) fail_('Permission denied: this return belongs to another user');
     var acc = r.refund_account_id ? all_('Accounts').filter(function (a) { return a.id === r.refund_account_id; })[0] : null;
@@ -6863,6 +6878,7 @@ function historyDoc_route_(p, user) {
     need_(user, 'purchase');
     var pr = all_('PurchaseReturns').filter(function (x) { return x.id === id || x.return_no === id; })[0]; if (!pr) fail_('Purchase return not found');
     branchRequire_('PurchaseReturns',pr.id);
+    branchRequire_('Purchases', pr.purchase_id);
     var acc2 = pr.account_id ? all_('Accounts').filter(function (a) { return a.id === pr.account_id; })[0] : null;
     var sup = pr.supplier_id ? all_('Suppliers').filter(function (x) { return x.id === pr.supplier_id; })[0] : null;
     var po = Object.assign({}, pr); delete po._row; po.account = acc2 ? acc2.name : '';
@@ -6872,6 +6888,7 @@ function historyDoc_route_(p, user) {
   if (t === 'claim') {
     need_(user, 'warranty');
     var c = all_('WarrantyClaims').filter(function (x) { return x.id === id || x.claim_no === id; })[0]; if (!c) fail_('Warranty claim not found');
+    branchRequire_('Sales', c.sale_id);
     var co = Object.assign({}, c); delete co._row; try { co.log = JSON.parse(c.log || '[]'); } catch (e) { co.log = []; }
     return { type: t, detail: co };
   }
@@ -7065,7 +7082,7 @@ function stockMonthCutoff_(today, months) {
   return first.toISOString().slice(0, 7) + '-' + ('0' + Math.min(Number(today.slice(8, 10)), last)).slice(-2);
 }
 /** Replay nonserial provenance in entry order. Missing/adjusted/vendor-recovered units never acquire an invented receipt. */
-function stockReceiptReplay_(receiptLots, purchases) {
+function stockReceiptReplay_(receiptLots, purchases, branch) {
   var queues = {}, sold = {}, returned = {}, supplierReturned = {}, cursors = {}, seq = 0;
   var receiptByPurchase={}; Object.keys(receiptLots).forEach(function(id) { receiptLots[id].forEach(function(l) { (receiptByPurchase[l.purchase_id+'|'+id]=receiptByPurchase[l.purchase_id+'|'+id] || []).push(l); }); });
   var salesReturns = indexBy_(all_('SalesReturns')), claims = indexBy_(all_('WarrantyClaims'));
@@ -7088,6 +7105,10 @@ function stockReceiptReplay_(receiptLots, purchases) {
   function held(ref,id) { var key=ref+'|'+id; return sold[key] = sold[key] || []; }
   all_('ItemEvents').forEach(function(e) {
     if (e.serial) return;
+    if (branch) {
+      var table = { purchase: 'Purchases', sale: 'Sales', sreturn: 'SalesReturns', preturn: 'PurchaseReturns' }[e.ref_type];
+      if (!table || docBranch_(table, e.ref_id) !== branch) return;
+    }
     var id=e.product_id, queue=queues[id] = queues[id] || [], q=Math.abs(num_(e.qty)), key=e.ref_id+'|'+id, observed=String(e.ts).slice(0,10);
     if (q <= 0) return;
     if (e.event === 'purchase') {
@@ -7119,9 +7140,11 @@ function stockReceiptReplay_(receiptLots, purchases) {
   return { queues:queues, take:take };
 }
 /** Current stock only. Serial lots are exact; nonserial remaining purchase lots use a disclosed FIFO estimate. */
-function stockAnalysis_() {
-  if (_mem.__stockAnalysis) return _mem.__stockAnalysis;
-  var today = today_(), purchases = indexBy_(all_('Purchases')), products = all_('Products').filter(function(x) { return !isService_(x); });
+function stockAnalysis_(branch) {
+  var cached = _mem.__stockAnalysis || (_mem.__stockAnalysis = {});
+  var scope = branch || '';
+  if (cached[scope]) return cached[scope];
+  var today = today_(), purchases = indexBy_(all_('Purchases').filter(function (p) { return !branch || docBranch_('Purchases', p.id) === branch; })), products = all_('Products').filter(function(x) { return !isService_(x); });
   var cats = indexBy_(all_('Categories')), brands = indexBy_(all_('Brands')), lots = {}, serialLots = {}, lastSale = {};
   all_('PurchaseItems').forEach(function(i) {
     var p = purchases[i.purchase_id]; if (!p || p.status !== 'active') return;
@@ -7130,21 +7153,34 @@ function stockAnalysis_() {
     (lots[i.product_id] = lots[i.product_id] || []).push(l);
     parseList_(i.serials).forEach(function(sn) { serialLots[p.id + '|' + i.product_id + '|' + sn.toLowerCase()] = l; });
   });
-  var activeSales = indexBy_(all_('Sales').filter(function(s) { return s.status === 'active'; })), salesRet = {}, soldBack = {};
+  var activeSales = indexBy_(all_('Sales').filter(function(s) { return s.status === 'active' && (!branch || docBranch_('Sales', s.id) === branch); })), salesRet = {}, soldBack = {};
   all_('SalesReturns').forEach(function(r) { if (r.status === 'active') salesRet[r.id] = true; });
   all_('SalesReturnItems').forEach(function(i) { if (salesRet[i.return_id]) soldBack[i.sale_item_id] = (soldBack[i.sale_item_id] || 0) + i.qty; });
   all_('SaleItems').forEach(function(i) { var s = activeSales[i.sale_id]; if (s && s.date <= today && i.qty - (soldBack[i.id] || 0) > 0.00001 && (!lastSale[i.product_id] || s.date > lastSale[i.product_id])) lastSale[i.product_id] = s.date; });
-  var serials = {}; all_('SerialItems').forEach(function(s) { if (s.status === 'in_stock') (serials[s.product_id] = serials[s.product_id] || []).push(s); });
-  var replay = stockReceiptReplay_(lots,purchases);
-  var reserved = repairReservations_().qty, rows = [], cut3 = stockMonthCutoff_(today, 3), cut6 = stockMonthCutoff_(today, 6), cut12 = stockMonthCutoff_(today, 12), soon = addDays_(today, 30);
+  var serials = {}; all_('SerialItems').forEach(function(s) { if (s.status === 'in_stock' && (!branch || serialBranch_(s.id) === branch)) (serials[s.product_id] = serials[s.product_id] || []).push(s); });
+  var uncertain = {};
+  if (branch) {
+    // Branch transfers retain quantities, but nonserial units lack lot attribution.
+    branchTransfers_().forEach(function (t) {
+      if (t.status !== 'cancelled' && (t.from === branch || (t.to === branch && t.status === 'received')))
+        t.items.forEach(function (i) { uncertain[i.product_id] = true; });
+    });
+    all_('ItemEvents').forEach(function (e) {
+      if (!e.serial && ['stock_adjust', 'warranty_replacement_out', 'warranty_restock'].indexOf(e.event) >= 0)
+        uncertain[e.product_id] = true;
+    });
+  }
+  var replay = stockReceiptReplay_(lots, purchases, branch);
+  var reserved = repairReservations_(null, branch).qty, rows = [], cut3 = stockMonthCutoff_(today, 3), cut6 = stockMonthCutoff_(today, 6), cut12 = stockMonthCutoff_(today, 12), soon = addDays_(today, 30);
   products.forEach(function(pr) {
-    var stock = Math.max(num_(pr.stock), 0), remaining = [], unknown = stock;
+    var stock = Math.max(num_(branch ? branchQty_(pr.id, branch) : pr.stock), 0), remaining = [], unknown = stock, branchSerialCost = 0;
     if (isSerialProduct_(pr)) {
       (serials[pr.id] || []).slice(0, Math.floor(stock)).forEach(function(s) {
+        branchSerialCost += num_(s.cost);
         var l = serialLots[s.purchase_id + '|' + pr.id + '|' + String(s.serial).toLowerCase()];
         if (l) { remaining.push(Object.assign({}, l, { qty: 1, serial: s.serial, unit_cost: num_(s.cost) })); unknown--; }
       });
-    } else {
+    } else if (!uncertain[pr.id]) {
       var queue=(replay.queues[pr.id] || []).filter(function(l) { return l.qty > 0.00001; }).map(function(l) { return Object.assign({},l); });
       var excess=round_(sum_(queue,function(l) { return l.qty; })-stock,4);
       if (excess > 0) replay.take(queue,excess); // Unlogged legacy outflow: consume oldest first, never revive it.
@@ -7154,7 +7190,7 @@ function stockAnalysis_() {
       });
     }
     if (unknown > 0.00001) remaining.push({ id: 'unknown-' + pr.id, product_id: pr.id, qty: unknown, date: '', expiry: '', invoice_no: '', supplier: '' });
-    var row = { product_id: pr.id, name: pr.name, group_id: pr.category_id || '', group: (cats[pr.category_id] || {}).name || 'No group', category_id: pr.subcategory_id || '', category: (cats[pr.subcategory_id] || {}).name || 'No category', brand_id: pr.brand_id || '', brand: (brands[pr.brand_id] || {}).name || 'No brand', unit: pr.unit || 'pcs', active: pr.active, stock: stock, reserved: Math.min(stock, reserved[pr.id] || 0), available: Math.max(round_(stock - (reserved[pr.id] || 0), 4), 0), age3: 0, age6: 0, age12: 0, age_unknown: 0, expiring: 0, expired: 0, warranty_unknown: 0, last_sale: lastSale[pr.id] || '', oldest: '', cost: stock * pr.cost_price, sale_value: stock * pr.sale_price, lots: remaining };
+    var row = { product_id: pr.id, name: pr.name, group_id: pr.category_id || '', group: (cats[pr.category_id] || {}).name || 'No group', category_id: pr.subcategory_id || '', category: (cats[pr.subcategory_id] || {}).name || 'No category', brand_id: pr.brand_id || '', brand: (brands[pr.brand_id] || {}).name || 'No brand', unit: pr.unit || 'pcs', active: pr.active, stock: stock, reserved: Math.min(stock, reserved[pr.id] || 0), available: Math.max(round_(stock - (reserved[pr.id] || 0), 4), 0), age3: 0, age6: 0, age12: 0, age_unknown: 0, expiring: 0, expired: 0, warranty_unknown: 0, last_sale: lastSale[pr.id] || '', oldest: '', cost: branch && isSerialProduct_(pr) ? branchSerialCost : stock * pr.cost_price, sale_value: stock * pr.sale_price, lots: remaining };
     remaining.forEach(function(l) {
       if (!l.date) row.age_unknown += l.qty;
       else { if (!row.oldest || l.date < row.oldest) row.oldest = l.date; if (l.date < cut3) row.age3 += l.qty; if (l.date < cut6) row.age6 += l.qty; if (l.date < cut12) row.age12 += l.qty; }
@@ -7169,7 +7205,7 @@ function stockAnalysis_() {
     if (Object.keys(unset).length) row.unset_lots = Object.keys(unset).map(function(k) { return unset[k]; }).sort(function(a, b) { return String(a.date).localeCompare(String(b.date)); });
     rows.push(row);
   });
-  return _mem.__stockAnalysis = { today: today, rows: rows };
+  return cached[scope] = { today: today, rows: rows };
 }
 function stockQuantitySummary_(rows) {
   var totals = {};
@@ -7177,7 +7213,7 @@ function stockQuantitySummary_(rows) {
   return Object.keys(totals).sort().map(function(k) { return totals[k]; });
 }
 function stockSummaryReport_(p, user) {
-  var analysis = stockAnalysis_(), today = analysis.today, metric = p.stock_filter || 'all';
+  var branch = branchFixed_(user), analysis = stockAnalysis_(branch), today = analysis.today, metric = p.stock_filter || 'all';
   var rows = analysis.rows.filter(function(r) {
     if (!p.include_inactive && !r.active) return false;
     if ((p.product_id && r.product_id !== p.product_id) || (p.group_id && r.group_id !== p.group_id) || (p.category_id && r.category_id !== p.category_id) || (p.brand_id && r.brand_id !== p.brand_id)) return false;
@@ -7213,7 +7249,7 @@ function stockSummaryReport_(p, user) {
     if (can_(user,'cost')) columns.push(col_('cost','Stock cost','money',1)); columns.push(col_('sale_value','Stock retail value','money',1));
   }
   columns.forEach(function(c) { if (c.key==='cost' || c.key==='sale_value') c.precision=8; });
-  return finishReport_('Stock summary — ' + today, columns, rows, { quantities: quantities, quantity_scope:view==='lots'?'lots':'products', note: 'Current stock, not a historical stock snapshot. Age thresholds overlap and use calendar months. Serial purchase lots are exact; nonserial remaining lots and their warranty quantities are FIFO estimates. Manual / untracked stock is shown as unknown. Warranty uses supplier expiry entered on the purchase, never customer warranty. Mixed units are kept separate. Valuation totals are calculated before rounding to currency; fractional-paisa row values are retained.' });
+  return finishReport_('Stock summary — ' + today, columns, rows, { quantities: quantities, quantity_scope:view==='lots'?'lots':'products', note: (branch ? 'Stock in ' + branchName_(branch) + '. Nonserial lots with uncertain branch provenance are shown as unknown. ' : '') + 'Current stock, not a historical stock snapshot. Age thresholds overlap and use calendar months. Serial purchase lots are exact; nonserial remaining lots and their warranty quantities are FIFO estimates. Manual / untracked stock is shown as unknown. Warranty uses supplier expiry entered on the purchase, never customer warranty. Mixed units are kept separate. Valuation totals are calculated before rounding to currency; fractional-paisa row values are retained.' });
 }
 function topProducts_(sales, today, showCost) {
   var month = today.slice(0, 7), byId = indexBy_(sales), prods = indexBy_(all_('Products')), cats = indexBy_(all_('Categories'));
@@ -7259,13 +7295,14 @@ function topProducts_(sales, today, showCost) {
 /** POS price history for one product: last purchase (cost permission only) and the last 3 selling prices. */
 function productHistory_(p, user) {
   var pr = all_('Products').filter(function (x) { return x.id === p.product_id; })[0]; if (!pr) fail_('Product not found');
-  var out = { product_id: pr.id, stock: pr.stock, last_sales: [] };
+  var fixed = branchFixed_(user);
+  var out = { product_id: pr.id, stock: fixed ? branchQty_(pr.id, fixed) : pr.stock, last_sales: [] };
   // POS price card: how much each branch holds (and what is on the way), so stock can be fetched from another branch
   if (branchesOn_() && !isService_(pr)) {
     var bsd = branchStockData_(false, pr.id), bsr = branchStockRow_(pr, bsd);
     out.branch_stock = { here: _branch || '', transit: bsr.transit, total: bsr.total, branches: bsd.list.filter(function (b) { return b.active || bsr.by[b.id]; }).map(function (b) { return { id: b.id, name: b.name, main: !!b.main, qty: bsr.by[b.id] }; }) };
   }
-  var actSale = indexBy_(all_('Sales').filter(function (s) { return s.status === 'active' && (can_(user, 'sales.all') || s.user_id === user.id); }));
+  var actSale = indexBy_(all_('Sales').filter(function (s) { return s.status === 'active' && branchSees_('Sales', s.id) && (can_(user, 'sales.all') || s.user_id === user.id); }));
   var si = all_('SaleItems').filter(function (i) { return i.product_id === pr.id && actSale[i.sale_id]; });
   out.last_sales = si.slice(-3).reverse().map(function (i) { var s = actSale[i.sale_id]; return { price: i.price, qty: i.qty, date: s.date, invoice_no: s.invoice_no, customer: s.customer_name }; });
   // POS hover card: last and second-last selling price, the highest, lowest and average (per unit, weighted by quantity),
@@ -7277,11 +7314,17 @@ function productHistory_(p, user) {
     max: max === null ? null : round_(max, 4), min: min === null ? null : round_(min, 4), avg: qty > 0 ? round_(value / qty, 2) : null };
   if (p.customer_id) out.customer_sales = si.filter(function (i) { return actSale[i.sale_id].customer_id === p.customer_id; }).slice(-3).reverse().map(line);
   if (can_(user, 'cost') || can_(user, 'purchase')) {
-    var actPur = indexBy_(all_('Purchases').filter(function (x) { return x.status === 'active'; }));
+    var actPur = indexBy_(all_('Purchases').filter(function (x) { return x.status === 'active' && branchSees_('Purchases', x.id); }));
     var pi = all_('PurchaseItems').filter(function (i) { return i.product_id === pr.id && actPur[i.purchase_id]; });
     var last = pi[pi.length - 1];
-    if (can_(user, 'cost')) out.avg_cost = pr.cost_price;
-    if (can_(user, 'cost') && pi.length) { var costs = pi.map(function (i) { return num_(i.cost); }); out.cost_stats = { min: round_(Math.min.apply(null, costs), 4), max: round_(Math.max.apply(null, costs), 4), avg: round_(pr.cost_price, 4), times: pi.length }; }
+    if (can_(user, 'cost')) {
+      var qtyPurchased = sum_(pi, function (i) { return num_(i.qty); });
+      if (!fixed || qtyPurchased > 0) out.avg_cost = fixed ? round_(sum_(pi, function (i) { return purchaseInventoryCost_(i); }) / qtyPurchased, 4) : pr.cost_price;
+      if (pi.length) {
+        var costs = pi.map(function (i) { return num_(i.cost); });
+        out.cost_stats = { min: round_(Math.min.apply(null, costs), 4), max: round_(Math.max.apply(null, costs), 4), avg: round_(out.avg_cost, 4), times: pi.length };
+      }
+    }
     out.last_purchase = last ? { cost: last.cost, qty: last.qty, date: actPur[last.purchase_id].date, invoice_no: actPur[last.purchase_id].invoice_no, supplier: actPur[last.purchase_id].supplier_name } : null;
   }
   return out;
@@ -8025,9 +8068,13 @@ function partyItemsReport_(kind, p, user, period) {
     if (!branchSees_(cust ? 'Sales' : 'Purchases', d.id) || (cust && !can_(user, 'sales.all') && d.user_id !== user.id)) return;
     docs[d.id] = d;
   });
+  var original = indexBy_(all_(cust ? 'Sales' : 'Purchases'));
   all_(cust ? 'SalesReturns' : 'PurchaseReturns').forEach(function (r) {
     if (r.status !== 'active' || (p.party_id && r[key] !== p.party_id) || !inRange_(r.date, from, to)) return;
-    if (cust && !branchSees_('SalesReturns', r.id)) return;
+    var parent = original[cust ? r.sale_id : r.purchase_id];
+    if (!parent || !branchSees_(cust ? 'SalesReturns' : 'PurchaseReturns', r.id) ||
+        !branchSees_(cust ? 'Sales' : 'Purchases', parent.id) ||
+        (cust && !can_(user, 'sales.all') && parent.user_id !== user.id)) return;
     rets[r.id] = r;
   });
   var row = function (pid, name, unit) { return g[pid] = g[pid] || { product_id: pid, product: (prods[pid] || {}).name || name, unit: unit || (prods[pid] || {}).unit || 'pcs', qty: 0, amount: 0, ret_qty: 0, ret_amount: 0, net_qty: 0, net_amount: 0, times: 0, last: '' }; };
@@ -8037,7 +8084,7 @@ function partyItemsReport_(kind, p, user, period) {
     var d = docs[id], dd = String(d.date).slice(0, 10);
     lines[id].forEach(function (i) {
       // A sale line counts at what the customer paid for it (the invoice discount spread over the lines).
-      var x = row(i.product_id, i.name, i.unit), amt = round_(cust ? invoiceLineNet_(i, lines[id], d) : num_(i.total));
+      var x = row(i.product_id, i.name, i.unit), amt = invoiceLineNet_(i, lines[id], d);
       x.qty = round_(x.qty + num_(i.qty), 4); x.amount = round_(x.amount + amt); x.times++; if (dd > x.last) x.last = dd;
     });
   });
@@ -8248,7 +8295,8 @@ function reportsRaw_(p, user) {
   if (T === 'supplier_rebates') {
     if (!can_(user, 'suppliers')) fail_('Permission denied: the rebate report needs the Suppliers permission');
     var sups = indexBy_(all_('Suppliers')), bySup = {}, byKind = {};
-    var got = rebateRows_().filter(function (r) { return inRange_(r.date, from, to) && (!p.supplier_id || r.supplier_id === p.supplier_id); })
+    var rebateInBranch = function (r) { return !fixedBranch || (!!r.purchase_id && branchSees_('Purchases', r.purchase_id)); };
+    var got = rebateRows_().filter(function (r) { return rebateInBranch(r) && inRange_(r.date, from, to) && (!p.supplier_id || r.supplier_id === p.supplier_id); })
       .sort(function (a, b) { return String(b.date).localeCompare(String(a.date)); });
     var rrows = got.map(function (r) {
       var name = sups[r.supplier_id] ? sups[r.supplier_id].name : '';
@@ -8256,7 +8304,7 @@ function reportsRaw_(p, user) {
       byKind[r.kind_label] = round_((byKind[r.kind_label] || 0) + r.amount);
       return { date: r.date, ref_no: r.ref_no, supplier: name, kind: r.kind_label, purchase: r.purchase_no, reason: r.reason, status: 'Received', received: r.amount, promised: 0 };
     });
-    var waiting = rebatesPending_().filter(function (r) { return !p.supplier_id || r.supplier_id === p.supplier_id; });
+    var waiting = rebatesPending_().filter(function (r) { return rebateInBranch(r) && (!p.supplier_id || r.supplier_id === p.supplier_id); });
     waiting.forEach(function (r) { rrows.push({ date: r.expected || r.created, ref_no: '', supplier: r.supplier, kind: REBATE_KINDS[r.kind] || '', purchase: r.purchase_no || '', reason: r.note, status: 'Promised — not received', received: 0, promised: r.amount }); });
     return finishReport_('Supplier rebates', [col_('date', 'Date', 'date'), col_('ref_no', 'Ref'), col_('supplier', 'Supplier'), col_('kind', 'Kind'), col_('purchase', 'Purchase'), col_('reason', 'Reason'), col_('status', 'Status'),
       col_('received', 'Received', 'money', true), col_('promised', 'Promised', 'money', true)], rrows,

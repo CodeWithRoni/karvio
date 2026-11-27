@@ -103,3 +103,19 @@ test('POS: invoice search box lists recent invoices, searches by number, edits, 
   await expect(page.locator('.cart td.cn')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Complete', exact: true })).toBeVisible();
 });
+
+test('POS edit excludes the current invoice from previous due', async ({ page, request }) => {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  const customer = await call(request, 'customer.save', { name: 'Edit due reconciliation customer' });
+  const items = [{ product_id: ids.item.id, qty: 1, price: 550 }];
+  await call(request, 'sale.create', { customer_id: customer.id, items, payments: [{ account_id: ids.cash, amount: 500 }] });
+  const invoice = await call(request, 'sale.create', { customer_id: customer.id, items, payments: [{ account_id: ids.cash, amount: 300 }] });
+
+  await page.goto('/#/pos');
+  await page.getByRole('combobox', { name: 'Search invoice' }).fill(invoice.sale.invoice_no);
+  await page.getByRole('option').filter({ hasText: invoice.sale.invoice_no }).click();
+  const balance = page.locator('.prev-due');
+  await expect(balance.locator('.row').filter({ hasText: 'Previous due' }).locator('b')).toHaveText('Tk 50');
+  await expect(balance.locator('.row').filter({ hasText: 'Due on this sale' }).locator('b')).toHaveText('Tk 250');
+  await expect(balance.locator('.total-due b')).toHaveText('Tk 300');
+});

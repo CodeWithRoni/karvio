@@ -2,7 +2,7 @@ import { quotationTotals, quotationPrice } from './quotationTotals';
 import { qrSvg, logoImg } from './qr';
 // Thermal receipts (58mm / 80mm), A4 quotation and ledger statements.
 import { useStore } from './store';
-import { bizDocHtml, isBizTpl, docOpen, docHead, printDocs, m2fmt } from './salesDocs';
+import { bizDocHtml, isBizTpl, docOpen, docHead, printDocs, m2fmt, invoicePaymentSummary } from './salesDocs';
 import { printParties } from './partyDocs';
 import { unitPrice, money, qty, fdate, fdatetime, splitList, today, cap1 } from './format';
 import { printHtml, esc, shopContacts } from './export';
@@ -49,6 +49,7 @@ export function receiptHtml(detail, widthOverride, height = 0) {
   const tpl = s.invoice_template || 'classic';
   const note = String(s.invoice_note || '').trim();
   const { sale, items, customer } = detail;
+  const payment = invoicePaymentSummary(detail);
   const pays = Array.isArray(sale.payments) ? sale.payments : safeJson(sale.payments, []);
   const lines = items.map((i) => {
     const sers = splitList(i.serials);
@@ -86,9 +87,11 @@ export function receiptHtml(detail, widthOverride, height = 0) {
     <tr><td>Subtotal</td><td class="r">${esc(money(sale.subtotal, false))}</td></tr>
     ${sale.discount ? `<tr><td>Discount</td><td class="r">-${esc(money(sale.discount, false))}</td></tr>` : ''}
     <tr class="tot"><td>TOTAL</td><td class="r">${esc(money(sale.total))}</td></tr>
-    ${pays.map((p) => `<tr><td>Paid (${esc(p.account_name)})</td><td class="r">${esc(money(p.amount, false))}</td></tr>`).join('')}
-    ${sale.credit_used ? `<tr><td>Paid (advance)</td><td class="r">${esc(money(sale.credit_used, false))}</td></tr>` : ''}
-    ${(sale.due_now ?? sale.due) > 0 ? `<tr class="tot"><td>DUE</td><td class="r">${esc(money(sale.due_now ?? sale.due))}</td></tr>` : ''}
+    ${payment.returned > 0 ? `<tr><td>Returned value</td><td class="r">${esc(money(payment.returned, false))}</td></tr><tr><td>Net invoice amount</td><td class="r">${esc(money(payment.net, false))}</td></tr>` : ''}
+    ${pays.map((p) => `<tr><td>${payment.current ? 'At sale' : 'Paid'} (${esc(p.account_name)})</td><td class="r">${esc(money(p.amount, false))}</td></tr>`).join('')}
+    ${sale.credit_used ? `<tr><td>${payment.current ? 'At sale' : 'Paid'} (advance)</td><td class="r">${esc(money(sale.credit_used, false))}</td></tr>` : ''}
+    ${payment.current ? `<tr><td>Paid now</td><td class="r">${esc(money(payment.paid, false))}</td></tr>` : ''}
+    ${payment.due > 0 ? `<tr class="tot"><td>DUE</td><td class="r">${esc(money(payment.due))}</td></tr>` : ''}
     ${customer && customer.balance !== undefined ? `<tr><td>${customer.balance < 0 ? 'Customer advance' : 'Total balance due'}</td><td class="r">${esc(money(Math.abs(customer.balance), false))}</td></tr>` : ''}
     ${sale.next_payment_date && (sale.due_now ?? sale.due) > 0 ? `<tr><td>Next payment date</td><td class="r">${esc(fdate(sale.next_payment_date))}</td></tr>` : ''}
   </table>

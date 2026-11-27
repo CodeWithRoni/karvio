@@ -188,6 +188,11 @@ export const PRIVATE_HINTS = {
   'purchase.warranty': ['__KarvioBranchRows', '__KarvioRequestReceipts'],
   'supplier.prices': ['__KarvioBranchRows'],
   'reports:supplier_prices': ['__KarvioBranchRows'],
+  'history': ['__KarvioBranchRows'],
+  'serials.list': ['__KarvioBranchRows'],
+  'reports:stock_summary': ['__KarvioBranchRows'],
+  'reports:party_items': ['__KarvioBranchRows'],
+  'reports:supplier_rebates': ['__KarvioBranchRows'],
 };
 
 // Every request signs in a user and reads shop settings.
@@ -292,7 +297,7 @@ export const TABLE_HINTS = {
   'reports:daily_summary': ['Expenses', 'ItemEvents', 'PurchaseReturns', 'Purchases', 'SaleItems', 'Sales', 'SalesReturns', 'WarrantyClaims'],
   'reports:due_collections': ['AccountTxns', 'Accounts', 'CustomerLedger', 'Customers'],
   'reports:expenses': ['Accounts', 'Expenses'],
-  'reports:party_items': ['Products', 'SaleItems', 'Sales', 'SalesReturnItems', 'SalesReturns'],
+  'reports:party_items': ['Products', 'PurchaseItems', 'Purchases', 'PurchaseReturnItems', 'PurchaseReturns', 'SaleItems', 'Sales', 'SalesReturnItems', 'SalesReturns'],
   'reports:payment_methods': ['AccountTxns', 'Accounts'],
   'reports:product_sales': ['SaleItems', 'Sales'],
   'reports:service_sales': ['Categories', 'Products', 'SaleItems', 'Sales', 'SalesReturnItems', 'SalesReturns'],
@@ -302,7 +307,7 @@ export const TABLE_HINTS = {
   'reports:sales_returns': ['Sales', 'SalesReturnItems', 'SalesReturns'],
   'reports:slow_stock': ['Brands', 'Categories', 'Products', 'PurchaseItems', 'Purchases', 'SaleItems', 'Sales', 'SerialItems'],
   'reports:staff': ['AccountTxns', 'Accounts', 'SaleItems', 'Sales', 'SalesReturns'],
-  'reports:stock_summary': ['Brands', 'Categories', 'ItemEvents', 'Products', 'PurchaseItems', 'PurchaseReturnItems', 'Purchases', 'Repairs', 'SaleItems', 'Sales', 'SalesReturnItems', 'SalesReturns', 'SerialItems', 'WarrantyClaims'],
+  'reports:stock_summary': ['Brands', 'Categories', 'ItemEvents', 'Products', 'PurchaseItems', 'PurchaseReturnItems', 'PurchaseReturns', 'Purchases', 'Repairs', 'SaleItems', 'Sales', 'SalesReturnItems', 'SalesReturns', 'SerialItems', 'WarrantyClaims'],
   'reports:supplier_payments': ['AccountTxns', 'Accounts', 'Purchases', 'SupplierLedger', 'Suppliers'],
   'reports:supplier_prices': ['Products', 'PurchaseItems', 'Purchases', 'Suppliers'],
   'reports:supplier_rebates': ['Purchases', 'SupplierLedger', 'Suppliers'],
@@ -317,7 +322,7 @@ export const TABLE_HINTS = {
   'sales.list:products': ['CustomerLedger', 'Customers', 'Products', 'SaleItems', 'Sales', 'SalesReturns'],
   'sales.list:invoice_search': ['CustomerLedger', 'Customers', 'Sales', 'SalesReturns'],
   'serials.find': ['Products', 'SerialItems'],
-  'serials.list': ['SerialItems'],
+  'serials.list': ['Repairs', 'SerialItems'],
   'service.cancel': ['AuditLog', 'CustomerLedger', 'Customers', 'Repairs'],
   'service.complete': ['AccountTxns', 'Accounts', 'AuditLog', 'CustomerLedger', 'Customers', 'ItemEvents', 'Products', 'Repairs', 'SaleItems', 'Sales', 'SalesReturnItems', 'SalesReturns', 'SerialItems', 'Units'],
   'service.get': ['CustomerLedger', 'Customers', 'Repairs', 'Sales'],

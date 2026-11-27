@@ -151,7 +151,7 @@ function JobForm({ job, meta, onClose, onDone }) {
             const p = pmap[x.product_id];
             return (
               <tr key={x.product_id}>
-                <td>{x.name}{isSerial(p) && <SerialChooser productId={x.product_id} value={x.serials} onChange={(s) => setPart(i, { serials: s, qty: s.length })} />}</td>
+                <td>{x.name}{isSerial(p) && <SerialChooser productId={x.product_id} extra={String((job?.parts || []).find((part) => part.product_id === x.product_id)?.serials || '').split(',').filter(Boolean)} value={x.serials} onChange={(s) => setPart(i, { serials: s, qty: s.length })} />}</td>
                 <td className="r">{isSerial(p) ? x.qty : <input type="number" min="0" step="any" value={x.qty} onChange={(e) => setPart(i, { qty: e.target.value })} style={{ width: 80 }} aria-label={`Qty of ${x.name}`} />} <small className="muted">{x.unit || ''}</small></td>
                 <td className="r"><input type="number" min="0" step="any" value={x.price} disabled={!can('pos')} onChange={(e) => setPart(i, { price: e.target.value })} style={{ width: 100 }} aria-label={`Price of ${x.name}`} /></td>
                 <td className="r num">{money((Number(x.qty) || 0) * (Number(x.price) || 0), false)}</td>

@@ -27,6 +27,13 @@ const classic = {...staff,shop:{...staff.shop,invoice_template:'classic'}};
 const promise = {...classic.sale,next_payment_date:'2026-11-27'};
 assert.doesNotMatch(docs.saleDocHtml({...classic,sale:promise}),/Next payment date/);
 assert.match(docs.saleDocHtml({...classic,sale:{...promise,due_now:100}}),/Next payment date/);checks+=2;
+for (const invoice_template of ['classic','modern','minimal']) {
+  const reprint={...classic,sale:{...classic.sale,paid_now:undefined,paid:400,total:1000,due:600,due_now:0,net_total:undefined},
+    shop:{...classic.shop,invoice_template}};
+  assert.match(docs.saleDocHtml(reprint),/Paid now<\/td><td class="r">1,000/);
+  assert.match(receipt.receiptHtml(reprint,80),/Paid now<\/td><td class="r">1,000/);
+  checks+=2;
+}
 // Public view displays current Paid now, while original payment-account rows are labeled At sale.
 let index=0;const hooks={...React,useState:()=>[index++===0?detail:'',()=>{}],useEffect:()=>{}};
 const Public=load('pages/PublicInvoice.jsx',{'react':hooks,'../lib/api':{},'../lib/store':{},'../lib/format':format}).default;
