@@ -61,7 +61,7 @@ test('POS: hovering a product shows its selling prices', async ({ page }) => {
   await expect(page.locator('.ppc-pop .ppc')).toContainText('2ND LAST');
 });
 
-test('POS: invoice search box lists every invoice, searches by number, edits, clears', async ({ page }) => {
+test('POS: invoice search box lists recent invoices, searches by number, edits, clears', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
   await page.goto('/#/pos');
   const inv = page.getByRole('combobox', { name: 'Search invoice' });
@@ -69,7 +69,7 @@ test('POS: invoice search box lists every invoice, searches by number, edits, cl
   const list = page.locator('.inv-search .ri-list');
   await expect(list).toBeVisible();
   await expect(list.locator('li').first()).toContainText(ids.sale.sale.invoice_no);
-  await expect(page.locator('.inv-search .ri-head')).toContainText('All invoices');
+  await expect(page.locator('.inv-search .ri-head')).toContainText('Recent invoices');
   await page.screenshot({ path: 'test-results/pos-invoice-search.png' });
   await inv.fill(ids.sale.sale.invoice_no.replace(/\D/g, '').slice(-3));
   await expect(list.locator('li').first()).toContainText(ids.sale.sale.invoice_no);
