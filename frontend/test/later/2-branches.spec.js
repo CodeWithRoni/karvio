@@ -71,6 +71,7 @@ test('add branches, work in one, send stock to the other and see every branch in
 
   await page.goto('/#/branch-report');
   await expect(page.locator('.br-table')).toContainText('Second branch');
+  await expect(page.locator('.br-table').getByRole('columnheader', { name: 'Due at sale' })).toBeVisible();
   await expect(page.locator('.br-table tr.all')).toContainText('All branches');
 
   // a new employee gets a branch from the user form; Settings → Branches shows (and can change) the same
