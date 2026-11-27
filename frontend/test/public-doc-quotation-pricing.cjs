@@ -23,6 +23,10 @@ assert.match(html,/Paid now<\/td><td>:<\/td><td class="r">500\.00/);assert.match
 const staff={...detail,sale:{...sale,live_invoice:false,due:400}};html=docs.saleDocHtml(staff);assert.match(html,/Outstanding Amount<\/td><td>:<\/td><td class="r">400\.00/);assert.match(html,/Collected Amount<\/td><td>:<\/td><td class="r">100\.00/);checks+=2;
 const returned={...detail,sale:{...sale,paid_now:400,returned_total:100,net_total:400}};html=docs.saleDocHtml(returned);assert(html.includes('Returned value'));assert.match(html,/Paid now<\/td><td>:<\/td><td class="r">400\.00/);checks+=2;
 html=docs.saleDocHtml({...returned,shop:{...detail.shop,invoice_template:'classic'}});assert.match(html,/Paid now<\/td><td class="r">400/);assert(html.includes('Net invoice amount'));checks+=2;
+const classic = {...staff,shop:{...staff.shop,invoice_template:'classic'}};
+const promise = {...classic.sale,next_payment_date:'2026-11-27'};
+assert.doesNotMatch(docs.saleDocHtml({...classic,sale:promise}),/Next payment date/);
+assert.match(docs.saleDocHtml({...classic,sale:{...promise,due_now:100}}),/Next payment date/);checks+=2;
 // Public view displays current Paid now, while original payment-account rows are labeled At sale.
 let index=0;const hooks={...React,useState:()=>[index++===0?detail:'',()=>{}],useEffect:()=>{}};
 const Public=load('pages/PublicInvoice.jsx',{'react':hooks,'../lib/api':{},'../lib/store':{},'../lib/format':format}).default;

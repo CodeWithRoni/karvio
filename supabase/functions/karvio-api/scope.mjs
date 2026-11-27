@@ -79,6 +79,10 @@ export const APPEND_HINTS = {
 // Private sheets read with every request (small). Request receipts are large and only needed by saves.
 export const DEFAULT_PRIVATE = ['__KarvioTxnJournal', '__KarvioQuoteLinks'];
 export const PRIVATE_HINTS = {
+  'claims.list': ['__KarvioBranchRows'],
+  'daybook': ['__KarvioBranchRows'],
+  'reports:slow_stock': ['__KarvioBranchRows'],
+  'warranty.lookup': ['__KarvioBranchRows'],
   'account.delete': ['__KarvioRequestReceipts'],
   'account.entry': ['__KarvioRequestReceipts'],
   'account.save': ['__KarvioRequestReceipts'],
@@ -94,8 +98,9 @@ export const PRIVATE_HINTS = {
   'branch.transfer.serials': ['__KarvioBranchRows'],
   'branch.transfer.send': ['__KarvioApprovals', '__KarvioBranchRows', '__KarvioRequestReceipts'],
   'branches.get': ['__KarvioBranchRows'],
-  'claim.create': ['__KarvioRequestReceipts'],
-  'claim.update': ['__KarvioRequestReceipts'],
+  'claim.create': ['__KarvioBranchRows', '__KarvioRequestReceipts'],
+  'claim.update': ['__KarvioBranchRows', '__KarvioRequestReceipts'],
+  'claim.restock': ['__KarvioBranchRows', '__KarvioRequestReceipts'],
   'courier.finish': ['__KarvioOnlineOrders', '__KarvioRequestReceipts'],
   'courier.prepare': ['__KarvioOnlineOrders'],
   'courier.record': ['__KarvioOnlineOrders'],
@@ -292,7 +297,7 @@ export const TABLE_HINTS = {
   'reports:purchases': ['PurchaseItems', 'PurchaseReturns', 'Purchases', 'SupplierLedger', 'Suppliers'],
   'reports:sales': ['CustomerLedger', 'Customers', 'SaleItems', 'Sales', 'SalesReturns'],
   'reports:sales_returns': ['Sales', 'SalesReturnItems', 'SalesReturns'],
-  'reports:slow_stock': ['Brands', 'Categories', 'Products', 'PurchaseItems', 'Purchases', 'SaleItems', 'Sales'],
+  'reports:slow_stock': ['Brands', 'Categories', 'Products', 'PurchaseItems', 'Purchases', 'SaleItems', 'Sales', 'SerialItems'],
   'reports:staff': ['AccountTxns', 'Accounts', 'SaleItems', 'Sales', 'SalesReturns'],
   'reports:stock_summary': ['Brands', 'Categories', 'ItemEvents', 'Products', 'PurchaseItems', 'PurchaseReturnItems', 'Purchases', 'Repairs', 'SaleItems', 'Sales', 'SalesReturnItems', 'SalesReturns', 'SerialItems', 'WarrantyClaims'],
   'reports:supplier_payments': ['AccountTxns', 'Accounts', 'Purchases', 'SupplierLedger', 'Suppliers'],

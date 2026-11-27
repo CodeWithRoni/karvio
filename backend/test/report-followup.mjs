@@ -21,6 +21,11 @@ const sale=q('sale.create',{items:products.map(p=>({product_id:p.id,qty:1,price:
 const day=q('bootstrap').serverToday;const profit=q('profit.report',{from:day,to:day});const report=q('reports',{type:'product_sales'});
 const actual={saleCost:sale.sale.cost,saleProfit:sale.sale.profit,summaryProfit:profit.summary.gross,productCosts:profit.products.map(x=>x.cost),productProfits:profit.products.map(x=>x.profit),productCostTotal:profit.products.reduce((n,x)=>n+x.cost,0),productProfitTotal:profit.products.reduce((n,x)=>n+x.profit,0),productSalesProfit:report.totals.profit};
 assert.equal(actual.saleCost,0.02);assert.equal(actual.saleProfit,2.98);assert.equal(actual.productProfitTotal,2.98);assert.equal(actual.productCostTotal,0.02);assert.equal(actual.productSalesProfit,2.98);
+const discounted = q('sale.create', {items:[{product_id:products[0].id,qty:1,price:1}],discount:0.20,payments:[{account_id:cash,amount:0.80}]});
+const staff = q('reports', {type:'staff',staff_id:discounted.sale.user_id});
+assert.equal(staff.staff_detail.products.find(p=>p.product===products[0].name).profit,
+  q('profit.report').products.find(p=>p.product_id===products[0].id).profit);
+q('reverse',{type:'sale',id:discounted.sale.id,password:'audit-owner-password-123',reason:'Isolate return fixture'});
 const returned=q('sreturn.create',{sale_id:sale.sale.id,items:sale.items.map(i=>({sale_item_id:i.id,qty:1})),refund:{mode:'cash',account_id:cash}});
 const after=q('profit.report',{from:day,to:day});assert.equal(after.summary.gross,0);assert.equal(Math.round(after.products.reduce((n,r)=>n+r.profit,0)*100)/100,0);
 reset();q('master.save',{kind:'unit',name:'meter',label:'Meter',decimal:true});const pcs=product('Pieces',{service:true}),meters=product('Meters',{unit:'meter'});q('purchase.create',{items:[{product_id:meters.id,qty:3,cost:5}],payments:[{account_id:cash,amount:15}]});q('sale.create',{items:[{product_id:pcs.id,qty:2,price:100},{product_id:meters.id,qty:3,price:10}],payments:[{account_id:cash,amount:230}]});const daily=q('reports',{type:'daily_summary'});assert.equal(daily.totals.items,'3 meter · 2 pcs');assert.equal(daily.rows[0].items,'3 meter · 2 pcs');assert.deepEqual(daily.rows[0].item_quantities,{pcs:2,meter:3});

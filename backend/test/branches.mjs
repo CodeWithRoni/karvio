@@ -97,7 +97,11 @@ eq((await q('products.list', {}, {branch: uttara})).find((p) => p.id === tea.id)
 console.log(`Features 12: ${checks} checks passed (branches).`);
 
 // A fixed-branch staff member with reporting privileges sees branch-specific statistics.
-await q('rolePerms.save', {sales: ['reports', 'pos', 'cost', 'sales.all']});
+await q('rolePerms.save', {sales: ['reports', 'pos', 'cost', 'sales.all', 'accounts', 'warranty']});
+await q('account.entry', {kind:'deposit',account_id:cash,amount:500,note:'Main cash'}, {branch:mirpur});
+await q('account.entry', {kind:'deposit',account_id:uttaraCash,amount:100,note:'Local cash'}, {branch:uttara});
+const localSale = (await q('sales.list', {}, {branch:uttara})).find(s=>s.total===9000);
+const localLine = (await q('sale.detail', {id:localSale.id})).items[0];
 api.setToken((await q('login', {username: 'uttara1', password: 'uttara-password-1'})).token);
 const reportOptions = {from: boot.serverToday, to: boot.serverToday};
 const branchDashboard = await q('dashboard');
@@ -105,4 +109,16 @@ const branchProfit = await q('profit.report', reportOptions);
 const branchInvoices = await q('reports', {type: 'sales', ...reportOptions});
 eq(branchDashboard.today.sales, branchInvoices.totals.total, 'dashboard sales match the assigned branch sales report');
 eq(branchProfit.summary.sales, branchInvoices.totals.total, 'Profit only includes the assigned branch sales');
+eq((await q('accounts.list')).map(a=>a.id), [uttaraCash], 'cash list carries only authorised branch accounts');
+eq((await q('account.ledger',{account_id:uttaraCash})).account, 'Uttara drawer', 'local account ledger remains available');
+eq((await q('dayclose.get')).accounts.map(a=>a.id), [uttaraCash], 'day close offers local accounts');
+eq((await q('daybook')).business.sales.total, branchInvoices.totals.total, 'day book business totals are branch-scoped');
+eq((await q('owner.money')).rows.map(r=>r.note), ['Local cash'], 'owner money shows local deposits');
+const limitedReport = await q('branch.report');
+eq([limitedReport.branches.map(r=>r.id),limitedReport.all,limitedReport.transit], [[uttara],null,null], 'branch report excludes consolidated figures');
+const localClaim = await q('claim.create',{sale_id:localSale.id,sale_item_id:localLine.id,serial:'P-2'});
+eq((await q('claim.update',{id:localClaim.id,status:'Sent to Vendor'})).status,'Sent to Vendor','local claims can still be processed');
+const slow = await q('reports',{type:'slow_stock'});
+eq(slow.slow.stock_value, limitedReport.branches[0].stock_value, 'slow stock denominator matches the local stock value');
+ok(!(await raw('branches.get')).ok,'staff cannot load the administrative directory');
 api.setToken(admin);

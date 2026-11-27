@@ -231,7 +231,7 @@ export function saleInvoiceHtml(d) {
       <tr><td>${s.live_invoice ? 'Paid now' : 'Paid'}</td><td class="r">${esc(money(s.live_invoice ? (s.paid_now ?? s.paid) : s.paid, false))}</td></tr>
       ${(s.due_now ?? s.due) > 0 ? `<tr><td><b>Due</b></td><td class="r"><b>${esc(money(s.due_now ?? s.due))}</b></td></tr>` : ''}
       ${d.customer && d.customer.balance !== undefined ? `<tr><td>${d.customer.balance < 0 ? 'Customer advance' : 'Total balance due'}</td><td class="r">${esc(money(Math.abs(d.customer.balance), false))}</td></tr>` : ''}
-      ${s.next_payment_date && s.due > 0 ? `<tr><td>Next payment date</td><td class="r">${esc(fdate(s.next_payment_date))}</td></tr>` : ''}
+      ${s.next_payment_date && (s.due_now ?? s.due) > 0 ? `<tr><td>Next payment date</td><td class="r">${esc(fdate(s.next_payment_date))}</td></tr>` : ''}
     </table>
     ${d.returns && d.returns.length ? `<p class="sm">Returns: ${esc(d.returns.map((r) => `${r.return_no} (${money(r.total, false)}, ${r.status})`).join(', '))}</p>` : ''}
     ${invoiceQr(s.invoice_no, st)}${noteHtml(st)}

@@ -147,6 +147,8 @@ function OrderView({ o, couriers, onClose, onChanged, onEdit }) {
     if (await ask({ title: `Cancel ${o.no}?`, message: 'The order stays in the list as cancelled. Stock is not touched (no invoice was made).', confirmLabel: 'Cancel order' })) act('order.cancel', { reason: 'Cancelled' }, 'Order cancelled');
   };
   const [st, tone] = STATUS[o.status] || [o.status, 'muted'];
+  const advancePaid = Number(o.advance_booked ?? o.advance) || 0;
+  const extraPaid = round2(Math.max((Number(o.advance) || 0) - advancePaid, 0));
   return (
     <Modal open size="lg" title={`${o.no} — ${o.customer.name}`} onClose={onClose}
       footer={<>
@@ -168,8 +170,9 @@ function OrderView({ o, couriers, onClose, onChanged, onEdit }) {
             {o.delivery_charge > 0 && <tr><td>Delivery charge</td><td /><td className="r num">{tk(o.delivery_charge)}</td></tr>}
             {o.discount > 0 && <tr><td>Discount</td><td /><td className="r num">−{tk(o.discount)}</td></tr>}
             <tr><th>Total</th><th /><th className="r num">{money(o.total)}</th></tr>
-            {o.advance > 0 && <tr><td>Advance paid{o.advance_entries?.length ? <small className="muted"> ({o.advance_entries.map((x) => `${x.receipt_no} · ${x.account_name}`).join(', ')})</small> : ''}</td><td /><td className="r num">−{tk(o.advance)}</td></tr>}
-            {o.credit_used !== undefined && o.credit_used + 0.004 < o.advance && <tr><td colSpan={3} className="muted">The invoice used {tk(o.credit_used)} of the advance; the rest went to an older due of this customer, so the invoice shows more due. The cash on delivery stays the same.</td></tr>}
+            {advancePaid > 0 && <tr><td>Advance paid{o.advance_entries?.length ? <small className="muted"> ({o.advance_entries.map((x) => `${x.receipt_no} · ${x.account_name}`).join(', ')})</small> : ''}</td><td /><td className="r num">−{tk(advancePaid)}</td></tr>}
+            {extraPaid > 0 && <tr><td>Additional invoice payment</td><td /><td className="r num">−{tk(extraPaid)}</td></tr>}
+            {o.credit_used !== undefined && o.credit_used + 0.004 < advancePaid && <tr><td colSpan={3} className="muted">The invoice used {tk(o.credit_used)} of the order advance. The remaining advance was applied to older dues.</td></tr>}
             {o.advance_refund && <tr><td>Advance returned ({o.advance_refund.receipt_no} · {o.advance_refund.account_name})</td><td /><td className="r num">{tk(o.advance_refund.amount)}</td></tr>}
             <tr><th>Cash on delivery</th><th /><th className="r num">{money(o.cod)}</th></tr></tbody></table>
           {o.note && <p><b>Note:</b> {o.note}</p>}

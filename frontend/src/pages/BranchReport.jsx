@@ -19,21 +19,22 @@ export default function BranchReport() {
     ...(cost ? [{ key: 'stock_value', label: 'Stock value', type: 'money' }] : []), { key: 'cash', label: 'Cash & accounts', type: 'money' }
   ];
   // Stock is shown per unit (pcs and meters are not added together); an older server sends only one number.
-  const rows = d ? [...d.branches, { ...d.all, name: 'All branches', id: 'all' }].map((r) => ({ ...r, stock_text: r.stock_text ?? r.stock_qty })) : [];
+  const summary = d?.all || d?.branches[0];
+  const rows = d ? [...d.branches, ...(d.all ? [{ ...d.all, name: 'All branches', id: 'all' }] : [])].map((r) => ({ ...r, stock_text: r.stock_text ?? r.stock_qty })) : [];
   const title = d ? `Branch report ${fdate(d.from)} – ${fdate(d.to)}` : 'Branch report';
   return (
     <>
-      <PageHead title="Branch report" sub="Sales, purchases, expenses, stock and cash of every branch — and all branches together.">
+      <PageHead title="Branch report" sub="Sales, purchases, expenses, stock and cash by branch.">
         {d && <><Btn onClick={() => printTable(title, cols, rows)}>Print</Btn><Btn onClick={() => exportExcel(title, cols, rows)}>Excel</Btn></>}
       </PageHead>
       <div className="filters"><Field label="Days"><DateRange from={range.from} to={range.to} onChange={(r) => r.from && r.to && setRange(r)} /></Field></div>
       <ErrorBox error={q.error} onRetry={q.reload} />
-      {q.loading && !d ? <Loading label="Reading every branch" /> : d && <>
+      {q.loading && !d ? <Loading label="Reading branch report" /> : d && summary && <>
         <div className="db-sum">
-          <div className="card"><span>Sales — all branches</span><b className="num">{money(d.all.sales)}</b><small>{d.all.sales_count} invoices</small></div>
-          <div className="card"><span>Purchases</span><b className="num">{money(d.all.purchases)}</b><small>{d.all.purchase_count} purchases</small></div>
-          <div className="card out"><span>Expenses</span><b className="num">{money(d.all.expenses)}</b></div>
-          <div className="card"><span>Stock on the way</span><b className="num">{d.transit.text ?? d.transit.qty}</b><small>{cost ? `${money(d.transit.value || 0)} at cost` : 'units between branches'}</small></div>
+          <div className="card"><span>Sales — {d.all ? 'all branches' : summary.name}</span><b className="num">{money(summary.sales)}</b><small>{summary.sales_count} invoices</small></div>
+          <div className="card"><span>Purchases</span><b className="num">{money(summary.purchases)}</b><small>{summary.purchase_count} purchases</small></div>
+          <div className="card out"><span>Expenses</span><b className="num">{money(summary.expenses)}</b></div>
+          {d.transit && <div className="card"><span>Stock on the way</span><b className="num">{d.transit.text ?? d.transit.qty}</b><small>{cost ? `${money(d.transit.value || 0)} at cost` : 'units between branches'}</small></div>}
         </div>
         <section className="card">
           <div className="dt-scroll"><table className="dc-hist br-table">

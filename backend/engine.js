@@ -1558,7 +1558,15 @@ function accountsList_() {
   all_('Expenses').forEach(function(t) { history[t.account_id] = true; });
   return all_('Accounts').map(function (a) { var o = Object.assign({}, a); delete o._row; o.balance = bal[a.id] || 0; o.has_history = !!history[a.id]; return o; });
 }
+function accountScope_(user) {
+  var fixed = branchFixed_(user), branches = fixed ? accountBranches_() : {};
+  return function (id) { return !fixed || !branches[id] || branches[id] === fixed; };
+}
+function requireAccountScope_(id, user) {
+  if (id && !accountScope_(user)(id)) fail_('Permission denied: this account belongs to another branch');
+}
 function accountSave_(p, user) {
+  requireAccountScope_(p.id, user);
   var name = String(p.name || '').trim(); if (!name) fail_('Account name is required');
   var type = ['cash', 'bank', 'mfs'].indexOf(p.type) >= 0 ? p.type : 'bank';
   var row = { name: name, type: type, number: p.number || '', opening_balance: num_(p.opening_balance) };
@@ -1579,6 +1587,7 @@ function accountSave_(p, user) {
 function accountDelete_(p, user) {
   var ids = (Array.isArray(p.ids) ? p.ids : [p.id]).filter(Boolean).map(String);
   if (!ids.length) fail_('Choose the accounts to delete');
+  ids.forEach(function (id) { requireAccountScope_(id, user); });
   var accs = all_('Accounts'), byId = indexBy_(accs), want = {};
   ids.forEach(function (id) { if (!byId[id]) fail_('Account not found'); want[id] = 1; });
   var used = {}, mark = function (id, why) { if (want[id]) (used[id] = used[id] || {})[why] = 1; };
@@ -1597,6 +1606,8 @@ function accountDelete_(p, user) {
   return { deleted: ids.length };
 }
 function accountEntry_(p, user) { // owner deposit / withdrawal / transfer
+  requireAccountScope_(p.account_id, user);
+  if (p.kind === 'transfer') requireAccountScope_(p.to_account_id, user);
   var amt = round_(p.amount); if (amt <= 0) fail_('Amount must be greater than 0');
   var accs = indexBy_(all_('Accounts'));
   var date = bookDate_(p.date, 'account entry');
@@ -1643,6 +1654,7 @@ function dayLocksRebuild_() {
   setSetting_('day_close_locks', JSON.stringify(m));
 }
 function dayCloseReopen_(p, user) {
+  requireAccountScope_(p.account_id, user);
   confirmAdmin_(user, p.password);
   var reason = String(p.reason || '').trim().slice(0, 300); if (!reason) fail_('Write why the day is reopened');
   var date = String(p.date || '').slice(0, 10); if (!isDate_(date)) fail_('Choose a valid date');
@@ -1651,7 +1663,7 @@ function dayCloseReopen_(p, user) {
   if (!c) fail_('That day is not closed');
   insert_('AuditLog', { ts: now_(), user: user.name, action: 'day_reopen', detail: JSON.stringify({ date: date, account_id: c.account_id, account_name: c.account_name, reason: reason }) });
   dayLocksRebuild_();
-  return dayCloseGet_({ account_id: c.account_id, date: date });
+  return dayCloseGet_({ account_id: c.account_id, date: date }, user);
 }
 function dayCloseFigures_(acc, date) {
   var opening = num_(acc.opening_balance), lines = {}, totIn = 0, totOut = 0;
@@ -1668,8 +1680,10 @@ function dayCloseFigures_(acc, date) {
   var list = Object.keys(lines).map(function (k) { return lines[k]; }).sort(function (a, b) { return (a.direction === b.direction ? 0 : a.direction === 'in' ? -1 : 1) || b.amount - a.amount; });
   return { opening: round_(opening), in: round_(totIn), out: round_(totOut), expected: round_(opening + totIn - totOut), lines: list };
 }
-function dayCloseGet_(p) {
-  var accs = all_('Accounts').filter(function (a) { return a.active; });
+function dayCloseGet_(p, user) {
+  requireAccountScope_(p.account_id, user);
+  var allowed = accountScope_(user);
+  var accs = all_('Accounts').filter(function (a) { return a.active && allowed(a.id); });
   if (!accs.length) fail_('Add an account first (Cash, bank & MFS)');
   var acc = accs.filter(function (a) { return a.id === p.account_id; })[0] || accs.filter(function (a) { return a.type === 'cash'; })[0] || accs[0];
   var today = today_(), date = p.date ? String(p.date).slice(0, 10) : today;
@@ -1682,6 +1696,7 @@ function dayCloseGet_(p) {
     accounts: accs.map(function (a) { return { id: a.id, name: a.name, type: a.type }; }), closed: done, locked: !!done && dayLockOn_(), history: history }, dayCloseFigures_(acc, date));
 }
 function dayCloseSave_(p, user) {
+  requireAccountScope_(p.account_id, user);
   var acc = all_('Accounts').filter(function (a) { return a.id === p.account_id && a.active; })[0]; if (!acc) fail_('Select an active account');
   var date = bookDate_(p.date, 'day close');
   if (dayCloses_().some(function (c) { return c.account_id === acc.id && c.date === date && !c.reopened; })) fail_(acc.name + ' is already closed for ' + date);
@@ -1763,7 +1778,8 @@ function shiftHistory_() {
 }
 /** The open shift a sale by this user belongs to (null when none). */
 function shiftFor_(user) {
-  var open = openShifts_();
+  var allowed = accountScope_(user);
+  var open = openShifts_().filter(function (s) { return allowed(s.account_id); });
   if (!open.length) return null;
   return shiftMode_() === 'shared' ? open[0] : open.filter(function (s) { return s.mode === 'shared' || s.user_id === user.id; })[0] || null;
 }
@@ -1773,10 +1789,11 @@ function shiftGate_(user) {
   fail_(shiftMode_() === 'shared' ? 'Open a shift before selling — no cash drawer shift is open' : 'Open your shift before selling — count the cash in your drawer and open your shift');
 }
 /** Active accounts, cash drawers first, with what the last closed shift of each left in it. */
-function shiftAccounts_() {
+function shiftAccounts_(user) {
+  var allowed = accountScope_(user);
   var last = {};
   shiftHistory_().forEach(function (h) { if (last[h.account_id] === undefined) last[h.account_id] = num_(h.counted); });
-  return all_('Accounts').filter(function (a) { return a.active; }).sort(function (a, b) { return (a.type === 'cash' ? 0 : 1) - (b.type === 'cash' ? 0 : 1); })
+  return all_('Accounts').filter(function (a) { return a.active && allowed(a.id); }).sort(function (a, b) { return (a.type === 'cash' ? 0 : 1) - (b.type === 'cash' ? 0 : 1); })
     .map(function (a) { return { id: a.id, name: a.name, type: a.type, last_counted: last[a.id] === undefined ? null : last[a.id] }; });
 }
 function shiftView_(s) { return Object.assign({}, s, shiftFigures_(s)); }
@@ -1794,15 +1811,15 @@ function shiftRenamed_(userId, name) {
 function shiftMine_(p, user) {
   shiftNeed_(user);
   var mine = shiftFor_(user);
-  return { mode: shiftMode_(), required: shiftRequired_(), shift: mine ? shiftView_(mine) : null, can_sell: !shiftRequired_() || !!mine, accounts: shiftAccounts_() };
+  return { mode: shiftMode_(), required: shiftRequired_(), shift: mine ? shiftView_(mine) : null, can_sell: !shiftRequired_() || !!mine, accounts: shiftAccounts_(user) };
 }
 function shiftsList_(p, user) {
   shiftNeed_(user);
-  var all = shiftCanAll_(user), today = today_();
-  var open = openShifts_().filter(function (s) { return all || s.user_id === user.id || s.mode === 'shared'; }).map(shiftView_);
-  var hist = shiftHistory_().filter(function (h) { return all || h.user_id === user.id || h.closed_by === user.name; });
+  var all = shiftCanAll_(user), today = today_(), allowed = accountScope_(user);
+  var open = openShifts_().filter(function (s) { return allowed(s.account_id) && (all || s.user_id === user.id || s.mode === 'shared'); }).map(shiftView_);
+  var hist = shiftHistory_().filter(function (h) { return allowed(h.account_id) && (all || h.user_id === user.id || h.closed_by === user.name); });
   var closedToday = hist.filter(function (h) { return String(h.closed_at).slice(0, 10) === today; });
-  return { mode: shiftMode_(), required: shiftRequired_(), can_all: all, today: today, accounts: shiftAccounts_(),
+  return { mode: shiftMode_(), required: shiftRequired_(), can_all: all, today: today, accounts: shiftAccounts_(user),
     open: open, history: hist.slice(0, 300),
     stats: { open: open.length, in_drawers: round_(open.reduce(function (t, s) { return t + s.expected; }, 0)), closed_today: closedToday.length,
       difference_today: round_(closedToday.reduce(function (t, h) { return t + num_(h.difference); }, 0)) },
@@ -1810,6 +1827,7 @@ function shiftsList_(p, user) {
 }
 function shiftOpen_(p, user) {
   shiftNeed_(user);
+  requireAccountScope_(p.account_id, user);
   var acc = all_('Accounts').filter(function (a) { return a.id === p.account_id && a.active; })[0]; if (!acc) fail_('Select an active cash drawer');
   var mode = shiftMode_(), open = openShifts_();
   if (mode === 'shared' && open.some(function (s) { return s.account_id === acc.id; })) fail_('A shift is already open on ' + acc.name);
@@ -1827,6 +1845,7 @@ function shiftClose_(p, user) {
   shiftNeed_(user);
   var open = openShifts_(), s = open.filter(function (x) { return x.id === p.id; })[0];
   if (!s) fail_('That shift is not open (it may have been closed already)');
+  requireAccountScope_(s.account_id, user);
   if (s.user_id !== user.id && s.mode !== 'shared' && !shiftCanAll_(user)) fail_('Only ' + s.user + ' or a manager can close this shift');
   var c = cashCounted_(p, 'counted total'), endRow = acctLastRow_(), f = shiftFigures_(s, endRow);
   var diff = round_(c.counted - f.expected), note = String(p.note || '').trim().slice(0, 300), date = today_();
@@ -1851,7 +1870,8 @@ function daybook_(p, user) {
   var t = today_(), from = String(p.from || t).slice(0, 10), to = String(p.to || from).slice(0, 10);
   if (!isDate_(from) || !isDate_(to)) fail_('Choose valid dates');
   if (from > to) { var x = from; from = to; to = x; }
-  var accs = all_('Accounts'), accIdx = indexBy_(accs), only = p.account_id ? accIdx[p.account_id] : null;
+  var allowed = accountScope_(user);
+  var accs = all_('Accounts').filter(function (a) { return allowed(a.id); }), accIdx = indexBy_(accs), only = p.account_id ? accIdx[p.account_id] : null;
   if (p.account_id && !only) fail_('Account not found');
   var per = {};
   accs.forEach(function (a) { if (!only || a.id === only.id) per[a.id] = { id: a.id, name: a.name, type: a.type, active: !!a.active, opening: num_(a.opening_balance), in: 0, out: 0 }; });
@@ -1873,11 +1893,12 @@ function daybook_(p, user) {
   var tin = round_(list.reduce(function (s, a) { return s + a.in; }, 0)), tout = round_(list.reduce(function (s, a) { return s + a.out; }, 0));
   var inRange = function (r) { var d = String(r.date).slice(0, 10); return d >= from && d <= to && r.status !== 'cancelled'; };
   var sum = function (rows, keys) { var o = { count: rows.length }; keys.forEach(function (k) { o[k] = round_(rows.reduce(function (s, r) { return s + num_(r[k]); }, 0)); }); return o; };
-  var sales = all_('Sales').filter(inRange), purchases = all_('Purchases').filter(inRange);
+  function visible(table) { return all_(table).filter(function (r) { return inRange(r) && branchSees_(table, r.id); }); }
+  var sales = visible('Sales'), purchases = visible('Purchases');
   var business = only ? null : {
-    sales: sum(sales, ['total', 'paid', 'due']), sales_returns: sum(all_('SalesReturns').filter(inRange), ['total', 'refund']),
-    purchases: sum(purchases, ['total', 'paid', 'due']), purchase_returns: sum(all_('PurchaseReturns').filter(inRange), ['total', 'received']),
-    expenses: sum(all_('Expenses').filter(inRange), ['amount']),
+    sales: sum(sales, ['total', 'paid', 'due']), sales_returns: sum(visible('SalesReturns'), ['total', 'refund']),
+    purchases: sum(purchases, ['total', 'paid', 'due']), purchase_returns: sum(visible('PurchaseReturns'), ['total', 'received']),
+    expenses: sum(visible('Expenses'), ['amount']),
     collections: round_(entries.filter(function (e) { return e.type === 'cpay' && e.direction === 'in'; }).reduce(function (s, e) { return s + e.amount; }, 0)),
     supplier_payments: round_(entries.filter(function (e) { return e.type === 'spay' && e.direction === 'out'; }).reduce(function (s, e) { return s + e.amount; }, 0)),
     profit: can_(user, 'cost') ? round_(sales.reduce(function (s, r) { return s + num_(r.profit); }, 0)) : null
@@ -2200,6 +2221,7 @@ function orderView_(o, sales) {
   if (o.sale_id) {
     var s = sales ? sales[o.sale_id] : all_('Sales').filter(function (x) { return x.id === o.sale_id; })[0];
     v.sale_status = s ? s.status : 'missing';
+    if (s && v.credit_used !== undefined) v.credit_used = round_(num_(s.credit_used));
     if (v.sale_status === 'cancelled' && ['confirmed', 'shipped', 'delivered'].indexOf(v.status) >= 0) v.status = 'cancelled';
   }
   v.courier_label = o.courier ? o.courier.label : (o.courier_choice ? COURIERS[o.courier_choice] : '');
@@ -2848,10 +2870,12 @@ function branchReport_(p, user) {
   if (!branchesOn_()) fail_('Add branches first (Settings → Branches)');
   var t = today_(), from = String(p.from || t.slice(0, 8) + '01').slice(0, 10), to = String(p.to || t).slice(0, 10);
   if (!isDate_(from) || !isDate_(to)) fail_('Choose valid dates');
-  var ids = branchesAll_().map(function (b) { return b.id; }), out = {}, showCost = can_(user, 'cost');
+  var limited = branchFixed_(user) || (user.role !== 'admin' ? _branch : '');
+  var branches = branchesAll_().filter(function (b) { return !limited || b.id === limited; });
+  var ids = branches.map(function (b) { return b.id; }), out = {}, showCost = can_(user, 'cost');
   var blank = function () { return { sales: 0, sales_count: 0, paid: 0, due: 0, profit: 0, returns: 0, purchases: 0, purchase_count: 0, expenses: 0, stock_qty: 0, stock_value: 0, cash: 0 }; };
   ids.concat(['all']).forEach(function (id) { out[id] = blank(); });
-  var add = function (id, k, v) { if (!out[id]) out[id] = blank(); out[id][k] = round_(out[id][k] + v); out.all[k] = round_(out.all[k] + v); };
+  var add = function (id, k, v) { if (limited && id !== limited) return; if (!out[id]) out[id] = blank(); out[id][k] = round_(out[id][k] + v); out.all[k] = round_(out.all[k] + v); };
   var inRange = function (r) { var d = String(r.date).slice(0, 10); return d >= from && d <= to && r.status !== 'cancelled'; };
   all_('Sales').filter(inRange).forEach(function (s) { var b = docBranch_('Sales', s.id); add(b, 'sales', num_(s.total)); add(b, 'sales_count', 1); add(b, 'paid', num_(s.paid)); add(b, 'due', num_(s.due)); add(b, 'profit', num_(s.profit)); });
   all_('SalesReturns').filter(inRange).forEach(function (r) {
@@ -2869,6 +2893,7 @@ function branchReport_(p, user) {
   branchRows_().rows.forEach(function (r) {
     if (r.key.indexOf('s|') !== 0 || !r.num) return;
     var k = r.key.split('|'), pr = pmap[k[1]]; if (!pr) return;
+    if (limited && k[2] !== limited) return;
     var v = isSerialProduct_(pr) ? (serialCosts[k[1] + '|' + k[2]] || 0) : r.num * num_(pr.cost_price);
     if (k[2] === BRANCH_TRANSIT) { transit.qty = round_(transit.qty + r.num, 4); transit.value += v; addUnitQty_(units, 'transit', pr.unit, r.num); return; }
     var totals = out[k[2]] || (out[k[2]] = blank());
@@ -2886,10 +2911,10 @@ function branchReport_(p, user) {
   transit.text = unitQtyText_(units.transit);
   var ab = accountBranches_(), unassigned = 0;
   accountsList_().filter(function (a) { return a.active; }).forEach(function (a) { if (ab[a.id]) add(ab[a.id], 'cash', num_(a.balance)); else unassigned = round_(unassigned + num_(a.balance)); });
-  out.all.cash = round_(out.all.cash + unassigned);
-  var rows = branchesAll_().map(function (b) { return Object.assign({ id: b.id, name: b.name, active: b.active }, out[b.id]); });
+  if (!limited) out.all.cash = round_(out.all.cash + unassigned);
+  var rows = branches.map(function (b) { return Object.assign({ id: b.id, name: b.name, active: b.active }, out[b.id]); });
   if (!showCost) rows.concat([out.all]).forEach(function (r) { delete r.profit; delete r.stock_value; });
-  return { from: from, to: to, branches: rows, all: out.all, transit: showCost ? transit : { qty: transit.qty, text: transit.text }, shared_cash: unassigned };
+  return { from: from, to: to, branches: rows, all: limited ? null : out.all, transit: limited ? null : showCost ? transit : { qty: transit.qty, text: transit.text }, shared_cash: limited ? null : unassigned };
 }
 
 /* ---- Approvals: chosen staff / managers send purchases, supplier payments, collections, expenses and branch
@@ -3084,7 +3109,9 @@ function ownerMoney_(p, user) {
   var from = p.from || '', to = p.to || '';
   if ((from && !isDate_(from)) || (to && !isDate_(to))) fail_('Choose valid dates');
   var accs = indexBy_(all_('Accounts')), run = 0, rows = [], putIn = 0, out = 0, nIn = 0, nOut = 0;
+  var allowed = accountScope_(user);
   ownerEntries_().forEach(function (t) {
+    if (!allowed(t.account_id)) return;
     var a = num_(t.amount), isIn = t.direction === 'in', d = String(t.date).slice(0, 10);
     if (to && d > to) return;
     run = round_(run + (isIn ? a : -a));
@@ -3096,7 +3123,8 @@ function ownerMoney_(p, user) {
   if (can_(user, 'cost') && can_(user, 'reports')) res.profit = profitSummary_(from, to).net;
   return res;
 }
-function accountLedger_(p) {
+function accountLedger_(p, user) {
+  requireAccountScope_(p.account_id, user);
   var acc = all_('Accounts').filter(function (a) { return a.id === p.account_id; })[0]; if (!acc) fail_('Account not found');
   var rows = all_('AccountTxns').filter(function (t) { return t.account_id === acc.id && !t.voided; });
   if (p.from && p.to && p.from > p.to) fail_('From date must not be after To date');
@@ -6032,6 +6060,7 @@ function reverse_(p, user) {
   var docTable = { sale: 'Sales', purchase: 'Purchases', sreturn: 'SalesReturns', preturn: 'PurchaseReturns', cpay: 'CustomerLedger', spay: 'SupplierLedger', rebate: 'SupplierLedger', cadjust: 'CustomerLedger', sadjust: 'SupplierLedger', expense: 'Expenses', account: 'AccountTxns' }[p.type];
   var doc = all_(docTable).filter(function (x) { return x.id === p.id; })[0];
   if (doc) branchRequire_(docTable, doc.id);
+  if (doc && (p.type === 'account' || p.type === 'expense')) requireAccountScope_(doc.account_id, user);
   if (doc && doc.date) lockCheck_(doc.date, 'a transaction');
   // Stock, serials and money go back in the branch that made the document, whichever branch the user works in.
   var hereBranch = _branch, r;
@@ -6147,7 +6176,7 @@ function saleEditIn_(s, p, user, reason) {
     o.subtotal = round_(o.items.reduce(function (t, i) { return t + i.qty * i.price; }, 0)); o.total = num_(detail.sale.total);
     var appliedCredit = num_(detail.sale.credit_used), oldDues = Math.max(num_(o.advance_booked) - appliedCredit, 0);
     o.advance = round_(num_(detail.sale.paid) + oldDues);
-    if (o.credit_used !== undefined) o.credit_used = round_(num_(detail.sale.paid));
+    if (o.credit_used !== undefined) o.credit_used = appliedCredit;
     o.cod = round_(Math.max(o.total - o.advance, 0));
     orderLog_(o, user, o.status, 'Invoice edited: total ' + o.total + ', cash on delivery ' + o.cod);
     orderWrite_(orders, r, o);
@@ -6335,6 +6364,10 @@ function reverseAccountEntry_(p, user, reason) {
   var t = all_('AccountTxns').filter(function (x) { return x.id === p.id; })[0];
   if (!t || t.voided) fail_('Account entry not found or already cancelled');
   if (t.ref_type !== 'manual' && t.ref_type !== 'transfer') fail_('Only deposits, withdrawals and transfers can be cancelled here; cancel the sale, purchase, payment or expense itself');
+  var allowed = accountScope_(user);
+  if (all_('AccountTxns').some(function (entry) {
+    return !entry.voided && entry.ref_id === t.ref_id && entry.ref_type === t.ref_type && !allowed(entry.account_id);
+  })) fail_('Permission denied: this transfer includes an account from another branch');
   voidRefs_('AccountTxns', t.ref_id, t.ref_type);
   return true;
 }
@@ -6366,6 +6399,7 @@ function warrantyLookup_(p) {
   var today = today_(), sales = indexBy_(all_('Sales')), out = [];
   var claims = all_('WarrantyClaims');
   function build(si, sale, serial) {
+    if (!branchSees_('Sales', sale.id)) return;
     var exp = si.warranty_expiry, left = exp ? daysBetween_(today, exp) : null;
     out.push({
       sale_id: sale.id, sale_item_id: si.id, invoice_no: sale.invoice_no, sale_date: sale.date, customer_id: sale.customer_id, customer_name: sale.customer_name,
@@ -6394,6 +6428,7 @@ function warrantyLookup_(p) {
 
 function claimCreate_(p, user) {
   var sale = all_('Sales').filter(function (s) { return s.id === p.sale_id; })[0]; if (!sale) fail_('Invoice not found');
+  branchRequire_('Sales', sale.id);
   var si = all_('SaleItems').filter(function (i) { return i.id === p.sale_item_id && i.sale_id === sale.id; })[0]; if (!si) fail_('Invoice line not found');
   if (sale.status !== 'active') fail_('Invoice ' + sale.invoice_no + ' is cancelled, so its items have no warranty');
   var serial = String(p.serial || '').trim();
@@ -6422,6 +6457,7 @@ function claimCreate_(p, user) {
 }
 function claimUpdate_(p, user) {
   var c = all_('WarrantyClaims').filter(function (x) { return x.id === p.id; })[0]; if (!c) fail_('Claim not found');
+  branchRequire_('Sales', c.sale_id);
   if (CLAIM_STATUSES.indexOf(p.status) < 0) fail_('Invalid status');
   if ((c.status === 'Delivered' || c.status === 'Rejected') && p.status !== c.status) fail_('This claim is already ' + c.status + ' and closed');
   if (c.status === 'Replaced' && p.status !== 'Replaced' && p.status !== 'Delivered') fail_('The item was already replaced; the claim can only be delivered now');
@@ -6495,6 +6531,7 @@ function claimReplace_(c, p, user) {
 /** The vendor sent a working unit for a replaced claim: it goes back into stock at the cost of the unit given away. */
 function claimRestock_(p, user) {
   var c = all_('WarrantyClaims').filter(function (x) { return x.id === p.id; })[0]; if (!c) fail_('Claim not found');
+  branchRequire_('Sales', c.sale_id);
   var rep = valuation_(c.replacement);
   if (!rep || (rep.kind !== 'serial' && rep.kind !== 'unit')) fail_('This claim has no replacement given from stock');
   if (rep.restocked) fail_('The vendor unit for this claim is already back in stock');
@@ -7672,10 +7709,8 @@ function profitLoss_(p, user) {
   return { title: 'Profit & loss', from: from, to: to, compare: cmp, columns: columns, lines: lines, margins: margins };
 }
 function visibleAccounts_(user) {
-  var fixed = branchFixed_(user), accounts = accountsList_();
-  if (!fixed) return accounts;
-  var branches = accountBranches_();
-  return accounts.filter(function (a) { return !branches[a.id] || branches[a.id] === fixed; });
+  var allowed = accountScope_(user);
+  return accountsList_().filter(function (a) { return allowed(a.id); });
 }
 function balanceSheet_(p, user) {
   statementAccess_(user);
@@ -8111,10 +8146,17 @@ function staffReport_(p, user, period) {
     if (num_(s.due) > 0) { var m3 = methods['On due'] = methods['On due'] || { method: 'On due', count: 0, amount: 0 }; m3.count++; m3.amount = round_(m3.amount + num_(s.due)); }
   });
   retRows.forEach(function (rt) { var d = String(rt.date).slice(0, 10), x = daily[d] = daily[d] || { date: d, invoices: 0, sales: 0, returns: 0, net: 0, profit: 0 }; x.returns = round_(x.returns + num_(rt.total)); x.profit = round_(x.profit - returnProfit_(rt)); });
-  all_('SaleItems').forEach(function (i) {
-    var s = ids[i.sale_id]; if (!s) return;
+  var saleItems = all_('SaleItems').filter(function (i) { return !!ids[i.sale_id]; });
+  var itemCosts = reportItemCosts_(saleItems, ids, 'sale_id', function (s) { return s.cost; });
+  var allocation = {};
+  saleItems.forEach(function (i) {
+    var s = ids[i.sale_id], a = allocation[s.id] = allocation[s.id] || { gross: 0, net: 0 };
+    a.gross += num_(i.total);
+    var net = s.subtotal > 0 ? round_(s.total * a.gross / s.subtotal) : 0;
+    var profit = round_(net - a.net - (itemCosts[i.id] || 0));
+    a.net = net;
     var x = prods[i.product_id] = prods[i.product_id] || { product: i.name, unit: i.unit || 'pcs', qty: 0, amount: 0, profit: 0, invoices: 0 };
-    x.qty = round_(x.qty + num_(i.qty), 4); x.amount = round_(x.amount + num_(i.total)); x.profit = round_(x.profit + num_(i.total) - num_(i.cost)); x.invoices++;
+    x.qty = round_(x.qty + num_(i.qty), 4); x.amount = round_(x.amount + num_(i.total)); x.profit = round_(x.profit + profit); x.invoices++;
   });
   var list = function (o, key) { return Object.keys(o).map(function (k) { var x = o[k]; if (!cost) delete x.profit; return x; }).sort(function (a, b) { return b[key] - a[key]; }); };
   var dailyRows = Object.keys(daily).sort().map(function (k) { var x = daily[k]; x.net = round_(x.sales - x.returns); if (!cost) delete x.profit; return x; });
@@ -8160,23 +8202,30 @@ function reportsRaw_(p, user) {
     var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     var nice = function (d) { return Number(d.slice(8, 10)) + ' ' + MON[Number(d.slice(5, 7)) - 1] + ' ' + d.slice(0, 4); };
     var activeSale = {}, lastSold = {}, firstIn = {}, lastSup = {};
-    all_('Sales').forEach(function (x) { if (x.status === 'active') activeSale[x.id] = String(x.date).slice(0, 10); });
+    all_('Sales').forEach(function (x) { if (x.status === 'active' && branchSees_('Sales', x.id)) activeSale[x.id] = String(x.date).slice(0, 10); });
     all_('SaleItems').forEach(function (i) { var d = activeSale[i.sale_id]; if (d && (!lastSold[i.product_id] || d > lastSold[i.product_id])) lastSold[i.product_id] = d; });
-    var activePur = {}; all_('Purchases').forEach(function (x) { if (x.status === 'active') activePur[x.id] = x; });
+    var activePur = {}; all_('Purchases').forEach(function (x) { if (x.status === 'active' && branchSees_('Purchases', x.id)) activePur[x.id] = x; });
     all_('PurchaseItems').forEach(function (i) {
       var pu = activePur[i.purchase_id]; if (!pu) return; var d = String(pu.date).slice(0, 10);
       if (!firstIn[i.product_id] || d < firstIn[i.product_id]) firstIn[i.product_id] = d;
       if (!lastSup[i.product_id] || d > lastSup[i.product_id].d || (d === lastSup[i.product_id].d && pu._row > lastSup[i.product_id].row)) lastSup[i.product_id] = { d: d, row: pu._row, name: pu.supplier_name || '' };
     });
     var catName = indexBy_(all_('Categories')), brandName = indexBy_(all_('Brands')), allValue = 0, slow = [];
+    var serialValues = {};
+    if (fixedBranch) all_('SerialItems').forEach(function (sn) {
+      if (sn.status === 'in_stock' && serialBranch_(sn.id) === fixedBranch) serialValues[sn.product_id] = (serialValues[sn.product_id] || 0) + num_(sn.cost);
+    });
     all_('Products').forEach(function (pr) {
-      if (isService_(pr) || !(pr.stock > 0)) return;
-      var value = round_(pr.stock * pr.cost_price); allValue += value;
+      var stock = fixedBranch ? branchQty_(pr.id, fixedBranch) : pr.stock;
+      if (isService_(pr) || !(stock > 0)) return;
+      var serialCost = fixedBranch && isSerialProduct_(pr);
+      var value = round_(serialCost ? serialValues[pr.id] || 0 : stock * pr.cost_price); allValue += value;
+      var costPrice = serialCost ? round_((serialValues[pr.id] || 0) / stock, 4) : pr.cost_price;
       var sold = lastSold[pr.id] || '', base = sold || firstIn[pr.id] || String(pr.created_at || '').slice(0, 10);
       var idle = isDate_(base) ? daysBetween_(base, tdy) : null;
       if (idle !== null && idle < sdays) return;
       slow.push({ product: pr.name, category: (catName[pr.subcategory_id] || catName[pr.category_id] || {}).name || '', brand: (brandName[pr.brand_id] || {}).name || '',
-        last_sold: sold ? nice(sold) : 'Never sold', idle_days: idle === null ? '' : idle, stock: pr.stock, unit: pr.unit, cost_price: pr.cost_price, value: value, supplier: (lastSup[pr.id] || {}).name || '' });
+        last_sold: sold ? nice(sold) : 'Never sold', idle_days: idle === null ? '' : idle, stock: stock, unit: pr.unit, cost_price: costPrice, value: value, supplier: (lastSup[pr.id] || {}).name || '' });
     });
     slow.sort(function (a, b) { return b.value - a.value || String(a.product).localeCompare(String(b.product)); });
     var tied = round_(sum_(slow, function (r) { return r.value; }));
@@ -8435,7 +8484,7 @@ var ROUTES = {
   'supplier.prices':  r_(null, supplierPrices_),
   'dayclose.get':     r_('accounts', dayCloseGet_),
   'shifts.list':      r_(null, shiftsList_),
-  'branches.get':     r_(null, branchesGet_),
+  'branches.get':     r_('settings', branchesGet_),
   'branch.save':      r_('settings', branchSave_, true),
   'branch.assign':    r_('settings', branchAssign_, true),
   'branch.transfers': r_('products', branchTransfersList_),
@@ -8504,7 +8553,7 @@ var ROUTES = {
   'ledger.adjust':    r_(null, ledgerAdjust_, true),
   'ledger.report':    r_(null, ledgerReport_),
 
-  'accounts.list':    r_('accounts', function () { return accountsList_(); }),
+  'accounts.list':    r_('accounts', function (p, u) { return visibleAccounts_(u); }),
   'account.save':     r_('accounts', accountSave_, true),
   'account.delete':   r_('accounts', accountDelete_, true),
   'account.entry':    r_('accounts', accountEntry_, true),

@@ -201,4 +201,9 @@ const invoice = await q('sale.detail', { id: depositOrder.sale_id });
 await q('sale.edit', { id: invoice.sale.id, password: 'harness-password-1', items: invoice.items,
   discount: invoice.sale.discount, credit_used: invoice.sale.credit_used, payments: [] });
 eq((await q('orders.list')).orders.find(x => x.id === depositOrder.id).cod, depositOrder.cod, 'invoice edit does not deduct the advance twice');
+const invoiceWithCash = await q('sale.detail', {id: (await q('orders.list')).orders.find(x => x.id === depositOrder.id).sale_id});
+await q('sale.edit', {id: invoiceWithCash.sale.id, password: 'harness-password-1', items: invoiceWithCash.items,
+  discount: invoiceWithCash.sale.discount, credit_used: invoiceWithCash.sale.credit_used, payments: [{account_id: cash, amount: 30}]});
+const editedOrder = (await q('orders.list')).orders.find(x => x.id === depositOrder.id);
+eq([editedOrder.credit_used, editedOrder.cod], [invoiceWithCash.sale.credit_used, depositOrder.cod - 30], 'new cash reduces COD and stays separate from advance applied');
 console.log(`Features 11: ${checks} checks passed (online orders and couriers).`);
