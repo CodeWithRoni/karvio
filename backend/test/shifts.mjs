@@ -133,3 +133,7 @@ for (const [i, t] of sameNameUsers.entries()) {
 api.setToken(adminToken);
 const shiftById = new Map((await q('shifts.list')).open.map(s => [s.id, s]));
 eq(sameNameShifts.map(s => shiftById.get(s.id).expected), [50, 100], 'same-name cashiers have independent shift figures');
+const shiftBackup = await q('database.export');
+await q('database.restore', {password: 'harness-password-1', confirm: 'RESTORE', backup_text: JSON.stringify(shiftBackup)});
+const restoredShifts = new Map((await q('shifts.list')).open.map(s => [s.id, s]));
+eq(sameNameShifts.map(s => restoredShifts.get(s.id).expected), [50, 100], 'backup and restore preserve shift attribution');

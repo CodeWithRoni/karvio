@@ -891,7 +891,7 @@ function acctTxn_(accId, dir, amount, refType, refId, note, user, date) {
   dayLockCheck_(accId, date || today_());
   var txn = insert_('AccountTxns', { date: date || today_(), account_id: accId, direction: dir, amount: round_(amount), ref_type: refType, ref_id: refId, note: note || '', user: user.name, voided: false });
   if (user.id && openShifts_().some(function (s) { return s.mode === 'cashier' && s.account_id === accId; })) {
-    branchPut_('cashier|' + txn.id, 0, user.id);
+    branchPut_('d|ShiftCashier|' + txn.id, 0, user.id);
   }
   return txn;
 }
@@ -1746,7 +1746,7 @@ function shiftFigures_(s, endRow) {
   all_('AccountTxns').forEach(function (t) {
     if (t.account_id !== s.account_id || t.voided || t._row <= s.start_row || (endRow && t._row > endRow) || isCashCount_(t)) return;
     if (s.mode !== 'shared') {
-      var cashier = branchGet_('cashier|' + t.id);
+      var cashier = branchGet_('d|ShiftCashier|' + t.id);
       if (cashier ? cashier.text !== s.user_id : shiftNames_(s).indexOf(t.user) < 0) return;
     }
     var a = num_(t.amount), key = (DAY_CLOSE_GROUPS[t.ref_type] ? t.ref_type : 'other') + ':' + t.direction;
