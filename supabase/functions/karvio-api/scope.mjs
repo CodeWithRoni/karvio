@@ -162,8 +162,8 @@ export const PRIVATE_HINTS = {
   'sale.detail': ['__KarvioBranchRows'],
   'sale.edit': ['__KarvioBranchRows', '__KarvioOnlineOrders', '__KarvioRequestReceipts'],
   'sale.exchange': ['__KarvioBranchRows', '__KarvioRequestReceipts'],
-  'sale.link': ['__KarvioRequestReceipts'],
-  'sale.promise': ['__KarvioRequestReceipts'],
+  'sale.link': ['__KarvioBranchRows', '__KarvioRequestReceipts'],
+  'sale.promise': ['__KarvioBranchRows', '__KarvioRequestReceipts'],
   'service.cancel': ['__KarvioBranchRows', '__KarvioRequestReceipts'],
   'service.complete': ['__KarvioBranchRows', '__KarvioRequestReceipts'],
   'service.get': ['__KarvioBranchRows'],
@@ -185,6 +185,9 @@ export const PRIVATE_HINTS = {
   'supplier.rebate': ['__KarvioRequestReceipts'],
   'supplier.save': ['__KarvioRequestReceipts'],
   'user.save': ['__KarvioRequestReceipts'],
+  'purchase.warranty': ['__KarvioBranchRows', '__KarvioRequestReceipts'],
+  'supplier.prices': ['__KarvioBranchRows'],
+  'reports:supplier_prices': ['__KarvioBranchRows'],
 };
 
 // Every request signs in a user and reads shop settings.

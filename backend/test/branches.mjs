@@ -97,11 +97,19 @@ eq((await q('products.list', {}, {branch: uttara})).find((p) => p.id === tea.id)
 console.log(`Features 12: ${checks} checks passed (branches).`);
 
 // A fixed-branch staff member with reporting privileges sees branch-specific statistics.
-await q('rolePerms.save', {sales: ['reports', 'pos', 'cost', 'sales.all', 'accounts', 'warranty']});
+await q('rolePerms.save', {sales: ['reports', 'pos', 'cost', 'sales.all', 'accounts', 'warranty', 'purchase']});
 await q('account.entry', {kind:'deposit',account_id:cash,amount:500,note:'Main cash'}, {branch:mirpur});
 await q('account.entry', {kind:'deposit',account_id:uttaraCash,amount:100,note:'Local cash'}, {branch:uttara});
 const localSale = (await q('sales.list', {}, {branch:uttara})).find(s=>s.total===9000);
 const localLine = (await q('sale.detail', {id:localSale.id})).items[0];
+const localPurchase = (await q('purchases.list', {}, {branch:uttara})).find(p=>p.total===1200);
+const localPurchaseLine = (await q('purchase.detail', {id:localPurchase.id})).items[0];
+const customer = await q('customer.save', {name:'Branch invoice customer'});
+const customerInvoice = await q('sale.create', {
+  customer_id: customer.id,
+  items: [{product_id:tea.id,qty:1,price:100}],
+  payments: []
+}, {branch:uttara});
 api.setToken((await q('login', {username: 'uttara1', password: 'uttara-password-1'})).token);
 const reportOptions = {from: boot.serverToday, to: boot.serverToday};
 const branchDashboard = await q('dashboard');
@@ -121,4 +129,16 @@ eq((await q('claim.update',{id:localClaim.id,status:'Sent to Vendor'})).status,'
 const slow = await q('reports',{type:'slow_stock'});
 eq(slow.slow.stock_value, limitedReport.branches[0].stock_value, 'slow stock denominator matches the local stock value');
 ok(!(await raw('branches.get')).ok,'staff cannot load the administrative directory');
+const localLink = await q('sale.link', {id:customerInvoice.sale.id});
+ok(localLink.url.includes('/i/'), 'staff can share a customer invoice from their branch');
+const dueDate = boot.serverToday;
+eq((await q('sale.promise',{id:customerInvoice.sale.id,next_payment_date:dueDate})).next_payment_date, dueDate, 'staff can set a promise on a local invoice');
+eq((await q('purchase.warranty',{item_id:localPurchaseLine.id,expiry:dueDate})).expiry, dueDate, 'staff can set warranty on a local purchase');
+const supplierFilter = {product_id:tea.id};
+const localPrices = await q('supplier.prices', supplierFilter);
+const localPriceReport = await q('reports', {type:'supplier_prices', ...supplierFilter});
+eq(localPrices.map(p=>[p.qty,p.spent]), [[20,1200]], 'supplier price API totals only local purchases');
+eq(localPriceReport.rows.map(p=>[p.qty,p.spent]), [[20,1200]], 'supplier price report totals only local purchases');
 api.setToken(admin);
+
+eq((await q('supplier.prices', {product_id:tea.id})).map(p=>[p.qty,p.spent]), [[70,4200]], 'the consolidated supplier price totals are available to the administrator');

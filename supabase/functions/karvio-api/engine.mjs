@@ -3870,6 +3870,7 @@ function dailyReceiptPrune_() {
 function saleLink_(p, user) {
   var s = all_('Sales').filter(function (x) { return x.id === p.id; })[0];
   if (!s) fail_('Invoice not found');
+  branchRequire_('Sales', s.id);
   if (!s.customer_id) fail_('Cash sales have no customer, so no customer link is made');
   if (!can_(user, 'sales.all') && s.user_id !== user.id) fail_('Permission denied: this invoice belongs to another user');
   var l = invoiceLinkCreate_(s.id);
@@ -4959,6 +4960,7 @@ function purchaseWarranty_(p, user) {
   if (!line) fail_('Purchase line not found');
   var pur = all_('Purchases').filter(function(x) { return x.id === line.purchase_id; })[0];
   if (!pur || pur.status !== 'active') fail_('Only active purchases can have supplier warranty dates updated');
+  branchRequire_('Purchases', pur.id);
   var v = {}; try { v = JSON.parse(line.valuation || '{}'); } catch (e) { fail_('Purchase valuation metadata is invalid'); }
   if (!v || typeof v !== 'object' || Array.isArray(v)) fail_('Purchase valuation metadata is invalid');
   v.supplier_warranty_expiry = supplierWarrantyDate_(p.expiry);
@@ -6891,6 +6893,7 @@ function promiseDate_(v, saleDate) {
 function salePromise_(p, user) {
   var s = all_('Sales').filter(function (x) { return x.id === p.id; })[0];
   if (!s || s.status !== 'active') fail_('Invoice not found');
+  branchRequire_('Sales', s.id);
   if (!s.customer_id) fail_('Only customer invoices have a payment date');
   if (!can_(user, 'sales.all') && !can_(user, 'customers') && s.user_id !== user.id) fail_('You can only change your own invoices');
   var t = today_(), d = p.next_payment_date ? promiseDate_(p.next_payment_date, t > s.date ? t : s.date) : '';
@@ -7771,7 +7774,9 @@ function activeReportTotals_(report, status) {
  *  supplier of each product is marked. Optional filters: product_id, group_id, brand_id. */
 function supplierPricesData_(p) {
   var from = p.from || '', to = p.to || '';
-  var purs = indexBy_(all_('Purchases').filter(function (x) { return x.status === 'active' && inRange_(x.date, from, to); }));
+  var purs = indexBy_(all_('Purchases').filter(function (x) {
+    return x.status === 'active' && inRange_(x.date, from, to) && branchSees_('Purchases', x.id);
+  }));
   var prods = indexBy_(all_('Products')), sups = indexBy_(all_('Suppliers')), g = {};
   all_('PurchaseItems').forEach(function (i) {
     var pu = purs[i.purchase_id]; if (!pu || !(num_(i.qty) > 0)) return;
@@ -8154,10 +8159,10 @@ function staffReport_(p, user, period) {
     var s = ids[i.sale_id], a = allocation[s.id] = allocation[s.id] || { gross: 0, net: 0 };
     a.gross += num_(i.total);
     var net = s.subtotal > 0 ? round_(s.total * a.gross / s.subtotal) : 0;
-    var profit = round_(net - a.net - (itemCosts[i.id] || 0));
+    var amount = round_(net - a.net), profit = round_(amount - (itemCosts[i.id] || 0));
     a.net = net;
     var x = prods[i.product_id] = prods[i.product_id] || { product: i.name, unit: i.unit || 'pcs', qty: 0, amount: 0, profit: 0, invoices: 0 };
-    x.qty = round_(x.qty + num_(i.qty), 4); x.amount = round_(x.amount + num_(i.total)); x.profit = round_(x.profit + profit); x.invoices++;
+    x.qty = round_(x.qty + num_(i.qty), 4); x.amount = round_(x.amount + amount); x.profit = round_(x.profit + profit); x.invoices++;
   });
   var list = function (o, key) { return Object.keys(o).map(function (k) { var x = o[k]; if (!cost) delete x.profit; return x; }).sort(function (a, b) { return b[key] - a[key]; }); };
   var dailyRows = Object.keys(daily).sort().map(function (k) { var x = daily[k]; x.net = round_(x.sales - x.returns); if (!cost) delete x.profit; return x; });

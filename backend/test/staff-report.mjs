@@ -43,7 +43,7 @@ ok(!b.rows.some((r) => r.staff === 'Sumon'), 'staff without sales are left out')
 const d = await q('reports', {type: 'staff', staff_id: rk.id});
 eq([d.staff_detail.staff, d.staff_detail.rank, d.staff_detail.of, d.rows.length], ['Rakib', 1, 2, 2], 'Rakib: rank 1 of 2, two invoices');
 eq(d.staff_detail.daily.map((x) => [x.invoices, x.sales, x.returns, x.net]), [[2, 640, 90, 550]], 'day by day');
-eq(d.staff_detail.products.map((x) => [x.product, x.qty, x.amount]), [['Tea', 7, 660]], 'products (line totals before the invoice discount)');
+eq(d.staff_detail.products.map((x) => [x.product, x.qty, x.amount]), [['Tea', 7, 640]], 'product amounts include the invoice discount');
 eq(d.staff_detail.customers.map((x) => x.customer).sort(), ['Cash sales (walk-in)', 'Rahim'], 'customers served');
 eq(d.staff_detail.methods.map((x) => [x.method, x.amount]), [['Cash', 640]], 'payment methods');
 
