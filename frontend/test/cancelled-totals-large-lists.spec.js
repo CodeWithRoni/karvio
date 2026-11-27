@@ -7,10 +7,33 @@ test.beforeAll(async({request})=>{token=(await call(request,'login',{username:'a
 test.beforeEach(async({page})=>{await page.addInitScript(({endpoint,token})=>{localStorage.setItem('erp_api_config',JSON.stringify({scriptUrl:endpoint}));localStorage.setItem('erp_token',token);},{endpoint,token});});
 
 test('cancelled sales stay visible but totals and Excel totals count active only',async({page})=>{
- await page.route(endpoint,async route=>{const req=route.request().postDataJSON();if(req.action==='sales.list')return route.fulfill({json:{ok:true,data:[{id:'active',invoice_no:'ACTIVE-1',date:'2026-11-11',total:100,paid:80,due_now:20,profit:10,status:'active'},{id:'cancel',invoice_no:'CANCEL-1',date:'2026-11-11',total:100,paid:100,due_now:0,profit:20,status:'cancelled'}]}});return route.continue();});
- await page.goto('/#/sales');const foot=page.locator('tfoot td');await expect(foot.nth(5)).toHaveText('100');await expect(foot.nth(6)).toHaveText('80');await expect(foot.nth(8)).toHaveText('10');await expect(page.getByText('CANCEL-1')).toBeVisible();
- const download=page.waitForEvent('download');await page.getByRole('button',{name:'Excel',exact:true}).click();const file=await download;const wb=XLSX.read(await fs.readFile(await file.path()));const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1});expect(rows.at(-1).slice(4,8)).toEqual([100,80,20,10]);
- await page.getByLabel('Search table').fill('CANCEL-1');await expect(foot.nth(5)).toHaveText('0');
+ const sales = [
+  { id:'active', invoice_no:'ACTIVE-1', date:'2026-11-11', total:100, paid:80, due:20, due_now:5, profit:10, status:'active' },
+  { id:'cancel', invoice_no:'CANCEL-1', date:'2026-11-11', total:150, paid:90, due:60, due_now:60, profit:30, status:'cancelled' },
+ ];
+ await page.route(endpoint,async route=>{
+  if (route.request().postDataJSON().action === 'sales.list')
+   return route.fulfill({ json:{ ok:true, data:sales } });
+  return route.continue();
+ });
+ await page.goto('/#/sales');
+ const footerCell = (label) => page.locator(`tfoot td[data-label="${label}"]`);
+ const activeTotals = { Total:100, 'Paid at sale':80, 'Due at sale':20, 'Due now':5, Profit:10 };
+ for (const [label, value] of Object.entries(activeTotals))
+  await expect(footerCell(label)).toHaveText(String(value));
+ await expect(page.getByText('CANCEL-1')).toBeVisible();
+
+ const download = page.waitForEvent('download');
+ await page.getByRole('button',{name:'Excel',exact:true}).click();
+ const file = await download;
+ const wb = XLSX.read(await fs.readFile(await file.path()));
+ const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1});
+ for (const [label, value] of Object.entries(activeTotals))
+  expect(rows.at(-1)[rows[0].indexOf(label)], label).toBe(value);
+
+ await page.getByLabel('Search table').fill('CANCEL-1');
+ for (const label of Object.keys(activeTotals))
+  await expect(footerCell(label)).toHaveText('0');
 });
 
 test('all 501 invoices reach the list and selected details load in complete batches',async({page})=>{
