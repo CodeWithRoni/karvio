@@ -2439,6 +2439,7 @@ td.bs-total { font-weight: 700; }
 .courier-section-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-bottom: 12px; }
 .courier-section-heading :is(h2, h3) { margin: 0; font-size: 16px; }
 .courier-metrics, .courier-provider-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.courier-metrics > .card, .courier-provider-grid > .card { margin: 0; }
 .courier-metric { display: grid; align-content: start; gap: 6px; color: var(--text); text-decoration: none; border-top: 2px solid var(--courier-tone); }
 .courier-metric:hover { background: var(--panel-2); border-color: var(--courier-tone); }
 .courier-metric strong { font-size: 29px; line-height: 1.12; font-variant-numeric: tabular-nums; }

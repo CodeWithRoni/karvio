@@ -147,6 +147,31 @@ test('Settings → Courier keeps the API keys and tells when they are missing', 
   await expect(page.getByText(/Steadfast is not set up/)).toBeVisible();
 });
 
+test('courier cards have aligned edges within each responsive row', async ({ page }) => {
+  await page.goto('/#/courier');
+  for (const width of [1920, 1000, 390]) {
+    await page.setViewportSize({ width, height: 920 });
+    for (const [selector, columns] of [
+      ['.courier-metrics > .card', width <= 620 ? 2 : 4],
+      ['.courier-provider-grid > .card', width <= 620 ? 1 : width <= 1250 ? 2 : 4]
+    ]) {
+      const cards = page.locator(selector);
+      await expect(cards).toHaveCount(4);
+      const boxes = await cards.evaluateAll((elements) => elements.map((card) => {
+        const { top, bottom, width } = card.getBoundingClientRect();
+        return { top, bottom, width, margin: getComputedStyle(card).marginTop };
+      }));
+      for (let i = 0; i < boxes.length; i++) {
+        const rowStart = boxes[i - i % columns];
+        expect(boxes[i].top).toBeCloseTo(rowStart.top, 0);
+        expect(boxes[i].bottom).toBeCloseTo(rowStart.bottom, 0);
+        expect(boxes[i].width).toBeCloseTo(rowStart.width, 0);
+        expect(boxes[i].margin).toBe('0px');
+      }
+    }
+  }
+});
+
 test('courier overview searches bookings, edits rates and opens filtered workflows', async ({ page, request }) => {
   const stamp = Date.now();
   const booking = await call(request, 'courier.manual.save', {
