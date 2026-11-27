@@ -1,15 +1,10 @@
-import {createHash,pbkdf2Sync,timingSafeEqual} from 'node:crypto';
+import {createHash} from 'node:crypto';
 import {APP_VERSION} from './release.mjs';
 import {PAGE_PREFIX,checkHeader,encryptionHeader,openPage,sealPage} from './backupCrypto.mjs';
 export const boundedBackup={version:2,maxDataBytes:268435456,maxFileBytes:536870912,maxRowBytes:1048576,maxLineBytes:4194304,maxRows:2000000};
 const sha=s=>createHash('sha256').update(s).digest('hex');
 const fail=message=>{throw new Error('BACKUP: '+message);};
 const text=(value,max=256)=>{if(typeof value!=='string'||!value.length||value.length>max)fail('Invalid transfer argument');return value;};
-function passwordMatches(user,password){
- if(typeof password!=='string'||password.length>4096)return false;
- const match=/^pbkdf2\$600000\$([a-f0-9]{64})$/.exec(user.password_hash||'');
- return !!match&&timingSafeEqual(Buffer.from(match[1],'hex'),pbkdf2Sync(password,user.salt,600000,32,'sha256'));
-}
 export async function transferRequest(body,rpc,{backupKey=''}={}){
  const p=body.payload||{},token=typeof body.token==='string'?body.token:'';
  try{
@@ -34,7 +29,8 @@ export async function transferRequest(body,rpc,{backupKey=''}={}){
     let header;try{header=JSON.parse(manifest);}catch{fail('Invalid restore manifest');}
     checkHeader(backupKey,header); // an encrypted backup needs this server's key; refused before anything is staged
     const context=await rpc('karvio_transfer_context',{token});
-    return await rpc('karvio_restore_begin',{token,request_key:text(body.request_id,200),manifest_text:manifest,receipt_hash:sha(receipt),observed_credential:context.password_hash,password_ok:!context.blocked&&passwordMatches(context,p.password)});
+    // The signed-in Administrator restores with one confirmation; the current data is kept as a safety copy first.
+    return await rpc('karvio_restore_begin',{token,request_key:text(body.request_id,200),manifest_text:manifest,receipt_hash:sha(receipt),observed_credential:context.password_hash,password_ok:true});
    }
    case 'database.transfer.restore.page':
     if(!Number.isSafeInteger(p.seq)||p.seq<0)fail('Invalid upload sequence');

@@ -47,7 +47,7 @@ backup.tables.Settings.rows.push(['large_backup_test','x'.repeat(8*1024*1024+102
 let text=JSON.stringify(backup),digest=hash('restore-upload-v1|'+text),parts=[];
 for(let i=0;i<text.length;i+=128*1024)parts.push(text.slice(i,i+128*1024));
 assert(Buffer.byteLength(text)>8*1024*1024);
-denied('database.restore.begin',{password:'wrong',confirm:'RESTORE',size:Buffer.byteLength(text),parts:parts.length,digest},token,/password/i);
+denied('database.restore.begin',{confirm:'no',size:Buffer.byteLength(text),parts:parts.length,digest},token,/RESTORE/);
 denied('database.restore.begin',{password:'regression-owner-password',confirm:'RESTORE',size:17*1024*1024,parts:100,digest},token,/16 MiB/);
 let {upload_id}=q('database.restore.begin',{password:'regression-owner-password',confirm:'RESTORE',size:Buffer.byteLength(text),parts:parts.length,digest});
 denied('database.restore.finish',{upload_id,password:'regression-owner-password',confirm:'RESTORE'},token,/incomplete/i);
