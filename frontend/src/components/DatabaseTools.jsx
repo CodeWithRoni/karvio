@@ -1,12 +1,12 @@
 import { clearShopDrafts, shopStorageKey } from '../lib/shopStorage';
-import {downloadStreamBackup,inspectStreamingBackup,isStreamingBackup,restoreStreamBackup} from '../lib/backupStream';
+import {downloadStreamBackup,inspectStreamingBackup,isEncryptedManifest,isStreamingBackup,restoreStreamBackup} from '../lib/backupStream';
 import { restoreBackup } from '../lib/restoreBackup';
 // Settings → Database (Administrator account only): overview, full backup download, restore from a backup file.
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../lib/store';
 import { api, isOffline } from '../lib/api';
 import { fdatetime, today } from '../lib/format';
-import { Btn, Field, useAction, useApi, Loading, ErrorBox } from './ui';
+import { Btn, Field, useAction, useApi, useConfirm, Loading, ErrorBox } from './ui';
 
 export const BACKUP_FORMAT = 'Karvio database backup';
 const RESTORE_WORD = 'RESTORE';
@@ -24,7 +24,7 @@ export async function backupChecksum(tables) {
 }
 
 
-export function DatabaseOverview({ info }) {
+export function DatabaseOverview({ info, drive }) {
   if (info.loading && !info.data) return <div className="card"><Loading label="Reading the database" /></div>;
   if (!info.data) return <ErrorBox error={info.error} onRetry={info.reload} />;
   const d = info.data, age = daysSince(d.last_backup);
@@ -38,7 +38,9 @@ export function DatabaseOverview({ info }) {
           <b>{d.last_backup ? fdatetime(d.last_backup) : 'Never'}</b>
           <small>{age === null ? 'Download a backup and keep it safe.' : age === 0 ? 'Today' : `${age} day${age === 1 ? '' : 's'} ago${age > 7 ? ' — time for a new backup' : ''}`}</small>
         </div>
-        {d.backend === 'supabase' && <div className="db-stamp"><span>Scheduled backups</span><b>Off</b><small>Backup exports are available in this tab.</small></div>}
+        {d.backend === 'supabase' && (drive?.connected && !drive.needs_reconnect
+          ? <div className={`db-stamp ${drive.last?.status === 'failed' ? 'warn' : 'ok'}`}><span>Scheduled backups</span><b>Google Drive · 12:00 AM daily</b><small>{drive.last ? (drive.last.status === 'ok' ? `Last saved ${fdatetime(drive.last.at)}` : `Last try failed ${fdatetime(drive.last.at)}`) : `First backup ${fdatetime(drive.next_at)}`}</small></div>
+          : <div className="db-stamp"><span>Scheduled backups</span><b>Off</b><small>{drive ? 'Connect Google Drive below for a nightly backup.' : 'Backup exports are available in this tab.'}</small></div>)}
         <div className="db-stamp"><span>Last restore</span><b>{d.last_restore ? fdatetime(d.last_restore) : '—'}</b><small>{d.last_restore ? 'Data was loaded from a backup file' : 'Not restored yet'}</small></div>
       </div>
       <div className="db-tables">
@@ -55,7 +57,7 @@ export function DatabaseBackup({ onDone }) {
   const bounded=useStore(s=>!!s.apiCapabilities?.boundedBackup);
   const streamed=async()=>{
     let result;try{result=await run(()=>downloadStreamBackup({call:api,progress:setProgress,date:today()}));}catch{return;}
-    setSaved({name:result.name,size:result.bytes||0,records:result.records});setProgress('Backup saved and verified');onDone?.();
+    setSaved({name:result.name,size:result.bytes||0,records:result.records,encrypted:result.encrypted});setProgress('Backup saved and verified');onDone?.();
   };
   const download = async () => {
     let b; try { b = await run(() => api('database.export', {})); } catch { return; } // the error is already shown
@@ -74,7 +76,8 @@ export function DatabaseBackup({ onDone }) {
   return (
     <div className="card form db-card">
 <div className="wide db-card-head"><span className="db-ic ok" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M4 17v3h16v-3" /></svg></span><h2>Export Backup</h2></div>
-      {saved && <div className="wide note reset-done" role="status"><b>Saved:</b> {saved.name} · {size(saved.size)} · {saved.records.toLocaleString('en-IN')} records</div>}
+      {saved && <div className="wide note reset-done" role="status"><b>Saved:</b> {saved.name} · {size(saved.size)} · {saved.records.toLocaleString('en-IN')} records{saved.encrypted ? ' · 🔒 encrypted' : ''}</div>}
+      {saved && saved.encrypted === false && <div className="wide errbox" role="alert">This backup is <b>not encrypted</b>: anyone with the file can read it. Set <code>KARVIO_BACKUP_KEY</code> on the server to encrypt backups.</div>}
       {progress&&<p className="wide muted" role="status">{progress}</p>}
       <div className="wide row end db-card-foot">
         <Btn kind="primary" busy={busy} onClick={bounded?streamed:download}>Download Backup</Btn>
@@ -98,7 +101,7 @@ export function DatabaseRestore({ onDone }) {
     if (!picked) return;
     if(isStreamingBackup(picked)){
       if(!bounded){setFile({name:picked.name,size:picked.size,error:'Update the Karvio backend before restoring a streamed backup.'});return;}
-      try{const header=await inspectStreamingBackup(picked);setFile({name:picked.name,size:picked.size,source:picked,streamed:true,verified:null,meta:{shop:header.shop_name,created:header.created_at,version:header.app_version,counts:Object.fromEntries(header.tables.map(t=>[t.name,t.rows]))}});}
+      try{const header=await inspectStreamingBackup(picked);setFile({name:picked.name,size:picked.size,source:picked,streamed:true,verified:null,encrypted:isEncryptedManifest(header),meta:{shop:header.shop_name,created:header.created_at,version:header.app_version,counts:Object.fromEntries(header.tables.map(t=>[t.name,t.rows]))}});}
       catch(error){setFile({name:picked.name,size:picked.size,error:error.message});}return;
     }
     if(picked.size>16*1048576){setFile({name:picked.name,size:picked.size,error:'Legacy JSON restore supports up to 16 MiB. For larger databases use a streamed backup or native PostgreSQL recovery.'});return;}
@@ -141,7 +144,7 @@ export function DatabaseRestore({ onDone }) {
         <b>Restored</b> the backup of {done.shop_name || 'the shop'} made {fdatetime(done.backup_created_at)}.{' '}
         {done.safety ? <>The data from before the restore was saved as <b>{done.safety.name}</b>{done.safety.url ? <> (<a href={done.safety.url} target="_blank" rel="noreferrer">open the copy</a>)</> : null}.</> : offline ? 'The data from before the restore is kept in the data folder on this computer.' : null}
       </div>}
-      <input ref={input} type="file" hidden accept=".json,.jsonl,.gz,application/json,application/gzip" onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ''; }} aria-label="Backup file" />
+      <input ref={input} type="file" hidden accept=".karvio,.json,.jsonl,.gz,application/json,application/gzip" onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ''; }} aria-label="Backup file" />
       <div className={`wide row end ${file ? '' : 'db-card-foot'}`}>
         {file && <span className="muted">{file.name} · {size(file.size)}</span>}
         {file && <span className="spacer" />}
@@ -151,8 +154,9 @@ export function DatabaseRestore({ onDone }) {
       {m && !file.error && <div className="wide db-preview">
         <div className="db-preview-head">
           <div><b>{m.shop || 'Shop'}</b><small>Backup made {fdatetime(m.created)}{m.by ? ` by ${m.by}` : ''}{m.version ? ` · Karvio ${m.version}` : ''}</small></div>
-          <span className={`db-badge ${file.verified ? 'ok' : ''}`}>{file.verified ? '✓ File verified' : 'Checked on restore'}</span>
+          <span className={`db-badge ${file.verified || file.encrypted ? 'ok' : ''}`}>{file.encrypted ? '🔒 Encrypted' : file.verified ? '✓ File verified' : 'Checked on restore'}</span>
         </div>
+        {!file.encrypted && <p className="muted db-plain">This is an older backup that is not encrypted. It can still be restored; keep the file private.</p>}
         <div className="db-tables">{MAIN.filter((n) => m.counts[n] !== undefined).map((n) => <div key={n} className="db-main"><span>{label(n)}</span><b>{Number(m.counts[n]).toLocaleString('en-IN')}</b></div>)}</div>
       </div>}
       {m && !file.error && <>
@@ -167,16 +171,78 @@ export function DatabaseRestore({ onDone }) {
 /** The whole Database tab. `Reset` is the existing reset card. */
 export function DatabaseTab({ Reset }) {
   const info = useApi('database.info', {});
+  const driveOn = useStore((s) => !!s.apiCapabilities?.driveBackup);
+  const drive = useApi('backup.drive.status', {}, [], { skip: !driveOn });
   const changed=()=>info.reload();
   return (
     <div className="db-tab">
-      <DatabaseOverview info={info} />
+      <DatabaseOverview info={info} drive={driveOn ? drive.data : null} />
+      {driveOn && <AutoBackup q={drive} onChanged={() => { drive.reload(); info.reload(); }} />}
       {/* Backup, Import and Reset side by side: one row of three cards (stacked on narrow screens). */}
       <div className="db-grid three">
         <DatabaseBackup onDone={changed} />
         <DatabaseRestore onDone={changed} />
         <Reset onDone={info.reload} />
       </div>
+    </div>
+  );
+}
+
+/** Automatic backup: the owner connects their own Google Drive once; every night at 12:00 AM the server saves an encrypted backup there. */
+export function AutoBackup({ q, onChanged }) {
+  const d = q.data;
+  const [busy, run] = useAction();
+  const [waiting, setWaiting] = useState(false);
+  const [confirmUI, ask] = useConfirm();
+  const timer = useRef(null);
+  useEffect(() => () => clearInterval(timer.current), []);
+  // The Google window finishes on the server; check until the account shows up (at most 10 minutes).
+  useEffect(() => {
+    if (!waiting) return undefined;
+    const started = Date.now();
+    timer.current = setInterval(async () => {
+      try { const s = await api('backup.drive.status', {}); if (s.connected && !s.needs_reconnect) { setWaiting(false); useStore.getState().toast(`Google Drive connected: ${s.email}`); onChanged(); } } catch { /* keep waiting */ }
+      if (Date.now() - started > 600000) setWaiting(false);
+    }, 2500);
+    return () => clearInterval(timer.current);
+  }, [waiting]); // eslint-disable-line react-hooks/exhaustive-deps
+  const connect = async () => {
+    const popup = window.open('', 'karvio-google', 'width=520,height=680');
+    let r; try { r = await run(() => api('backup.drive.connect', {})); } catch { popup?.close(); return; }
+    if (popup && !popup.closed) popup.location.href = r.url; else window.location.href = r.url;
+    setWaiting(true);
+  };
+  const now = async () => { try { await run(() => api('backup.drive.run', {}), 'Backup saved to Google Drive'); } catch { /* shown */ } onChanged(); };
+  const disconnect = async () => {
+    if (!(await ask({ title: 'Disconnect Google Drive?', message: 'Nightly backups stop. Backups already in your Google Drive stay there.', confirmLabel: 'Disconnect' }))) return;
+    try { await run(() => api('backup.drive.disconnect', {}), 'Google Drive disconnected'); } catch { return; }
+    onChanged();
+  };
+  const last = d?.last;
+  return (
+    <div className="card form db-card db-auto">
+      <div className="wide db-card-head"><span className="db-ic aqua" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 8.5a4 4 0 0 1-.5 9.5H7z" /><path d="M12 11v6" /><path d="m9.5 13.5 2.5-2.5 2.5 2.5" /></svg></span><h2>Automatic Backup</h2>
+        {d?.connected && !d.needs_reconnect && <span className="db-badge ok">On · Google Drive</span>}</div>
+      <p className="wide muted" style={{ margin: 0 }}>Every night at 12:00 AM an encrypted backup of the whole shop is saved to your own Google Drive, in the “Karvio Backups” folder. The newest {d?.keep || 30} are kept. Karvio can only see the files it saves there.</p>
+      {q.loading && !d && <div className="wide"><Loading label="Checking Google Drive" /></div>}
+      <ErrorBox error={q.error} onRetry={q.reload} />
+      {d && !d.configured && <div className="wide note" role="note">
+        <b>Server setup needed.</b> Set {d.missing.map((m, i) => <span key={m}>{i ? ', ' : ''}<code>{m}</code></span>)} in the Supabase Edge Function secrets.
+        {d.redirect_uri && <> In Google Cloud → Credentials, use this as the authorised redirect URI: <code className="db-uri">{d.redirect_uri}</code></>}
+      </div>}
+      {d?.configured && d.connected && <div className="wide db-stamps">
+        <div className={`db-stamp ${d.needs_reconnect ? 'warn' : 'ok'}`}><span>Google account</span><b>{d.email || 'Connected'}</b><small>{d.needs_reconnect ? 'Access was removed — connect again' : `Folder: ${d.folder || 'Karvio Backups'}`}</small></div>
+        <div className={`db-stamp ${last?.status === 'failed' ? 'warn' : last ? 'ok' : ''}`}><span>Last backup</span><b>{last ? fdatetime(last.at) : 'Not yet'}</b>
+          <small>{!last ? 'The first one is saved tonight.' : last.status === 'ok' ? `${last.file} · ${size(last.bytes || 0)}` : last.error}</small></div>
+        <div className="db-stamp"><span>Next backup</span><b>{d.next_at ? fdatetime(d.next_at) : '—'}</b><small>{d.running ? 'A backup is running now…' : 'Every night at 12:00 AM'}</small></div>
+      </div>}
+      {waiting && <p className="wide muted" role="status">Finish signing in to Google in the window that opened. This card updates by itself.</p>}
+      {d?.configured && <div className="wide row end db-card-foot">
+        {d.connected && <Btn busy={busy} onClick={disconnect}>Disconnect</Btn>}
+        {d.connected && !d.needs_reconnect && <Btn busy={busy || d.running} onClick={now}>Back up now</Btn>}
+        {(!d.connected || d.needs_reconnect) && <Btn kind="primary" busy={busy || waiting} onClick={connect}>{d.needs_reconnect ? 'Connect again' : 'Connect Google Drive'}</Btn>}
+      </div>}
+      {confirmUI}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 // Hosted adaptations. All money, stock, permission and ledger rules remain above.
 API_CAPABILITIES.boundedBackup=security.backupCapabilities;
+API_CAPABILITIES.driveBackup=true; // Settings → Database → Automatic backup (Google Drive), served by the Edge function
 pwHash_ = function(salt, pw) { return security.passwordHash(salt, String(pw || '')); };
 pwCheck_ = function(user, pw) { return security.passwordCheck(user, String(pw || '')); };
 uid_ = function() { return Utilities.getUuid().replace(/-/g, ''); };

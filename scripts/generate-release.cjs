@@ -5,7 +5,7 @@ const root = path.resolve(__dirname, '..');
 const version = JSON.parse(fs.readFileSync(path.join(root, 'frontend/package.json'))).version;
 const core = fs.readFileSync(path.join(root, 'backend/engine.js'), 'utf8');
 if (!core.includes("var APP_VERSION = '" + version + "';")) throw new Error('Backend/package version mismatch');
-const inputs = ['backend/engine.js', 'supabase/engine-overrides.txt', 'supabase/functions/karvio-api/handler.mjs', 'supabase/functions/karvio-api/runtime.mjs', 'supabase/functions/karvio-api/scope.mjs', 'supabase/functions/karvio-api/delta.mjs', 'supabase/functions/karvio-api/transfers.mjs', 'supabase/functions/karvio-api/index.ts', 'supabase/functions/karvio-api/sms.mjs', 'supabase/functions/karvio-api/schema.json'];
+const inputs = ['backend/engine.js', 'supabase/engine-overrides.txt', 'supabase/functions/karvio-api/handler.mjs', 'supabase/functions/karvio-api/runtime.mjs', 'supabase/functions/karvio-api/scope.mjs', 'supabase/functions/karvio-api/delta.mjs', 'supabase/functions/karvio-api/transfers.mjs', 'supabase/functions/karvio-api/backupCrypto.mjs', 'supabase/functions/karvio-api/drive.mjs', 'supabase/functions/karvio-api/index.ts', 'supabase/functions/karvio-api/sms.mjs', 'supabase/functions/karvio-api/schema.json'];
 const digest = crypto.createHash('sha256');
 for (const file of inputs) digest.update(file).update(fs.readFileSync(path.join(root, file)));
 const revision = process.argv[2] || digest.digest('hex');
