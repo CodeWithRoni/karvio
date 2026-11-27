@@ -171,3 +171,15 @@ eq(steadfast.rates, { inside: 0, outside: 120.5, cod: 1.25, return_fee: null, te
 ok(Boolean(steadfast.checked_at), 'successful API check timestamp persisted');
 ok(!(await raw('settings.save', { values: { courier_rates_steadfast: { cod: 101 } } })).ok, 'invalid COD rate rejected');
 console.log(`Features 11: ${checks} checks passed (online orders and couriers).`);
+
+// Payments can arrive in instalments and a voided receipt reopens the unpaid COD.
+const partial = await q('order.confirm', {id: (await q('order.save', {...form, advance: 0})).id});
+await q('order.ship', {id: partial.id, courier: 'other', tracking: 'COD-PARTIAL-FIXTURE'});
+const part = await q('order.settle', {id: partial.id, account_id: cash, charge: 0, collected: 400});
+eq([part.status, part.cod_remaining, part.settlement.collected], ['shipped', partial.cod - 400, 400], 'partial COD stays open');
+const paid = await q('order.settle', {id: partial.id, account_id: cash, charge: 0});
+eq([paid.status, paid.cod_remaining, paid.settlement.collected], ['settled', 0, partial.cod], 'the remaining COD settles it');
+const receipt = paid.settlement_entries[0].payment_id;
+await q('reverse', {type: 'cpay', id: receipt, password: 'harness-password-1', reason: 'Wrong COD payment'});
+const reopened = (await q('orders.list')).orders.find(o => o.id === paid.id);
+eq([reopened.status, reopened.cod_remaining, reopened.settlement.collected], ['shipped', 400, partial.cod - 400], 'voided COD receipt reopens just its unpaid part');

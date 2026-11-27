@@ -12,7 +12,8 @@ backupSchedule_ = function(p,user) {
   if(!isOwner_(user))fail_('Only the Administrator account can change automatic backups');
   var keep=Math.round(num_(p.keep_days));if(keep<1||keep>365)fail_('Keep backups for 1 to 365 days');
   var enabled=p.enabled===true||p.enabled==='true';
-  setSetting_('backup_daily',String(enabled));setSetting_('backup_keep_days',String(keep));
+  if (enabled) fail_('Scheduled snapshots are disabled on this backend. Download and store a backup outside the project.');
+  setSetting_('backup_daily','false');setSetting_('backup_keep_days',String(keep));
   audit_(user,'backup_schedule',{enabled:enabled,keep_days:keep,provider:'supabase'});
   return {enabled:enabled,keep_days:keep,folder:'Supabase private snapshots',last:getSetting_('last_daily_backup_at','')};
 };
@@ -21,7 +22,7 @@ var originalDatabaseInfo_ = ROUTES['database.info'].fn;
 ROUTES['database.info'].fn = function(p,user) {
   var info=originalDatabaseInfo_(p,user);
   info.backend='supabase';info.offline=false;info.backup_folder='Supabase private snapshots';
-  info.daily_backup=getSetting_('backup_daily','true')==='true';
+  info.daily_backup=false;
   return info;
 };
 ROUTES['sms.test'].fn = function(p) { return sendSms_(p.phone,'Test SMS from '+getSetting_('shop_name')+' - Karvio'); };

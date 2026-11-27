@@ -49,7 +49,7 @@ test('take a Facebook order, confirm it, send it with a courier and settle the c
   const settle = page.getByRole('dialog').last();
   await settle.getByLabel('Courier charge').fill('120');
   await settle.getByRole('button', { name: /Save · Tk 1,780 received/ }).click();
-  await expect(view).toContainText('Courier paid Tk 1,780');
+  await expect(view).toContainText('Courier payments · Tk 1,780 received');
   expect((await call(request, 'products.list')).find((x) => x.id === p.id).stock).toBe(3);
   await view.getByRole('button', { name: 'Close' }).first().click().catch(() => {});
   await page.keyboard.press('Escape');

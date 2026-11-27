@@ -61,3 +61,9 @@ api.setToken((await q('login', {username: 'tech', password: 'tech-password-1'}))
 ok(/Permission denied/.test((await raw('branch.stock', {})).error), 'refused without the Reports permission');
 api.setToken(admin);
 console.log(`Branch stock: ${checks} checks passed`);
+
+// Four-decimal serial unit costs accumulate before currency rounding.
+const fractional = await q('product.save', {name: 'Fractional valuation serial', has_warranty: true, warranty_type: 'serial', warranty_days: 30, sale_price: 1});
+await q('purchase.create', {items: [{product_id: fractional.id, qty: 2, cost: 0.0049, serials: ['VALUE-1', 'VALUE-2']}], payments: [{account_id: (await q('bootstrap')).accounts[0].id, amount: 0.01}]});
+const valuation = (await q('branch.stock')).rows.find(r => r.product_id === fractional.id);
+eq(Math.round(valuation.value * 100), 1, 'two fractional serial costs have a combined value of one paisa');

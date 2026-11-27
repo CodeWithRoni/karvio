@@ -99,3 +99,8 @@ for (const [a, p] of [['ledger.report', {kind: 'customer'}], ['adjust.list', {ki
   ok(/Only an admin/.test((await raw(a, p)).error), `${a} is admin only`);
 
 console.log(`Features 7: ${checks} checks passed (party ledger adjust and ledger report).`);
+
+// Period-wide Net Profit agrees with Daily Counts when ledger adjustments exist.
+const auditPeriod = {from: day(-30), to: today};
+const dailyProfit = await q('reports', {type: 'daily_summary', ...auditPeriod});
+eq(dailyProfit.totals.profit, (await q('profit.report', auditPeriod)).summary.net, 'daily net profit includes write-offs, rebates and ledger charges');

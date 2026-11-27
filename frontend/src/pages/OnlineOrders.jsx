@@ -181,7 +181,7 @@ function OrderView({ o, couriers, onClose, onChanged, onEdit }) {
         <div>
           {o.courier && <div className="oo-courier"><b>{o.courier.label}</b> · {o.courier.tracking}{o.courier.status && <> · <Badge tone="info">{o.courier.status}</Badge></>}
             <small className="muted">Booked {fdatetime(o.courier.booked_at)} by {o.courier.booked_by}{o.courier.by_api ? ' through the API' : ''}{o.courier.checked_at && o.courier.by_api ? ` · checked ${fdatetime(o.courier.checked_at)}` : ''}</small></div>}
-          {o.settlement && <div className="oo-courier"><b>Courier paid {money(o.settlement.received)}</b><small className="muted">COD {tk(o.settlement.collected)} − charge {tk(o.settlement.charge)} into {o.settlement.account_name} · {fdate(o.settlement.date)}</small></div>}
+          {o.settlement && <div className="oo-courier"><b>Courier payments · {money(o.settlement.received)} received</b><small className="muted">COD {tk(o.settlement.collected)} − charge {tk(o.settlement.charge)} · {money(o.cod_remaining)} pending</small></div>}
           <h4 style={{ margin: '10px 0 6px' }}>History</h4>
           <ol className="oo-hist">{(o.history || []).slice().reverse().map((h, n) => <li key={n}><b>{STATUS[h.status]?.[0] || h.status}</b> <span className="muted">· {fdatetime(h.at)} · {h.by}</span>{h.note && <div>{h.note}</div>}</li>)}</ol>
         </div>
@@ -274,21 +274,22 @@ function ShipDialog({ o, couriers, onClose, onDone }) {
 function SettleDialog({ o, onClose, onDone }) {
   const { accounts } = useStore();
   const [account, setAccount] = useState((accounts.find((a) => a.type === 'mfs') || accounts[0])?.id || '');
-  const [charge, setCharge] = useState(String(o.courier?.charge || ''));
-  const [collected, setCollected] = useState(String(o.cod));
+  const remaining = o.cod_remaining ?? o.cod;
+  const [charge, setCharge] = useState(String(Math.max(0, (o.courier?.charge || 0) - (o.settlement?.charge || 0)) || ''));
+  const [collected, setCollected] = useState(String(remaining));
   const [date, setDate] = useState(today());
   const [busy, run] = useAction();
   const received = (Number(collected) || 0) - (Number(charge) || 0);
-  const submit = async () => { const r = await run(() => api('order.settle', { id: o.id, account_id: account, charge: charge || 0, collected, date }), `${o.no} settled`); if (r) onDone(r); };
+  const submit = async () => { const r = await run(() => api('order.settle', { id: o.id, account_id: account, charge: charge || 0, collected, date }), 'Courier payment recorded'); if (r) onDone(r); };
   return (
     <Modal open size="sm" title={`Courier paid — ${o.no}`} onClose={onClose}
-      footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={submit} disabled={!account || received < 0}>Save · {money(received)} received</Btn></>}>
+      footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={submit} disabled={!account || collected === '' || Number(collected) < 0 || Number(collected) > remaining || Number(charge) < 0 || (remaining > 0 && Number(collected) === 0 && !Number(charge))}>Save · {money(received)} received</Btn></>}>
       <div className="form">
-        <Field label="Cash collected from the customer" wide><input type="number" min="0" value={collected} onChange={(e) => setCollected(e.target.value)} aria-label="Cash collected" /></Field>
+        <Field label="Cash collected from the customer" wide><input type="number" min="0" max={remaining} step="0.01" value={collected} onChange={(e) => setCollected(e.target.value)} aria-label="Cash collected" /></Field>
         <Field label="Courier charge" wide><input type="number" min="0" value={charge} onChange={(e) => setCharge(e.target.value)} placeholder="0" aria-label="Courier charge" /></Field>
         <Field label="Paid into" wide><select value={account} onChange={(e) => setAccount(e.target.value)} aria-label="Paid into">{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></Field>
         <Field label="Date" wide><input type="date" value={date} max={today()} onChange={(e) => setDate(e.target.value)} aria-label="Date" /></Field>
-        <p className="muted wide">The customer's due of {money(o.cod)} is collected; the courier charge is saved as an expense ("Courier charge").</p>
+        <p className="muted wide">{money(remaining)} remains to collect for this order. Courier charges are saved as expenses.</p>
       </div>
     </Modal>
   );

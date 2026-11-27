@@ -104,13 +104,12 @@ function Report({ d, group, setGroup, view, setView }) {
             { key: 'name', label: 'Product' },
             { key: 'unit', label: 'Unit' },
             { key: 'qty', label: 'Qty sold', type: 'num', sum: true, total: rows => quantityTotal(rows) },
-            { key: 'revenue', label: 'Sales', type: 'money', sum: true },
+            { key: 'revenue', label: 'Sales after discount', type: 'money', sum: true },
             { key: 'cost', label: 'Cost', type: 'money', sum: true },
             { key: 'returned_qty', label: 'Returned qty', type: 'num', sum: true, total: rows => quantityTotal(rows, 'returned_qty') },
             { key: 'profit', label: 'Profit', type: 'money', sum: true },
             { key: 'margin', label: 'Margin %', type: 'num' }
           ]} />}
-        {view === 'products' && d.products.length > 0 && s.discount > 0 && <p className="muted" style={{ fontSize: 12.5 }}>Product profit is before invoice discounts ({money(s.discount)} in this period), which are taken off in the gross profit above.</p>}
         {view === 'staff' && <DataTable title={`Profit by staff ${d.from} to ${d.to}`} rows={d.staff} empty={<Empty title="No sales in this period" />}
           columns={[
             { key: 'name', label: 'Staff' },

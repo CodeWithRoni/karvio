@@ -114,3 +114,22 @@ eq([hist[0].no, hist[0].lines.find((l) => l.product_id === router.id).missing], 
 console.log(`Features 10: ${checks} checks passed`);
 await db.close?.();
 process.exit(0);
+
+// Cashier display names may coincide. The drawer must attribute each movement by user ID.
+const sameNameUsers = [];
+for (const username of ['same_cashier_a', 'same_cashier_b']) {
+  await q('user.save', {name: 'Same Cashier', username, role: 'sales', password: 'fixture-cashier-123'});
+  sameNameUsers.push((await q('login', {username, password: 'fixture-cashier-123'})).token);
+}
+const sameNameShifts = [];
+for (const t of sameNameUsers) {
+  api.setToken(t);
+  sameNameShifts.push(await q('shift.open', {account_id: cash, opening: 0}));
+}
+for (const [i, t] of sameNameUsers.entries()) {
+  api.setToken(t);
+  ok((await sell(i + 1)).ok, 'same-name cashier can sell');
+}
+api.setToken(adminToken);
+const shiftById = new Map((await q('shifts.list')).open.map(s => [s.id, s]));
+eq(sameNameShifts.map(s => shiftById.get(s.id).expected), [50, 100], 'same-name cashiers have independent shift figures');

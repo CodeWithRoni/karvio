@@ -889,7 +889,11 @@ function dayLockCheck_(accId, date) {
 }
 function acctTxn_(accId, dir, amount, refType, refId, note, user, date) {
   dayLockCheck_(accId, date || today_());
-  return insert_('AccountTxns', { date: date || today_(), account_id: accId, direction: dir, amount: round_(amount), ref_type: refType, ref_id: refId, note: note || '', user: user.name, voided: false });
+  var txn = insert_('AccountTxns', { date: date || today_(), account_id: accId, direction: dir, amount: round_(amount), ref_type: refType, ref_id: refId, note: note || '', user: user.name, voided: false });
+  if (user.id && openShifts_().some(function (s) { return s.mode === 'cashier' && s.account_id === accId; })) {
+    branchPut_('cashier|' + txn.id, 0, user.id);
+  }
+  return txn;
 }
 /** Business dates: YYYY-MM-DD, not in the future, and not inside the closed books period. */
 function lockedUntil_() { var v = String(getSetting_('books_locked_until', '') || '').slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : ''; }
@@ -1741,7 +1745,10 @@ function shiftFigures_(s, endRow) {
   var lines = {}, totIn = 0, totOut = 0;
   all_('AccountTxns').forEach(function (t) {
     if (t.account_id !== s.account_id || t.voided || t._row <= s.start_row || (endRow && t._row > endRow) || isCashCount_(t)) return;
-    if (s.mode !== 'shared' && shiftNames_(s).indexOf(t.user) < 0) return;
+    if (s.mode !== 'shared') {
+      var cashier = branchGet_('cashier|' + t.id);
+      if (cashier ? cashier.text !== s.user_id : shiftNames_(s).indexOf(t.user) < 0) return;
+    }
     var a = num_(t.amount), key = (DAY_CLOSE_GROUPS[t.ref_type] ? t.ref_type : 'other') + ':' + t.direction;
     var l = lines[key] = lines[key] || { type: t.ref_type || 'other', label: DAY_CLOSE_GROUPS[t.ref_type] || 'Other', direction: t.direction, amount: 0, count: 0 };
     l.amount = round_(l.amount + a); l.count++;
@@ -1902,7 +1909,7 @@ function orderFind_(id) {
   if (!row || /^mc_/.test(row.id)) fail_('Order not found');
   var o = orderParse_(row); if (!o) fail_('This order is damaged and cannot be opened');
   if (!orderSees_(o)) fail_('Permission denied: this order belongs to another branch');
-  return { all: all, row: row, o: o };
+  return { all: all, row: row, o: orderSettlementView_(o) };
 }
 /** An order belongs to the branch of its invoice; before the invoice, to the branch it was taken in.
  *  Orders saved before branches were tracked on them stay visible to everyone until they get an invoice. */
@@ -2052,6 +2059,45 @@ function orderDeliver_(p, user) {
   orderWrite_(f.all, f.row, o);
   return orderView_(o);
 }
+/** Reconcile settlement with its active receipt/expense records, including old one-payment orders. */
+function orderSettlementView_(o) {
+  if (!o.settlement && !o.settlement_entries) return o;
+  if (!_mem.__codSettlement) {
+    var ledger = all_('CustomerLedger'), fees = all_('Expenses'), receipts = {}, legacyFees = {};
+    ledger.forEach(function (l) {
+      var order = /^COD (\S+) via /.exec(String(l.note || ''));
+      if (order && l.type === 'payment') receipts[order[1] + '|' + l.customer_id + '|' + payForSale_(l.ref_id)] = l.id;
+    });
+    fees.forEach(function (fee) {
+      var order = /^(\S+) — /.exec(String(fee.note || ''));
+      if (order && nameKey_(fee.category) === nameKey_(COURIER_EXPENSE)) {
+        legacyFees[order[1] + '|' + fee.date + '|' + fee.account_id] = fee.id;
+      }
+    });
+    _mem.__codSettlement = { payments: indexBy_(ledger), expenses: indexBy_(fees), receipts: receipts, legacyFees: legacyFees };
+  }
+  var data = _mem.__codSettlement, entries = o.settlement_entries;
+  if (!entries || !entries.length) {
+    var old = o.settlement;
+    if (!old) return o;
+    entries = [Object.assign({}, old, {
+      payment_id: data.receipts[o.no + '|' + o.customer_id + '|' + o.sale_id],
+      expense_id: data.legacyFees[o.no + '|' + old.date + '|' + old.account_id]
+    })];
+  }
+  var collected = 0, charge = 0;
+  entries.forEach(function (e) {
+    var payment = data.payments[e.payment_id], expense = data.expenses[e.expense_id];
+    collected += e.payment_id ? (payment && !payment.voided ? num_(payment.credit) : 0) : num_(e.collected);
+    charge += e.expense_id ? (expense && expense.status === 'active' ? num_(expense.amount) : 0) : num_(e.charge);
+  });
+  var result = Object.assign({}, o, { settlement_entries: entries,
+    settlement: Object.assign({}, entries[entries.length - 1], { collected: round_(collected), charge: round_(charge), received: round_(collected - charge) }) });
+  if (o.status === 'settled' && collected + 0.005 < num_(o.cod)) {
+    result.status = (o.history || []).some(function (h) { return h.status === 'delivered'; }) ? 'delivered' : 'shipped';
+  }
+  return result;
+}
 /** The courier paid: the customer's cash-on-delivery is collected into the account, the courier's charge is an expense. */
 function orderSettle_(p, user) {
   var f = orderFind_(p.id), o = f.o;
@@ -2060,22 +2106,29 @@ function orderSettle_(p, user) {
   var acc = all_('Accounts').filter(function (a) { return a.id === p.account_id && a.active; })[0]; if (!acc) fail_('Select the account the courier paid into');
   var charge = Number(p.charge); if (!isFinite(charge) || charge < 0) fail_('Write the courier charge (0 or more)');
   charge = round_(charge);
-  var collected = p.collected === undefined || p.collected === '' ? o.cod : round_(Number(p.collected));
-  if (!isFinite(collected) || collected < 0 || collected > o.cod + 0.005) fail_('The collected amount must be between 0 and ' + o.cod);
+  var previous = o.settlement ? num_(o.settlement.collected) : 0;
+  var remaining = Math.max(0, round_(num_(o.cod) - previous));
+  var collected = p.collected === undefined || p.collected === '' ? remaining : round_(Number(p.collected));
+  if (!isFinite(collected) || collected < 0 || collected > remaining + 0.005) fail_('The collected amount must be between 0 and ' + remaining);
+  if (remaining > 0 && collected <= 0 && charge <= 0) fail_('Enter a COD payment or a courier charge');
+  var paymentId = '', expenseId = '';
   var date = bookDate_(p.date, 'courier payment');
   if (collected > 0) {
     _mem.__payForSale = o.sale_id || '';
-    try { customerPayment_({ customer_id: o.customer_id, amount: collected, account_id: acc.id, date: date, note: 'COD ' + o.no + ' via ' + (o.courier ? o.courier.label : 'courier') }, user); }
+    try { paymentId = customerPayment_({ customer_id: o.customer_id, amount: collected, account_id: acc.id, date: date, note: 'COD ' + o.no + ' via ' + (o.courier ? o.courier.label : 'courier') }, user).entry.id; }
     finally { delete _mem.__payForSale; }
   }
   if (charge > 0) {
     var cats = []; try { cats = JSON.parse(getSetting_('expense_categories', '[]')); } catch (e) {}
     if (!Array.isArray(cats)) cats = [];
     if (!cats.some(function (c) { return nameKey_(c) === nameKey_(COURIER_EXPENSE); })) setSetting_('expense_categories', JSON.stringify(cats.concat([COURIER_EXPENSE])));
-    expenseCreate_({ date: date, category: COURIER_EXPENSE, amount: charge, account_id: acc.id, note: o.no + ' — ' + (o.courier ? o.courier.label + ' ' + o.courier.tracking : 'courier') }, user);
+    expenseId = expenseCreate_({ date: date, category: COURIER_EXPENSE, amount: charge, account_id: acc.id, note: o.no + ' — ' + (o.courier ? o.courier.label + ' ' + o.courier.tracking : 'courier') }, user).id;
   }
-  o.settlement = { date: date, collected: collected, charge: charge, received: round_(collected - charge), account_id: acc.id, account_name: acc.name, at: now_(), by: user.name };
-  orderLog_(o, user, 'settled', 'Courier paid ' + round_(collected - charge) + ' (COD ' + collected + ' − charge ' + charge + ') into ' + acc.name);
+  o.settlement_entries = (o.settlement_entries || []).concat([{ date: date, collected: collected, charge: charge,
+    account_id: acc.id, account_name: acc.name, at: now_(), by: user.name, payment_id: paymentId, expense_id: expenseId }]);
+  delete _mem.__codSettlement;
+  o = orderSettlementView_(o);
+  orderLog_(o, user, collected + 0.005 >= remaining ? 'settled' : o.status, 'Courier paid ' + round_(collected - charge) + ' (COD ' + collected + ' − charge ' + charge + ') into ' + acc.name);
   orderWrite_(f.all, f.row, o);
   return orderView_(o);
 }
@@ -2141,7 +2194,8 @@ function orderSaleActive_(o) {
   if (!s || s.status !== 'active') fail_('The invoice of this order is cancelled');
 }
 function orderView_(o, sales) {
-  var v = Object.assign({}, o);
+  var v = Object.assign({}, orderSettlementView_(o));
+  v.cod_remaining = Math.max(0, round_(num_(o.cod) - num_(v.settlement && v.settlement.collected)));
   v.booking_pending = !!o.courier_attempt && o.courier_attempt.state !== 'done';
   delete v.courier_attempt;
   if (o.sale_id) {
@@ -2232,7 +2286,7 @@ function ordersList_(p, user) {
   var withCourier = 0, toSettle = 0;
   list.forEach(function (o) {
     counts[o.status] = (counts[o.status] || 0) + 1;
-    if (o.status === 'shipped' || o.status === 'delivered') { withCourier += o.cod; if (o.status === 'delivered') toSettle += o.cod; }
+    if (o.status === 'shipped' || o.status === 'delivered') { withCourier += o.cod_remaining; if (o.status === 'delivered') toSettle += o.cod_remaining; }
   });
   var from = String(p.from || '').slice(0, 10), to = String(p.to || '').slice(0, 10);
   function inRange(o) {
@@ -2679,7 +2733,10 @@ function branchTransferPut_(t) { var c = Object.assign({}, t); delete c.id; bran
 function branchTransfersList_(p, user) {
   if (!branchesOn_()) return { on: false, transfers: [] };
   var mine = branchFixed_(user);
-  return { on: true, current: _branch, transfers: branchTransfers_().filter(function (t) { return !mine || t.from === mine || t.to === mine; }).slice(0, 500).map(function (t) {
+  var visible = branchTransfers_().filter(function (t) { return !mine || t.from === mine || t.to === mine; });
+  var pending = visible.filter(function (t) { return t.status === 'in_transit'; });
+  var recent = visible.filter(function (t) { return t.status !== 'in_transit'; }).slice(0, 500);
+  return { on: true, current: _branch, transfers: pending.concat(recent).map(function (t) {
     return Object.assign(t, { from_name: branchName_(t.from), to_name: branchName_(t.to) }); }) };
 }
 function branchTransferSerials_(p) {
@@ -2770,12 +2827,19 @@ function branchReport_(p, user) {
     if (r.key.indexOf('s|') !== 0 || !r.num) return;
     var k = r.key.split('|'), pr = pmap[k[1]]; if (!pr) return;
     var v = isSerialProduct_(pr) ? (serialCosts[k[1] + '|' + k[2]] || 0) : r.num * num_(pr.cost_price);
-    if (k[2] === BRANCH_TRANSIT) { transit.qty = round_(transit.qty + r.num, 4); transit.value = round_(transit.value + v); addUnitQty_(units, 'transit', pr.unit, r.num); return; }
-    add(k[2], 'stock_qty', r.num); add(k[2], 'stock_value', v);
+    if (k[2] === BRANCH_TRANSIT) { transit.qty = round_(transit.qty + r.num, 4); transit.value += v; addUnitQty_(units, 'transit', pr.unit, r.num); return; }
+    var totals = out[k[2]] || (out[k[2]] = blank());
+    totals.stock_qty += r.num; out.all.stock_qty += r.num;
+    totals.stock_value += v; out.all.stock_value += v;
     addUnitQty_(units, k[2], pr.unit, r.num); addUnitQty_(units, 'all', pr.unit, r.num);
   });
   // Quantities by unit for the screen (stock_qty adds pieces and meters together and stays only for older screens).
-  ids.concat(['all']).forEach(function (id) { if (out[id]) out[id].stock_text = unitQtyText_(units[id]); });
+  ids.concat(['all']).forEach(function (id) {
+    var r = out[id];
+    r.stock_text = unitQtyText_(units[id]);
+    r.stock_qty = round_(r.stock_qty, 4); r.stock_value = round_(r.stock_value);
+  });
+  transit.value = round_(transit.value);
   transit.text = unitQtyText_(units.transit);
   var ab = accountBranches_(), unassigned = 0;
   accountsList_().filter(function (a) { return a.active; }).forEach(function (a) { if (ab[a.id]) add(ab[a.id], 'cash', num_(a.balance)); else unassigned = round_(unassigned + num_(a.balance)); });
@@ -2938,7 +3002,7 @@ function branchStockData_(showCost, onlyPid) {
     if (sn.status !== 'in_stock' || (onlyPid && sn.product_id !== onlyPid)) return;
     var at = serialBranch_(sn.id), m = serials[sn.product_id] = serials[sn.product_id] || {};
     (m[at] = m[at] || []).push(String(sn.serial));
-    sCost[sn.product_id] = round_((sCost[sn.product_id] || 0) + num_(sn.cost));
+    sCost[sn.product_id] = (sCost[sn.product_id] || 0) + num_(sn.cost);
   });
   return { list: list, ids: ids, per: per, serials: serials, sCost: sCost, showCost: showCost };
 }
@@ -2947,7 +3011,7 @@ function branchStockRow_(pr, d) {
   d.ids.forEach(function (id) { var n = round_(q[id] || 0, 4); row.by[id] = n; sum += n; if (sn[id]) row.serials[id] = sn[id].slice().sort(); });
   if (sn[BRANCH_TRANSIT]) row.serials[BRANCH_TRANSIT] = sn[BRANCH_TRANSIT].slice().sort();
   row.total = round_(sum + row.transit, 4);
-  if (d.showCost) row.value = isSerialProduct_(pr) ? round_(d.sCost[pr.id] || 0) : round_(row.total * num_(pr.cost_price));
+  if (d.showCost) row.value = isSerialProduct_(pr) ? round_(d.sCost[pr.id] || 0, 4) : round_(row.total * num_(pr.cost_price), 8);
   return row;
 }
 /** Reports → Branch stock. */
@@ -2961,8 +3025,8 @@ function branchStock_(p, user) {
       brand_id: pr.brand_id || '', brand: (brands[pr.brand_id] || {}).name || 'No brand' });
   }).sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
   var totals = { by: {}, transit: 0, total: 0, value: 0 };
-  rows.forEach(function (r) { d.ids.forEach(function (id) { totals.by[id] = round_((totals.by[id] || 0) + r.by[id], 4); }); totals.transit = round_(totals.transit + r.transit, 4); totals.total = round_(totals.total + r.total, 4); if (d.showCost) totals.value = round_(totals.value + r.value); });
-  if (!d.showCost) delete totals.value;
+  rows.forEach(function (r) { d.ids.forEach(function (id) { totals.by[id] = round_((totals.by[id] || 0) + r.by[id], 4); }); totals.transit = round_(totals.transit + r.transit, 4); totals.total = round_(totals.total + r.total, 4); if (d.showCost) totals.value += r.value; });
+  if (d.showCost) totals.value = round_(totals.value); else delete totals.value;
   return { branches: d.list.map(function (b) { return { id: b.id, name: b.name, main: !!b.main, active: b.active }; }), rows: rows, totals: totals, cost: d.showCost, current: _branch || '' };
 }
 
@@ -5395,9 +5459,10 @@ function rebateRows_() {
   return all_('SupplierLedger').filter(function (l) { return l.type === 'rebate' && !l.voided; }).map(function (l) { return rebateParse_(l, purchases); });
 }
 /** Rebates received in a period; with `key` also grouped (for the profit timeline). */
-function rebateTotal_(from, to, key) {
-  var total = 0, by = {};
+function rebateTotal_(from, to, key, fixed) {
+  var total = 0, by = {}, docs = fixed ? indexBy_(all_('Purchases')) : null;
   all_('SupplierLedger').forEach(function (l) {
+    if (docs && (!docs[l.ref_id] || !branchSees_('Purchases', l.ref_id))) return;
     if (l.type !== 'rebate' || l.voided || !inRange_(l.date, from, to)) return;
     var a = num_(l.debit); total += a; if (key) by[key(l.date)] = (by[key(l.date)] || 0) + a;
   });
@@ -5556,9 +5621,10 @@ function adjustList_(p, user) {
   return { rows: rows, pending: kind === 'supplier' ? rebatesPending_() : [] };
 }
 /** Customer dues written off in a period (customer 'adjust' deductions); with `key` grouped for the profit timeline. */
-function writeoffTotal_(from, to, key) {
-  var total = 0, by = {};
+function writeoffTotal_(from, to, key, fixed) {
+  var total = 0, by = {}, docs = fixed ? indexBy_(all_('Sales')) : null;
   all_('CustomerLedger').forEach(function (l) {
+    if (docs && (!docs[l.ref_id] || !branchSees_('Sales', l.ref_id))) return;
     if (l.type !== 'adjust' || l.voided || !(num_(l.credit) > 0) || !inRange_(l.date, from, to)) return;
     var a = num_(l.credit); total += a; if (key) by[key(l.date)] = (by[key(l.date)] || 0) + a;
   });
@@ -5567,10 +5633,11 @@ function writeoffTotal_(from, to, key) {
 /** Party Ledger Adjust additions that are real income or cost: a missed charge or another addition — not a Correction,
  *  which only fixes a wrong balance. side 'customer' = charges added to customers (other income); 'supplier' = charges
  *  suppliers added to what we owe (a cost). With `key` grouped for the profit timeline. */
-function ledgerChargeTotal_(side, from, to, key) {
+function ledgerChargeTotal_(side, from, to, key, fixed) {
   var cust = side === 'customer', table = cust ? 'CustomerLedger' : 'SupplierLedger', correction = ADJUST_TYPES[side].add.correction + ' — ';
-  var total = 0, by = {};
+  var total = 0, by = {}, docs = fixed ? indexBy_(all_(cust ? 'Sales' : 'Purchases')) : null;
   all_(table).forEach(function (l) {
+    if (docs && (!docs[l.ref_id] || !branchSees_(cust ? 'Sales' : 'Purchases', l.ref_id))) return;
     if (l.type !== 'adjust' || l.voided || !inRange_(l.date, from, to)) return;
     var a = num_(cust ? l.debit : l.credit); // an addition raises the balance: customer debit, supplier credit
     if (!(a > 0) || String(l.note || '').indexOf(correction) === 0) return;
@@ -7139,9 +7206,28 @@ function returnProfit_(ret) {
   }
   return _mem.__returnProfits[ret.id] || 0;
 }
+function profitSaleVisible_(s) {
+  return branchSees_('Sales', s.id);
+}
+function profitReturnVisible_(r, sales) {
+  return !!sales[r.sale_id] && profitSaleVisible_(sales[r.sale_id]) && branchSees_('SalesReturns', r.id);
+}
+function reportAdjustments_(from, to, key) {
+  var fixed = _reqUser && branchFixed_(_reqUser);
+  return {
+    stock_adjust: fixed ? (key ? {} : 0) : stockAdjustValue_(from, to, key),
+    rebates: rebateTotal_(from, to, key, fixed),
+    writeoffs: writeoffTotal_(from, to, key, fixed),
+    customer_charges: ledgerChargeTotal_('customer', from, to, key, fixed),
+    supplier_charges: ledgerChargeTotal_('supplier', from, to, key, fixed)
+  };
+}
 function profitSummary_(from, to) {
   var inR = function (x) { return x.status === 'active' && inRange_(x.date, from, to); };
-  var s = all_('Sales').filter(inR), r = all_('SalesReturns').filter(inR), e = all_('Expenses').filter(inR);
+  var salesById = indexBy_(all_('Sales'));
+  var s = all_('Sales').filter(function (x) { return inR(x) && profitSaleVisible_(x); });
+  var r = all_('SalesReturns').filter(function (x) { return inR(x) && profitReturnVisible_(x, salesById); });
+  var e = all_('Expenses').filter(function (x) { return inR(x) && branchSees_('Expenses', x.id); });
   var sales = round_(sum_(s, function (x) { return x.total; })), returns = round_(sum_(r, function (x) { return x.total; }));
   var o = {
     invoices: s.length, sales: sales, discount: round_(sum_(s, function (x) { return x.discount; })),
@@ -7152,11 +7238,7 @@ function profitSummary_(from, to) {
   };
   o.net_sales = round_(sales - returns);
   o.gross = round_(o.sales_profit - o.returns_profit);
-  o.stock_adjust = stockAdjustValue_(from, to); // negative = stock written off
-  o.rebates = rebateTotal_(from, to); // supplier rebates: other income
-  o.writeoffs = writeoffTotal_(from, to); // customer dues written off (Customer Ledger Adjust)
-  o.customer_charges = ledgerChargeTotal_('customer', from, to); // charges added to customers later: other income
-  o.supplier_charges = ledgerChargeTotal_('supplier', from, to); // charges suppliers added later: a cost
+  Object.assign(o, reportAdjustments_(from, to));
   o.net = round_(o.gross - o.expenses + o.stock_adjust + o.rebates - o.writeoffs + o.customer_charges - o.supplier_charges);
   o.margin = o.net_sales > 0 ? round_(o.gross / o.net_sales * 100, 1) : 0;
   o.net_margin = o.net_sales > 0 ? round_(o.net / o.net_sales * 100, 1) : 0;
@@ -7181,15 +7263,18 @@ function profitReport_(p, user) {
   var group = p.group === 'month' || p.group === 'day' ? p.group : days > 62 ? 'month' : 'day';
   var key = function (d) { return group === 'month' ? String(d).slice(0, 7) : String(d).slice(0, 10); };
   var inR = function (x) { return x.status === 'active' && inRange_(x.date, from, to); };
-  var sales = all_('Sales').filter(inR), rets = all_('SalesReturns').filter(inR), exps = all_('Expenses').filter(inR);
+  var salesById = indexBy_(all_('Sales'));
+  var sales = all_('Sales').filter(function (x) { return inR(x) && profitSaleVisible_(x); });
+  var rets = all_('SalesReturns').filter(function (x) { return inR(x) && profitReturnVisible_(x, salesById); });
+  var exps = all_('Expenses').filter(function (x) { return inR(x) && branchSees_('Expenses', x.id); });
 
   var tl = {}, row = function (k) { return tl[k] = tl[k] || { period: k, invoices: 0, sales: 0, cost: 0, returns: 0, returns_profit: 0, gross: 0, expenses: 0, net: 0 }; };
   sales.forEach(function (s) { var r = row(key(s.date)); r.invoices++; r.sales += s.total; r.cost += s.cost; r.gross += s.profit; });
   rets.forEach(function (x) { var r = row(key(x.date)); r.returns += x.total; r.returns_profit += returnProfit_(x); r.gross -= returnProfit_(x); });
   exps.forEach(function (x) { row(key(x.date)).expenses += x.amount; });
-  var adj = stockAdjustValue_(from, to, key);
-  var reb = rebateTotal_(from, to, key), wo = writeoffTotal_(from, to, key);
-  var cch = ledgerChargeTotal_('customer', from, to, key), sch = ledgerChargeTotal_('supplier', from, to, key);
+  var adjustments = reportAdjustments_(from, to, key);
+  var adj = adjustments.stock_adjust, reb = adjustments.rebates, wo = adjustments.writeoffs;
+  var cch = adjustments.customer_charges, sch = adjustments.supplier_charges;
   Object.keys(adj).concat(Object.keys(reb), Object.keys(wo), Object.keys(cch), Object.keys(sch)).forEach(function (k) { row(k); });
   var timeline = Object.keys(tl).sort().map(function (k) {
     var r = tl[k]; ['sales', 'cost', 'returns', 'returns_profit', 'gross', 'expenses'].forEach(function (f) { r[f] = round_(r[f]); });
@@ -7200,13 +7285,26 @@ function profitReport_(p, user) {
     r.net = round_(r.gross - r.expenses + r.stock_adjust + r.rebates - r.writeoffs + r.customer_charges - r.supplier_charges); return r;
   });
 
-  // Per product: item profit before invoice discounts, less profit on returned units.
+  // Per product: allocate each invoice discount before subtracting returned profit.
   var sIds = indexBy_(sales), rIds = indexBy_(rets), pg = {};
   var prow = function (id, name, unit) { return pg[id] = pg[id] || { product_id: id, name: name, unit: unit || 'pcs', qty: 0, revenue: 0, cost: 0, returned_qty: 0, returns: 0, returns_profit: 0, profit: 0 }; };
   var saleItems = all_('SaleItems'), returnItems = all_('SalesReturnItems'), saleItemMap = indexBy_(saleItems);
   var saleCosts = reportItemCosts_(saleItems,sIds,'sale_id',function(s) { return s.cost; });
   var returnCosts = reportItemCosts_(returnItems,rIds,'return_id',function(r) { return round_(r.total-returnProfit_(r)); });
-  saleItems.forEach(function (i) { if (!sIds[i.sale_id]) return; var r = prow(i.product_id, i.name, i.unit), cost = saleCosts[i.id] || 0; r.qty += i.qty; r.revenue += i.total; r.cost += cost; r.profit += i.total - cost; });
+  var invoiceItems = {}, itemsProfit = 0;
+  saleItems.forEach(function (i) { if (sIds[i.sale_id]) (invoiceItems[i.sale_id] = invoiceItems[i.sale_id] || []).push(i); });
+  Object.keys(invoiceItems).forEach(function (id) {
+    var invoice = sIds[id], gross = 0, allocated = 0;
+    invoiceItems[id].forEach(function (i) {
+      gross += num_(i.total);
+      var through = invoice.subtotal > 0 ? round_(invoice.total * gross / invoice.subtotal) : 0;
+      var revenue = round_(through - allocated), cost = saleCosts[i.id] || 0;
+      allocated = through;
+      var r = prow(i.product_id, i.name, i.unit);
+      r.qty += i.qty; r.revenue += revenue; r.cost += cost; r.profit += revenue - cost;
+      itemsProfit += num_(i.total) - cost;
+    });
+  });
   returnItems.forEach(function (i) { if (!rIds[i.return_id]) return; var r = prow(i.product_id, i.name, (saleItemMap[i.sale_item_id] || {}).unit), cost = returnCosts[i.id] || 0; r.returned_qty += i.qty; r.returns += i.total; r.returns_profit += i.total - cost; r.profit -= i.total - cost; });
   var products = Object.keys(pg).map(function (k) {
     var r = pg[k]; ['revenue', 'cost', 'returns', 'returns_profit', 'profit'].forEach(function (f) { r[f] = round_(r[f]); });
@@ -7227,7 +7325,7 @@ function profitReport_(p, user) {
   var expenses = Object.keys(ec).map(function (k) { ec[k].amount = round_(ec[k].amount); return ec[k]; }).sort(function (a, b) { return b.amount - a.amount; });
 
   var summary = profitSummary_(from, to);
-  summary.items_profit = round_(sum_(products, function (r) { return r.profit + r.returns_profit; }));
+  summary.items_profit = round_(itemsProfit);
   return { from: from, to: to, group: group, summary: summary, timeline: timeline, products: products, staff: staff, expenses: expenses };
 }
 
@@ -7266,7 +7364,13 @@ function posPicks_(p, user) {
 function dashboard_(p, user) {
   var full = can_(user, 'reports'), showCost = can_(user, 'cost'), today = today_(), month = today.slice(0, 7), yesterday = addDays_(today, -1);
   var inP = { today: function (d) { return d === today; }, yesterday: function (d) { return d === yesterday; }, month: function (d) { return d.slice(0, 7) === month; }, total: function () { return true; } };
-  var sales = all_('Sales').filter(function (s) { return s.status === 'active' && (full || s.user_id === user.id); });
+  var salesById = indexBy_(all_('Sales'));
+  var sales = all_('Sales').filter(function (s) { return s.status === 'active' && profitSaleVisible_(s) && (full || s.user_id === user.id); });
+  var fixed = branchFixed_(user);
+  function visible(table, row) {
+    return row.status === 'active' && branchSees_(table, row.id) &&
+      (table !== 'SalesReturns' || profitReturnVisible_(row, salesById));
+  }
   var out = { limited: !full, user: user.name, date: today };
 
   function cards(period) {
@@ -7274,21 +7378,18 @@ function dashboard_(p, user) {
     var s = sales.filter(function (x) { return f(x.date); });
     var c = { sales: round_(sum_(s, function (x) { return x.total; })), invoices: s.length, due: round_(sum_(s, function (x) { return x.due; })) };
     if (!full) return c;
-    var sr = all_('SalesReturns').filter(function (x) { return x.status === 'active' && f(x.date); });
-    var pu = all_('Purchases').filter(function (x) { return x.status === 'active' && f(x.date); });
-    var pr = all_('PurchaseReturns').filter(function (x) { return x.status === 'active' && f(x.date); });
-    var ex = all_('Expenses').filter(function (x) { return x.status === 'active' && f(x.date); });
+    var sr = all_('SalesReturns').filter(function (x) { return visible('SalesReturns', x) && f(x.date); });
+    var pu = all_('Purchases').filter(function (x) { return visible('Purchases', x) && f(x.date); });
+    var pr = all_('PurchaseReturns').filter(function (x) { return visible('PurchaseReturns', x) && f(x.date); });
+    var ex = all_('Expenses').filter(function (x) { return visible('Expenses', x) && f(x.date); });
     c.sales_returns = round_(sum_(sr, function (x) { return x.total; }));
     c.purchases = round_(sum_(pu, function (x) { return x.total; }));
     c.purchase_returns = round_(sum_(pr, function (x) { return x.total; }));
     c.expenses = round_(sum_(ex, function (x) { return x.amount; }));
     if (showCost) {
       c.gross_profit = round_(sum_(s, function (x) { return x.profit; }) - sum_(sr, function (x) { return returnProfit_(x); }));
-      c.stock_adjust = period === 'total' ? stockAdjustValue_('', '') : period === 'today' ? stockAdjustValue_(today, today) : period === 'yesterday' ? stockAdjustValue_(yesterday, yesterday) : stockAdjustValue_(month + '-01', today);
-      c.rebates = period === 'total' ? rebateTotal_('', '') : period === 'today' ? rebateTotal_(today, today) : period === 'yesterday' ? rebateTotal_(yesterday, yesterday) : rebateTotal_(month + '-01', today);
-      c.writeoffs = period === 'total' ? writeoffTotal_('', '') : period === 'today' ? writeoffTotal_(today, today) : period === 'yesterday' ? writeoffTotal_(yesterday, yesterday) : writeoffTotal_(month + '-01', today);
       var cr = period === 'total' ? ['', ''] : period === 'today' ? [today, today] : period === 'yesterday' ? [yesterday, yesterday] : [month + '-01', today];
-      c.customer_charges = ledgerChargeTotal_('customer', cr[0], cr[1]); c.supplier_charges = ledgerChargeTotal_('supplier', cr[0], cr[1]);
+      Object.assign(c, reportAdjustments_(cr[0], cr[1]));
       c.net_profit = round_(c.gross_profit - c.expenses + c.stock_adjust + c.rebates - c.writeoffs + c.customer_charges - c.supplier_charges);
     }
     return c;
@@ -7309,7 +7410,7 @@ function dashboard_(p, user) {
     ['year', 'This year', y + '-01-01', today],
     ['last_year', 'Last year', (y - 1) + '-01-01', (y - 1) + '-12-31']
   ];
-  var act = function (t) { return full ? all_(t).filter(function (x) { return x.status === 'active'; }) : []; };
+  var act = function (t) { return full ? all_(t).filter(function (x) { return visible(t, x); }) : []; };
   var srAll = act('SalesReturns'), puAll = act('Purchases'), prAll = act('PurchaseReturns'), exAll = act('Expenses');
   out.periods = ranges.map(function (r) {
     var inR = function (x) { var d = String(x.date).slice(0, 10); return d >= r[2] && d <= r[3]; };
@@ -7363,7 +7464,8 @@ function dashboard_(p, user) {
   out.recent = sales.slice(-8).reverse().map(function (s) { return { id: s.id, invoice_no: s.invoice_no, customer_name: s.customer_name, total: s.total, due: s.due, date: s.date }; });
 
   var thDef = num_(getSetting_('low_stock_default', '5'));
-  var lowAll = all_('Products').filter(function (x) { return x.active && !isService_(x) && x.stock <= (x.low_stock > 0 ? x.low_stock : thDef); });
+  var products = fixed ? productsList_(user) : all_('Products');
+  var lowAll = products.filter(function (x) { return x.active && !isService_(x) && x.stock <= (x.low_stock > 0 ? x.low_stock : thDef); });
   out.low_stock_count = lowAll.length; // the list below shows the 40 lowest; the count is every low-stock product
   out.low_stock = lowAll
     .sort(function (a, b) { return a.stock - b.stock; }).slice(0, 40)
@@ -7374,15 +7476,15 @@ function dashboard_(p, user) {
   out.accounts = accs.map(function (a) { return { id: a.id, name: a.name, type: a.type, number: a.number, balance: a.balance }; });
   out.receivable = round_(sum_(customersList_(), function (c) { return c.balance > 0 ? c.balance : 0; }));
   out.payable = round_(sum_(suppliersList_(), function (c) { return c.balance > 0 ? c.balance : 0; }));
-  out.stock_value = showCost ? round_(sum_(all_('Products'), function (x) { return x.stock * x.cost_price; })) : undefined;
-  var goods = all_('Products').filter(function (x) { return x.active && !isService_(x); }), held = goods.filter(function (x) { return x.stock > 0; });
+  out.stock_value = showCost ? round_(sum_(products, function (x) { return x.stock * x.cost_price; })) : undefined;
+  var goods = products.filter(function (x) { return x.active && !isService_(x); }), held = goods.filter(function (x) { return x.stock > 0; });
   out.stock_summary = {
     products: goods.length, in_stock: held.length, out_of_stock: goods.length - held.length,
     sale_value: round_(sum_(held, function (x) { return x.stock * x.sale_price; })),
     unpriced: held.filter(function (x) { return !(x.sale_price > 0); }).length
   };
-  var stockRows = stockAnalysis_().rows.filter(function(r) { return r.active && r.stock > 0; });
-  out.product_summary = stockQuantitySummary_(stockRows);
+  var stockRows = (fixed ? [] : stockAnalysis_().rows).filter(function(r) { return r.active && r.stock > 0; });
+  if (!fixed) out.product_summary = stockQuantitySummary_(stockRows);
   if (showCost) {
     var costs = { age3: 0, age6: 0, age12: 0, expiring: 0, expired: 0 };
     var cut3 = stockMonthCutoff_(today, 3), cut6 = stockMonthCutoff_(today, 6), cut12 = stockMonthCutoff_(today, 12), soon = addDays_(today, 30);
@@ -7395,11 +7497,11 @@ function dashboard_(p, user) {
       else if (l.expiry && l.expiry <= soon) costs.expiring += cost;
     }); });
     Object.keys(costs).forEach(function (k) { costs[k] = round_(costs[k]); });
-    out.product_summary_cost = costs;
+    if (!fixed) out.product_summary_cost = costs;
     out.stock_summary.cost_value = round_(sum_(held, function (x) { return x.stock * x.cost_price; }));
     out.stock_summary.expected_profit = round_(out.stock_summary.sale_value - out.stock_summary.cost_value);
   }
-  var claims = all_('WarrantyClaims');
+  var claims = all_('WarrantyClaims').filter(function (c) { return !fixed || (salesById[c.sale_id] && branchSees_('Sales', c.sale_id)); });
   out.claims = {
     pending: claims.filter(function (c) { return c.status === 'Pending'; }).length,
     vendor: claims.filter(function (c) { return c.status === 'Sent to Vendor'; }).length,
@@ -7459,7 +7561,7 @@ function profitLoss_(p, user) {
   periods.forEach(function (per) {
     sums[per.key] = profitSummary_(per.from, per.to);
     all_('Expenses').forEach(function (e) {
-      if (e.status !== 'active' || !inRange_(e.date, per.from, per.to)) return;
+      if (e.status !== 'active' || !branchSees_('Expenses', e.id) || !inRange_(e.date, per.from, per.to)) return;
       var c = String(e.category || 'Other'); cats[c] = cats[c] || {}; cats[c][per.key] = round_((cats[c][per.key] || 0) + num_(e.amount));
     });
   });
@@ -7525,7 +7627,7 @@ function balanceSheet_(p, user) {
 function reports_(p, user) {
   var rep = reportsRaw_(p, user);
   if (can_(user, 'cost')) return rep;
-  var hidden = ['cost', 'profit', 'cost_price', 'wholesale_price', 'returns_cost', 'stock_adjust'];
+  var hidden = ['cost', 'profit', 'cost_price', 'wholesale_price', 'returns_cost', 'stock_adjust', 'rebates', 'writeoffs', 'customer_charges', 'supplier_charges'];
   var clean = function (o) { if (!o || typeof o !== 'object') return o; var c = Object.assign({}, o); hidden.forEach(function (k) { delete c[k]; }); return c; };
   rep.columns = (rep.columns || []).filter(function (c) { return hidden.indexOf(c.key) < 0; });
   rep.rows = (rep.rows || []).map(clean);
@@ -8087,10 +8189,15 @@ function reportsRaw_(p, user) {
     all_('Purchases').forEach(function (s) { if (s.status === 'active' && inRange_(s.date, from, to) && branchSees_('Purchases', s.id)) d_(s.date).purchases += s.total; });
     all_('PurchaseReturns').forEach(function (s) { if (s.status === 'active' && inRange_(s.date, from, to) && branchSees_('PurchaseReturns', s.id)) d_(s.date).purchase_returns += s.total; });
     all_('Expenses').forEach(function (s) { if (s.status === 'active' && inRange_(s.date, from, to) && branchSees_('Expenses', s.id)) { var r = d_(s.date); r.expenses += s.amount; r.profit -= s.amount; } });
-    var adjD = stockAdjustValue_(from, to, function (d) { return d; });
-    Object.keys(adjD).forEach(function (k) { var r = d_(k); r.stock_adjust = round_(adjD[k]); r.profit += adjD[k]; });
+    var adjustments = reportAdjustments_(from, to, function (d) { return d; });
+    ['stock_adjust', 'rebates', 'writeoffs', 'customer_charges', 'supplier_charges'].forEach(function (kind) {
+      var values = adjustments[kind], sign = kind === 'writeoffs' || kind === 'supplier_charges' ? -1 : 1;
+      Object.keys(values).forEach(function (date) { var r = d_(date); r[kind] = round_(values[date]); r.profit += sign * r[kind]; });
+    });
     var dc = [col_('date', 'Date', 'date'), col_('invoices', 'Invoices', 'num', 1), col_('items', 'Items Sold', 'text', 1), col_('sales', 'Sales', 'money', 1), col_('returns', 'Sales Returns', 'money', 1), col_('purchases', 'Purchases', 'money', 1), col_('purchase_returns', 'Purchase Returns', 'money', 1), col_('expenses', 'Expenses', 'money', 1)];
-    if (cost) dc.push(col_('stock_adjust', 'Stock adjust', 'money', 1), col_('profit', 'Net Profit', 'money', 1));
+    if (cost) dc.push(col_('stock_adjust', 'Stock adjust', 'money', 1), col_('rebates', 'Supplier rebates', 'money', 1),
+      col_('writeoffs', 'Dues written off', 'money', 1), col_('customer_charges', 'Customer charges', 'money', 1),
+      col_('supplier_charges', 'Supplier charges', 'money', 1), col_('profit', 'Net Profit', 'money', 1));
     var dailyUnits = {}, dailyRows = Object.keys(days).sort().map(function(k) { var r=days[k]; r.items=unitQuantityText_(r.item_quantities); Object.keys(r.item_quantities).forEach(function(u) { dailyUnits[u]=(dailyUnits[u] || 0)+r.item_quantities[u]; }); return r; });
     var dailyReport = finishReport_('Daily Counts' + period,dc,dailyRows); dailyReport.totals.items=unitQuantityText_(dailyUnits); return dailyReport;
   }
@@ -8463,7 +8570,8 @@ backupSchedule_ = function(p,user) {
   if(!isOwner_(user))fail_('Only the Administrator account can change automatic backups');
   var keep=Math.round(num_(p.keep_days));if(keep<1||keep>365)fail_('Keep backups for 1 to 365 days');
   var enabled=p.enabled===true||p.enabled==='true';
-  setSetting_('backup_daily',String(enabled));setSetting_('backup_keep_days',String(keep));
+  if (enabled) fail_('Scheduled snapshots are disabled on this backend. Download and store a backup outside the project.');
+  setSetting_('backup_daily','false');setSetting_('backup_keep_days',String(keep));
   audit_(user,'backup_schedule',{enabled:enabled,keep_days:keep,provider:'supabase'});
   return {enabled:enabled,keep_days:keep,folder:'Supabase private snapshots',last:getSetting_('last_daily_backup_at','')};
 };
@@ -8472,7 +8580,7 @@ var originalDatabaseInfo_ = ROUTES['database.info'].fn;
 ROUTES['database.info'].fn = function(p,user) {
   var info=originalDatabaseInfo_(p,user);
   info.backend='supabase';info.offline=false;info.backup_folder='Supabase private snapshots';
-  info.daily_backup=getSetting_('backup_daily','true')==='true';
+  info.daily_backup=false;
   return info;
 };
 ROUTES['sms.test'].fn = function(p) { return sendSms_(p.phone,'Test SMS from '+getSetting_('shop_name')+' - Karvio'); };

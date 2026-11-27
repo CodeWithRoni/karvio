@@ -38,6 +38,7 @@ jobs:
           path: frontend/dist
           include-hidden-files: true
   deploy-backend:
+    if: github.ref == 'refs/heads/main'
     needs: build-and-test
     runs-on: ubuntu-latest
     env:
@@ -75,6 +76,7 @@ jobs:
           echo "::error::Expected backend revision not confirmed. Frontend publication is blocked."
           exit 1
   publish-frontend:
+    if: github.ref == 'refs/heads/main'
     needs: [build-and-test, deploy-backend]
     runs-on: ubuntu-latest
     steps:

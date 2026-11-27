@@ -95,3 +95,14 @@ api.setToken((await q('login', {username: 'admin', password: 'harness-password-1
 eq((await q('products.list', {}, {branch: uttara})).find((p) => p.id === tea.id).stock, before, 'restored: Uttara has its stock back');
 
 console.log(`Features 12: ${checks} checks passed (branches).`);
+
+// A fixed-branch staff member with reporting privileges sees branch-specific statistics.
+await q('rolePerms.save', {sales: ['reports', 'pos', 'cost', 'sales.all']});
+api.setToken((await q('login', {username: 'uttara1', password: 'uttara-password-1'})).token);
+const reportOptions = {from: boot.serverToday, to: boot.serverToday};
+const branchDashboard = await q('dashboard');
+const branchProfit = await q('profit.report', reportOptions);
+const branchInvoices = await q('reports', {type: 'sales', ...reportOptions});
+eq(branchDashboard.today.sales, branchInvoices.totals.total, 'dashboard sales match the assigned branch sales report');
+eq(branchProfit.summary.sales, branchInvoices.totals.total, 'Profit only includes the assigned branch sales');
+api.setToken(admin);
