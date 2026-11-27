@@ -2,11 +2,13 @@ name: Deploy Karvio to GitHub Pages
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 concurrency:
-  group: pages
+  group: ${{ github.event_name == 'pull_request' && format('karvio-pr-{0}', github.event.pull_request.number) || 'pages' }}
   cancel-in-progress: false
 jobs:
   build-and-test:
@@ -38,6 +40,7 @@ jobs:
           path: frontend/dist
           include-hidden-files: true
   deploy-backend:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: build-and-test
     runs-on: ubuntu-latest
     env:
@@ -75,6 +78,9 @@ jobs:
           echo "::error::Expected backend revision not confirmed. Frontend publication is blocked."
           exit 1
   publish-frontend:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    permissions:
+      contents: write
     needs: [build-and-test, deploy-backend]
     runs-on: ubuntu-latest
     steps:
