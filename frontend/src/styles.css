@@ -2476,3 +2476,5 @@ td.bs-total { font-weight: 700; }
 .db-auto code, .db-card .errbox code { font-size: 12px; background: var(--panel-2); padding: 1px 5px; border-radius: 5px; }
 .db-uri { display: inline-block; word-break: break-all; margin-top: 4px; }
 .db-plain { margin: 8px 0 0; font-size: 12.5px; }
+.db-time { align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.db-time .field { flex: 0 1 280px; margin: 0; }

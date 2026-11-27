@@ -161,9 +161,34 @@ assert.equal((await owner.raw('backup.drive.tick', {nonce: 'x'.repeat(64)})).ok,
 assert.equal((await owner.raw('backup.drive.tick', call.payload)).ok, true);
 assert.equal(google.uploads.length, 2);
 assert.equal((await owner.raw('backup.drive.tick', call.payload)).ok, false, 'a code works once');
-const job = (await db.query("select command from cron.job where jobname='karvio-drive-backup'")).rows[0];
-assert.ok(job, 'nightly job scheduled');
-assert.equal((await db.query("select schedule from cron.job where jobname='karvio-drive-backup'")).rows[0].schedule, '0 18 * * *', '00:00 Asia/Dhaka');
+assert.equal((await db.query("select schedule from cron.job where jobname='karvio-drive-backup'")).rows[0].schedule, '*/5 * * * *', 'checked every 5 minutes');
+const today = new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Dhaka'}).format(new Date());
+const driveState = async () => (await db.query("select value::jsonb as v from karvio_private.config where key='drive_backup'")).rows[0].v;
+assert.equal((await driveState()).auto_date, today, "today's automatic backup is recorded");
+st = await owner.q('backup.drive.status');
+assert.ok(!st.next_at.startsWith(today) && st.next_at.endsWith('T00:00:00'), 'next automatic backup is tomorrow at the set time');
+const ticks = async () => { await db.query('delete from net.calls'); await db.query('select karvio_private.drive_tick()'); return Number((await db.query('select count(*) from net.calls')).rows[0].count); };
+assert.equal(await ticks(), 0, 'one automatic backup a day');
+// The owner sets the time; a wrong time is refused.
+for (const bad of ['24:00', '7:5', '', 'noon']) assert.equal((await owner.raw('backup.drive.schedule', {time: bad})).ok, false);
+st = await owner.q('backup.drive.schedule', {time: '14:30'});
+assert.equal(st.time, '14:30');
+assert.equal((await driveState()).time, '14:30');
+const deniedTime = await staff.raw('backup.drive.schedule', {time: '10:00'});
+assert.equal(deniedTime.ok, false);
+// Not saved today yet: due only once the set time has come (Asia/Dhaka), asked again after 45 minutes at most 3 times.
+const localNow = new Intl.DateTimeFormat('en-GB', {timeZone: 'Asia/Dhaka', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'}).format(new Date());
+await db.query("update karvio_private.config set value=(value::jsonb-'auto_date')::text where key='drive_backup'");
+await db.query("delete from karvio_private.config where key='drive_tick'");
+await owner.q('backup.drive.schedule', {time: '00:00'});
+assert.equal(await ticks(), 1, 'due: set time has passed today');
+assert.equal(await ticks(), 0, 'not asked again within 45 minutes');
+await db.query(`update karvio_private.config set value=jsonb_set(value::jsonb,'{at}',to_jsonb(now()-interval '1 hour'))::text where key='drive_tick'`);
+assert.equal(await ticks(), 1, 'asked again later the same day when no backup arrived');
+await db.query(`update karvio_private.config set value=jsonb_set(jsonb_set(value::jsonb,'{at}',to_jsonb(now()-interval '1 hour')),'{tries}','3')::text where key='drive_tick'`);
+assert.equal(await ticks(), 0, 'at most 3 tries a day');
+await db.query("delete from karvio_private.config where key='drive_tick'");
+if (localNow < '23:59') { await owner.q('backup.drive.schedule', {time: '23:59'}); assert.equal(await ticks(), 0, 'not before the set time'); await owner.q('backup.drive.schedule', {time: '00:00'}); }
 
 // Keep the newest 30.
 for (let i = 0; i < KEEP_BACKUPS + 2; i++) await owner.q('backup.drive.run');

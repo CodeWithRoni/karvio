@@ -13,6 +13,8 @@ const RESTORE_WORD = 'RESTORE';
 const label = (name) => name.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^(\w)(.*)$/, (m, a, b) => a + b.toLowerCase());
 const size = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 const daysSince = (ts) => (ts ? Math.floor((Date.now() - new Date(ts.replace(' ', 'T') + '+06:00').getTime()) / 864e5) : null);
+/** 14:30 → 2:30 PM (Bangladesh time, as set for the automatic backup). */
+export const clock12 = (t = '00:00') => { const [h, m] = String(t).split(':').map(Number); return `${h % 12 || 12}:${String(m || 0).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
 const MAIN = ['Products', 'Customers', 'Suppliers', 'Sales', 'Purchases', 'SalesReturns', 'Expenses', 'Users'];
 
 /** Same checksum as the server: SHA-256 of "karvio-backup-v1|" + JSON of the tables, in hex. */
@@ -39,7 +41,7 @@ export function DatabaseOverview({ info, drive }) {
           <small>{age === null ? 'Download a backup and keep it safe.' : age === 0 ? 'Today' : `${age} day${age === 1 ? '' : 's'} ago${age > 7 ? ' — time for a new backup' : ''}`}</small>
         </div>
         {d.backend === 'supabase' && (drive?.connected && !drive.needs_reconnect
-          ? <div className={`db-stamp ${drive.last?.status === 'failed' ? 'warn' : 'ok'}`}><span>Scheduled backups</span><b>Google Drive · 12:00 AM daily</b><small>{drive.last ? (drive.last.status === 'ok' ? `Last saved ${fdatetime(drive.last.at)}` : `Last try failed ${fdatetime(drive.last.at)}`) : `First backup ${fdatetime(drive.next_at)}`}</small></div>
+          ? <div className={`db-stamp ${drive.last?.status === 'failed' ? 'warn' : 'ok'}`}><span>Scheduled backups</span><b>Google Drive · {clock12(drive.time)} daily</b><small>{drive.last ? (drive.last.status === 'ok' ? `Last saved ${fdatetime(drive.last.at)}` : `Last try failed ${fdatetime(drive.last.at)}`) : `First backup ${fdatetime(drive.next_at)}`}</small></div>
           : <div className="db-stamp"><span>Scheduled backups</span><b>Off</b><small>{drive ? 'Connect Google Drive below for a nightly backup.' : 'Backup exports are available in this tab.'}</small></div>)}
         <div className="db-stamp"><span>Last restore</span><b>{d.last_restore ? fdatetime(d.last_restore) : '—'}</b><small>{d.last_restore ? 'Data was loaded from a backup file' : 'Not restored yet'}</small></div>
       </div>
@@ -188,12 +190,14 @@ export function DatabaseTab({ Reset }) {
   );
 }
 
-/** Automatic backup: the owner connects their own Google Drive once; every night at 12:00 AM the server saves an encrypted backup there. */
+/** Automatic backup: the owner connects their own Google Drive once; every day at the time they set the server saves an encrypted backup there. */
 export function AutoBackup({ q, onChanged }) {
   const d = q.data;
   const [busy, run] = useAction();
   const [waiting, setWaiting] = useState(false);
   const [confirmUI, ask] = useConfirm();
+  const [time, setTime] = useState('');
+  useEffect(() => { if (d?.time) setTime(d.time); }, [d?.time]);
   const timer = useRef(null);
   useEffect(() => () => clearInterval(timer.current), []);
   // The Google window finishes on the server; check until the account shows up (at most 10 minutes).
@@ -212,6 +216,11 @@ export function AutoBackup({ q, onChanged }) {
     if (popup && !popup.closed) popup.location.href = r.url; else window.location.href = r.url;
     setWaiting(true);
   };
+  const saveTime = async () => {
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return useStore.getState().toast('Choose a backup time', 'err');
+    try { await run(() => api('backup.drive.schedule', { time }), `Daily backup time set to ${clock12(time)}`); } catch { return; }
+    onChanged();
+  };
   const now = async () => { try { await run(() => api('backup.drive.run', {}), 'Backup saved to Google Drive'); } catch { /* shown */ } onChanged(); };
   const disconnect = async () => {
     if (!(await ask({ title: 'Disconnect Google Drive?', message: 'Nightly backups stop. Backups already in your Google Drive stay there.', confirmLabel: 'Disconnect' }))) return;
@@ -223,7 +232,7 @@ export function AutoBackup({ q, onChanged }) {
     <div className="card form db-card db-auto">
       <div className="wide db-card-head"><span className="db-ic aqua" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 8.5a4 4 0 0 1-.5 9.5H7z" /><path d="M12 11v6" /><path d="m9.5 13.5 2.5-2.5 2.5 2.5" /></svg></span><h2>Automatic Backup</h2>
         {d?.connected && !d.needs_reconnect && <span className="db-badge ok">On · Google Drive</span>}</div>
-      <p className="wide muted" style={{ margin: 0 }}>Every night at 12:00 AM an encrypted backup of the whole shop is saved to your own Google Drive, in the “Karvio Backups” folder. The newest {d?.keep || 30} are kept. Karvio can only see the files it saves there.</p>
+      <p className="wide muted" style={{ margin: 0 }}>Every day at the time you set{d?.time ? ` (now ${clock12(d.time)})` : ''} an encrypted backup of the whole shop is saved to your own Google Drive, in the “Karvio Backups” folder. The newest {d?.keep || 30} are kept. Karvio can only see the files it saves there.</p>
       {q.loading && !d && <div className="wide"><Loading label="Checking Google Drive" /></div>}
       <ErrorBox error={q.error} onRetry={q.reload} />
       {d && !d.configured && <div className="wide note" role="note">
@@ -234,7 +243,13 @@ export function AutoBackup({ q, onChanged }) {
         <div className={`db-stamp ${d.needs_reconnect ? 'warn' : 'ok'}`}><span>Google account</span><b>{d.email || 'Connected'}</b><small>{d.needs_reconnect ? 'Access was removed — connect again' : `Folder: ${d.folder || 'Karvio Backups'}`}</small></div>
         <div className={`db-stamp ${last?.status === 'failed' ? 'warn' : last ? 'ok' : ''}`}><span>Last backup</span><b>{last ? fdatetime(last.at) : 'Not yet'}</b>
           <small>{!last ? 'The first one is saved tonight.' : last.status === 'ok' ? `${last.file} · ${size(last.bytes || 0)}` : last.error}</small></div>
-        <div className="db-stamp"><span>Next backup</span><b>{d.next_at ? fdatetime(d.next_at) : '—'}</b><small>{d.running ? 'A backup is running now…' : 'Every night at 12:00 AM'}</small></div>
+        <div className="db-stamp"><span>Next backup</span><b>{d.next_at ? fdatetime(d.next_at) : '—'}</b><small>{d.running ? 'A backup is running now…' : d.due_now ? 'Due now — starts within 5 minutes' : `Every day at ${clock12(d.time)}`}</small></div>
+      </div>}
+      {d?.configured && d.connected && !d.needs_reconnect && <div className="wide row db-time">
+        <Field label="Daily backup time (Bangladesh time)" hint="The backup starts within 5 minutes of this time. If the shop is offline then, it is tried again later the same day.">
+          <input type="time" step="60" value={time} onChange={(e) => setTime(e.target.value)} aria-label="Daily backup time" />
+        </Field>
+        <Btn busy={busy} disabled={!time || time === d.time} onClick={saveTime}>Save time</Btn>
       </div>}
       {waiting && <p className="wide muted" role="status">Finish signing in to Google in the window that opened. This card updates by itself.</p>}
       {d?.configured && <div className="wide row end db-card-foot">

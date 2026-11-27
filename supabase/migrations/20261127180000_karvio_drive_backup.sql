@@ -1,5 +1,6 @@
 -- Automatic backup to the owner's Google Drive (Settings → Database → Automatic backup).
--- Every night at 00:00 Asia/Dhaka, pg_cron asks the Edge function to make an encrypted backup and upload it.
+-- Once a day, at the time the owner chose (Asia/Dhaka, 12:00 AM unless changed), pg_cron asks the Edge function
+-- to make an encrypted backup and upload it. The scheduler checks every 5 minutes whether today's backup is due.
 -- As with the daily summary SMS, each call carries a one-time code (stored only as a hash) that the Edge
 -- function must redeem first. The Google sign-in is kept in karvio_private.config, sealed by the Edge function
 -- with KARVIO_BACKUP_KEY; it is never part of a backup and never sent to a browser.
@@ -90,22 +91,30 @@ begin
  return true;
 end $$;
 
--- pg_cron (database owner): when Drive is connected, mint a code and ask the Edge function to back up.
+-- pg_cron (database owner), every 5 minutes: when Drive is connected and today's backup time has come
+-- (and no automatic backup was saved today), mint a code and ask the Edge function to back up.
+-- If the Edge function does not answer, it is asked again after 45 minutes, at most 3 times a day.
 create function karvio_private.drive_tick() returns void language plpgsql security invoker set search_path='' as $$
-declare url text; state jsonb; nonce text;
+declare url text; state jsonb; tick jsonb; nonce text; local timestamp:=now() at time zone 'Asia/Dhaka'; today text; due time;
 begin
  select value::jsonb into state from karvio_private.config where key='drive_backup';
- if state is null or coalesce(state->>'refresh','')='' or coalesce((state->>'enabled')::boolean,true)=false then return; end if;
+ if state is null or coalesce(state->>'refresh','')='' or coalesce((state->>'enabled')::boolean,true)=false or coalesce((state->>'needs_reconnect')::boolean,false) then return; end if;
+ today:=to_char(local,'YYYY-MM-DD');
+ due:=case when coalesce(state->>'time','') ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' then (state->>'time')::time else '00:00'::time end;
+ if local::time<due or state->>'auto_date'=today then return; end if;
+ select value::jsonb into tick from karvio_private.config where key='drive_tick';
+ if tick->>'date'=today and (coalesce((tick->>'tries')::int,0)>=3 or (tick->>'at')::timestamptz>now()-interval '45 minutes') then return; end if;
  select value into url from karvio_private.config where key='edge_endpoint';
  if url is null then return; end if;
+ insert into karvio_private.config(key,value,updated_at) values('drive_tick',jsonb_build_object('date',today,'at',now(),'tries',case when tick->>'date'=today then coalesce((tick->>'tries')::int,0)+1 else 1 end)::text,now())
+ on conflict(key) do update set value=excluded.value,updated_at=now();
  nonce:=replace(gen_random_uuid()::text,'-','')||replace(gen_random_uuid()::text,'-','');
  insert into karvio_private.cron_nonces(nonce_hash,expires_at) values(encode(sha256(convert_to(nonce,'UTF8')),'hex'),now()+interval '5 minutes');
  perform net.http_post(url := url, body := jsonb_build_object('action','backup.drive.tick','payload',jsonb_build_object('nonce',nonce)),
    headers := jsonb_build_object('Content-Type','application/json'), timeout_milliseconds := 20000);
 end $$;
 revoke all on function karvio_private.drive_tick() from public, anon, authenticated;
--- 18:00 UTC = 00:00 Asia/Dhaka.
-select cron.schedule('karvio-drive-backup','0 18 * * *','select karvio_private.drive_tick();');
+select cron.schedule('karvio-drive-backup','*/5 * * * *','select karvio_private.drive_tick();');
 
 do $$ declare f text; begin
  foreach f in array array['karvio_drive_state()','karvio_drive_state_save(jsonb)','karvio_oauth_state_mint()','karvio_oauth_state_claim(text)',

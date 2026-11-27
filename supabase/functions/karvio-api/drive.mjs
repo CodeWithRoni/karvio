@@ -1,6 +1,7 @@
 // Automatic backup to the owner's Google Drive (Settings → Database → Automatic backup).
 // The owner signs in with Google once; Karvio may then only see the files it creates itself (drive.file).
-// Every night at 00:00 Asia/Dhaka (pg_cron → backup.drive.tick) and on "Back up now", the server makes the
+// Once a day at the time the owner sets (Asia/Dhaka, 12:00 AM unless changed; pg_cron → backup.drive.tick) and on
+// "Back up now", the server makes the
 // same backup file as Download Backup, encrypted with KARVIO_BACKUP_KEY, and streams it into a
 // "Karvio Backups" folder. The newest 30 backups are kept; older ones go to the Drive bin.
 import {createHash,randomUUID} from 'node:crypto';
@@ -19,8 +20,16 @@ const dhaka=(date=new Date())=>{
  const p=Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Dhaka',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(date).map(x=>[x.type,x.value]));
  return {date:`${p.year}-${p.month}-${p.day}`,time:`${p.hour}:${p.minute}`,stamp:`${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}`};
 };
-/** The next 00:00 in Asia/Dhaka, as the shop's local date-time. */
-export function nextRun(now=new Date()){const d=dhaka(new Date(now.getTime()+864e5));return `${d.date}T00:00:00`;}
+export const DEFAULT_TIME='00:00';
+export const validTime=t=>typeof t==='string'&&/^([01]\d|2[0-3]):[0-5]\d$/.test(t);
+const timeOf=state=>validTime(state?.time)?state.time:DEFAULT_TIME;
+/** When the next automatic backup runs, as the shop's local date-time. Once today's backup is saved: tomorrow.
+ * Not yet saved today: today at the set time (if that time has passed, it runs within a few minutes). */
+export function nextRun(state,now=new Date()){
+ const today=dhaka(now),time=timeOf(state);
+ const day=state?.auto_date===today.date?dhaka(new Date(now.getTime()+864e5)).date:today.date;
+ return {at:`${day}T${time}:00`,due:day===today.date&&today.time>=time};
+}
 
 /** What is still missing before the owner can connect Google Drive. */
 export function missingSettings(cfg){
@@ -30,7 +39,8 @@ function statusOf(state,cfg){
  const missing=missingSettings(cfg);
  return {configured:!missing.length,missing,redirect_uri:cfg.redirectUri||'',encrypted:!!cfg.backupKey,
   connected:!!state?.refresh,email:state?.email||'',folder:state?.folder_name||'',connected_at:state?.connected_at||'',
-  needs_reconnect:!!state?.needs_reconnect,keep:KEEP_BACKUPS,next_at:state?.refresh&&!state?.needs_reconnect?nextRun():'',
+  needs_reconnect:!!state?.needs_reconnect,keep:KEEP_BACKUPS,time:timeOf(state),
+  ...(state?.refresh&&!state?.needs_reconnect?(n=>({next_at:n.at,due_now:n.due}))(nextRun(state)):{next_at:'',due_now:false}),
   running:!!(state?.running_at&&Date.now()-Date.parse(state.running_at)<15*60000),last:state?.last||null};
 }
 
@@ -154,7 +164,8 @@ export async function runDriveBackup(rpc,cfg,{manual=false}={}){
  }
  // Disconnected (or reconnected) while this ran: keep what the owner did, only report the result.
  const fresh=await rpc('karvio_drive_state',{}).catch(()=>null);
- if(fresh?.refresh===state.refresh)await rpc('karvio_drive_state_save',{state:{...fresh,folder_id:state.folder_id,running_at:null,last,...(reconnect?{needs_reconnect:true}:{})}}).catch(()=>{});
+ // The automatic backup of the day is done only when it really reached Drive (a manual one does not count).
+ if(fresh?.refresh===state.refresh)await rpc('karvio_drive_state_save',{state:{...fresh,folder_id:state.folder_id,running_at:null,last,...(reconnect?{needs_reconnect:true}:{}),...(last.status==='ok'&&!manual?{auto_date:dhaka(now).date}:{})}}).catch(()=>{});
  return last;
 }
 
@@ -176,6 +187,14 @@ export async function driveRequest(body,rpc,cfg){
     if(last.status!=='ok')return {ok:false,error:last.error||'Backup failed'};
     return {ok:true,data:statusOf(await rpc('karvio_drive_state',{}),cfg)};
    }
+   case 'backup.drive.schedule':{
+    const time=body.payload?.time;
+    if(!validTime(time))fail('Choose a backup time, for example 00:00 or 14:30');
+    const state=await rpc('karvio_drive_state',{});
+    if(!state?.refresh)fail('Connect Google Drive first');
+    await rpc('karvio_drive_state_save',{state:{...state,time}});
+    return {ok:true,data:statusOf(await rpc('karvio_drive_state',{}),cfg)};
+   }
    case 'backup.drive.disconnect':{
     const state=await rpc('karvio_drive_state',{});
     if(state?.refresh&&cfg.backupKey){try{await google(cfg.fetch,'https://oauth2.googleapis.com/revoke',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:form({token:openSecret(cfg.backupKey,'drive-refresh',state.refresh)})},{timeout:15000});}catch{}}
@@ -194,6 +213,7 @@ export async function driveRequest(body,rpc,cfg){
 }
 
 /* ---------------- Google sign-in window comes back here (GET ?code=…&state=…) ---------------- */
+const clock=t=>{const [h,m]=t.split(':').map(Number);return `${h%12||12}:${String(m).padStart(2,'0')} ${h<12?'AM':'PM'}`;};
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function page(title,text,ok){
  const html=`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title>
@@ -220,8 +240,8 @@ export async function driveCallback(url,rpc,cfg){
   if(!refresh)return page('Not connected','Google did not give Karvio lasting access. Open your Google Account → Security → Third-party connections, remove Karvio, then connect again.',false);
   const sameAccount=prev?.email===email;
   const folder=await ensureFolder(cfg,t.access_token,sameAccount?prev.folder_id:'');
-  await rpc('karvio_drive_state_save',{state:{refresh:sealSecret(cfg.backupKey,'drive-refresh',refresh),email,folder_id:folder,folder_name:FOLDER_NAME,enabled:true,connected_at:dhaka().stamp,last:sameAccount?prev.last||null:null}});
-  return page('Google Drive connected',`Backups will be saved every night at 12:00 AM in the "${FOLDER_NAME}" folder of ${email||'your Google Drive'}.`,true);
+  await rpc('karvio_drive_state_save',{state:{refresh:sealSecret(cfg.backupKey,'drive-refresh',refresh),email,folder_id:folder,folder_name:FOLDER_NAME,enabled:true,connected_at:dhaka().stamp,time:timeOf(prev),...(sameAccount&&prev.auto_date?{auto_date:prev.auto_date}:{}),last:sameAccount?prev.last||null:null}});
+  return page('Google Drive connected',`Backups will be saved every day at ${clock(timeOf(prev))} in the "${FOLDER_NAME}" folder of ${email||'your Google Drive'}. You can change the time in Karvio.`,true);
  }catch(error){
   return page('Not connected',error instanceof GoogleError?error.message:'Google Drive could not be connected. Try again.',false);
  }
