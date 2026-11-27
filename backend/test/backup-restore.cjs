@@ -73,6 +73,7 @@ copies.length = 0;
 // every bad request is refused and changes nothing
 const before = JSON.stringify(strip(Q('database.export', {})));
 const refuse = (payload, re, msg) => { truthy(re.test(QF('database.restore', { password: 'admin123', confirm: 'RESTORE', backup_text: file, ...payload })), msg); };
+refuse({ password: 'nope' }, /Incorrect password/, 'wrong password');
 refuse({ confirm: 'restore it' }, /Type RESTORE/, 'confirmation word');
 refuse({ backup_text: 'hello' }, /not a Karvio database backup/, 'not JSON');
 refuse({ backup_text: JSON.stringify({ format: 'Other app' }) }, /not a Karvio database backup/, 'wrong format');

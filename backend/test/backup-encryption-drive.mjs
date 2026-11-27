@@ -84,7 +84,7 @@ assert.ok(isEncryptedManifest(await inspectStreamingBackup(file)));
 
 // ---- 2. It restores on the same server, and the data comes back exactly.
 await api.q('customer.save', {name: 'Added after the backup'});
-const restored = await restoreStreamBackup(file, {call: (a, p) => api.q(a, p), credentials: {password: '', confirm: 'RESTORE'}, storage: storage(), key: 'r1', pace: 0, wait: worker});
+const restored = await restoreStreamBackup(file, {call: (a, p) => api.q(a, p), credentials: {password: PASSWORD, confirm: 'RESTORE'}, storage: storage(), key: 'r1', pace: 0, wait: worker});
 assert.equal(restored.signed_out, true);
 assert.equal(await fingerprint(), before, 'encrypted backup restores the same customers');
 
@@ -92,13 +92,13 @@ assert.equal(await fingerprint(), before, 'encrypted backup restores the same cu
 const api2 = await client(KEY);
 const tamper = (i, fn) => { const copy = [...lines]; const part = JSON.parse(copy[i]); fn(part); copy[i] = JSON.stringify(part) + '\n'; return new File(copy, 'edited.karvio', {lastModified: 2}); };
 const flip = (s) => { const at = s.length - 10; return s.slice(0, at) + (s[at] === 'A' ? 'B' : 'A') + s.slice(at + 1); };
-await assert.rejects(restoreStreamBackup(tamper(1, p => { p.payload = flip(p.payload); }), {call: (a, p) => api2.q(a, p), credentials: {password: '', confirm: 'RESTORE'}, storage: storage(), key: 'r2', pace: 0, wait: worker}), /damaged/);
+await assert.rejects(restoreStreamBackup(tamper(1, p => { p.payload = flip(p.payload); }), {call: (a, p) => api2.q(a, p), credentials: {password: PASSWORD, confirm: 'RESTORE'}, storage: storage(), key: 'r2', pace: 0, wait: worker}), /damaged/);
 // A page that was re-sealed by someone else (checksum fixed) still fails the server's seal check.
-await assert.rejects(restoreStreamBackup(tamper(1, p => { const forged = sealPage(OTHER, header.encryption.salt, p.table, '[]'); p.payload = forged.payload; p.enc_sha256 = forged.enc_sha256; }), {call: (a, p) => api2.q(a, p), credentials: {password: '', confirm: 'RESTORE'}, storage: storage(), key: 'r3', pace: 0, wait: worker}), /could not be decrypted/);
+await assert.rejects(restoreStreamBackup(tamper(1, p => { const forged = sealPage(OTHER, header.encryption.salt, p.table, '[]'); p.payload = forged.payload; p.enc_sha256 = forged.enc_sha256; }), {call: (a, p) => api2.q(a, p), credentials: {password: PASSWORD, confirm: 'RESTORE'}, storage: storage(), key: 'r3', pace: 0, wait: worker}), /could not be decrypted/);
 const other = await client(OTHER);
-await assert.rejects(restoreStreamBackup(file, {call: (a, p) => other.q(a, p), credentials: {password: '', confirm: 'RESTORE'}, storage: storage(), key: 'r4', pace: 0, wait: worker}), /different backup key/);
+await assert.rejects(restoreStreamBackup(file, {call: (a, p) => other.q(a, p), credentials: {password: PASSWORD, confirm: 'RESTORE'}, storage: storage(), key: 'r4', pace: 0, wait: worker}), /different backup key/);
 const keyless = await client('');
-await assert.rejects(restoreStreamBackup(file, {call: (a, p) => keyless.q(a, p), credentials: {password: '', confirm: 'RESTORE'}, storage: storage(), key: 'r5', pace: 0, wait: worker}), /KARVIO_BACKUP_KEY/);
+await assert.rejects(restoreStreamBackup(file, {call: (a, p) => keyless.q(a, p), credentials: {password: PASSWORD, confirm: 'RESTORE'}, storage: storage(), key: 'r5', pace: 0, wait: worker}), /KARVIO_BACKUP_KEY/);
 assert.equal(await fingerprint(), before, 'refused restores change nothing');
 assert.throws(() => openPage(KEY, 'salt', 'Customers', sealPage(KEY, 'salt', 'Sales', '[1]').payload, 'x'), /could not be decrypted/, 'a page cannot be moved to another table');
 
@@ -106,7 +106,7 @@ assert.throws(() => openPage(KEY, 'salt', 'Customers', sealPage(KEY, 'salt', 'Sa
 const plain = await download(keyless);
 assert.ok(!isEncryptedManifest(JSON.parse(plain[0])));
 assert.ok(plain.join('').includes('Secret Customer Rahim'));
-const plainBack = await restoreStreamBackup(new File(plain, 'old.karvio.gz'.replace('.gz', '.jsonl'), {lastModified: 3}), {call: (a, p) => api2.q(a, p), credentials: {password: '', confirm: 'RESTORE'}, storage: storage(), key: 'r6', pace: 0, wait: worker});
+const plainBack = await restoreStreamBackup(new File(plain, 'old.karvio.gz'.replace('.gz', '.jsonl'), {lastModified: 3}), {call: (a, p) => api2.q(a, p), credentials: {password: PASSWORD, confirm: 'RESTORE'}, storage: storage(), key: 'r6', pace: 0, wait: worker});
 assert.equal(plainBack.signed_out, true, 'a plain (older) backup still restores on a server with the key');
 assert.equal(await fingerprint(), before);
 
@@ -145,7 +145,7 @@ assert.ok(!up.text.includes('Secret Customer Rahim'), 'the Drive copy is encrypt
 st = await owner.q('backup.drive.status');
 assert.equal(st.last.status, 'ok'); assert.equal(st.last.file, up.name);
 // The Drive file restores like a downloaded one.
-const fromDrive = await restoreStreamBackup(new File([up.text], up.name, {lastModified: 4}), {call: (a, p) => owner.q(a, p), credentials: {password: '', confirm: 'RESTORE'}, storage: storage(), key: 'r7', pace: 0, wait: worker});
+const fromDrive = await restoreStreamBackup(new File([up.text], up.name, {lastModified: 4}), {call: (a, p) => owner.q(a, p), credentials: {password: PASSWORD, confirm: 'RESTORE'}, storage: storage(), key: 'r7', pace: 0, wait: worker});
 assert.equal(fromDrive.signed_out, true);
 assert.equal(await fingerprint(), before);
 owner.setToken((await owner.q('login', {username: 'admin', password: PASSWORD})).token);

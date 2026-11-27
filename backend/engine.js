@@ -3486,6 +3486,7 @@ function checkBackup_(b) {
 function databaseRestore_(p, user) {
   _branch = ''; // restored rows bring their own branch data; nothing here is a new stock movement
   if (!isOwner_(user)) fail_('Only the Administrator account can restore the database');
+  if (!pwCheck_(user, p.password)) fail_('Incorrect password — nothing was restored');
   if (String(p.confirm || '').trim() !== RESTORE_WORD) fail_('Type RESTORE to confirm — nothing was restored');
   var b; try { b = JSON.parse(String(p.backup_text || '')); } catch (e) { fail_('This is not a Karvio database backup file'); }
   var plan = checkBackup_(b), quotes = checkBackupQuotes_(b), orders = checkBackupJsonRows_(b.online_orders, b.orders_checksum, 'karvio-orders-v1', 'online orders'), branchRows = checkBackupBranchRows_(b);

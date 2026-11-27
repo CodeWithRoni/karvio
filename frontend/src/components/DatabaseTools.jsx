@@ -90,42 +90,43 @@ export function DatabaseBackup({ onDone }) {
 
 export function DatabaseRestore({ onDone }) {
   const bounded=useStore(s=>!!s.apiCapabilities?.boundedBackup);
-  const [error, setError] = useState('');
+  const [file, setFile] = useState(null); // { name, size, text, meta, verified, error }
+  const [f, setF] = useState({ password: '', confirm: '' });
   const [done, setDone] = useState(null);
   const [progress, setProgress] = useState('');
   const [busy, run] = useAction();
-  const [confirmUI, ask] = useConfirm();
   const input = useRef();
   const offline = isOffline();
-  // The signed-in Administrator restores with one confirmation: no password, nothing to type.
-  const credentials = { password: '', confirm: RESTORE_WORD };
 
-  /** Read and check the chosen file. Returns { meta, encrypted, streamed, text? } or throws with a clear message. */
-  const read = async (picked) => {
-    if(isStreamingBackup(picked)){
-      if(!bounded)throw Error('Update the Karvio backend before restoring this backup.');
-      const header=await inspectStreamingBackup(picked);
-      return {streamed:true,encrypted:isEncryptedManifest(header),meta:{shop:header.shop_name,created:header.created_at,version:header.app_version,records:header.total_rows}};
-    }
-    if(picked.size>16*1048576)throw Error('Older .json backups can be restored up to 16 MB. Use a .karvio backup for a larger shop.');
-    const text = await picked.text();
-    let b; try { b = JSON.parse(text); } catch { throw Error('This is not a Karvio database backup file.'); }
-    if (b?.format !== BACKUP_FORMAT || !b.tables) throw Error('This is not a Karvio database backup file.');
-    const sum = await backupChecksum(b.tables);
-    if (sum !== null && sum !== b.checksum) throw Error('This file is damaged or was edited — it cannot be restored.');
-    return {streamed:false,encrypted:false,text,meta:{shop:b.shop_name,created:b.created_at,by:b.created_by,version:b.app_version,records:Object.values(b.counts||{}).reduce((x,y)=>x+Number(y||0),0)}};
-  };
   const pick = async (picked) => {
-    setDone(null); setError(''); setProgress('');
+    setDone(null);
     if (!picked) return;
-    let file; try { file = await read(picked); } catch (e) { setError(e.message || 'This backup cannot be opened.'); return; }
-    const m = file.meta;
-    const ok = await ask({ title: 'Restore this backup?', confirmLabel: 'Restore',
-      message: <>All current data will be replaced by the backup of <b>{m.shop || 'the shop'}</b> made <b>{fdatetime(m.created)}</b>{m.records ? <> ({Number(m.records).toLocaleString('en-IN')} records)</> : null}. A copy of the current data is kept first.{file.encrypted ? '' : ' This is an older backup that is not encrypted.'}</> });
-    if (!ok) return;
-    let r; try { r = await run(() => file.streamed?restoreStreamBackup(picked,{call:api,credentials,key:shopStorageKey('erp_stream_restore'),progress:setProgress}):restoreBackup(file.text, credentials, setProgress)); } catch { setProgress(''); return; }
-    setProgress('');
+    if(isStreamingBackup(picked)){
+      if(!bounded){setFile({name:picked.name,size:picked.size,error:'Update the Karvio backend before restoring a streamed backup.'});return;}
+      try{const header=await inspectStreamingBackup(picked);setFile({name:picked.name,size:picked.size,source:picked,streamed:true,verified:null,encrypted:isEncryptedManifest(header),meta:{shop:header.shop_name,created:header.created_at,version:header.app_version,counts:Object.fromEntries(header.tables.map(t=>[t.name,t.rows]))}});}
+      catch(error){setFile({name:picked.name,size:picked.size,error:error.message});}return;
+    }
+    if(picked.size>16*1048576){setFile({name:picked.name,size:picked.size,error:'Legacy JSON restore supports up to 16 MiB. For larger databases use a streamed backup or native PostgreSQL recovery.'});return;}
+    const text = await picked.text();
+    let meta = null, error = '', verified = null;
+    try {
+      const b = JSON.parse(text);
+      if (b?.format !== BACKUP_FORMAT || !b.tables) error = 'This is not a Karvio database backup file.';
+      else {
+        meta = { shop: b.shop_name, created: b.created_at, by: b.created_by, version: b.app_version, counts: b.counts || {} };
+        const sum = await backupChecksum(b.tables);
+        verified = sum === null ? null : sum === b.checksum;
+        if (verified === false) error = 'This file is damaged or was edited — it cannot be restored.';
+      }
+    } catch { error = 'This is not a Karvio database backup file.'; }
+    setFile({ name: picked.name, size: picked.size, text, meta, verified, error });
+  };
+  const ready = file && !file.error && f.password && f.confirm.trim() === RESTORE_WORD;
+  const restore = async () => {
+    if (!ready) return;
+    let r; try { r = await run(() => file.streamed?restoreStreamBackup(file.source,{call:api,credentials:f,key:shopStorageKey('erp_stream_restore'),progress:setProgress}):restoreBackup(file.text, f, setProgress)); } catch { return; }
     if (!clearShopDrafts()) useStore.getState().toast('Database changed, but saved carts could not be cleared. Clear this site’s saved data before opening POS.', 'err');
+    setF({ password: '', confirm: '' }); setFile(null); if (input.current) input.current.value = '';
     if (r.signed_out) {
       await useStore.getState().logout();
       useStore.getState().toast('Database restored. Sign in with the Administrator password from the backup.');
@@ -136,6 +137,7 @@ export function DatabaseRestore({ onDone }) {
     await useStore.getState().refresh('all').catch(() => {});
     onDone?.();
   };
+  const m = file?.meta;
   return (
     <div className="card form db-card">
 <div className="wide db-card-head"><span className="db-ic aqua" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 15V3" /><path d="m7 8 5-5 5 5" /><path d="M4 17v3h16v-3" /></svg></span><h2>Import Backup</h2></div>
@@ -145,11 +147,25 @@ export function DatabaseRestore({ onDone }) {
         {done.safety ? <>The data from before the restore was saved as <b>{done.safety.name}</b>{done.safety.url ? <> (<a href={done.safety.url} target="_blank" rel="noreferrer">open the copy</a>)</> : null}.</> : offline ? 'The data from before the restore is kept in the data folder on this computer.' : null}
       </div>}
       <input ref={input} type="file" hidden accept=".karvio,.json,.jsonl,.gz,application/json,application/gzip" onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ''; }} aria-label="Backup file" />
-      {error && <div className="wide errbox" role="alert">{error}</div>}
-      <div className="wide row end db-card-foot">
-        <Btn kind="primary" busy={busy} onClick={() => input.current?.click()}>Upload Backup</Btn>
+      <div className={`wide row end ${file ? '' : 'db-card-foot'}`}>
+        {file && <span className="muted">{file.name} · {size(file.size)}</span>}
+        {file && <span className="spacer" />}
+        <Btn kind={file?.meta && !file.error ? undefined : 'primary'} busy={busy} onClick={() => input.current?.click()}>{file ? 'Choose another file' : 'Upload Backup'}</Btn>
       </div>
-      {confirmUI}
+      {file?.error && <div className="wide errbox" role="alert">{file.error}</div>}
+      {m && !file.error && <div className="wide db-preview">
+        <div className="db-preview-head">
+          <div><b>{m.shop || 'Shop'}</b><small>Backup made {fdatetime(m.created)}{m.by ? ` by ${m.by}` : ''}{m.version ? ` · Karvio ${m.version}` : ''}</small></div>
+          <span className={`db-badge ${file.verified || file.encrypted ? 'ok' : ''}`}>{file.encrypted ? '🔒 Encrypted' : file.verified ? '✓ File verified' : 'Checked on restore'}</span>
+        </div>
+        {!file.encrypted && <p className="muted db-plain">This is an older backup that is not encrypted. It can still be restored; keep the file private.</p>}
+        <div className="db-tables">{MAIN.filter((n) => m.counts[n] !== undefined).map((n) => <div key={n} className="db-main"><span>{label(n)}</span><b>{Number(m.counts[n]).toLocaleString('en-IN')}</b></div>)}</div>
+      </div>}
+      {m && !file.error && <>
+        <Field label="Administrator password" wide><input type="password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} autoComplete="current-password" /></Field>
+        <Field label={`Type ${RESTORE_WORD} to confirm`} wide><input value={f.confirm} onChange={(e) => setF({ ...f, confirm: e.target.value })} placeholder={RESTORE_WORD} autoComplete="off" autoCapitalize="characters" spellCheck={false} /></Field>
+        <div className="wide row end"><Btn kind="danger" busy={busy} disabled={!ready} onClick={restore}>Restore database</Btn></div>
+      </>}
     </div>
   );
 }
