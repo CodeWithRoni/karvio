@@ -81,6 +81,7 @@ export const useStore = create((set, get) => ({
   async refresh(...keys) {
     // Light refresh of lists after a write
     const jobs = {
+      accounts: () => api('bootstrap').then(({ accounts }) => set({ accounts })),
       products: () => api('products.list').then((products) => set({ products })),
       customers: () => api('customers.list').then((c) => set({ customers: c.filter((x) => x.active) })),
       suppliers: () => (get().can('suppliers') || get().can('purchase')) && api('suppliers.list').then((s) => set({ suppliers: s.filter((x) => x.active) })),

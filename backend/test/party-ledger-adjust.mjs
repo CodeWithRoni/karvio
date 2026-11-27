@@ -54,6 +54,8 @@ eq([reb.ref_no, reb.balance], ['SLA-000001', 20000], 'a supplier deduction is a 
 eq((await q('adjust.options', {kind: 'supplier', party_id: s.id})).invoices[0].due, 20000, 'the purchase owes less');
 const sadd = await q('ledger.adjust', {kind: 'supplier', party_id: s.id, dir: 'add', type: 'correction', amount: 850, reason: 'Courier charge missed'});
 eq([sadd.ref_no, sadd.balance], ['SLA-000002', 20850], 'a supplier addition: we owe more');
+const pnlWithCharges = await q('report.pnl', {from: day(-30), to: today});
+eq(pnlWithCharges.lines.filter(l => ['Customer charges', 'Supplier charges'].includes(l.label)).map(l => l.values.current), [300, -850], 'P&L expenses and charges show with the same signs as net profit');
 const promised = await q('ledger.adjust', {kind: 'supplier', party_id: s.id, dir: 'ded', type: 'target', amount: 5000, reason: 'Q4 target', promised: true, expected: day(10), ref: 'Letter 7'});
 eq([promised.promise.amount, promised.promise.ref, (await q('adjust.options', {kind: 'supplier', party_id: s.id})).balance], [5000, 'Letter 7', 20850], 'a promised rebate changes nothing yet');
 const got = await q('ledger.adjust', {kind: 'supplier', party_id: s.id, dir: 'ded', type: 'target', amount: 5000, reason: 'Q4 target', pending_id: promised.promise.id});

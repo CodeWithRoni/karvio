@@ -34,10 +34,11 @@ export function DatabaseOverview({ info }) {
       <div className="card-head"><h2>Database</h2><span className="muted">{d.offline ? 'Saved on this computer' : d.backend === 'supabase' ? 'Supabase (online database)' : 'Google Sheets'} · {d.total.toLocaleString('en-IN')} records in {d.tables.length} tables</span></div>
       <div className="db-stamps">
         <div className={`db-stamp ${age === null || age > 7 ? 'warn' : 'ok'}`}>
-          <span>Last backup</span>
+          <span>{d.backend === 'supabase' ? 'Last backup export' : 'Last backup'}</span>
           <b>{d.last_backup ? fdatetime(d.last_backup) : 'Never'}</b>
           <small>{age === null ? 'Download a backup and keep it safe.' : age === 0 ? 'Today' : `${age} day${age === 1 ? '' : 's'} ago${age > 7 ? ' — time for a new backup' : ''}`}</small>
         </div>
+        {d.backend === 'supabase' && <div className="db-stamp"><span>Scheduled backups</span><b>Off</b><small>Backup exports are available in this tab.</small></div>}
         <div className="db-stamp"><span>Last restore</span><b>{d.last_restore ? fdatetime(d.last_restore) : '—'}</b><small>{d.last_restore ? 'Data was loaded from a backup file' : 'Not restored yet'}</small></div>
       </div>
       <div className="db-tables">

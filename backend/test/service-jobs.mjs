@@ -92,7 +92,12 @@ const j2 = await q('service.save', {customer_id: karim.id, type_id: net.id, deta
 eq([j2.job_no, j2.address, j2.technician_name, j2.charge], ['SRV-000002', 'Mirpur 10, Dhaka', '', 1000], 'address from the customer, no technician yet');
 const j2b = await q('service.save', {id: j2.id, type_id: net.id, details: 'New 20 Mbps line', address: 'Mirpur 10, Dhaka', technician_id: sumon.id, charge: 1200});
 eq([j2b.technician_name, j2b.charge, j2b.log.at(-1).note], ['Sumon', 1200, 'Given to Sumon'], 'given to a technician later');
-const fin = await q('service.complete', {id: j2.id, payments: [{account_id: cash, amount: 1200}]});
+await q('customer.payment', { customer_id: karim.id, amount: 500, account_id: cash });
+const eligibleAdvance = (await q('service.get', { id: j2.id })).available_advance;
+ok(eligibleAdvance >= 200, 'completion can see existing customer advance');
+ok(/discount/i.test((await raw('service.complete', { id: j2.id, discount: 1201 })).error), 'discount larger than the service is rejected');
+const fin = await q('service.complete', {id: j2.id, credit_used: 200, payments: [{account_id: cash, amount: 1000}]});
+eq([fin.sale.credit_used, fin.sale.paid, fin.sale.due], [200, 1200, 0], 'advance and new payment settle the invoice once');
 eq([(await q('sale.detail', {id: fin.sale_id})).items.map((i) => i.name), fin.status], [['New Internet Connection'], 'Completed'], 'service charge only');
 ok(/can no longer be changed/.test((await raw('service.save', {id: j2.id, type_id: net.id, details: 'x', address: 'y'})).error), 'a completed job is closed');
 

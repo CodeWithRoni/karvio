@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Modal, Btn } from './ui';
 import { createPortal } from 'react-dom';
-import { isMobileOrTablet } from '../lib/mobileDevice';
+import { isKarvioDesktop, isMobileOrTablet } from '../lib/mobileDevice';
 
 export function CameraIcon() {
   return <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 6h3l2-3h6l2 3h3a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="4"/></svg>;
@@ -51,16 +51,16 @@ function Scanner({ onScan, onClose, title }) {
     return () => { cancelled = true; stop(); document.removeEventListener('visibilitychange',hide); document.removeEventListener('keydown',escape,true); window.removeEventListener('offline',hideOffline); };
   }, [attempt]);
   return <Modal open title={title} onClose={onClose} size="md" footer={<><Btn onClick={onClose}>Close camera</Btn>{error && <Btn kind="primary" onClick={()=>setAttempt(n=>n+1)}>Try again</Btn>}</>}>
-    <p className="camera-intro">Point the back camera at one barcode or serial label.</p>
+    <p className="camera-intro">Point the camera at one barcode or serial label.</p>
     <div className="camera-view"><video ref={video} playsInline muted autoPlay aria-label="Barcode camera preview"/><div className="camera-guide" aria-hidden="true"><span/></div><span className="camera-live">{ready ? 'Camera ready' : error ? 'Camera unavailable' : 'Opening camera…'}</span></div>
     {error ? <p className="camera-error" role="alert">{error}</p> : <p className="camera-help" role="status">Keep the code inside the frame and hold steady. The camera closes after one scan.</p>}
     <p className="camera-private">Scanning stays on this device. No photo is saved or uploaded.</p>
   </Modal>;
 }
 
-/** Camera is opt-in, and only shown for a phone/tablet device family. */
+/** Camera is opt-in on phones, tablets and the installed desktop app. */
 export default function CameraScanButton({onScan,label='Scan barcode with camera',title='Scan barcode',disabled=false}) {
   const [open,setOpen] = useState(false);
-  if (!isMobileOrTablet()) return null;
+  if (!isMobileOrTablet() && !isKarvioDesktop()) return null;
   return <><button type="button" className="camera-trigger" aria-label={label} title={label} disabled={disabled} onClick={()=>setOpen(true)}><CameraIcon/></button>{open && createPortal(<div className="camera-overlay"><Scanner title={title} onScan={onScan} onClose={()=>setOpen(false)}/></div>,document.body)}</>;
 }

@@ -239,7 +239,13 @@ function Complete({ job, meta, onClose, onDone }) {
   const qtyOf = (x) => (x.took.length ? x.serials.length : Number(x.qty) || 0);
   const bad = used.some((x) => !x.took.length && (Number(x.qty) < 0 || Number(x.qty) > x.taken + 1e-9 || x.qty === ''));
   const total = round2(used.reduce((a, x) => a + round2(qtyOf(x) * x.price), 0) + (Number(charge) || 0));
-  const toPay = round2(Math.max(total - (Number(discount) || 0), 0));
+  const jobDetails = useApi('service.get', { id: job.id });
+  const [useAdvance, setUseAdvance] = useState(false);
+  const availableAdvance = jobDetails.data?.available_advance || 0;
+  const invoiceTotal = round2(Math.max(total - (Number(discount) || 0), 0));
+  const credit = useAdvance ? Math.min(availableAdvance, invoiceTotal) : 0;
+  const toPay = round2(invoiceTotal - credit);
+  const badDiscount = Number(discount) < 0 || Number(discount) > total;
   const [pay, setPay] = useState({ account_id: meta.accounts[0]?.id || '', amount: '' });
   const [nextDate, setNextDate] = useState('');
   const amount = pay.amount === '' ? toPay : Number(pay.amount) || 0;
@@ -248,7 +254,7 @@ function Complete({ job, meta, onClose, onDone }) {
   const back = used.filter((x) => qtyOf(x) < x.taken - 1e-9);
   const go = async (print) => {
     const r = await run(() => api('service.complete', {
-      id: job.id, charge: Number(charge) || 0, discount: Number(discount) || 0, next_payment_date: left > 0.004 ? nextDate : '',
+      id: job.id, charge: Number(charge) || 0, discount: Number(discount) || 0, credit_used: credit, next_payment_date: left > 0.004 ? nextDate : '',
       used: used.map((x) => ({ product_id: x.product_id, qty: qtyOf(x), ...(x.took.length ? { serials: x.serials.join(',') } : {}) })),
       payments: amount > 0 ? [{ account_id: pay.account_id, amount }] : []
     }), `Service ${job.job_no} completed${back.length ? ' — unused products are back in stock' : ''}`);
@@ -258,8 +264,8 @@ function Complete({ job, meta, onClose, onDone }) {
   return (
     <Modal open onClose={onClose} size="lg" title={`Complete ${job.job_no} · ${job.service}`}
       footer={<><Btn onClick={onClose}>Back</Btn>
-        <Btn busy={busy} disabled={bad || amount > toPay + 0.004} onClick={() => go(false)}>Complete</Btn>
-        <Btn kind="primary" busy={busy} disabled={bad || amount > toPay + 0.004 || total <= 0} onClick={() => go(true)}>Complete & print invoice</Btn></>}>
+        <Btn busy={busy} disabled={bad || badDiscount || amount < 0 || amount > toPay + 0.004} onClick={() => go(false)}>Complete</Btn>
+        <Btn kind="primary" busy={busy} disabled={bad || badDiscount || amount < 0 || amount > toPay + 0.004 || total <= 0} onClick={() => go(true)}>Complete & print invoice</Btn></>}>
       {used.length > 0 ? (
         <>
           <p className="muted" style={{ marginTop: 0 }}>Mark what was used at the customer. What the technician brought back goes back to stock.</p>
@@ -284,13 +290,16 @@ function Complete({ job, meta, onClose, onDone }) {
       ) : <p className="muted" style={{ marginTop: 0 }}>No products were taken for this job.</p>}
       <div className="form" style={{ marginTop: 12 }}>
         <Field label="Service charge"><input type="number" min="0" step="any" value={charge} onChange={(e) => setCharge(e.target.value)} aria-label="Service charge" /></Field>
-        <Field label="Discount"><input type="number" min="0" step="any" value={discount} onChange={(e) => setDiscount(e.target.value)} aria-label="Discount" /></Field>
+        <Field label="Discount" hint={badDiscount ? "Discount must be between zero and the total." : undefined}><input type="number" min="0" max={total} step="any" value={discount} onChange={(e) => setDiscount(e.target.value)} aria-label="Discount" /></Field>
+        {availableAdvance > 0 && <label className="check wide"><input type="checkbox" checked={useAdvance}
+          onChange={(e) => setUseAdvance(e.target.checked)} /> Use customer advance ({money(availableAdvance) } available)</label>}
         <Field label="Received now into"><Select value={pay.account_id} onChange={(v) => setPay({ ...pay, account_id: v })} options={meta.accounts} allowEmpty={false} aria-label="Account" /></Field>
         <Field label={`Amount received (to pay ${money(toPay, false)})`}><input type="number" min="0" step="any" value={pay.amount} placeholder={String(toPay)} onChange={(e) => setPay({ ...pay, amount: e.target.value })} aria-label="Amount received" /></Field>
         {left > 0.004 && <Field label={`Next payment date (${money(left, false)} stays as the customer's due)`}><DateInput value={nextDate} onChange={(e) => setNextDate(e.target.value)} /></Field>}
         <div className="wide totals">
           <span>Products used</span><b className="num">{money(round2(total - (Number(charge) || 0)), false)}</b>
-          <span>Total</span><span className="grand">{money(toPay)}</span>
+          <span>Total</span><span className="grand">{money(invoiceTotal)}</span>
+          {credit > 0 && <><span>Advance applied</span><b>{money(credit)}</b><span>To pay</span><b>{money(toPay)}</b></>}
         </div>
         {back.length > 0 && <p className="wide la-note">Back to stock: {back.map((x) => `${round2(x.taken - qtyOf(x))} ${x.unit || ''} ${x.name}`).join(', ')}</p>}
         <p className="muted wide" style={{ margin: 0 }}>{total > 0 ? 'An invoice is made for the products used and the service charge. They leave stock now.' : 'Nothing to charge: the service is closed without an invoice.'}</p>

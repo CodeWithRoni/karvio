@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {isMobileOrTablet as mobile} from '../src/lib/mobileDevice.js';
+import {isKarvioDesktop, isMobileOrTablet as mobile} from '../src/lib/mobileDevice.js';
 import {androidCameraManifest,iosCameraPlist} from '../scripts/native-camera.mjs';
 assert.equal(mobile({userAgent:'Mozilla/5.0 (Linux; Android 14) Mobile',maxTouchPoints:5}),true);
 assert.equal(mobile({userAgent:'Mozilla/5.0 (Linux; Android 14; Tablet)',maxTouchPoints:5}),true);
@@ -8,6 +8,10 @@ assert.equal(mobile({userAgent:'Mozilla/5.0 (Macintosh; Intel Mac OS X)',platfor
 assert.equal(mobile({userAgent:'Mozilla/5.0 (Windows NT 10.0)',platform:'Win32',maxTouchPoints:10}),false);
 assert.equal(mobile({userAgent:'Mozilla/5.0 (Macintosh; Intel Mac OS X)',platform:'MacIntel',maxTouchPoints:0}),false);
 assert.equal(mobile({userAgent:'Mozilla/5.0 (X11; Linux x86_64)',maxTouchPoints:0}),false);
+const desktop = { userAgent: 'Electron/45.0 KarvioDesktop/1' };
+assert.equal(isKarvioDesktop(desktop, { protocol: 'file:' }), true);
+assert.equal(isKarvioDesktop(desktop, { protocol: 'https:' }), false);
+assert.equal(isKarvioDesktop({ userAgent: 'Electron/45.0' }, { protocol: 'file:' }), false);
 const a=androidCameraManifest('<manifest xmlns:android="http://schemas.android.com/apk/res/android"><application /></manifest>');
 assert.match(a,/android.permission.CAMERA/);assert.match(a,/android.hardware.camera.any" android:required="false"/);assert.equal(androidCameraManifest(a),a);assert.doesNotMatch(a,/RECORD_AUDIO/);
 const i=iosCameraPlist('<plist><dict><key>Name</key><string>Karvio</string></dict></plist>');assert.match(i,/NSCameraUsageDescription/);assert.equal(iosCameraPlist(i),i);assert.doesNotMatch(i,/NSMicrophone/);

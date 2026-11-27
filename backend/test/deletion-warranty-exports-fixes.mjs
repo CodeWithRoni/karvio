@@ -52,14 +52,14 @@ let historical=q('sale.detail',{id:sale.sale.id}).sale;assert.equal(historical.p
 ret(sale,1);pub=q('invoice.public',{token:link},'');assert.equal(pub.sale.returned_total,100);assert.equal(pub.sale.net_total,400);assert.equal(pub.sale.paid_now,400);assert.equal(pub.sale.due_now,0);
 // F05: stocked products cannot disappear; explicit write-offs carry their loss.
 reset();p=product('Counted stock',{cost_price:100});q('stock.adjust',{product_id:p.id,new_stock:2});denied('product.delete',{id:p.id},token,/still has stock/i);assert.equal(q('dashboard').stock_value,200);q('stock.adjust',{product_id:p.id,new_stock:0,note:'Write off damaged stock'});assert.equal(q('profit.report',{}).summary.net,0);denied('product.delete',{id:p.id},token,/history/i);q('product.save',{...p,active:false});assert.equal(q('products.list').find(x=>x.id===p.id).active,false);
-// F07: cancelled returns remain inspectable but contribute zero to financial totals.
+// F07: cancelled returns are excluded from all-status totals and counted in the cancelled-only view.
 for(const purchase of [false,true]) {
  reset();p=product('Returns report');let a,b;
  if(purchase){a=buy(p);b=buy(p);}else{buy(p,4);a=sell(p);b=sell(p);}
  const create=d=>purchase?q('preturn.create',{purchase_id:d.purchase.id,items:[{purchase_item_id:d.items[0].id,qty:1}],refund:{account_id:cash}}):ret(d);
  create(a);const reversed=create(b);q('reverse',{type:purchase?'preturn':'sreturn',id:reversed.return.id,password:'regression-owner-password',reason:'Wrong return'});
  const report=q('reports',{type:purchase?'purchase_returns':'sales_returns',status:'all'});assert.equal(report.rows.length,2);assert.equal(report.totals.total,purchase?100:200);assert.equal(report.totals[purchase?'received':'refund'],purchase?100:200);
- assert.equal(q('reports',{type:purchase?'purchase_returns':'sales_returns',status:'cancelled'}).totals.total,0);
+ assert.equal(q('reports',{type:purchase?'purchase_returns':'sales_returns',status:'cancelled'}).totals.total,purchase?100:200);
 }
 // F08: an oversized request fails explicitly instead of exporting only 200 purchases.
 reset();state.tables.Purchases=Array.from({length:201},(_,i)=>({_position:i+2,id:'purchase-'+i,invoice_no:'PUR-'+i,date:'2026-11-11',status:'active',total:100,paid:100,due:0,supplier_id:''}));denied('purchases.details',{ids:state.tables.Purchases.map(p=>p.id)},token,/200 purchases/i);assert.equal(q('purchases.details',{ids:state.tables.Purchases.slice(0,200).map(p=>p.id)}).length,200);

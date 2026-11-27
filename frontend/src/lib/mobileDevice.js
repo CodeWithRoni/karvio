@@ -5,3 +5,7 @@ export function isMobileOrTablet(nav = globalThis.navigator) {
   return !!nav.userAgentData?.mobile || /Android|iPhone|iPad|iPod/i.test(ua)
     || (/Macintosh|MacIntel/i.test(ua + ' ' + (nav.platform || '')) && nav.maxTouchPoints > 1);
 }
+
+export function isKarvioDesktop(nav = globalThis.navigator, location = globalThis.location) {
+  return location?.protocol === 'file:' && /\bKarvioDesktop\/1\b/.test(nav?.userAgent || '');
+}

@@ -7,7 +7,7 @@ seedCategories_ = function() {}; // Fresh shop: owner enters their own groups/ca
 // Keep only the base Pieces unit; optional selling units must be entered by owner.
 DEFAULT_UNITS = [{name:'pcs',label:'Pieces',decimal:false}];
 driveCopy_ = function(ss, name) { security.backup(name); return {name: name, url: ''}; };
-// The fixed pg_cron job reads these settings; browser users cannot schedule SQL.
+// The hosted scheduler was disabled by migration; leave existing snapshots intact.
 backupSchedule_ = function(p,user) {
   if(!isOwner_(user))fail_('Only the Administrator account can change automatic backups');
   var keep=Math.round(num_(p.keep_days));if(keep<1||keep>365)fail_('Keep backups for 1 to 365 days');

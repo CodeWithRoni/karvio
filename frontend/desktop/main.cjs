@@ -22,7 +22,16 @@ else {
   });
   app.whenReady().then(() => {
     try {
-      session.defaultSession.setPermissionRequestHandler((_, __, callback) => callback(false));
+      const isAppFrame = (contents, details) => Boolean(mainWindow && contents === mainWindow.webContents &&
+        details.isMainFrame && details.requestingUrl?.split('#')[0] === appUrl);
+      const allowClipboard = 'clipboard-sanitized-write';
+      session.defaultSession.setPermissionCheckHandler((contents, permission, _origin, details) =>
+        isAppFrame(contents, details) && (permission === allowClipboard ||
+          (permission === 'media' && details.mediaType === 'video')));
+      session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
+        callback(isAppFrame(contents, details) && (permission === allowClipboard ||
+          (permission === 'media' && details.mediaTypes?.length === 1 && details.mediaTypes[0] === 'video')));
+      });
       Menu.setApplicationMenu(null);
       const createWindow = () => {
         mainWindow = new BrowserWindow({ width: 1440, height: 900, minWidth: 1024, minHeight: 640,
@@ -30,6 +39,8 @@ else {
           icon: path.join(__dirname, '..', 'branding', 'linux', '256x256.png'),
           show: process.env.KARVIO_TEST_MODE !== '1', webPreferences: {
             contextIsolation: true, sandbox: true, nodeIntegration: false } });
+        const contents = mainWindow.webContents;
+        contents.setUserAgent(contents.getUserAgent() + ' KarvioDesktop/1');
         mainWindow.loadFile(indexPath);
         mainWindow.webContents.setWindowOpenHandler(({ url }) => {
           if (online && /^https?:\/\//i.test(url)) shell.openExternal(url);

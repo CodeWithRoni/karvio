@@ -200,10 +200,11 @@ function EditInvoice({ detail, onClose, onDone }) {
   const count = (l) => (l.serial ? splitList(l.serials).length : Number(l.qty) || 0);
   const subtotal = round2(lines.reduce((t, l) => t + round2(count(l) * (Number(l.price) || 0)), 0)); // each line rounded, as the server does
   const total = round2(subtotal - (Number(discount) || 0));
-  const paid = round2(pays.reduce((t, p) => t + (Number(p.amount) || 0), 0) + (Number(s.credit_used) || 0));
+  const credit = customer === (s.customer_id || '') ? Number(s.credit_used) || 0 : 0;
+  const paid = round2(pays.reduce((t, p) => t + (Number(p.amount) || 0), 0) + credit);
   const due = round2(total - paid);
   const save = async () => {
-    const r = await run(() => api('sale.edit', { id: s.id, password, reason, customer_id: customer, discount: Number(discount) || 0, note, credit_used: Number(s.credit_used) || 0,
+    const r = await run(() => api('sale.edit', { id: s.id, password, reason, customer_id: customer, discount: Number(discount) || 0, note, credit_used: credit,
       payments: cleanPays(pays), items: lines.map((l) => ({ product_id: l.product_id, qty: l.serial ? splitList(l.serials).length : l.qty, price: l.price, ...(l.serial ? { serials: l.serials } : {}) })) }), `Invoice ${s.invoice_no} updated`);
     if (r) onDone(r);
   };
@@ -223,8 +224,8 @@ function EditInvoice({ detail, onClose, onDone }) {
               <td className="r"><Btn size="sm" kind="danger" onClick={() => setLines(lines.filter((_, j) => j !== i))} aria-label={`Remove ${l.name}`}>×</Btn></td></tr>))}</tbody></table>
         <Field label="Discount"><input type="number" min="0" step="any" value={discount} onChange={(e) => setDiscount(e.target.value)} onWheel={noWheel} aria-label="Discount" /></Field>
         <Field label="Note"><input value={note} onChange={(e) => setNote(e.target.value)} aria-label="Invoice note" /></Field>
-        <div className="wide"><PaymentSplit value={pays} onChange={setPays} total={round2(total - (Number(s.credit_used) || 0))} label="Paid on this invoice" /></div>
-        <div className="wide oo-totals"><span>Subtotal {money(subtotal, false)}</span><span>− Discount {money(Number(discount) || 0, false)}</span><b>Total {money(total)}</b><span>Paid {money(paid, false)}{Number(s.credit_used) ? ` (incl. advance ${money(s.credit_used, false)})` : ''}</span><b className="cod">{due > 0.004 ? `Due ${money(due)}` : due < -0.004 ? `Overpaid ${money(-due)}` : 'Fully paid'}</b></div>
+        <div className="wide"><PaymentSplit value={pays} onChange={setPays} total={round2(total - credit)} label="Paid on this invoice" /></div>
+        <div className="wide oo-totals"><span>Subtotal {money(subtotal, false)}</span><span>− Discount {money(Number(discount) || 0, false)}</span><b>Total {money(total)}</b><span>Paid {money(paid, false)}{credit ? ` (incl. advance ${money(credit, false)})` : ''}</span><b className="cod">{due > 0.004 ? `Due ${money(due)}` : due < -0.004 ? `Overpaid ${money(-due)}` : 'Fully paid'}</b></div>
         {!customer && due > 0.004 && <p className="wide sms-warn">A walk-in (cash) sale must be paid in full — choose the customer or add the payment.</p>}
         <Field label="Why (optional)"><input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. wrong price entered" aria-label="Reason for the edit" /></Field>
         <Field label={user?.role === 'admin' ? 'Your password' : 'Admin password'}><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" aria-label="Admin password" /></Field>

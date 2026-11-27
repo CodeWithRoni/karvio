@@ -125,7 +125,7 @@ export function PaymentSplit({ value, onChange, total, label = 'Payment', allowZ
   );
 }
 export const defaultPay = (amount = '') => {
-  const acc = useStore.getState().accounts;
+  const acc = useStore.getState().accounts.filter((a) => a.active !== false);
   const cash = acc.find((a) => a.type === 'cash') || acc[0];
   return cash ? [{ account_id: cash.id, amount }] : [];
 };
@@ -135,7 +135,7 @@ export const cleanPays = (arr) => arr.map((p) => ({ account_id: p.account_id, am
 /* ------------------------------------------------------------------
  * Admin-authorised reversal dialog
  * ---------------------------------------------------------------- */
-export function ReverseDialog({ open, onClose, type, id, label, onDone }) {
+export function ReverseDialog({ open, onClose, type, id, label, onDone, description }) {
   const [reason, setReason] = useState('');
   const [password, setPassword] = useState('');
   const [busy, run] = useAction();
@@ -144,7 +144,7 @@ export function ReverseDialog({ open, onClose, type, id, label, onDone }) {
   useEffect(() => { if (open) { setReason(''); setPassword(''); } }, [open]);
   const submit = async (e) => {
     e?.preventDefault();
-    await run(() => api('reverse', { type, id, reason, password }), `${label} cancelled — stock, balances and ledgers restored`);
+    await run(() => api('reverse', { type, id, reason, password }), description ? `${label} cancelled` : `${label} cancelled — stock, balances and ledgers restored`);
     await refresh('all');
     onDone?.(); onClose();
   };
@@ -152,7 +152,7 @@ export function ReverseDialog({ open, onClose, type, id, label, onDone }) {
     <Modal open={open} onClose={onClose} title={`Cancel ${label}`} size="sm"
       footer={<><Btn onClick={onClose}>Keep it</Btn><Btn kind="danger" busy={busy} onClick={submit} disabled={!reason.trim() || !password}>Cancel {label}</Btn></>}>
       <form onSubmit={submit} className="form">
-        <p className="muted">This reverses the transaction completely: stock levels, account balances and customer / supplier ledgers go back to how they were. The record stays in history, marked cancelled.</p>
+        <p className="muted">{description || 'This reverses the transaction completely: stock levels, account balances and customer / supplier ledgers go back to how they were. The record stays in history, marked cancelled.'}</p>
         <Field label="Reason" wide><input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. wrong item entered" required /></Field>
         <Field label={user?.role === 'admin' ? 'Your password' : 'Admin password'} wide hint="Required to authorise the cancellation."><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" /></Field>
       </form>

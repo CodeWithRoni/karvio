@@ -7,7 +7,7 @@ import { api } from '../lib/api';
 import { printHtml } from '../lib/export';
 import { money, qty as fqty, fdate } from '../lib/format';
 import { ROLLS, SHEETS, DEFAULT_OPTS, layoutOf, layoutErrors, codeProblem, codeFormat, scanRisk, minWidthFor, pagesHtml, fitScale } from '../lib/labels';
-import { PageHead, Btn, Field, Tabs, Badge, Empty, DeleteBtn, useAction } from '../components/ui';
+import { PageHead, Btn, Field, Tabs, Badge, Empty, DeleteBtn, useAction, useApi } from '../components/ui';
 import { ProductSearch } from '../components/widgets';
 
 const OPTS_KEY = 'karvio_label_opts';
@@ -40,7 +40,18 @@ export default function Barcodes() {
   const [opts, setOptsState] = useState(loadOpts);
   const [busy, run] = useAction();
   const [bulk, setBulk] = useState({ cat: '', brand: '', stockOnly: true, per: 'stock' });
-  const [purchases, setPurchases] = useState(null);
+  const [purchaseOpen, setPurchaseOpen] = useState(false);
+  const [purchasePage, setPurchasePage] = useState(1);
+  const [purchaseText, setPurchaseText] = useState('');
+  const [purchaseQuery, setPurchaseQuery] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => { setPurchasePage(1); setPurchaseQuery(purchaseText.trim()); }, 250);
+    return () => clearTimeout(timer);
+  }, [purchaseText]);
+  const purchaseList = useApi('purchases.list', { page: purchasePage, per: 40, status: 'active', q: purchaseQuery }, [], { skip: !purchaseOpen });
+  const purchases = purchaseList.data?.rows || [];
+  const purchaseLoading = purchaseText.trim() !== purchaseQuery || purchaseList.loading;
+  const purchasePages = Math.max(1, Math.ceil((purchaseList.data?.total || 0) / 40));
   const [purId, setPurId] = useState('');
   const pmap = useMemo(() => Object.fromEntries(products.map((p) => [p.id, p])), [products]);
   const brandMap = useMemo(() => Object.fromEntries(brands.map((b) => [b.id, b.name])), [brands]);
@@ -72,11 +83,6 @@ export default function Barcodes() {
     if (!list.length) return toast('No products match these filters', 'err');
     addRows(list.map((p) => ({ product_id: p.id, count: bulk.per === 'stock' ? Math.max(1, Math.min(MAX_LABELS, Math.floor(p.stock))) : 1 })));
     toast(`${list.length} product${list.length === 1 ? '' : 's'} added`, 'ok');
-  };
-  const loadPurchases = async () => {
-    if (purchases) return;
-    try { const r = await api('purchases.list', { page: 1, per: 40, status: 'active' }); setPurchases(r.rows || []); }
-    catch (e) { toast(e.message, 'err'); setPurchases([]); }
   };
   const addPurchase = async (id) => {
     if (!id) return;
@@ -205,15 +211,25 @@ export default function Barcodes() {
                 </div>
               </details>
               {can('purchase') && (
-                <details onToggle={(e) => e.currentTarget.open && loadPurchases()}>
+                <details onToggle={(e) => setPurchaseOpen(e.currentTarget.open)}>
                   <summary>Add from a purchase</summary>
                   <div className="bc-bulk">
-                    <select value={purId} onChange={(e) => setPurId(e.target.value)} aria-label="Purchase" style={{ flex: 1, minWidth: 220 }}>
-                      <option value="">{purchases === null ? 'Loading purchases…' : purchases.length ? 'Choose a purchase…' : 'No purchases yet'}</option>
+                    <input type="search" aria-label="Search purchases" placeholder="Invoice, supplier or product" value={purchaseText}
+                      onChange={(e) => { setPurchaseText(e.target.value); setPurId(''); }} />
+                  </div>
+                  <div className="bc-bulk">
+                    <select value={purId} onChange={(e) => setPurId(e.target.value)} aria-label="Purchase" disabled={purchaseLoading || !!purchaseList.error} style={{ flex: 1, minWidth: 220 }}>
+                      <option value="">{purchaseLoading ? 'Loading purchases…' : purchases.length ? 'Choose a purchase…' : 'No matching purchases'}</option>
                       {(purchases || []).map((x) => <option key={x.id} value={x.id}>{x.invoice_no} · {fdate(x.date)} · {x.supplier_name || 'No supplier'} · {money(x.total, false)}</option>)}
                     </select>
-                    <Btn disabled={!purId} busy={busy} onClick={() => addPurchase(purId)}>Add its items</Btn>
+                    <Btn disabled={!purId || purchaseLoading || !!purchaseList.error} busy={busy} onClick={() => addPurchase(purId)}>Add its items</Btn>
+                    {purchasePages > 1 && <>
+                      <Btn disabled={purchaseLoading || purchasePage <= 1} onClick={() => { setPurId(''); setPurchasePage(purchasePage - 1); }}>Previous purchases</Btn>
+                      <span className="muted">Page {purchasePage} of {purchasePages}</span>
+                      <Btn disabled={purchaseLoading || purchasePage >= purchasePages} onClick={() => { setPurId(''); setPurchasePage(purchasePage + 1); }}>Next purchases</Btn>
+                    </>}
                   </div>
+                  {purchaseList.error && <div role="alert">{purchaseList.error} <Btn onClick={purchaseList.reload}>Retry</Btn></div>}
                   <p className="muted" style={{ margin: '6px 0 0', fontSize: 12.5 }}>One label for every unit bought; serial-number products get one label per serial.</p>
                 </details>
               )}

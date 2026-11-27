@@ -63,7 +63,12 @@ export default function ProductImport({ onClose }) {
     } catch (e2) { setErr(e2.message); } finally { setChecking(false); }
   };
   const doImport = async () => {
-    const r = await run(() => api('products.import', { rows }), null);
+    const r = await run(async () => {
+      const result = await api('products.import', { rows });
+      if (!result || !Number.isFinite(result.added) || !Number.isFinite(result.updated)) throw new Error('The server did not confirm the import. Refresh Products before retrying.');
+      return result;
+    }, null).catch(() => null);
+    if (!r) return;
     useStore.getState().toast(`Imported: ${r.added} added, ${r.updated} updated${r.prices ? `, ${r.prices} prices set` : ''}`, 'ok');
     await refresh('all').catch(() => {});
     onClose();

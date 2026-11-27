@@ -40,6 +40,7 @@ function remember(map,key,names){const set=map.get(key)||new Set();names.forEach
  */
 // Reports differ a lot by type, so each report type keeps its own table list.
 export const hintKey=(action,payload)=>{
+ if(action==='sales.list'&&payload?.invoice_search)return 'sales.list:invoice_search';
  if(action==='sales.list'&&(payload?.group_id||payload?.category_id||payload?.brand_id))return 'sales.list:products';
  return action==='reports'&&typeof payload?.type==='string'&&/^[a-z_]{1,40}$/.test(payload.type)?'reports:'+payload.type:action;
 };

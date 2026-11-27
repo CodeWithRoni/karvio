@@ -12,7 +12,7 @@ test('tables show 10 rows per page with page numbers and a 10 / 20 / 50 / 100 / 
  await expect(body).toHaveCount(10);
  await expect(pager).toContainText('Showing 1–10 of 125');
  await expect(size).toHaveValue('10');
- await expect(size.locator('option')).toHaveText(['10 Reports','20 Reports','50 Reports','100 Reports','Custom Range']);
+ await expect(size.locator('option')).toHaveText(['10 per page','20 per page','50 per page','100 per page','Custom Range']);
  await pager.getByRole('button',{name:'Next ›'}).click();
  await expect(pager).toContainText('Showing 11–20 of 125');await expect(body.first()).toContainText('Pager customer 010');
  await pager.getByRole('button',{name:'13',exact:true}).click();

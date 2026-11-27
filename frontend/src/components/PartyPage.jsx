@@ -225,14 +225,19 @@ function PartyDetail({ kind, id, onClose, onChanged }) {
   const [pay, setPay] = useState(false);
   const [rev, setRev] = useState(null);
   // Full-period statement closing is the live balance; with a date filter fall back to the directory balance.
+  const [exportBusy, runExport] = useAction();
+  const exportDisabled = exportBusy || st.loading || !!st.error;
+  const exportStatement = (format) => runExport(() => format === 'pdf'
+    ? pdfParties(kind, [st.data], 'ledger.pdf', range)
+    : excelParties(kind, [{ ...st.data, info: { ...st.data.info, opening_balance: st.data.opening } }], 'ledger.xlsx')).catch(() => {});
   const liveBal = st.data && !range.from && !range.to ? st.data.closing : Number(party?.balance) || 0;
   return (
     <Modal open onClose={onClose} size="lg" title={st.data ? st.data.party : 'Ledger'}
       footer={st.data && <>
         <div className="seg">
-          <button onClick={() => exportParties(kind, [id], 'excel')}>Excel</button>
-          <button onClick={() => exportParties(kind, [id], 'pdf')}>PDF</button>
-          <button onClick={() => printStatement(kind, st.data, range.from, range.to)}>Print</button>
+          <button disabled={exportDisabled} onClick={() => exportStatement('excel')}>Excel</button>
+          <button disabled={exportDisabled} onClick={() => exportStatement('pdf')}>PDF</button>
+          <button disabled={exportDisabled} onClick={() => printStatement(kind, st.data, range.from, range.to)}>Print</button>
         </div>
         <span className="spacer" />
         <Btn kind="primary" onClick={() => setPay(true)}>{c.payLabel}</Btn>
@@ -255,7 +260,7 @@ function PartyDetail({ kind, id, onClose, onChanged }) {
               <div className="rb-pend-row" style={{ marginTop: 0 }}>
                 <span>🔔 Promised to pay the rest on <b>{fdate(party.next_payment_date)}</b>{party.next_payment_date <= today() ? ' — due now' : ''}</span>
                 <span className="spacer" />
-                <Btn size="sm" onClick={async () => { await api('customer.promise', { customer_id: id, next_payment_date: '' }); useStore.getState().toast('Reminder removed', 'ok'); onChanged(); partyList.reload(); }}>Remove reminder</Btn>
+                <Btn size="sm" onClick={async () => { try { await api('customer.promise', { customer_id: id, next_payment_date: '' }); useStore.getState().toast('Reminder removed', 'ok'); onChanged(); partyList.reload(); } catch (error) { useStore.getState().toast(error.message, 'err'); } }}>Remove reminder</Btn>
               </div>
             </div>
           )}
@@ -264,12 +269,12 @@ function PartyDetail({ kind, id, onClose, onChanged }) {
               { key: 'date', label: 'Date', type: 'date' }, { key: 'ref_no', label: 'Ref' }, { key: 'note', label: 'Details', className: 'clip' },
               { key: 'debit', label: c.debit, type: 'money', sum: true }, { key: 'credit', label: c.credit, type: 'money', sum: true },
               { key: 'balance', label: 'Balance', type: 'money' },
-              ...(kind === 'customer' ? [{key:'receipt',label:'',noSort:true,noExport:true,render:(r)=>r.type==='payment' && <button className="link" onClick={()=>printMoneyReceipt({receipt_no:r.ref_no,customer:st.data.party,amount:r.credit,balance:r.balance,account:r.note.match(/\[([^\]]+)\]$/)?.[1] || r.note,date:r.date})}>Print receipt</button>}] : []),
+              ...(kind === 'customer' ? [{key:'receipt',label:'',noSort:true,noExport:true,render:(r)=>r.type==='payment' && <button className="link" onClick={()=>printMoneyReceipt({receipt_no:r.ref_no,customer:st.data.party,amount:r.credit,balance:r.balance,account:String(r.note || '').match(/\[([^\]]+)\]$/)?.[1] || r.note,date:r.date})}>Print receipt</button>}] : []),
               ...(can('cancel') ? [{ key: 'x', label: '', noSort: true, noExport: true, render: (r) => (r.type === 'payment' || r.type === 'refund') && <button className="link" style={{ color: 'var(--bad)' }} onClick={() => setRev({ type: c.revType, id: r.id, label: `payment ${r.ref_no}` })}>Void</button> }] : [])
             ]} />
         </>
       )}
-      {pay && <PaymentForm kind={kind} id={id} name={st.data?.party} balance={liveBal} accounts={accounts} onClose={() => setPay(false)} onDone={() => { st.reload(); onChanged(); partyList.reload(); }} />}
+      {pay && <PaymentForm kind={kind} id={id} name={st.data?.party} balance={liveBal} accounts={accounts.filter((a) => a.active !== false)} onClose={() => setPay(false)} onDone={() => { st.reload(); onChanged(); partyList.reload(); }} />}
       <ReverseDialog open={!!rev} {...(rev || {})} onClose={() => setRev(null)} onDone={() => { st.reload(); onChanged(); }} />
     </Modal>
   );

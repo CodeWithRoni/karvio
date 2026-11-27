@@ -170,7 +170,6 @@ const steadfast = (await q('orders.list', { courier_overview: true })).couriers.
 eq(steadfast.rates, { inside: 0, outside: 120.5, cod: 1.25, return_fee: null, terms: 'Up to 1 kg' }, 'rates retain zero and unknown separately');
 ok(Boolean(steadfast.checked_at), 'successful API check timestamp persisted');
 ok(!(await raw('settings.save', { values: { courier_rates_steadfast: { cod: 101 } } })).ok, 'invalid COD rate rejected');
-console.log(`Features 11: ${checks} checks passed (online orders and couriers).`);
 
 // Payments can arrive in instalments and a voided receipt reopens the unpaid COD.
 const partial = await q('order.confirm', {id: (await q('order.save', {...form, advance: 0})).id});
@@ -183,3 +182,23 @@ const receipt = paid.settlement_entries[0].payment_id;
 await q('reverse', {type: 'cpay', id: receipt, password: 'harness-password-1', reason: 'Wrong COD payment'});
 const reopened = (await q('orders.list')).orders.find(o => o.id === paid.id);
 eq([reopened.status, reopened.cod_remaining, reopened.settlement.collected], ['shipped', 400, partial.cod - 400], 'voided COD receipt reopens just its unpaid part');
+
+const revised = await q('courier.manual.save', { ...manualForm, id: dueBooking.id, amount: 75 });
+eq([revised.id, revised.courier.charge, revised.booking], [dueBooking.id, 75, 'due'], 'editing a due booking keeps its ID and records the charge');
+const invalid = await raw('courier.manual.save', { ...manualForm, customer: { ...manualForm.customer, phone: 'wrong' } });
+ok(!invalid.ok && /phone/.test(invalid.error), 'invalid manual booking phone is rejected');
+await q('reverse', { type: 'expense', id: paidBooking.expense_id, password: 'harness-password-1', reason: 'Incorrect charge' });
+eq((await q('orders.list', { include_manual: true })).manual.find(x => x.id === paidBooking.id).booking, 'due', 'reversing the expense removes paid status');
+const bookingToCancel = await q('courier.manual.paid', { ...paidPayload, amount: 60 });
+const beforeCancel = await balance(cash);
+await q('reverse', { type: 'manual_challan', id: bookingToCancel.id, password: 'harness-password-1', reason: 'Parcel cancelled' });
+const cancelled = (await q('orders.list', { include_manual: true })).manual.find(x => x.id === bookingToCancel.id);
+eq([cancelled.status, cancelled.booking, await balance(cash)], ['cancelled', '', beforeCancel + 60], 'cancelling a paid booking reverses the linked Transport expense');
+const depositOrder = await q('order.confirm', { id: (await q('order.save', form)).id });
+await q('courier.challan.save', { id: depositOrder.id, booking: 'due' });
+eq((await q('orders.list')).orders.find(x => x.id === depositOrder.id).booking, 'due', 'online challan booking type persists');
+const invoice = await q('sale.detail', { id: depositOrder.sale_id });
+await q('sale.edit', { id: invoice.sale.id, password: 'harness-password-1', items: invoice.items,
+  discount: invoice.sale.discount, credit_used: invoice.sale.credit_used, payments: [] });
+eq((await q('orders.list')).orders.find(x => x.id === depositOrder.id).cod, depositOrder.cod, 'invoice edit does not deduct the advance twice');
+console.log(`Features 11: ${checks} checks passed (online orders and couriers).`);

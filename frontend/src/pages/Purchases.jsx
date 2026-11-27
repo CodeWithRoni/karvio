@@ -514,7 +514,7 @@ function EditPurchase({ detail, onClose, onDone }) {
   };
   return (
     <Modal open size="lg" title={`Edit purchase ${p.invoice_no}`} onClose={onClose}
-      footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={() => run(save)} disabled={!lines.length || !password || (!supplier && due > 0.004) || total < 0}>Save changes</Btn></>}>
+      footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={() => run(save)} disabled={!lines.length || !password || lines.some((line) => !(Number(line.cost) > 0)) || due < -0.004 || (!supplier && due > 0.004) || total < 0}>Save changes</Btn></>}>
       <div className="form inv-edit">
         <p className="muted wide" style={{ margin: 0 }}>The purchase keeps its number ({p.invoice_no}), date ({fdate(p.date)}) and entry user ({p.user}). Stock, serials, payments and the supplier's due are corrected; the old version stays as {p.invoice_no}-E1 (cancelled) and in the activity log.</p>
         <Field label="Supplier"><select value={supplier} onChange={(e) => setSupplier(e.target.value)} aria-label="Supplier">

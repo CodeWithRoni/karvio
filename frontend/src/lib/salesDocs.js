@@ -157,7 +157,7 @@ function businessInvoiceHtml(d) {
           ${s.live_invoice && s.returned_total > 0 ? `<tr><td class="k">Returned value</td><td>:</td><td class="r">${esc(m2(s.returned_total))}</td></tr><tr><td class="k">Net invoice amount</td><td>:</td><td class="r">${esc(m2(s.net_total))}</td></tr>` : ''}
           <tr><td class="k">${s.live_invoice ? 'Paid now' : 'Collected Amount'}</td><td>:</td><td class="r">${esc(m2(paid, false))}</td></tr>
           <tr><td class="k">${s.live_invoice ? 'Invoice due now' : 'Outstanding Amount'}</td><td>:</td><td class="r">${outstanding === null ? 'Not recorded' : esc(m2(outstanding, false))}</td></tr>
-          ${s.next_payment_date && s.due > 0 ? `<tr><td class="k">Next Payment Date</td><td>:</td><td class="r">${esc(fdate(s.next_payment_date))}</td></tr>` : ''}
+          ${s.next_payment_date && (s.due_now ?? s.due) > 0 ? `<tr><td class="k">Next Payment Date</td><td>:</td><td class="r">${esc(fdate(s.next_payment_date))}</td></tr>` : ''}
         </table></div>
       <table class="btot">
         <tr><td class="k">TOTAL :</td><td class="r">${esc(m2(s.subtotal, false))}</td></tr>
@@ -229,8 +229,8 @@ export function saleInvoiceHtml(d) {
       <tr class="g"><td>Total</td><td class="r">${esc(money(s.total))}</td></tr>
       ${s.live_invoice && s.returned_total > 0 ? `<tr><td>Returned value</td><td class="r">${esc(money(s.returned_total, false))}</td></tr><tr><td>Net invoice amount</td><td class="r">${esc(money(s.net_total, false))}</td></tr>` : ''}
       <tr><td>${s.live_invoice ? 'Paid now' : 'Paid'}</td><td class="r">${esc(money(s.live_invoice ? (s.paid_now ?? s.paid) : s.paid, false))}</td></tr>
-      ${s.due > 0 ? `<tr><td><b>Due</b></td><td class="r"><b>${esc(money(s.due))}</b></td></tr>` : ''}
-      ${d.customer && d.customer.balance !== undefined ? `<tr><td>Total balance due</td><td class="r">${esc(money(d.customer.balance, false))}</td></tr>` : ''}
+      ${(s.due_now ?? s.due) > 0 ? `<tr><td><b>Due</b></td><td class="r"><b>${esc(money(s.due_now ?? s.due))}</b></td></tr>` : ''}
+      ${d.customer && d.customer.balance !== undefined ? `<tr><td>${d.customer.balance < 0 ? 'Customer advance' : 'Total balance due'}</td><td class="r">${esc(money(Math.abs(d.customer.balance), false))}</td></tr>` : ''}
       ${s.next_payment_date && s.due > 0 ? `<tr><td>Next payment date</td><td class="r">${esc(fdate(s.next_payment_date))}</td></tr>` : ''}
     </table>
     ${d.returns && d.returns.length ? `<p class="sm">Returns: ${esc(d.returns.map((r) => `${r.return_no} (${money(r.total, false)}, ${r.status})`).join(', '))}</p>` : ''}

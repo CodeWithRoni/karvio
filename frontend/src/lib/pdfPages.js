@@ -17,13 +17,24 @@ export async function pdfPages(blocks, styles, filename) {
       const el = document.createElement('div'); el.style.padding = '4px'; el.innerHTML = html;
       host.appendChild(el);
       const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff', logging: false });
+      const bounds = el.getBoundingClientRect(), scale = canvas.width / bounds.width;
+      const rows = Array.from(el.querySelectorAll('tr'), (row) => {
+        const box = row.getBoundingClientRect();
+        return { top: Math.floor((box.top - bounds.top) * scale), bottom: Math.ceil((box.bottom - bounds.top) * scale) };
+      });
       el.remove();
       const pw = W - M * 2, sliceH = Math.floor(((H - M * 2) / pw) * canvas.width);
-      for (let y = 0; y < canvas.height; y += sliceH) {
-        const c = document.createElement('canvas'); c.width = canvas.width; c.height = Math.min(sliceH, canvas.height - y);
+      for (let y = 0; y < canvas.height;) {
+        let end = Math.min(y + sliceH, canvas.height);
+        if (end < canvas.height) {
+          const crossing = rows.find(({ top, bottom }) => top > y && top < end && bottom > end && bottom - top <= sliceH);
+          if (crossing) end = crossing.top;
+        }
+        const c = document.createElement('canvas'); c.width = canvas.width; c.height = end - y;
         c.getContext('2d').drawImage(canvas, 0, y, c.width, c.height, 0, 0, c.width, c.height);
         if (!first) doc.addPage(); first = false;
         doc.addImage(c.toDataURL('image/jpeg', 0.92), 'JPEG', M, M, pw, (c.height / c.width) * pw); // JPEG: about 10× smaller than PNG, still sharp at scale 2
+        y = end;
       }
     }
     doc.save(filename);

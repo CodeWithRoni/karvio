@@ -42,7 +42,7 @@ export function statementHtml(kind, st, opt = {}) {
 }
 
 export const printParties = (kind, list, opt) => printDocs(list.map((st) => statementHtml(kind, st, opt)));
-export const pdfParties = (kind, list, filename) => pdfDocs(list.map((st) => statementHtml(kind, st)), filename);
+export const pdfParties = (kind, list, filename, opt) => pdfDocs(list.map((st) => statementHtml(kind, st, opt)), filename);
 
 export async function excelParties(kind, list, filename) {
   const XLSX = await import('xlsx');

@@ -88,9 +88,9 @@ export function receiptHtml(detail, widthOverride, height = 0) {
     <tr class="tot"><td>TOTAL</td><td class="r">${esc(money(sale.total))}</td></tr>
     ${pays.map((p) => `<tr><td>Paid (${esc(p.account_name)})</td><td class="r">${esc(money(p.amount, false))}</td></tr>`).join('')}
     ${sale.credit_used ? `<tr><td>Paid (advance)</td><td class="r">${esc(money(sale.credit_used, false))}</td></tr>` : ''}
-    ${sale.due > 0 ? `<tr class="tot"><td>DUE</td><td class="r">${esc(money(sale.due))}</td></tr>` : ''}
-    ${customer && customer.balance !== undefined ? `<tr><td>Total balance due</td><td class="r">${esc(money(customer.balance, false))}</td></tr>` : ''}
-    ${sale.next_payment_date && sale.due > 0 ? `<tr><td>Next payment date</td><td class="r">${esc(fdate(sale.next_payment_date))}</td></tr>` : ''}
+    ${(sale.due_now ?? sale.due) > 0 ? `<tr class="tot"><td>DUE</td><td class="r">${esc(money(sale.due_now ?? sale.due))}</td></tr>` : ''}
+    ${customer && customer.balance !== undefined ? `<tr><td>${customer.balance < 0 ? 'Customer advance' : 'Total balance due'}</td><td class="r">${esc(money(Math.abs(customer.balance), false))}</td></tr>` : ''}
+    ${sale.next_payment_date && (sale.due_now ?? sale.due) > 0 ? `<tr><td>Next payment date</td><td class="r">${esc(fdate(sale.next_payment_date))}</td></tr>` : ''}
   </table>
   <hr>
   <div class="c">${esc(s.shop_footer || 'Thank you!')}</div>

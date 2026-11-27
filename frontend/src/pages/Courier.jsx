@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
 import DateInput from '../components/DateInput';
 import PartyPicker from '../components/PartyPicker';
+import { ReverseDialog } from '../components/widgets';
 import { api } from '../lib/api';
 import { quantityTotal } from '../lib/quantityTotals';
 import { Badge, Btn, ClearFiltersButton, ErrorBox, Field, Loading, Modal, PageHead, useAction, useApi } from '../components/ui';
@@ -17,6 +18,7 @@ const STATUS = {
   settled: 'Paid by courier', returned: 'Returned', cancelled: 'Cancelled'
 };
 const courierName = (order) => order.courier?.label || order.courier_label || '';
+const deliveryStatus = (o) => o.manual && o.status !== 'cancelled' ? 'booked' : o.status;
 const bookingLabel = (o) => o.booking === 'cash' ? 'Paid' : o.booking === 'due' ? 'Due' : '';
 const ORDER_COLUMNS = [
   { key: 'no', label: 'Order / challan' },
@@ -25,7 +27,7 @@ const ORDER_COLUMNS = [
   { key: 'customer', label: 'Customer', value: (o) => o.customer?.name || '' },
   { key: 'courier', label: 'Courier', value: courierName },
   { key: 'tracking', label: 'Tracking', value: (o) => o.courier?.tracking || '' },
-  { key: 'status', label: 'Status', value: (o) => o.manual ? 'Booked' : STATUS[o.status] || o.status }
+  { key: 'status', label: 'Status', value: (o) => deliveryStatus(o) === 'booked' ? 'Booked' : STATUS[o.status] || o.status }
 ];
 const REPORT_COLUMNS = [
   { key: 'source', label: 'Source', value: (o) => o.manual ? 'Manual' : 'Online' },
@@ -36,7 +38,7 @@ const REPORT_COLUMNS = [
   { key: 'booked', label: 'Booking date', type: 'date', value: (o) => o.courier?.booked_at?.slice(0, 10) || '' },
   { key: 'providerStatus', label: 'Courier status', value: (o) => o.courier?.status || '' },
   { key: 'cod', label: 'COD', type: 'money' },
-  { key: 'charge', label: 'Courier charge', type: 'money', value: (o) => o.settlement?.charge ?? o.return_charge ?? o.courier?.charge ?? 0 },
+  { key: 'charge', label: 'Courier charge', type: 'money', sum: true, value: (o) => o.status === 'cancelled' ? 0 : o.settlement?.charge ?? o.return_charge ?? o.courier?.charge ?? 0 },
   { key: 'received', label: 'Received', type: 'money', sum: true, value: (o) => o.settlement?.received ?? 0 }
 ];
 
@@ -130,7 +132,7 @@ function CourierHub() {
           {parcels.map((parcel) => <article key={parcel.id} className="courier-parcel">
             <div><strong>{parcel.no}</strong><small className="muted">{courierName(parcel) || 'Courier not assigned'}{parcel.courier?.tracking ? ` · ${parcel.courier.tracking}` : ''}</small></div>
             <div><Badge tone={parcel.status === 'returned' ? 'bad' : ['delivered', 'settled'].includes(parcel.status) ? 'ok' : 'info'}>
-              {parcel.manual ? 'Booked manually' : STATUS[parcel.status] || parcel.status}
+              {deliveryStatus(parcel) === 'booked' ? 'Booked manually' : STATUS[parcel.status] || parcel.status}
             </Badge>{parcel.courier?.status && <small className="muted">Provider: {parcel.courier.status}</small>}
               <small className="muted">Updated {fdatetime([parcel.courier?.checked_at, parcel.updated_at, parcel.created_at, parcel.date].filter(Boolean).sort().at(-1))}</small>
             </div>
@@ -218,6 +220,10 @@ function CourierDeliveries({ mode }) {
   const [booking, setBooking] = useState('');
   const [selected, setSelected] = useState(null);
   const [manual, setManual] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [cancel, setCancel] = useState(null);
+  const canCancel = useStore((s) => s.can('cancel'));
+  const canExpense = useStore((s) => s.can('expenses'));
   const report = mode === 'report';
   const invalidDates = Boolean(!activityDay && from && to && from > to);
   const reportFilters = activityDay
@@ -231,7 +237,7 @@ function CourierDeliveries({ mode }) {
   const names = [...new Set(deliveries.map(courierName).filter(Boolean))].sort();
   const rows = activityDay ? orders : report
     ? deliveries.filter((o) => (!source || source === (o.manual ? 'manual' : 'online')) &&
-        (!courier || courierName(o) === courier) && (!status || status === (o.manual ? 'booked' : o.status)) &&
+        (!courier || courierName(o) === courier) && (!status || status === deliveryStatus(o)) &&
         (!booking || o.booking === booking))
     : deliveries.filter((o) => o.manual || (o.sale_id && ['confirmed', 'shipped', 'delivered', 'settled'].includes(o.status)));
   const reportTitle = source ? (source === 'manual' ? 'Manual Courier Delivery Report' : 'Online Order Delivery Report') : TITLES.report;
@@ -254,7 +260,7 @@ function CourierDeliveries({ mode }) {
       </select></Field>
       <Field label="Delivery status"><select aria-label="Delivery status" value={status} onChange={(e) => setStatus(e.target.value)}>
         <option value="">All statuses</option>{source !== 'online' && <option value="booked">Booked</option>}
-        {source !== 'manual' && Object.entries(STATUS).filter(([id]) => id !== 'confirmed').map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+        {Object.entries(STATUS).filter(([id]) => source === 'manual' ? id === 'cancelled' : id !== 'confirmed').map(([id, label]) => <option key={id} value={id}>{label}</option>)}
       </select></Field>
       {source !== 'online' && <Field label="Booking payment"><select aria-label="Booking payment" value={booking} onChange={(e) => setBooking(e.target.value)}>
         <option value="">Any payment</option><option value="cash">Paid</option><option value="due">Due</option>
@@ -273,19 +279,26 @@ function CourierDeliveries({ mode }) {
           exportable={report} onRowClick={mode === 'challan' ? setSelected : undefined}
           empty={report ? 'No deliveries match these filters.' : 'No saved challans or confirmed orders.'}
           toolbar={mode === 'challan' ? <span className="muted">Select an order or booking to preview its challan.</span> : undefined} />)}
-    {selected && <Challan order={selected} onClose={() => setSelected(null)} />}
-    {(manual || (presetCourier && q.data?.couriers?.some((c) => c.id === presetCourier))) && <ManualChallan
-      courierName={q.data?.couriers?.find((c) => c.id === presetCourier)?.name}
-      onClose={() => { setManual(false); if (presetCourier) clearPreset(); }} onSaved={q.reload} />}
+    {selected && <Challan order={selected} onClose={() => setSelected(null)} onSaved={q.reload}
+      onEdit={selected.manual && selected.status !== 'cancelled' ? () => { setEditing(selected); setSelected(null); } : undefined}
+      onCancel={canCancel && selected.manual && selected.status !== 'cancelled' && (!selected.expense_id || selected.booking !== 'cash' || canExpense)
+        ? () => { setCancel(selected); setSelected(null); } : undefined} />}
+    {cancel && <ReverseDialog open type="manual_challan" id={cancel.id} label={`booking ${cancel.no}`}
+      description="The booking stays in history as cancelled. Any linked, active Transport expense is reversed."
+      onClose={() => setCancel(null)} onDone={q.reload} />}
+    {(editing || manual || (presetCourier && q.data?.couriers?.some((c) => c.id === presetCourier))) && <ManualChallan
+      initial={editing} courierName={q.data?.couriers?.find((c) => c.id === presetCourier)?.name}
+      onClose={() => { setManual(false); setEditing(null); if (presetCourier) clearPreset(); }} onSaved={q.reload} />}
   </>;
 }
 
-function Challan({ order, onClose }) {
+function Challan({ order, onClose, onSaved, onEdit, onCancel }) {
   const settings = useStore((s) => s.settings);
   const user = useStore((s) => s.user);
   const q = useApi('sale.detail', { id: order.sale_id }, [], { skip: order.manual });
   const [busy, run] = useAction();
   const [booking, setBooking] = useState(order.booking || '');
+  const [savedBooking, setSavedBooking] = useState(booking);
   const [date, setDate] = useState(() => order.courier?.booked_at?.slice(0, 10) || shopDay());
   const items = order.manual ? order.items : q.data?.items;
   const html = items && deliveryChallanHtml({
@@ -294,8 +307,17 @@ function Challan({ order, onClose }) {
   });
 
   return <Modal open size="lg" title={`Delivery Challan · ${order.no}`} onClose={onClose}
-    footer={<><Btn onClick={onClose}>Close</Btn><Btn kind="primary" busy={busy} disabled={!html || q.loading || !!q.error}
+    footer={<><Btn onClick={onClose}>Close</Btn>
+      {onEdit && <Btn onClick={onEdit}>Edit booking</Btn>}
+      {onCancel && <Btn kind="danger" onClick={onCancel}>Cancel booking</Btn>}
+      {!order.manual && <Btn busy={busy} disabled={booking === savedBooking} onClick={() => run(async () => {
+        const result = await api('courier.challan.save', { id: order.id, booking });
+        setSavedBooking(result.booking);
+        onSaved();
+      }, 'Booking type saved').catch(() => {})}>Save booking type</Btn>}
+      <Btn kind="primary" busy={busy} disabled={!html || q.loading || !!q.error || order.status === 'cancelled'}
       onClick={() => run(() => printHtml(html)).catch(() => {})}>Print / Save as PDF</Btn></>}>
+    {order.status === 'cancelled' && <p className="muted">This courier booking was cancelled.</p>}
     <ErrorBox error={q.error} onRetry={q.reload} />
     {q.loading && <Loading label="Reading invoice items and serial numbers" />}
     {html && !q.error && <>
@@ -316,9 +338,9 @@ function ChallanPreview({ html }) {
     style={{ width: '100%', height: 'min(60vh, 620px)', background: '#fff', border: 0 }} />;
 }
 
-function ManualChallan({ onClose, onSaved, courierName: initialCourier }) {
+function ManualChallan({ onClose, onSaved, courierName: initialCourier, initial }) {
   const formId = useId();
-  const nextLine = useRef(1);
+  const nextLine = useRef(initial?.items?.length || 1);
   const settings = useStore((s) => s.settings);
   const userName = useStore((s) => s.user?.name || '');
   const canPickSupplier = useStore((s) => s.can({ any: ['suppliers', 'purchase'] }));
@@ -326,13 +348,13 @@ function ManualChallan({ onClose, onSaved, courierName: initialCourier }) {
   const accounts = useStore((s) => s.accounts);
   const [source, setSource] = useState('manual');
   const [partyId, setPartyId] = useState('');
-  const [recipient, setRecipient] = useState({ name: '', phone: '', address: '' });
-  const [lines, setLines] = useState([0]);
-  const [date, setDate] = useState(() => shopDay());
+  const [recipient, setRecipient] = useState(() => initial?.customer || { name: '', phone: '', address: '' });
+  const [lines, setLines] = useState(() => initial?.items?.map((_, index) => index) || [0]);
+  const [date, setDate] = useState(() => initial?.date || shopDay());
   const [draft, setDraft] = useState(null);
   const [saved, setSaved] = useState(null);
   const [uncertain, setUncertain] = useState(false);
-  const [payment, setPayment] = useState('due');
+  const [payment, setPayment] = useState(initial?.booking || 'due');
   const [busy, run] = useAction();
 
   function selectParty(id) {
@@ -356,17 +378,17 @@ function ManualChallan({ onClose, onSaved, courierName: initialCourier }) {
     const value = (key) => String(data.get(key) || '').trim();
     const items = lines.map((id) => ({ name: value(`product-${id}`), serials: value(`serials-${id}`), qty: value(`qty-${id}`), unit: value(`unit-${id}`) }));
     const order = {
-      manual: true,
+      id: initial?.id, manual: true,
       customer: { name: value('recipient'), address: value('address'), phone: value('phone') },
       courier: { label: value('courier'), tracking: value('tracking') }
     };
     setDraft({ ...order, items, date, booking: payment, booked_by: value('bookedBy'),
-      ...(payment === 'cash' ? { amount: value('amount'), account_id: value('account') } : {}) });
+      amount: value('amount'), ...(payment === 'cash' && !initial ? { account_id: value('account') } : {}) });
   }
 
   async function save() {
     try {
-      const result = await run(() => api(draft.booking === 'cash' ? 'courier.manual.paid' : 'courier.manual.save', draft), 'Courier booking saved');
+      const result = await run(() => api(!initial && draft.booking === 'cash' ? 'courier.manual.paid' : 'courier.manual.save', draft), 'Courier booking saved');
       if (!result) return;
       if (result.pending_approval) { onClose(); return; }
       setSaved(result);
@@ -375,9 +397,9 @@ function ManualChallan({ onClose, onSaved, courierName: initialCourier }) {
   }
   const details = saved || draft;
   const html = details && deliveryChallanHtml({ order: details, items: details.items, settings,
-    booking: details.booking, date: fdate(details.date), bookedBy: details.courier.booked_by || details.booked_by });
+    booking: initial?.expense_id ? initial.booking : details.booking, date: fdate(details.date), bookedBy: details.courier.booked_by || details.booked_by });
 
-  return <Modal open size="lg" title="Manual Delivery Challan" onClose={onClose}
+  return <Modal open size="lg" title={initial ? `Edit booking · ${initial.no}` : 'Manual Delivery Challan'} onClose={onClose}
     footer={saved
       ? <><Btn onClick={onClose}>Close</Btn><Btn kind="primary" busy={busy}
           onClick={() => run(() => printHtml(html)).catch(() => {})}>Print / Save as PDF</Btn></>
@@ -397,15 +419,19 @@ function ManualChallan({ onClose, onSaved, courierName: initialCourier }) {
         <Field label="Recipient name"><input name="recipient" required pattern={'.*\\S.*'} {...recipientInput('name')} /></Field>
         <Field label="Recipient phone"><input name="phone" type="tel" required pattern={'.*\\S.*'} {...recipientInput('phone')} /></Field>
         <Field label="Delivery address" wide><input name="address" required pattern={'.*\\S.*'} {...recipientInput('address')} /></Field>
-        <Field label="Courier name"><input name="courier" defaultValue={initialCourier} required pattern={'.*\\S.*'} /></Field>
-        <Field label="Tracking number (optional)"><input name="tracking" /></Field>
-        <Field label="Booking by"><input name="bookedBy" defaultValue={userName} /></Field>
-        <Field label="Booking type"><select aria-label="Booking type" value={payment} onChange={(e) => setPayment(e.target.value)}>
-          <option value="due">Due Booking</option>{canPayCourier && <option value="cash">Paid Booking</option>}
+        <Field label="Courier name"><input name="courier" defaultValue={initial?.courier?.label || initialCourier} required pattern={'.*\\S.*'} /></Field>
+        <Field label="Tracking number (optional)"><input name="tracking" defaultValue={initial?.courier?.tracking} /></Field>
+        <Field label="Booking by"><input name="bookedBy" defaultValue={initial?.courier?.booked_by || userName} /></Field>
+        <Field label="Booking type"><select aria-label="Booking type" value={payment} disabled={!!initial} onChange={(e) => setPayment(e.target.value)}>
+          <option value="due">Due Booking</option>{(canPayCourier || payment === 'cash') && <option value="cash">Paid Booking</option>}
         </select></Field>
-        <Field label="Challan date"><DateInput value={date} max={shopDay()} onChange={(e) => setDate(e.target.value)} /></Field>
-        {payment === 'cash' && <>
-          <Field label="Courier charge" hint="Recorded under Expenses → Transport"><input name="amount" type="number" min="0.01" step="0.01" required /></Field>
+        <Field label="Challan date"><DateInput value={date} max={shopDay()} disabled={!!initial?.expense_id} onChange={(e) => setDate(e.target.value)} /></Field>
+        <Field label={payment === 'cash' ? 'Courier charge' : 'Courier charge (optional)'}
+          hint={initial?.expense_id ? 'This charge is linked to the original Transport expense.' : payment === 'cash' ? 'Recorded under Expenses → Transport' : undefined}>
+          <input name="amount" type="number" min={payment === 'cash' ? '0.01' : '0'} step="0.01" defaultValue={initial?.courier?.charge}
+            required={payment === 'cash'} disabled={!!initial?.expense_id} />
+        </Field>
+        {payment === 'cash' && !initial && <>
           <Field label="Paid from"><select name="account" aria-label="Paid from" required defaultValue="">
             <option value="">Select an account</option>{accounts.filter((a) => a.active).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select></Field>
@@ -427,10 +453,10 @@ function ManualChallan({ onClose, onSaved, courierName: initialCourier }) {
             )}
           </div>
           <div className="challan-product-fields">
-            <Field label="Product name"><input name={`product-${id}`} required pattern={'.*\\S.*'} /></Field>
-            <Field label="Serial numbers (optional)"><input name={`serials-${id}`} /></Field>
-            <Field label="Quantity"><input name={`qty-${id}`} type="number" min="0.0001" step="0.0001" defaultValue="1" required /></Field>
-            <Field label="Unit"><input name={`unit-${id}`} defaultValue="pcs" maxLength={30} /></Field>
+            <Field label="Product name"><input name={`product-${id}`} defaultValue={initial?.items?.[id]?.name} required pattern={'.*\\S.*'} /></Field>
+            <Field label="Serial numbers (optional)"><input name={`serials-${id}`} defaultValue={initial?.items?.[id]?.serials} /></Field>
+            <Field label="Quantity"><input name={`qty-${id}`} type="number" min="0.0001" step="0.0001" defaultValue={initial?.items?.[id]?.qty ?? 1} required /></Field>
+            <Field label="Unit"><input name={`unit-${id}`} defaultValue={initial?.items?.[id]?.unit || "pcs"} maxLength={30} /></Field>
           </div>
         </div>)}
         <Btn type="button" className="challan-product-add" onClick={() => {

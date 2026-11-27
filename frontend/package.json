@@ -108,6 +108,7 @@
       ],
       "icon": "branding/macos/icon.icns",
       "category": "public.app-category.business",
+      "extendInfo": { "NSCameraUsageDescription": "Karvio uses the camera to scan product barcodes and serial numbers." },
       "identity": null
     },
     "dmg": {

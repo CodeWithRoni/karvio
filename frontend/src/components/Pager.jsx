@@ -38,7 +38,7 @@ export function Pager({ page, pageSize, total, onPage, onPageSize, label = 'rows
           if (e.target.value === 'custom') { setCustom(true); setDraft(String(pageSize)); return; }
           setCustom(false); onPageSize(Number(e.target.value));
         }}>
-        {PAGE_SIZES.map((n) => <option key={n} value={n}>{n} Reports</option>)}
+        {PAGE_SIZES.map((n) => <option key={n} value={n}>{n} per page</option>)}
         <option value="custom">Custom Range</option>
       </select>
       {custom && <input className="pager-custom" type="number" min="1" max={MAX_PAGE_SIZE} step="1" value={draft} aria-label="Rows per page (custom)" title={`1 to ${MAX_PAGE_SIZE} rows per page — press Enter`}

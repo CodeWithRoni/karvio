@@ -343,6 +343,7 @@ function Deliver({ job, meta, onClose, onDone }) {
 function DeliveryForm({ job, meta, onClose, onDone }) {
   const advance = Number(job.available_advance) || 0;
   const [discount, setDiscount] = useState('');
+  const badDiscount = Number(discount) < 0 || Number(discount) > job.total;
   const toPay = round2(Math.max(job.total - (Number(discount) || 0) - advance, 0));
   const [pay, setPay] = useState({ account_id: meta.accounts[0]?.id || '', amount: String(toPay || '') });
   const [nextDate, setNextDate] = useState('');
@@ -359,14 +360,14 @@ function DeliveryForm({ job, meta, onClose, onDone }) {
   return (
     <Modal open onClose={onClose} title={`Deliver ${job.job_no}`}
       footer={<><Btn onClick={onClose}>Back</Btn>
-        <Btn busy={busy} onClick={() => go(false)} disabled={Number(pay.amount) > toPay + 0.004}>Deliver</Btn>
-        <Btn kind="primary" busy={busy} onClick={() => go(true)} disabled={Number(pay.amount) > toPay + 0.004 || job.total <= 0}>Deliver & print invoice</Btn></>}>
+        <Btn busy={busy} onClick={() => go(false)} disabled={badDiscount || Number(pay.amount) < 0 || Number(pay.amount) > toPay + 0.004}>Deliver</Btn>
+        <Btn kind="primary" busy={busy} onClick={() => go(true)} disabled={badDiscount || Number(pay.amount) < 0 || Number(pay.amount) > toPay + 0.004 || job.total <= 0}>Deliver & print invoice</Btn></>}>
       <div className="form">
         <div className="wide totals">
           <span>Parts + charge</span><b className="num">{money(job.total, false)}</b>
           <span>Advance available now</span><b className="num">{money(advance, false)}</b>
         </div>
-        {job.total > 0 && <Field label="Discount"><input type="number" min="0" step="any" value={discount} onChange={(e) => { setDiscount(e.target.value); setPay({ ...pay, amount: String(round2(Math.max(job.total - (Number(e.target.value) || 0) - advance, 0)) || '') }); }} /></Field>}
+        {job.total > 0 && <Field label="Discount" hint={badDiscount ? "Discount must be between zero and the total." : undefined}><input type="number" min="0" max={job.total} step="any" value={discount} onChange={(e) => { setDiscount(e.target.value); setPay({ ...pay, amount: String(round2(Math.max(job.total - (Number(e.target.value) || 0) - advance, 0)) || '') }); }} /></Field>}
         <Field label="Received now into"><Select value={pay.account_id} onChange={(v) => setPay({ ...pay, account_id: v })} options={meta.accounts} allowEmpty={false} /></Field>
         <Field label={`Amount received (to pay ${money(toPay, false)})`}><input type="number" min="0" step="any" value={pay.amount} onChange={(e) => setPay({ ...pay, amount: e.target.value })} /></Field>
         {left > 0.004 && <Field label={`Next payment date (${money(left, false)} stays as the customer's due)`}><DateInput value={nextDate} onChange={(e) => setNextDate(e.target.value)} /></Field>}
