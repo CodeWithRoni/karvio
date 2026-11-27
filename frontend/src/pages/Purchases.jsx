@@ -314,12 +314,12 @@ function NewPurchase({ onDone }) {
                   <td data-label="Unit cost"><input type="number" min="0" step="any" value={l.cost} onChange={(e) => upd(l.product_id, { cost: e.target.value, costTyped: true })} aria-label={`Unit cost for ${p?.name}`} className={tried && b.cost ? 'invalid' : ''} />
                     {(() => {
                       // The product cost after this purchase: weighted average of the stock on hand and this purchase.
-                      const st = Number(p?.stock) || 0, avg = Number(p?.cost_price) || 0, q = Number(l.qty) || 0, c = Number(l.cost) || 0;
-                      if (!canCost || !pricing.valid || !(c > 0) || !(q > 0) || st <= 0) return null;
+                      const valuation = p?.purchase_valuation, q = Number(l.qty), c = Number(l.cost);
+                      if (!canCost || !valuation || !pricing.valid || !(c > 0) || !(q > 0)) return null;
+                      const { qty: st, value: held } = valuation;
                       const incoming = pricing.lineCosts[lineIndex];
-                      const held = serial && Number.isFinite(p.inventory_cost) ? p.inventory_cost : st * avg;
                       const next = Math.round((held + incoming) / (st + q) * 10000) / 10000;
-                      return <small className="avg-next" title={`Average cost after this purchase: (${money(held, false, 4)} held cost + ${money(incoming, false)} net received cost) ÷ ${fqty(st + q)}`}>New avg <b>{money(Math.round(next * 100) / 100, false)}</b><span className="muted">now {money(avg, false)}</span></small>;
+                      return <small className="avg-next" title={`Shop-wide average after this purchase: (${money(held, false, 4)} held cost + ${money(incoming, false)} net received cost) ÷ ${fqty(st + q)}`}>New avg <b>{money(Math.round(next * 100) / 100, false)}</b>{st > 0 && <span className="muted">now {money(held / st, false)}</span>}</small>;
                     })()}
                   </td>
                   <td data-label="Retail price"><input type="number" min="0" step="any" value={l.sale} onChange={(e) => upd(l.product_id, { sale: e.target.value })} aria-label={`Retail price for ${p?.name}`} className={tried && b.sale ? 'invalid' : ''} placeholder="Retail" />

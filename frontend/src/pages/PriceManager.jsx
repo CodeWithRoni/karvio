@@ -112,7 +112,7 @@ export default function Prices() {
         <tbody>{visibleRows.map((p) => {
           const sale = value(p, 'sale'), whole = value(p, 'whole');
           const dirty = changes.some((c) => c.id === p.id);
-          const m = showCost && p.cost_price > 0 && Number(sale) > 0 ? Math.round(((sale - p.cost_price) / p.cost_price) * 100) : null;
+          const m = showCost && Number.isFinite(p.cost_price) && Number(sale) > 0 ? Math.round(((sale - p.cost_price) / sale) * 100) : null;
           return (
             <tr key={p.id} className={dirty ? 'dirty' : ''}>
               <td><b>{p.name}</b>{p.sku && <div className="muted" style={{ fontSize: 12 }}>{p.sku}</div>}</td>

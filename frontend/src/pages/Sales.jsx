@@ -69,7 +69,8 @@ export default function Sales({ mode = 'sales' }) {
               { key: 'customer_name', label: 'Customer' },
               { key: 'items_text', label: 'Items', className: 'clip' },
               { key: 'total', label: 'Total', type: 'money', sum: true },
-              { key: 'paid', label: 'Paid', type: 'money', sum: true },
+              { key: 'paid', label: 'Paid at sale', type: 'money', sum: true },
+              { key: 'due', label: 'Due at sale', type: 'money', sum: true },
               { key: 'due_now', label: 'Due now', type: 'money', sum: true, value: (r) => r.due_now ?? r.due },
               ...(can('cost') ? [{ key: 'profit', label: 'Profit', type: 'money', sum: true }] : []),
               { key: 'user_name', label: 'Staff', value: (r) => cap1(r.user_name) },
@@ -200,17 +201,20 @@ function EditInvoice({ detail, onClose, onDone }) {
   const count = (l) => (l.serial ? splitList(l.serials).length : Number(l.qty) || 0);
   const subtotal = round2(lines.reduce((t, l) => t + round2(count(l) * (Number(l.price) || 0)), 0)); // each line rounded, as the server does
   const total = round2(subtotal - (Number(discount) || 0));
-  const credit = customer === (s.customer_id || '') ? Number(s.credit_used) || 0 : 0;
-  const paid = round2(pays.reduce((t, p) => t + (Number(p.amount) || 0), 0) + credit);
+  const payments = cleanPays(pays);
+  const received = round2(payments.reduce((t, p) => t + p.amount, 0));
+  const originalCredit = customer && customer === s.customer_id ? Number(s.credit_used) || 0 : 0;
+  const credit = Math.min(originalCredit, Math.max(0, round2(total - received)));
+  const paid = round2(received + credit);
   const due = round2(total - paid);
   const save = async () => {
     const r = await run(() => api('sale.edit', { id: s.id, password, reason, customer_id: customer, discount: Number(discount) || 0, note, credit_used: credit,
-      payments: cleanPays(pays), items: lines.map((l) => ({ product_id: l.product_id, qty: l.serial ? splitList(l.serials).length : l.qty, price: l.price, ...(l.serial ? { serials: l.serials } : {}) })) }), `Invoice ${s.invoice_no} updated`);
+      payments, items: lines.map((l) => ({ product_id: l.product_id, qty: l.serial ? splitList(l.serials).length : l.qty, price: l.price, ...(l.serial ? { serials: l.serials } : {}) })) }), `Invoice ${s.invoice_no} updated`);
     if (r) onDone(r);
   };
   return (
     <Modal open size="lg" title={`Edit invoice ${s.invoice_no}`} onClose={onClose}
-      footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={save} disabled={!lines.length || !password || (!customer && due > 0.004) || total < 0}>Save changes</Btn></>}>
+      footer={<><Btn onClick={onClose}>Cancel</Btn><Btn kind="primary" busy={busy} onClick={save} disabled={!lines.length || !password || (!customer && due > 0.004) || due < -0.004 || total < 0}>Save changes</Btn></>}>
       <div className="form inv-edit">
         <p className="muted wide" style={{ margin: 0 }}>The invoice keeps its number ({s.invoice_no}), date ({fdate(s.date)}) and seller ({s.user_name}). Stock, serials, payments and the customer's due are corrected; the old version stays in the activity log.</p>
         <Field label="Customer" wide><CustomerPicker value={customer} onChange={setCustomer} /></Field>

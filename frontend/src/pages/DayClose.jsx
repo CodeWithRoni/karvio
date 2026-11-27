@@ -56,7 +56,12 @@ function CountForm({ d, onSaved }) {
   const diff = counted === null ? null : roundDecimal(counted - d.expected, 2);
   const off = diff !== null && Math.abs(diff) > 0.005;
   const save = async () => {
-    await run(() => api('dayclose.save', { account_id: d.account.id, date: d.date, counted, notes: anyNotes ? notes : {}, note, adjust: off && adjust }), `${d.account.name} closed for ${fdate(d.date)}`);
+    try {
+      await run(() => api('dayclose.save', { account_id: d.account.id, date: d.date, expected: d.expected, counted, notes: anyNotes ? notes : {}, note, adjust: off && adjust }), `${d.account.name} closed for ${fdate(d.date)}`);
+    } catch (e) {
+      if (e.message === 'Expected balance changed. Review the latest figures and try again.') await onSaved();
+      return;
+    }
     onSaved();
   };
   return (

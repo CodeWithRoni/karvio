@@ -1068,9 +1068,31 @@ function productUsageIndex_() {
   return used;
 }
 function productsList_(user) {
-  var reservations = repairReservations_(null, _branch).qty, history = productUsageIndex_(), serialValues = {}, showCost = can_(user,'cost');
-  if (showCost) all_('SerialItems').forEach(function(s) { if (s.status === 'in_stock' && (!_branch || serialBranch_(s.id) === _branch)) serialValues[s.product_id]=(serialValues[s.product_id] || 0)+num_(s.cost); });
-  var list = all_('Products').map(function (p) { var c = Object.assign({}, p); delete c._row; c.has_history = !!history[p.id]; c.reserved = reservations[p.id] || 0; c.available = Math.max(0, round_(p.stock - c.reserved, 4)); if (showCost && isSerialProduct_(p)) c.inventory_cost=round_(serialValues[p.id] || 0,4); return c; });
+  var reservations = repairReservations_(null, _branch).qty, history = productUsageIndex_(), serialValues = {}, purchaseSerials = {};
+  var showCost = can_(user, 'cost'), showPurchaseValuation = showCost && can_(user, 'purchase');
+  if (showCost) all_('SerialItems').forEach(function (s) {
+    if (s.status !== 'in_stock') return;
+    var cost = num_(s.cost);
+    if (!_branch || serialBranch_(s.id) === _branch) serialValues[s.product_id] = (serialValues[s.product_id] || 0) + cost;
+    if (showPurchaseValuation) {
+      var held = purchaseSerials[s.product_id] || (purchaseSerials[s.product_id] = { qty: 0, value: 0 });
+      held.qty++;
+      held.value += cost;
+    }
+  });
+  var list = all_('Products').map(function (p) {
+    var c = Object.assign({}, p); delete c._row;
+    c.has_history = !!history[p.id];
+    c.reserved = reservations[p.id] || 0;
+    c.available = Math.max(0, round_(p.stock - c.reserved, 4));
+    var serial = isSerialProduct_(p);
+    if (showCost && serial) c.inventory_cost = round_(serialValues[p.id] || 0, 4);
+    if (showPurchaseValuation && !isService_(p)) {
+      var stock = Math.max(0, num_(p.stock));
+      c.purchase_valuation = serial ? (purchaseSerials[p.id] || { qty: 0, value: 0 }) : { qty: stock, value: stock * num_(p.cost_price) };
+    }
+    return c;
+  });
   if (_branch) list.forEach(function (c) {
     if (isService_(c)) return;
     c.stock_total = c.stock; c.stock_here = branchQty_(c.id, _branch); c.stock = c.stock_here; // this branch; the shop total stays in stock_total
@@ -1700,6 +1722,11 @@ function dayCloseGet_(p, user) {
   return Object.assign({ date: date, today: today, account: { id: acc.id, name: acc.name, type: acc.type },
     accounts: accs.map(function (a) { return { id: a.id, name: a.name, type: a.type }; }), closed: done, locked: !!done && dayLockOn_(), history: history }, dayCloseFigures_(acc, date));
 }
+function requireCloseBalance_(expected, actual) {
+  if (expected === undefined) return; // Older callers do not send the reviewed balance.
+  if (typeof expected !== 'number' || !isFinite(expected) || Math.abs(expected - actual) > 0.005)
+    fail_('Expected balance changed. Review the latest figures and try again.');
+}
 function dayCloseSave_(p, user) {
   requireAccountScope_(p.account_id, user);
   var acc = all_('Accounts').filter(function (a) { return a.id === p.account_id && a.active; })[0]; if (!acc) fail_('Select an active account');
@@ -1715,7 +1742,9 @@ function dayCloseSave_(p, user) {
   if (!isFinite(counted) || counted < 0) fail_('Enter the counted amount (0 or more)');
   counted = round_(counted);
   if (hasNotes && Math.abs(round_(fromNotes) - counted) > 0.005) fail_('The counted amount does not match the notes and coins (' + round_(fromNotes) + ')');
-  var f = dayCloseFigures_(acc, date), diff = round_(counted - f.expected), note = String(p.note || '').trim().slice(0, 300);
+  var f = dayCloseFigures_(acc, date);
+  requireCloseBalance_(p.expected, f.expected);
+  var diff = round_(counted - f.expected), note = String(p.note || '').trim().slice(0, 300);
   if (Math.abs(diff) > 0.005 && !note) fail_('Write a note explaining the ' + (diff < 0 ? 'shortage' : 'extra cash'));
   var adjustment = '';
   if (p.adjust && Math.abs(diff) > 0.005) {
@@ -1853,6 +1882,7 @@ function shiftClose_(p, user) {
   requireAccountScope_(s.account_id, user);
   if (s.user_id !== user.id && s.mode !== 'shared' && !shiftCanAll_(user)) fail_('Only ' + s.user + ' or a manager can close this shift');
   var c = cashCounted_(p, 'counted total'), endRow = acctLastRow_(), f = shiftFigures_(s, endRow);
+  requireCloseBalance_(p.expected, f.expected);
   var diff = round_(c.counted - f.expected), note = String(p.note || '').trim().slice(0, 300), date = today_();
   if (Math.abs(diff) > 0.005 && !note) fail_('Write a note explaining the ' + (diff < 0 ? 'shortage' : 'extra cash'));
   var adjustment = '';
@@ -1900,8 +1930,10 @@ function daybook_(p, user) {
   var sum = function (rows, keys) { var o = { count: rows.length }; keys.forEach(function (k) { o[k] = round_(rows.reduce(function (s, r) { return s + num_(r[k]); }, 0)); }); return o; };
   function visible(table) { return all_(table).filter(function (r) { return inRange(r) && branchSees_(table, r.id); }); }
   var sales = visible('Sales'), purchases = visible('Purchases');
+  var salesTotals = sum(sales, ['total', 'paid', 'due', 'credit_used']);
+  salesTotals.received = round_(salesTotals.paid - salesTotals.credit_used);
   var business = only ? null : {
-    sales: sum(sales, ['total', 'paid', 'due']), sales_returns: sum(visible('SalesReturns'), ['total', 'refund']),
+    sales: salesTotals, sales_returns: sum(visible('SalesReturns'), ['total', 'refund']),
     purchases: sum(purchases, ['total', 'paid', 'due']), purchase_returns: sum(visible('PurchaseReturns'), ['total', 'received']),
     expenses: sum(visible('Expenses'), ['amount']),
     collections: round_(entries.filter(function (e) { return e.type === 'cpay' && e.direction === 'in'; }).reduce(function (s, e) { return s + e.amount; }, 0)),
@@ -2878,11 +2910,16 @@ function branchReport_(p, user) {
   var limited = branchFixed_(user) || (user.role !== 'admin' ? _branch : '');
   var branches = branchesAll_().filter(function (b) { return !limited || b.id === limited; });
   var ids = branches.map(function (b) { return b.id; }), out = {}, showCost = can_(user, 'cost');
-  var blank = function () { return { sales: 0, sales_count: 0, paid: 0, due: 0, profit: 0, returns: 0, purchases: 0, purchase_count: 0, expenses: 0, stock_qty: 0, stock_value: 0, cash: 0 }; };
+  var blank = function () { return { sales: 0, sales_count: 0, paid: 0, received: 0, credit_used: 0, due: 0, profit: 0, returns: 0, purchases: 0, purchase_count: 0, expenses: 0, stock_qty: 0, stock_value: 0, cash: 0 }; };
   ids.concat(['all']).forEach(function (id) { out[id] = blank(); });
   var add = function (id, k, v) { if (limited && id !== limited) return; if (!out[id]) out[id] = blank(); out[id][k] = round_(out[id][k] + v); out.all[k] = round_(out.all[k] + v); };
   var inRange = function (r) { var d = String(r.date).slice(0, 10); return d >= from && d <= to && r.status !== 'cancelled'; };
-  all_('Sales').filter(inRange).forEach(function (s) { var b = docBranch_('Sales', s.id); add(b, 'sales', num_(s.total)); add(b, 'sales_count', 1); add(b, 'paid', num_(s.paid)); add(b, 'due', num_(s.due)); add(b, 'profit', num_(s.profit)); });
+  all_('Sales').filter(inRange).forEach(function (s) {
+    var b = docBranch_('Sales', s.id), paid = num_(s.paid), credit = num_(s.credit_used);
+    add(b, 'sales', num_(s.total)); add(b, 'sales_count', 1);
+    add(b, 'paid', paid); add(b, 'received', paid - credit); add(b, 'credit_used', credit);
+    add(b, 'due', num_(s.due)); add(b, 'profit', num_(s.profit));
+  });
   all_('SalesReturns').filter(inRange).forEach(function (r) {
     add(docBranch_('SalesReturns', r.id), 'returns', num_(r.total));
     // Reverse the profit in the selling branch, even if another branch accepts the return.
@@ -4219,6 +4256,15 @@ function repairReservations_(exceptId, branchId) {
   });
   return { qty: qty, serial: serial };
 }
+function requirePartPricePermission_(parts, job, user) {
+  if (!parts.length || can_(user, 'pos')) return;
+  var savedParts = job ? repairParts_(job) : [], products = indexBy_(all_('Products'));
+  parts.forEach(function (part) {
+    var previous = savedParts.filter(function (x) { return x.product_id === part.product_id; })[0];
+    var allowed = previous ? num_(previous.price) : num_(products[part.product_id].sale_price);
+    if (round_(part.price) !== round_(allowed)) fail_('Permission denied: POS permission is required to change a part price');
+  });
+}
 function repairPartsClean_(list, exceptId) {
   var jobTag = exceptId && _branch ? branchGet_('d|Repairs|' + exceptId) : null, bid = jobTag && jobTag.text ? jobTag.text : _branch;
   var pmap = indexBy_(all_('Products')), sidx = serialIndex_(), seen = {}, quantities = {}, reserved = repairReservations_(exceptId), branchReserved = bid ? repairReservations_(exceptId, bid).qty : {};
@@ -4314,14 +4360,7 @@ function repairSave_(p, user) {
   var charge = round_(p.charge); if (charge < 0) fail_('Repair charge cannot be negative');
   var estimate = round_(p.estimate); if (estimate < 0) fail_('Estimate cannot be negative');
   var parts = repairPartsClean_(p.parts, p.id);
-  if (!can_(user, 'pos')) {
-    var oldParts = open ? repairParts_(open) : [], products = indexBy_(all_('Products'));
-    parts.forEach(function (part) {
-      var previous = oldParts.filter(function (x) { return x.product_id === part.product_id; })[0];
-      var allowed = previous ? num_(previous.price) : num_(products[part.product_id].sale_price);
-      if (round_(part.price) !== round_(allowed)) fail_('Permission denied: POS permission is required to change a part price');
-    });
-  }
+  requirePartPricePermission_(parts, open, user);
   var fields = {
     device: device, serial: String(p.serial || '').trim(), problem: problem, accessories: String(p.accessories || '').trim(),
     technician_id: tech ? tech.id : '', technician_name: tech ? tech.name : '', estimate: estimate, charge: charge,
@@ -4600,6 +4639,7 @@ function serviceSave_(p, user) {
   var tech = repairTechnician_(p.technician_id, open ? open.technician_id : '');
   var charge = round_(p.charge); if (!(charge >= 0)) fail_('The service charge cannot be negative');
   var parts = repairPartsClean_(p.parts, p.id);
+  requirePartPricePermission_(parts, open, user);
   var fields = { device: type.name, serial: type.id, problem: details, accessories: address, technician_id: tech ? tech.id : '', technician_name: tech ? tech.name : '',
     charge: charge, estimate: charge, parts: parts, note: String(p.note || '').trim(), updated_at: now_() };
   if (open) {

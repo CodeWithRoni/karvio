@@ -248,7 +248,7 @@ function Complete({ job, meta, onClose, onDone }) {
   const badDiscount = Number(discount) < 0 || Number(discount) > total;
   const [pay, setPay] = useState({ account_id: meta.accounts[0]?.id || '', amount: '' });
   const [nextDate, setNextDate] = useState('');
-  const amount = pay.amount === '' ? toPay : Number(pay.amount) || 0;
+  const amount = Number(pay.amount) || 0;
   const left = round2(toPay - amount);
   const [busy, run] = useAction();
   const back = used.filter((x) => qtyOf(x) < x.taken - 1e-9);
@@ -294,7 +294,7 @@ function Complete({ job, meta, onClose, onDone }) {
         {availableAdvance > 0 && <label className="check wide"><input type="checkbox" checked={useAdvance}
           onChange={(e) => setUseAdvance(e.target.checked)} /> Use customer advance ({money(availableAdvance) } available)</label>}
         <Field label="Received now into"><Select value={pay.account_id} onChange={(v) => setPay({ ...pay, account_id: v })} options={meta.accounts} allowEmpty={false} aria-label="Account" /></Field>
-        <Field label={`Amount received (to pay ${money(toPay, false)})`}><input type="number" min="0" step="any" value={pay.amount} placeholder={String(toPay)} onChange={(e) => setPay({ ...pay, amount: e.target.value })} aria-label="Amount received" /></Field>
+        <Field label={`Amount received (to pay ${money(toPay, false)})`} hint="Leave blank if no payment was received."><input type="number" min="0" step="any" value={pay.amount} placeholder="0" onChange={(e) => setPay({ ...pay, amount: e.target.value })} aria-label="Amount received" /></Field>
         {left > 0.004 && <Field label={`Next payment date (${money(left, false)} stays as the customer's due)`}><DateInput value={nextDate} onChange={(e) => setNextDate(e.target.value)} /></Field>}
         <div className="wide totals">
           <span>Products used</span><b className="num">{money(round2(total - (Number(charge) || 0)), false)}</b>

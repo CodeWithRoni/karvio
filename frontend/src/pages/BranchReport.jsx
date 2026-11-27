@@ -13,7 +13,8 @@ export default function BranchReport() {
   if (!on) return <><PageHead title="Branch report" /><Empty icon="receipt" title="Branches are off">An admin can add branches in Settings → Branches.</Empty></>;
   const d = q.data, cost = can('cost');
   const cols = [
-    { key: 'name', label: 'Branch' }, { key: 'sales_count', label: 'Invoices' }, { key: 'sales', label: 'Sales', type: 'money' }, { key: 'paid', label: 'Received', type: 'money' },
+    { key: 'name', label: 'Branch' }, { key: 'sales_count', label: 'Invoices' }, { key: 'sales', label: 'Sales', type: 'money' }, { key: 'received', label: 'Received at sale', type: 'money' },
+    { key: 'credit_used', label: 'Advance used', type: 'money' },
     { key: 'due', label: 'Due at sale', type: 'money' }, { key: 'returns', label: 'Returns', type: 'money' }, ...(cost ? [{ key: 'profit', label: 'Gross profit', type: 'money' }] : []),
     { key: 'purchases', label: 'Purchases', type: 'money' }, { key: 'expenses', label: 'Expenses', type: 'money' }, { key: 'stock_text', label: 'Stock' },
     ...(cost ? [{ key: 'stock_value', label: 'Stock value', type: 'money' }] : []), { key: 'cash', label: 'Cash & accounts', type: 'money' }

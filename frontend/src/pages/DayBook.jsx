@@ -38,7 +38,7 @@ export default function DayBook() {
         {d.business && <section className="card">
           <div className="card-head"><h2>Business {oneDay ? `on ${fdate(d.from)}` : `${fdate(d.from)} – ${fdate(d.to)}`}</h2></div>
           <div className="db-biz">
-            <div><span>Sales <small>({d.business.sales.count})</small></span><b className="num">{ins(d.business.sales.total)}</b><small>Received {ins(d.business.sales.paid)} · due {ins(d.business.sales.due)}</small></div>
+            <div><span>Sales <small>({d.business.sales.count})</small></span><b className="num">{ins(d.business.sales.total)}</b><small>Received at sale {ins(d.business.sales.received)} · advance used {ins(d.business.sales.credit_used)} · due at sale {ins(d.business.sales.due)}</small></div>
             <div><span>Sales returns <small>({d.business.sales_returns.count})</small></span><b className="num">{ins(d.business.sales_returns.total)}</b><small>Refunded {ins(d.business.sales_returns.refund)}</small></div>
             <div><span>Purchases <small>({d.business.purchases.count})</small></span><b className="num">{ins(d.business.purchases.total)}</b><small>Paid {ins(d.business.purchases.paid)} · due {ins(d.business.purchases.due)}</small></div>
             <div><span>Purchase returns <small>({d.business.purchase_returns.count})</small></span><b className="num">{ins(d.business.purchase_returns.total)}</b><small>Received back {ins(d.business.purchase_returns.received)}</small></div>

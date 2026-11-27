@@ -23,7 +23,8 @@ export default function Shifts() {
   const tab = tabs.some((t) => t[0] === params.get('tab')) ? params.get('tab') : 'open';
   const q = useApi('shifts.list', {}, []);
   const [opening, setOpening] = useState(false);
-  const [closing, setClosing] = useState(null);
+  const [closingId, setClosingId] = useState('');
+  const closing = q.data?.open.find((shift) => shift.id === closingId);
   const d = q.data;
   const head = (
     <PageHead title="Shift & day close" sub="Open a shift with the cash in the drawer, close it by counting — the system shows if cash is short or over.">
@@ -45,7 +46,7 @@ export default function Shifts() {
           <div className="card"><span>Closed today</span><b className="num">{d.stats.closed_today}</b></div>
           <div className="card"><span>Short / over today</span><b className={`num ${d.stats.difference_today < -0.005 ? 'bad' : d.stats.difference_today > 0.005 ? 'warn' : ''}`}>{off(d.stats.difference_today) ? (d.stats.difference_today < 0 ? '− ' : '+ ') + money(Math.abs(d.stats.difference_today)) : money(0)}</b></div>
         </div>
-        {d.open.length ? <div className="sh-open">{d.open.map((s) => <OpenCard key={s.id} s={s} onClose={() => setClosing(s)} />)}</div>
+        {d.open.length ? <div className="sh-open">{d.open.map((s) => <OpenCard key={s.id} s={s} onClose={() => setClosingId(s.id)} />)}</div>
           : <Empty icon="receipt" title="No shift is open">{d.required ? 'Selling needs an open shift — open one to start.' : 'Open a shift with the cash in the drawer to start counting.'}</Empty>}
         <section className="card" style={{ marginTop: 12 }}>
           <div className="card-head"><h2>Recent closed shifts</h2></div>
@@ -55,7 +56,7 @@ export default function Shifts() {
         <section className="card"><div className="card-head"><h2>Shift history</h2><span className="muted">{d.can_all ? 'All cashiers' : 'Your shifts'}</span></div><ShiftTable rows={d.history} /></section>
       )}
       {opening && <OpenShift accounts={d.accounts} mode={d.mode} onClose={() => setOpening(false)} onDone={q.reload} />}
-      {closing && <CloseShift s={closing} onClose={() => setClosing(null)} onDone={q.reload} />}
+      {closing && <CloseShift s={closing} onClose={() => setClosingId('')} onDone={q.reload} onRefresh={q.reload} />}
     </>
   );
 }
@@ -147,7 +148,7 @@ export function OpenShift({ accounts, mode, onClose, onDone }) {
 }
 
 /** Close a shift: count the drawer, compare with what should be there, explain any difference. */
-export function CloseShift({ s, onClose, onDone }) {
+export function CloseShift({ s, onClose, onDone, onRefresh }) {
   const [notes, setNotes] = useState({});
   const [manual, setManual] = useState('');
   const [note, setNote] = useState('');
@@ -158,7 +159,13 @@ export function CloseShift({ s, onClose, onDone }) {
   const diff = useMemo(() => (counted === null ? null : roundDecimal(counted - s.expected, 2)), [counted, s.expected]);
   const isOff = diff !== null && off(diff);
   const submit = async () => {
-    const rec = await run(() => api('shift.close', { id: s.id, counted, notes: fromNotes ? notes : {}, note, adjust: isOff && adjust }), `${s.no} closed`);
+    let rec;
+    try {
+      rec = await run(() => api('shift.close', { id: s.id, expected: s.expected, counted, notes: fromNotes ? notes : {}, note, adjust: isOff && adjust }), `${s.no} closed`);
+    } catch (e) {
+      if (e.message === 'Expected balance changed. Review the latest figures and try again.') await onRefresh?.();
+      return;
+    }
     onClose(); onDone?.(rec);
   };
   return (
