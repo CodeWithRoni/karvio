@@ -13,6 +13,12 @@
     "dev": "vite",
     "build": "vite build && node scripts/verify-build.mjs",
     "build:vps": "VITE_API_URL=/api vite build && node scripts/verify-build.mjs",
+    "build:shops": "vite build --mode shops && node scripts/verify-build.mjs",
+    "desktop:build:win:shops": "npm run build:shops && electron-builder --win nsis --x64 --publish never",
+    "desktop:build:mac:shops": "npm run build:shops && electron-builder --mac dmg --publish never",
+    "desktop:build:linux:shops": "npm run build:shops && electron-builder --linux deb --x64 --publish never",
+    "android:prepare:shops": "npm run build:shops && npx cap add android && node scripts/native-icons.mjs android && npx cap sync android",
+    "ios:prepare:shops": "npm run build:shops && npx cap add ios && node scripts/native-icons.mjs ios && npx cap sync ios",
     "preview": "vite preview",
     "check:deploy-build": "npm test && npm run test:supabase && npm run test:performance && npm run build",
     "check:deploy": "npm run check:deploy-build && npm run test:e2e",
@@ -147,5 +153,6 @@
     "type": "git",
     "url": "https://github.com/CodeWithRoni/karvio.git"
   },
-  "desktopName": "karvio.desktop"
+  "desktopName": "karvio.desktop",
+  "karvioShopDomain": "karvio.com.bd"
 }

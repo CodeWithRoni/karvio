@@ -5,22 +5,23 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 const day = (d) => { const [y, m, dd] = d.split('-').map(Number); return `${dd} ${MONTHS[m - 1]} ${y}`; };
 
 /**
- * Shops on the Karvio server (API at /api on the shop's own address): the Administrator sees when the
+ * Shops on the Karvio server (API at /api on the shop's own address, in the browser or the apps): the Administrator sees when the
  * subscription is about to end. Shops on any other backend never ask, so nothing changes for them.
  */
 export default function RenewNotice({ show }) {
   const [sub, setSub] = useState(null);
   const url = endpoint();
-  const selfHosted = /^\/api\/?$/.test(url);
+  // The Karvio server's API ends in /api: the website (same address) and the shop-address apps (full address).
+  const selfHosted = /(^|[a-z0-9])\/api\/?$/i.test(url) && (url.startsWith('/') || url.startsWith('https://'));
   useEffect(() => {
     if (!show || !selfHosted) return undefined;
     let live = true;
-    fetch('/api/subscription', { credentials: 'same-origin' })
+    fetch(url.replace(/\/?$/, '/subscription'), { credentials: 'omit' })
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => { if (live && j?.ok && j.data?.warn && j.data.paid_until) setSub(j.data); })
       .catch(() => { /* the notice is optional */ });
     return () => { live = false; };
-  }, [show, selfHosted]);
+  }, [show, selfHosted, url]);
   if (!sub) return null;
   const left = sub.days_left;
   const text = left > 0

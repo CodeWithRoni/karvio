@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../lib/store';
-import { api, getApiConfig, setApiConfig, testConnection, endpoint, isOffline } from '../lib/api';
+import { api, getApiConfig, setApiConfig, testConnection, endpoint, isOffline, setToken } from '../lib/api';
+import { SHOP_DOMAIN, shopApiUrl, shopOf } from '../config';
 import { Btn, Field } from '../components/ui';
 import { readBrand } from '../lib/brand';
 
 export default function Login() {
   const login = useStore((s) => s.login);
   const [cfg, setCfg] = useState(getApiConfig());
+  // Shop-address apps: the shop this device is connected to, and the name typed on the connect screen.
+  const [shop, setShop] = useState(() => shopOf(endpoint()));
+  const [shopInput, setShopInput] = useState(() => shopOf(endpoint()));
   const [showApi, setShowApi] = useState(!endpoint());
   const [f, setF] = useState({ username: '', password: '' });
   const [busy, setBusy] = useState(false);
@@ -51,6 +55,26 @@ export default function Login() {
     } catch (e2) { setErr(e2.message); }
     setBusy(false);
   };
+  const connectShop = async (e) => {
+    e.preventDefault(); setErr(''); setOk('');
+    const name = shopInput.trim().toLowerCase().replace(new RegExp(`\\.${SHOP_DOMAIN.replace(/\./g, '\\.')}$`), '');
+    if (!/^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/.test(name)) { setErr('Type your shop address: English letters, numbers and dashes, as given by Karvio.'); return; }
+    setBusy(true);
+    const url = shopApiUrl(name);
+    try {
+      const r = await testConnection(url);
+      setToken(null); // a sign-in from another shop is never sent here
+      const next = { ...cfg, scriptUrl: url, proxyUrl: '' };
+      setApiConfig(next); setCfg(next); setShop(name); setShowApi(false);
+      setSetup(r.backend === 'supabase' && r.requiresSetup === true);
+    } catch (e2) {
+      const m = String(e2?.message || '');
+      setErr(/paused|subscription/i.test(m) ? m
+        : /internet|offline/i.test(m) ? m
+        : `No Karvio shop found at ${name}.${SHOP_DOMAIN}. Check the address, or ask Karvio for it.`);
+    }
+    setBusy(false);
+  };
   const submit = async (e) => {
     e.preventDefault(); setErr(''); setBusy(true);
     try { await login(f.username, f.password, branches.length ? branch : ''); } catch (e2) { setErr(e2.message); setBusy(false); }
@@ -71,7 +95,23 @@ export default function Login() {
       )}
       <div className="auth-card">
         {!brand && <img className="auth-logo" src={`${import.meta.env.BASE_URL}karvio-logo.png`} alt="Karvio" />}
-        {showApi ? (
+        {showApi && SHOP_DOMAIN ? (
+          <>
+            <h1>Connect your shop</h1>
+            <p className="muted">Type your shop's Karvio address. You only do this once on this device.</p>
+            <form onSubmit={connectShop}>
+              <Field label="Shop address">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <input value={shopInput} onChange={(e) => { setShopInput(e.target.value); setErr(''); }} placeholder="yourshop" autoFocus autoCapitalize="none" autoCorrect="off" spellCheck={false} inputMode="url" maxLength={60} style={{ flex: 1, minWidth: 0 }} aria-describedby="shop-domain" />
+                  <span id="shop-domain" className="muted" style={{ whiteSpace: 'nowrap' }}>.{SHOP_DOMAIN}</span>
+                </div>
+              </Field>
+              {err && <div className="errbox">{err}</div>}
+              <Btn kind="primary" size="lg" busy={busy} type="submit">Connect</Btn>
+              {shop && <button type="button" className="link" onClick={() => { setShopInput(shop); setErr(''); setShowApi(false); }}>Back to {shop}.{SHOP_DOMAIN}</button>}
+            </form>
+          </>
+        ) : showApi ? (
           <>
             <h1>Connect your shop</h1>
             <p className="muted">Paste your shop's Karvio server address (Supabase). You can change it later in Settings.</p>
@@ -94,7 +134,7 @@ export default function Login() {
               <Field label="Confirm password"><input type="password" value={owner.confirm} onChange={e=>setOwner({...owner,confirm:e.target.value})} required minLength={12} autoComplete="new-password" /></Field>
               {err && <div className="errbox">{err}</div>}
               <Btn kind="primary" size="lg" busy={busy} type="submit">Create Administrator account</Btn>
-              <button type="button" className="link" onClick={()=>setShowApi(true)}>Change API connection</button>
+              <button type="button" className="link" onClick={()=>setShowApi(true)}>{SHOP_DOMAIN ? 'Change shop' : 'Change API connection'}</button>
             </form>
           </>
         ) : (
@@ -107,7 +147,8 @@ export default function Login() {
               {branches.length > 0 && <Field label="Branch"><select value={branch} onChange={(e) => setBranch(e.target.value)} aria-label="Sign in to branch">{branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></Field>}
               {err && <div className="errbox">{err}</div>}
               <Btn kind="primary" size="lg" busy={busy} type="submit">Sign in</Btn>
-              {import.meta.env.DEV && !isOffline() && <button type="button" className="link" onClick={() => setShowApi(true)}>Change API connection</button>}
+              {SHOP_DOMAIN && shop && <button type="button" className="link" onClick={() => { setErr(''); setOk(''); setShowApi(true); }}>{shop}.{SHOP_DOMAIN} · Change shop</button>}
+              {!SHOP_DOMAIN && import.meta.env.DEV && !isOffline() && <button type="button" className="link" onClick={() => setShowApi(true)}>Change API connection</button>}
             </form>
             {brand && <p className="auth-powered">Powered by <b>Karvio</b></p>}
           </>

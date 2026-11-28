@@ -10,6 +10,7 @@ import {parseCron} from './cron.mjs';
 import {createAdmin} from './admin.mjs';
 import {pauseExpired, subscriptionOf} from './billing.mjs';
 
+const CORS = {'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info', 'Access-Control-Allow-Methods': 'POST, OPTIONS'};
 const json = (status, data) => new Response(JSON.stringify(data), {status, headers: {'Content-Type': 'application/json', 'Cache-Control': 'no-store'}});
 
 /**
@@ -79,15 +80,21 @@ export function createApp({control, connection = {}, baseDomain, backupKeyEnv = 
     // The shop's own users see "renew soon" from this; it says nothing beyond the dates.
     if (url.pathname === '/api/subscription' && request.method === 'GET') {
       const known = sub && (await loadShops()).get(sub);
-      return known ? json(200, {ok: true, data: await subscriptionOf(control, sub)}) : json(404, {ok: false});
+      // The desktop and mobile apps ask from their own origin.
+      const res = known ? json(200, {ok: true, data: await subscriptionOf(control, sub)}) : json(404, {ok: false});
+      res.headers.set('Access-Control-Allow-Origin', '*');
+      return res;
     }
     if (url.pathname !== '/api' && url.pathname !== '/api/') return json(404, {ok: false, error: 'Not found'});
     let shop = sub ? (await loadShops()).get(sub) : null;
     if (sub && !shop) shop = (await loadShops(true)).get(sub); // a shop created a moment ago
-    if (!shop) return json(404, {ok: false, error: 'Unknown shop address'});
-    if (shop.status !== 'active') return json(403, {ok: false, error: shop.pause_reason === 'expired'
+    // The desktop and mobile apps call from their own origin, so these answers carry CORS headers too.
+    const withCors = res => { for (const [k, v] of Object.entries(CORS)) res.headers.set(k, v); return res; };
+    if (!shop) return withCors(json(404, {ok: false, error: 'Unknown shop address'}));
+    if (request.method === 'OPTIONS') return new Response(null, {status: 204, headers: {...CORS, 'Cache-Control': 'no-store'}});
+    if (shop.status !== 'active') return withCors(json(403, {ok: false, error: shop.pause_reason === 'expired'
       ? 'Your Karvio subscription has ended. Renew it to continue; your data is safe.'
-      : 'This shop is paused. Contact Karvio support.'});
+      : 'This shop is paused. Contact Karvio support.'}));
     const t = tenantFor(shop);
     track(ensureRegistered(t));
     // The Google sign-in window comes back here with ?code=…&state=….

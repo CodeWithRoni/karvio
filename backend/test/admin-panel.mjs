@@ -117,6 +117,11 @@ try {
   assert.equal(a.status, 'suspended'); assert.equal(a.pause_reason, 'expired');
   const blocked = await shopCall(SHOP, 'bootstrap', {}, token);
   assert.equal(blocked.status, 403); assert.match(blocked.error, /subscription has ended/);
+  // The desktop and mobile apps (another origin) can read these answers.
+  const appCall = async (host, method = 'POST') => app.handle(new Request(`https://${host}/api`, {method, headers: {Host: host, Origin: 'https://localhost', 'Content-Type': 'text/plain'}, body: method === 'POST' ? '{"action":"ping"}' : undefined}));
+  for (const res of [await appCall(`${SHOP}.${BASE}`), await appCall(`nope${run}.${BASE}`), await appCall(`${SHOP}.${BASE}`, 'OPTIONS')]) assert.equal(res.headers.get('access-control-allow-origin'), '*');
+  assert.equal((await appCall(`${SHOP}.${BASE}`, 'OPTIONS')).status, 204);
+  assert.equal((await app.handle(new Request(`https://${SHOP}.${BASE}/api/subscription`, {headers: {Host: `${SHOP}.${BASE}`}}))).headers.get('access-control-allow-origin'), '*');
   const p2 = await admin('payment.record', {subdomain: SHOP, amount: 7500, method: 'Bank', plan: 'half-yearly'});
   assert.equal(p2.resumed, true); assert.equal(p2.paid_until, plusMonths(today, 6));
   a = (await admin('overview')).shops.find(s => s.subdomain === SHOP);

@@ -56,6 +56,15 @@ for Drive backup (the redirect address shown there is `https://computerplus.karv
 Other commands: `karvio shop:list`, `karvio shop:pause <shop>` (unpaid: the shop sees a paused message),
 `karvio shop:resume <shop>`, `karvio shop:setup-key <shop>`, `karvio migrate`.
 
+## Desktop and mobile apps
+
+One Karvio app for every shop. Build it with the shop-address screen:
+`npm run desktop:build:win:shops` (also `:mac:shops`, `:linux:shops`) and `npm run android:prepare:shops` /
+`ios:prepare:shops` in `frontend/`. The first time it opens, the owner types the shop's address
+(`computerplus`), and the app connects to `https://computerplus.<karvioShopDomain>/api`; "Change shop" on the
+sign-in screen switches it. The domain is `karvioShopDomain` in `frontend/package.json`. The apps carry the web app
+inside, so new features reach them with a new app release; the website updates at once.
+
 ## Updates
 
 On the VPS, as root: `karvio-update`. It downloads the latest code from GitHub, builds the web app there
