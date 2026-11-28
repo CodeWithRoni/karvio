@@ -1,0 +1,26 @@
+# /etc/systemd/system/karvio.service
+[Unit]
+Description=Karvio server (all shops)
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+User=karvio
+Group=karvio
+WorkingDirectory=/srv/karvio/current/server
+EnvironmentFile=/etc/karvio/karvio.env
+ExecStart=/usr/bin/node main.mjs
+Restart=always
+RestartSec=3
+# 2 GB VPS: keep Node well below the memory PostgreSQL needs.
+Environment=NODE_OPTIONS=--max-old-space-size=384
+MemoryMax=600M
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/srv/karvio/logs
+
+[Install]
+WantedBy=multi-user.target

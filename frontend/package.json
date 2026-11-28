@@ -12,6 +12,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && node scripts/verify-build.mjs",
+    "build:vps": "VITE_API_URL=/api vite build && node scripts/verify-build.mjs",
     "preview": "vite preview",
     "check:deploy-build": "npm test && npm run test:supabase && npm run test:performance && npm run build",
     "check:deploy": "npm run check:deploy-build && npm run test:e2e",
@@ -19,7 +20,7 @@
     "desktop:build": "npm run build && electron-builder --publish never",
     "desktop:build:win": "npm run build && electron-builder --win nsis --x64 --publish never",
     "desktop:build:mac": "npm run build && electron-builder --mac dmg --publish never",
-    "test": "node ../backend/test/simulate.js && node ../backend/test/valuation.js && node ../backend/test/categories.cjs && node ../backend/test/service.cjs && node ../backend/test/dues-returns.cjs && node ../backend/test/barcodes.cjs && node ../backend/test/access-hours.cjs && node ../backend/test/supplier-invoice.cjs && node ../backend/test/invoice-links.cjs && node test/sms-presets.mjs && node ../backend/test/finance-integrity.cjs && node ../backend/test/integrity.cjs && node test/reliability.cjs && node ../backend/test/reset-profit.cjs && node ../backend/test/backup-restore.cjs && node ../backend/test/history-cards.cjs && node ../backend/test/open-dues.cjs && node ../backend/test/refunds-roles-backups-fixes.cjs && node ../backend/test/repairs.cjs && node ../backend/test/maintenance-visibility-fixes.cjs && node test/client-reload-invoice-html.cjs && node test/financial-fixes.cjs && node test/user-shop-isolation.cjs && node test/repair-dashboard.mjs && node test/public-doc-quotation-pricing.cjs && node test/camera-device.mjs",
+    "test": "node ../backend/test/simulate.js && node ../backend/test/valuation.js && node ../backend/test/categories.cjs && node ../backend/test/service.cjs && node ../backend/test/dues-returns.cjs && node ../backend/test/barcodes.cjs && node ../backend/test/access-hours.cjs && node ../backend/test/supplier-invoice.cjs && node ../backend/test/invoice-links.cjs && node test/sms-presets.mjs && node ../backend/test/finance-integrity.cjs && node ../backend/test/integrity.cjs && node test/reliability.cjs && node ../backend/test/reset-profit.cjs && node ../backend/test/backup-restore.cjs && node ../backend/test/history-cards.cjs && node ../backend/test/open-dues.cjs && node ../backend/test/refunds-roles-backups-fixes.cjs && node ../backend/test/repairs.cjs && node ../backend/test/maintenance-visibility-fixes.cjs && node test/client-reload-invoice-html.cjs && node test/financial-fixes.cjs && node test/user-shop-isolation.cjs && node test/repair-dashboard.mjs && node test/public-doc-quotation-pricing.cjs && node test/camera-device.mjs && node ../backend/test/node-server.mjs",
     "test:e2e": "playwright test",
     "verify:live": "node ../backend/test/live.cjs",
     "desktop:build:linux": "npm run build && electron-builder --linux deb --x64 --publish never",

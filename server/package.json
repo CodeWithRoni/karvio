@@ -1,0 +1,14 @@
+{
+  "name": "karvio-server",
+  "private": true,
+  "type": "module",
+  "description": "Karvio on one VPS: the Karvio API on Node.js, every shop in its own PostgreSQL database.",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node main.mjs",
+    "test": "node ../backend/test/node-server.mjs"
+  },
+  "dependencies": {
+    "pg": "8.16.3"
+  }
+}
