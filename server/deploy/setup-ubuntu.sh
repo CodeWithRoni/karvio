@@ -8,11 +8,11 @@ set -euo pipefail
 : "${KARVIO_BASE_DOMAIN:?set KARVIO_BASE_DOMAIN, e.g. karvioerp.com}"
 : "${KARVIO_ADMIN_EMAIL:?set KARVIO_ADMIN_EMAIL, used for certificate notices}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-export DEBIAN_FRONTEND=noninteractive
+export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a
 
 apt-get update
 apt-get -y upgrade
-apt-get -y install curl ca-certificates gnupg ufw rsync unattended-upgrades postgresql-16 postgresql-contrib-16 \
+apt-get -y install curl ca-certificates gnupg ufw rsync git sudo unattended-upgrades postgresql-16 \
   debian-keyring debian-archive-keyring apt-transport-https
 
 # Node.js 22 (NodeSource)
@@ -68,7 +68,7 @@ fi
 chown root:karvio /etc/karvio/karvio.env && chmod 640 /etc/karvio/karvio.env
 sudo -u postgres psql -tAc "select 1 from pg_database where datname='karvio_control'" | grep -q 1 || sudo -u postgres createdb -O karvio karvio_control
 
-# Caddy and the service file (the code itself arrives with deploy.sh).
+# Caddy and the service file (the code itself arrives with update.sh).
 grep -q KARVIO_ADMIN_EMAIL /etc/default/caddy 2>/dev/null || echo "KARVIO_ADMIN_EMAIL=$KARVIO_ADMIN_EMAIL" >> /etc/default/caddy
 mkdir -p /etc/systemd/system/caddy.service.d
 printf '[Service]\nEnvironmentFile=-/etc/default/caddy\n' > /etc/systemd/system/caddy.service.d/karvio.conf
@@ -79,4 +79,4 @@ echo '30 20 * * * karvio /usr/local/bin/karvio-backup >> /srv/karvio/logs/backup
 systemctl daemon-reload
 systemctl enable karvio caddy
 systemctl restart caddy
-echo "Setup done. Next: run deploy.sh from your computer, then: sudo -u karvio karvio shop:create <shop> \"<Shop name>\""
+echo "Server setup done."

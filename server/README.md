@@ -21,10 +21,14 @@ What replaces Supabase pieces:
 
 ## First setup (once, on a fresh Ubuntu 24.04 VPS)
 
-1. DNS at your domain provider: `A  @  <VPS IP>`, `A  www  <VPS IP>`, `A  *  <VPS IP>`.
-2. Copy the `server/deploy` and `server/lib` folders to the VPS, then as root:
-   `KARVIO_BASE_DOMAIN=karvioerp.com KARVIO_ADMIN_EMAIL=<your email> bash server/deploy/setup-ubuntu.sh`
-3. From your computer: `KARVIO_SSH=root@<VPS IP> bash server/deploy/deploy.sh`
+1. DNS for the domain (DNS only, no proxy): `A  @  <VPS IP>`, `A  www  <VPS IP>`, `A  *  <VPS IP>`.
+2. Log in to the VPS as root (`ssh root@<VPS IP>`) and run:
+   ```
+   curl -fsSL https://raw.githubusercontent.com/CodeWithRoni/karvio/main/server/deploy/install.sh | bash -s -- karvio.com.bd <your email>
+   ```
+   It installs PostgreSQL 16, Node.js 22, Caddy, the firewall, swap and nightly dumps, downloads Karvio from
+   GitHub, builds it on the server and starts it.
+3. Create your admin sign-in: `sudo -u karvio karvio admin:password <your-name>`
 
 ## Super admin panel (`https://admin.karvioerp.com`)
 
@@ -54,9 +58,10 @@ Other commands: `karvio shop:list`, `karvio shop:pause <shop>` (unpaid: the shop
 
 ## Updates
 
-`deploy.sh` again. It builds the web app with `npm run build:vps` (API at `/api` on the shop's own address),
-uploads it, runs new migrations on every shop database and restarts the server. The last five releases are kept
-in `/srv/karvio/releases`.
+On the VPS, as root: `karvio-update`. It downloads the latest code from GitHub, builds the web app there
+(`npm run build:vps`, API at `/api` on each shop's address), runs new migrations on every shop database and
+restarts the server; a failed build leaves the running version alone. The last five releases are kept in
+`/srv/karvio/releases`. (`deploy.sh` does the same from a Linux or Mac computer instead.)
 
 ## Moving a shop from Supabase
 
