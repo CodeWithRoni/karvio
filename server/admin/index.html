@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Karvio admin</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#1d2129;--muted:#667085;--line:#e4e7ec;--accent:#1f6feb;--accent-bg:#e8f0fe;--ok:#127a3e;--ok-bg:#e6f4ea;--warn:#8a5a00;--warn-bg:#fff4d6;--bad:#b42318;--bad-bg:#fdecea;--r:8px}
+@media (prefers-color-scheme:dark){:root{--bg:#111418;--card:#1a1e24;--text:#e8eaed;--muted:#9aa4b2;--line:#2c323b;--accent:#6ea8fe;--accent-bg:#1b2a44;--ok:#6fd49a;--ok-bg:#13301f;--warn:#f5c96a;--warn-bg:#3a2e10;--bad:#ff8a80;--bad-bg:#3d1714}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1100px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:18px;font-weight:600;margin:0}h2{font-size:16px;font-weight:600;margin:0 0 12px}
+.muted{color:var(--muted)}.small{font-size:12px}
+input,select,textarea{font:inherit;color:inherit;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;width:100%}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:-1px}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:var(--r);padding:7px 12px}
+button:hover{border-color:var(--muted)}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.link{border:none;background:none;color:var(--accent);padding:0}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.top .tools{display:flex;gap:8px;flex-wrap:wrap}.top input{width:200px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:16px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}.stat b{display:block;font-size:22px;font-weight:600}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px 12px;border-top:1px solid var(--line);vertical-align:middle}
+th{border-top:none;font-size:12px;font-weight:500;color:var(--muted)}td.act{text-align:right;white-space:nowrap}
+.pill{display:inline-block;font-size:12px;padding:2px 10px;border-radius:99px}
+.ok{background:var(--ok-bg);color:var(--ok)}.warn{background:var(--warn-bg);color:var(--warn)}.bad{background:var(--bad-bg);color:var(--bad)}
+.addr{color:var(--accent);font-size:12px;text-decoration:none}
+dialog{border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--text);padding:20px;width:min(460px,94vw)}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+.field{margin-bottom:10px}.field label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.suffix{display:flex;align-items:center;gap:6px}.suffix input{flex:1}
+.btns{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+.err{color:var(--bad);font-size:13px;min-height:18px;margin-top:6px}
+.key{font:600 16px ui-monospace,Consolas,monospace;background:var(--bg);border:1px dashed var(--line);border-radius:var(--r);padding:10px;word-break:break-all;margin:8px 0}
+.login{max-width:340px;margin:12vh auto}
+.empty{padding:30px;text-align:center;color:var(--muted)}
+@media (max-width:760px){.hide-sm{display:none}td,th{padding:9px 8px}}
+</style>
+</head>
+<body>
+<main id="app"><p class="muted">Loading…</p></main>
+
+<dialog id="dlg"><form method="dialog" id="dlgForm" novalidate></form></dialog>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const tk = n => '৳' + Number(n || 0).toLocaleString('en-IN', {maximumFractionDigits: 2});
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const day = d => { if (!d) return '—'; const [y, m, dd] = d.split('-').map(Number); return `${dd} ${MONTHS[m - 1]} ${y}`; };
+const base = location.hostname.replace(/^admin\./, '');
+let state = null, search = '';
+
+async function api(action, data = {}) {
+  const r = await fetch('/admin/api', {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json', 'X-Karvio-Admin': '1'}, body: JSON.stringify({action, ...data})});
+  let j; try { j = await r.json(); } catch { throw new Error('The server did not answer. Try again.'); }
+  if (j.auth) { showLogin(); throw new Error(j.error); }
+  if (!j.ok) throw new Error(j.error || 'Failed');
+  return j.data;
+}
+
+async function start() {
+  try {
+    const s = await api('session');
+    if (s.username) return load();
+    showLogin(s.has_admin);
+  } catch (e) { $('#app').innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+}
+
+function showLogin(hasAdmin = true) {
+  $('#app').innerHTML = `<div class="login card" style="padding:22px">
+    <h1 style="margin-bottom:4px">Karvio admin</h1><p class="muted small" style="margin:0 0 14px">Sign in to manage shops and subscriptions.</p>
+    ${hasAdmin ? '' : `<p class="small warn" style="padding:8px;border-radius:8px">No admin account yet. On the server run: <code>karvio admin:password &lt;name&gt;</code></p>`}
+    <form id="loginForm"><div class="field"><label>Username</label><input name="username" autocomplete="username" required></div>
+    <div class="field"><label>Password</label><input name="password" type="password" autocomplete="current-password" required></div>
+    <button class="primary" style="width:100%">Sign in</button><div class="err" id="loginErr"></div></form></div>`;
+  $('#loginForm').onsubmit = async e => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    if (!f.get('username') || !f.get('password')) { $('#loginErr').textContent = 'Enter your username and password'; return; }
+    try { await api('login', {username: f.get('username'), password: f.get('password')}); load(); }
+    catch (er) { $('#loginErr').textContent = er.message; }
+  };
+}
+
+async function load() {
+  try { state = await api('overview'); render(); }
+  catch (e) { if ($('#app')) $('#app').innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+}
+
+function statusOf(s) {
+  const warn = state.settings.warn_days ?? 7;
+  if (s.status !== 'active') return s.pause_reason === 'expired' ? ['bad', 'Unpaid · paused'] : ['bad', 'Paused'];
+  if (s.days_left === null) return ['ok', 'Active'];
+  if (s.days_left < 0) return ['bad', 'Grace period'];
+  if (s.days_left <= warn) return ['warn', 'Due soon'];
+  return ['ok', 'Active'];
+}
+const planOf = code => state.plans.find(p => p.code === code);
+
+function render() {
+  const t = state.totals;
+  const q = search.trim().toLowerCase();
+  const shops = state.shops.filter(s => !q || s.name.toLowerCase().includes(q) || s.subdomain.includes(q) || (s.phone || '').includes(q));
+  $('#app').innerHTML = `
+  <div class="top">
+    <div><h1>Karvio admin</h1><div class="muted small">${esc(location.hostname)} · today ${day(state.today)}</div></div>
+    <div class="tools"><input id="q" placeholder="Search shops" value="${esc(search)}" aria-label="Search shops">
+      <button class="primary" id="newShop">+ New shop</button><button id="plansBtn">Plans and settings</button><button id="logout">Sign out</button></div>
+  </div>
+  <div class="stats">
+    <div class="stat"><span class="muted small">Active shops</span><b>${t.active}</b></div>
+    <div class="stat"><span class="muted small">Due in ${state.settings.warn_days ?? 7} days</span><b style="color:var(--warn)">${t.due_soon}</b></div>
+    <div class="stat"><span class="muted small">Paused</span><b style="color:var(--bad)">${t.paused}</b></div>
+    <div class="stat"><span class="muted small">Received this month</span><b>${tk(t.month_received)}</b><span class="muted small">${t.month_payments} payment(s)</span></div>
+  </div>
+  <div class="card" style="overflow-x:auto">
+    ${shops.length ? `<table><thead><tr><th>Shop</th><th class="hide-sm">Plan</th><th>Paid until</th><th>Status</th><th style="text-align:right">Actions</th></tr></thead><tbody>
+    ${shops.map(s => { const [cls, label] = statusOf(s); const p = planOf(s.plan);
+      const left = s.days_left === null ? '' : s.days_left >= 0 ? `${s.days_left} day(s) left` : `${-s.days_left} day(s) over`;
+      return `<tr>
+        <td><b style="font-weight:500">${esc(s.name)}</b><br><a class="addr" href="https://${esc(s.subdomain)}.${esc(base)}" target="_blank" rel="noopener">${esc(s.subdomain)}.${esc(base)}</a>${s.phone ? `<span class="muted small"> · ${esc(s.phone)}</span>` : ''}</td>
+        <td class="hide-sm">${p ? `${esc(p.label)} · ${tk(p.price)}` : '<span class="muted">—</span>'}</td>
+        <td>${s.paid_until ? day(s.paid_until) : '<span class="muted">No end date</span>'}${left ? `<br><span class="small" style="color:var(--${cls === 'ok' ? 'muted' : cls === 'warn' ? 'warn' : 'bad'})">${left}</span>` : ''}</td>
+        <td><span class="pill ${cls}">${label}</span></td>
+        <td class="act"><button data-pay="${esc(s.subdomain)}" title="Record payment">Payment</button>
+          ${s.status === 'active' ? `<button data-pause="${esc(s.subdomain)}" title="Pause">Pause</button>` : `<button data-resume="${esc(s.subdomain)}" title="Resume">Resume</button>`}
+          <button data-more="${esc(s.subdomain)}" title="Details" aria-label="Details">⋯</button></td></tr>`; }).join('')}
+    </tbody></table>` : `<div class="empty">${q ? 'No shop matches that search.' : 'No shops yet. Create the first one with “New shop”.'}</div>`}
+  </div>`;
+  $('#q').oninput = e => { search = e.target.value; const pos = e.target.selectionStart; render(); $('#q').focus(); $('#q').setSelectionRange(pos, pos); };
+  $('#newShop').onclick = newShop;
+  $('#plansBtn').onclick = plansDialog;
+  $('#logout').onclick = async () => { await api('logout').catch(() => {}); showLogin(); };
+  document.querySelectorAll('[data-pay]').forEach(b => b.onclick = () => payDialog(b.dataset.pay));
+  document.querySelectorAll('[data-pause]').forEach(b => b.onclick = () => pauseDialog(b.dataset.pause, true));
+  document.querySelectorAll('[data-resume]').forEach(b => b.onclick = () => pauseDialog(b.dataset.resume, false));
+  document.querySelectorAll('[data-more]').forEach(b => b.onclick = () => moreDialog(b.dataset.more));
+}
+
+// One dialog for everything: html, then submit(formData) → string message to show, or nothing to close.
+function dialog(html, submit, {wide = false} = {}) {
+  const d = $('#dlg'), f = $('#dlgForm');
+  d.style.width = wide ? 'min(720px,94vw)' : '';
+  f.innerHTML = html + `<div class="err" id="dlgErr"></div>`;
+  f.onsubmit = async e => {
+    const btn = e.submitter;
+    if (!btn || btn.value === 'cancel') return;
+    e.preventDefault();
+    $('#dlgErr').textContent = '';
+    btn.disabled = true;
+    try { const after = await submit(new FormData(f), btn.value); if (after !== 'stay') { d.close(); load(); } }
+    catch (er) { $('#dlgErr').textContent = er.message; }
+    finally { btn.disabled = false; }
+  };
+  f.oninput = () => { if ($('#dlgErr')) $('#dlgErr').textContent = ''; };
+  if (!d.open) d.showModal();
+}
+const planOptions = sel => state.plans.map(p => `<option value="${esc(p.code)}" ${p.code === sel ? 'selected' : ''}>${esc(p.label)} · ${tk(p.price)}</option>`).join('');
+const methods = ['bKash', 'Nagad', 'Rocket', 'Bank', 'Cash', 'Other'].map(m => `<option>${m}</option>`).join('');
+
+function newShop() {
+  dialog(`<h2>New shop</h2>
+    <div class="field"><label>Shop name</label><input name="name" required maxlength="120"></div>
+    <div class="field"><label>Address</label><div class="suffix"><input name="subdomain" required maxlength="32" placeholder="starcomputer" autocapitalize="off" spellcheck="false"><span class="muted small">.${esc(base)}</span></div></div>
+    <div class="row2"><div class="field"><label>Plan</label><select name="plan">${planOptions('monthly')}</select></div>
+    <div class="field"><label>Owner phone</label><input name="phone" maxlength="30" inputmode="tel"></div></div>
+    <div class="row2"><div class="field"><label>First payment (leave empty for a ${state.settings.trial_days ?? 7}-day trial)</label><input name="amount" inputmode="decimal" placeholder="0"></div>
+    <div class="field"><label>Paid by</label><select name="method">${methods}</select></div></div>
+    <div class="btns"><button value="cancel">Cancel</button><button class="primary" value="ok">Create shop</button></div>`,
+  async f => {
+    const name = String(f.get('name') || '').trim(), subdomain = String(f.get('subdomain') || '').trim().toLowerCase();
+    if (!name) throw new Error('Enter the shop name');
+    if (!/^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/.test(subdomain)) throw new Error('Address: lower-case English letters, digits and dashes only');
+    const amount = String(f.get('amount') || '').replace(/,/g, '');
+    if (amount && !(Number(amount) > 0)) throw new Error('First payment: a number, or leave it empty');
+    $('#dlgErr').textContent = 'Creating the database… this takes a few seconds.';
+    const r = await api('shop.create', {name, subdomain, plan: f.get('plan'), phone: f.get('phone'), amount: amount || 0, method: f.get('method')});
+    showKey(`${name} is ready`, `https://${r.subdomain}.${base}`, r.setup_key);
+    return 'stay';
+  });
+}
+
+function showKey(title, address, key) {
+  dialog(`<h2>${esc(title)}</h2>
+    <p class="small" style="margin:0">Address: <a class="addr" href="${esc(address)}" target="_blank" rel="noopener">${esc(address)}</a></p>
+    <p class="small" style="margin:10px 0 0">One-time setup key — give it to the owner. They open the address, choose <b>Set up</b>, enter this key and choose their password.</p>
+    <div class="key" id="theKey">${esc(key)}</div>
+    <p class="small muted" style="margin:0">It is shown only now. If it is lost, make a new one from the shop's details (until the owner has set up).</p>
+    <div class="btns"><button value="copy" type="button" id="copyKey">Copy key</button><button class="primary" value="cancel">Done</button></div>`, async () => {});
+  $('#copyKey').onclick = async () => { try { await navigator.clipboard.writeText(key); $('#copyKey').textContent = 'Copied'; } catch { $('#copyKey').textContent = 'Select and copy'; } };
+  $('#dlg').addEventListener('close', load, {once: true});
+}
+
+function payDialog(sub) {
+  const s = state.shops.find(x => x.subdomain === sub), plan = planOf(s.plan) || state.plans[0];
+  const from = s.paid_until && s.days_left >= 0 ? s.paid_until : state.today;
+  const until = (code, months) => { const p = planOf(code); const m = months === '' || months === undefined ? p.months : Number(months);
+    const [y, mo, d] = from.split('-').map(Number); const dt = new Date(Date.UTC(y, mo - 1 + m, d));
+    if (dt.getUTCDate() !== d) dt.setUTCDate(0); return dt.toISOString().slice(0, 10); };
+  dialog(`<h2>Record payment · ${esc(s.name)}</h2>
+    <div class="row2"><div class="field"><label>Plan</label><select name="plan" id="pPlan">${planOptions(plan.code)}</select></div>
+    <div class="field"><label>Amount</label><input name="amount" id="pAmt" inputmode="decimal" value="${esc(plan.price)}"></div></div>
+    <div class="row2"><div class="field"><label>Paid by</label><select name="method">${methods}</select></div>
+    <div class="field"><label>Payment date</label><input name="paid_on" type="date" value="${esc(state.today)}"></div></div>
+    <div class="field"><label>Note (transaction ID etc.)</label><input name="note" maxlength="300"></div>
+    <p class="small" style="margin:4px 0 0">Paid until: ${day(s.paid_until)} → <b id="pUntil">${day(until(plan.code))}</b>
+    ${s.status !== 'active' && s.pause_reason === 'expired' ? '<br><span style="color:var(--ok)">The shop starts working again when you save.</span>' : ''}</p>
+    <div class="btns"><button value="cancel">Cancel</button><button class="primary" value="ok">Save payment</button></div>`,
+  async f => {
+    const amount = String(f.get('amount') || '').replace(/,/g, '');
+    if (!(Number(amount) > 0)) throw new Error('Enter the amount received');
+    await api('payment.record', {subdomain: sub, amount, method: f.get('method'), plan: f.get('plan'), paid_on: f.get('paid_on'), note: f.get('note')});
+  });
+  $('#pPlan').onchange = e => { const p = planOf(e.target.value); $('#pAmt').value = p.price; $('#pUntil').textContent = day(until(p.code)); };
+}
+
+function pauseDialog(sub, pause) {
+  const s = state.shops.find(x => x.subdomain === sub);
+  dialog(`<h2>${pause ? 'Pause' : 'Resume'} ${esc(s.name)}?</h2>
+    <p class="small">${pause ? 'Everyone in this shop is signed out of the app until you resume it. Their data stays safe.' : 'The shop can sign in and work again now.'}
+    ${!pause && s.days_left !== null && s.days_left < 0 ? '<br><b>Its paid-until date has passed</b>: without a payment it will pause itself again tonight. Record the payment instead to extend it.' : ''}</p>
+    <div class="btns"><button value="cancel">Cancel</button><button class="primary" value="ok">${pause ? 'Pause shop' : 'Resume shop'}</button></div>`,
+  async () => { await api(pause ? 'shop.pause' : 'shop.resume', {subdomain: sub}); });
+}
+
+async function moreDialog(sub) {
+  const s = state.shops.find(x => x.subdomain === sub);
+  let pays = [];
+  try { pays = await api('payments', {subdomain: sub}); } catch { /* shown empty */ }
+  dialog(`<h2>${esc(s.name)}</h2>
+    <div class="row2"><div class="field"><label>Shop name</label><input name="name" value="${esc(s.name)}" maxlength="120"></div>
+    <div class="field"><label>Owner phone</label><input name="phone" value="${esc(s.phone || '')}" maxlength="30"></div></div>
+    <div class="row2"><div class="field"><label>Plan</label><select name="plan">${planOptions(s.plan)}</select></div>
+    <div class="field"><label>Paid until (fix a mistake)</label><input name="paid_until" type="date" value="${esc(s.paid_until || '')}"></div></div>
+    <div class="field"><label>Note</label><textarea name="note" rows="2" maxlength="300">${esc(s.note || '')}</textarea></div>
+    <div class="btns" style="justify-content:space-between"><button value="key">New setup key</button><span><button value="cancel">Close</button> <button class="primary" value="ok">Save</button></span></div>
+    <h2 style="margin-top:18px">Payments</h2>
+    <div style="max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:8px">
+    ${pays.length ? `<table><thead><tr><th>Date</th><th>Amount</th><th>By</th><th>Period</th></tr></thead><tbody>${pays.map(p => `<tr><td>${day(p.paid_on)}</td><td>${tk(p.amount)}</td><td>${esc(p.method)}${p.note ? `<br><span class="muted small">${esc(p.note)}</span>` : ''}</td><td class="small">${p.months ? `${day(p.from_date)} → ${day(p.to_date)}` : '—'}</td></tr>`).join('')}</tbody></table>` : '<div class="empty small">No payments yet</div>'}
+    </div>`,
+  async (f, which) => {
+    if (which === 'key') {
+      const r = await api('shop.setup_key', {subdomain: sub});
+      showKey(`New setup key · ${s.name}`, `https://${sub}.${base}`, r.setup_key);
+      return 'stay';
+    }
+    if (!String(f.get('name') || '').trim()) throw new Error('Enter the shop name');
+    await api('shop.update', {subdomain: sub, name: f.get('name'), phone: f.get('phone'), plan: f.get('plan'), note: f.get('note'), paid_until: f.get('paid_until') || null});
+  }, {wide: true});
+}
+
+function plansDialog() {
+  const st = state.settings;
+  dialog(`<h2>Plans and settings</h2>
+    ${state.plans.map((p, i) => `<div class="row2" style="grid-template-columns:2fr 1fr 1.4fr"><div class="field"><label>Plan name</label><input name="label${i}" value="${esc(p.label)}" maxlength="40"></div>
+      <div class="field"><label>Months</label><input name="months${i}" inputmode="numeric" value="${p.months}"></div>
+      <div class="field"><label>Price (৳)</label><input name="price${i}" inputmode="decimal" value="${p.price}"></div></div>`).join('')}
+    <div class="row2" style="grid-template-columns:1fr 1fr 1fr">
+      <div class="field"><label>Free trial (days)</label><input name="trial_days" inputmode="numeric" value="${st.trial_days ?? 7}"></div>
+      <div class="field"><label>Warn shop (days before)</label><input name="warn_days" inputmode="numeric" value="${st.warn_days ?? 7}"></div>
+      <div class="field"><label>Grace after due (days)</label><input name="grace_days" inputmode="numeric" value="${st.grace_days ?? 3}"></div></div>
+    <p class="small muted" style="margin:0">New prices apply to the next payments; past payments keep their amounts.</p>
+    <div class="btns"><button value="cancel">Cancel</button><button class="primary" value="ok">Save</button></div>`,
+  async f => {
+    const plans = state.plans.map((p, i) => ({code: p.code, label: String(f.get('label' + i) || '').trim(), months: Number(f.get('months' + i)), price: Number(String(f.get('price' + i)).replace(/,/g, ''))}));
+    for (const p of plans) if (!p.label || !Number.isInteger(p.months) || p.months < 1 || p.months > 60 || !(p.price >= 0)) throw new Error('Each plan needs a name, 1–60 months and a price');
+    const settings = {trial_days: Number(f.get('trial_days')), warn_days: Number(f.get('warn_days')), grace_days: Number(f.get('grace_days'))};
+    for (const v of Object.values(settings)) if (!Number.isInteger(v) || v < 0 || v > 60) throw new Error('Days: whole numbers from 0 to 60');
+    await api('plans.save', {plans});
+    await api('settings.save', {settings});
+  });
+}
+
+start();
+</script>
+</body>
+</html>

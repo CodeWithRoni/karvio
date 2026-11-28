@@ -26,11 +26,25 @@ What replaces Supabase pieces:
    `KARVIO_BASE_DOMAIN=karvioerp.com KARVIO_ADMIN_EMAIL=<your email> bash server/deploy/setup-ubuntu.sh`
 3. From your computer: `KARVIO_SSH=root@<VPS IP> bash server/deploy/deploy.sh`
 
+## Super admin panel (`https://admin.karvioerp.com`)
+
+Create your sign-in once on the server (the password is typed, never shown or saved in history):
+`sudo -u karvio karvio admin:password <name>`
+
+The panel lists every shop with its plan, paid-until date and status, and records payments (bKash, Nagad,
+bank, cash…). A payment moves the paid-until date forward by the plan's months. Settings: plan prices, free
+trial days (new shops without a first payment), warning days (the shop's Administrator sees "renew soon") and
+grace days after the due date. After the grace days the shop pauses itself; recording a payment opens it again
+at once. Shops you pause by hand stay paused until you resume them.
+
 ## A new shop
+
+From the panel: "New shop". Or on the server:
 
 ```
 sudo -u karvio karvio shop:create computerplus "Computer Plus"
 ```
+
 It prints a one-time **setup key**. The owner opens `https://computerplus.karvioerp.com`, chooses
 "Set up", enters the key and their password. Then in Settings → Database they add their own Google keys
 for Drive backup (the redirect address shown there is `https://computerplus.karvioerp.com/api`).

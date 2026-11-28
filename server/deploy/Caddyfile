@@ -18,6 +18,18 @@ www.karvioerp.com {
 	file_server
 }
 
+# The super admin panel (shops, plans, payments): served entirely by the Karvio server.
+admin.karvioerp.com {
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000"
+	handle /internal/* {
+		respond 404
+	}
+	handle {
+		reverse_proxy 127.0.0.1:8787
+	}
+}
+
 # Every shop: the same web app, and /api goes to that shop's own database through the Karvio server.
 https:// {
 	tls {

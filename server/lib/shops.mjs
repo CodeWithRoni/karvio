@@ -2,6 +2,7 @@
 import {createHash, randomBytes} from 'node:crypto';
 import pg from 'pg';
 import {createPool, migrate} from './db.mjs';
+import {initBilling} from './billing.mjs';
 
 export const RESERVED = new Set(['www', 'api', 'app', 'admin', 'mail', 'smtp', 'ftp', 'static', 'cdn', 'status', 'docs', 'help', 'support', 'karvio']);
 export const validSubdomain = s => typeof s === 'string' && /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/.test(s) && !RESERVED.has(s);
@@ -17,12 +18,12 @@ create table if not exists shops(
  updated_at timestamptz not null default now()
 );`;
 
-export async function initControl(control) { await control.query(CONTROL_SQL); }
+export async function initControl(control) { await control.query(CONTROL_SQL); await initBilling(control); }
 export async function listShops(control) {
-  return (await control.query('select subdomain, name, db_name, status, created_at from shops order by created_at')).rows;
+  return (await control.query('select subdomain, name, db_name, status, pause_reason, plan, paid_until, created_at from shops order by created_at')).rows;
 }
 export async function setStatus(control, sub, status) {
-  const r = await control.query('update shops set status=$2, updated_at=now() where subdomain=$1', [sub, status]);
+  const r = await control.query(`update shops set status=$2, pause_reason=case when $2='active' then null else 'manual' end, updated_at=now() where subdomain=$1`, [sub, status]);
   if (!r.rowCount) throw new Error(`No shop "${sub}"`);
 }
 

@@ -5,6 +5,7 @@ import { Btn, Loading } from './ui';
 import { isOffline, endpoint } from '../lib/api';
 import { saveBrand } from '../lib/brand';
 import NavIcon from './NavIcon';
+import RenewNotice from './RenewNotice';
 import { cap1 } from '../lib/format';
 
 // Karvio app mark (files in public/, so they work on GitHub Pages, desktop and mobile builds).
@@ -196,7 +197,7 @@ export default function Layout() {
           <span>{settings.shop_name || 'Karvio'}</span>
         </div>
         {/* A page whose file is still loading shows its placeholder here only: the menu never leaves the screen. */}
-        <main className="content"><Suspense fallback={<Loading />}><Outlet key={branchKey} /></Suspense></main>
+        <main className="content"><RenewNotice show={user?.role === 'admin'} /><Suspense fallback={<Loading />}><Outlet key={branchKey} /></Suspense></main>
       </div>
     </div>
   );

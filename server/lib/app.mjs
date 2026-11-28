@@ -7,6 +7,8 @@ import {driveCallback} from '../../supabase/functions/karvio-api/drive.mjs';
 import {keyResolver} from '../../supabase/functions/karvio-api/backupCrypto.mjs';
 import {createPool, rpcFor} from './db.mjs';
 import {parseCron} from './cron.mjs';
+import {createAdmin} from './admin.mjs';
+import {pauseExpired, subscriptionOf} from './billing.mjs';
 
 const json = (status, data) => new Response(JSON.stringify(data), {status, headers: {'Content-Type': 'application/json', 'Cache-Control': 'no-store'}});
 
@@ -22,10 +24,11 @@ export function createApp({control, connection = {}, baseDomain, backupKeyEnv = 
   const pending = new Set();
   const track = work => { const p = Promise.resolve(work).catch(e => console.error('Background work failed', e?.message)); pending.add(p); p.finally(() => pending.delete(p)); return p; };
   let shops = new Map(), loadedAt = 0, loading = null;
+  const admin = createAdmin({control, connection, secure: scheme === 'https', onShopsChanged: () => { loadedAt = 0; }});
 
   async function loadShops(force = false) {
     if (!force && Date.now() - loadedAt < 30000) return shops;
-    loading ||= control.query('select subdomain, name, db_name, status from shops').then(r => {
+    loading ||= control.query('select subdomain, name, db_name, status, pause_reason from shops').then(r => {
       shops = new Map(r.rows.map(s => [s.subdomain, s])); loadedAt = Date.now(); return shops;
     }).finally(() => { loading = null; });
     return loading;
@@ -67,16 +70,24 @@ export function createApp({control, connection = {}, baseDomain, backupKeyEnv = 
     // Caddy asks before getting a certificate for a new name: only the main site and real shops.
     if (url.pathname === '/internal/tls-allowed') {
       const domain = String(url.searchParams.get('domain') || '').toLowerCase();
-      if (domain === base || domain === 'www.' + base) return json(200, {ok: true});
+      if (domain === base || domain === 'www.' + base || domain === 'admin.' + base) return json(200, {ok: true});
       const sub = subdomainOf(domain);
       return sub && (await loadShops()).has(sub) ? json(200, {ok: true}) : json(404, {ok: false});
     }
-    if (url.pathname !== '/api' && url.pathname !== '/api/') return json(404, {ok: false, error: 'Not found'});
     const sub = subdomainOf(request.headers.get('host') || url.host);
+    if (sub === 'admin') return admin.handle(request);
+    // The shop's own users see "renew soon" from this; it says nothing beyond the dates.
+    if (url.pathname === '/api/subscription' && request.method === 'GET') {
+      const known = sub && (await loadShops()).get(sub);
+      return known ? json(200, {ok: true, data: await subscriptionOf(control, sub)}) : json(404, {ok: false});
+    }
+    if (url.pathname !== '/api' && url.pathname !== '/api/') return json(404, {ok: false, error: 'Not found'});
     let shop = sub ? (await loadShops()).get(sub) : null;
     if (sub && !shop) shop = (await loadShops(true)).get(sub); // a shop created a moment ago
     if (!shop) return json(404, {ok: false, error: 'Unknown shop address'});
-    if (shop.status !== 'active') return json(403, {ok: false, error: 'This shop is paused. Contact Karvio support.'});
+    if (shop.status !== 'active') return json(403, {ok: false, error: shop.pause_reason === 'expired'
+      ? 'Your Karvio subscription has ended. Renew it to continue; your data is safe.'
+      : 'This shop is paused. Contact Karvio support.'});
     const t = tenantFor(shop);
     track(ensureRegistered(t));
     // The Google sign-in window comes back here with ?code=…&state=….
@@ -86,6 +97,10 @@ export function createApp({control, connection = {}, baseDomain, backupKeyEnv = 
 
   /** One scheduler minute: each active shop's due jobs, then the calls they queued (pg_net's part). */
   async function tick(date = new Date()) {
+    try {
+      const paused = await pauseExpired(control);
+      if (paused.length) console.log('Paused for non-payment:', paused.join(', '));
+    } catch (e) { console.error('Expiry check failed', e.message); }
     const list = [...(await loadShops(true)).values()].filter(s => s.status === 'active');
     for (const shop of list) {
       const t = tenantFor(shop);
@@ -121,5 +136,5 @@ export function createApp({control, connection = {}, baseDomain, backupKeyEnv = 
     await Promise.allSettled([...tenants.values()].map(t => t.pool.end()));
   }
 
-  return {handle, tick, close, loadShops, tenants, pending};
+  return {handle, tick, close, loadShops, tenants, pending, admin};
 }

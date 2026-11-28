@@ -5,9 +5,31 @@
 //   node cli.mjs shop:pause <shop> | shop:resume <shop>
 //   node cli.mjs shop:setup-key <shop>         new setup key (only before the Administrator account exists)
 //   node cli.mjs migrate                       bring every shop database up to date (run on each deploy)
+//   node cli.mjs admin:password <name>         create a super admin (admin.<base domain>) or change its password
 import pg from 'pg';
 import {createPool, migrate} from './lib/db.mjs';
 import {createShop, initControl, listShops, setSetupKey, setStatus, newSetupKey} from './lib/shops.mjs';
+import {setAdminPassword, startSubscription} from './lib/billing.mjs';
+
+// Typed without showing on screen (and never passed on the command line, where it would land in the shell history).
+async function askHidden(question) {
+  const {stdin, stdout} = process;
+  if (!stdin.isTTY) { let text = ''; for await (const c of stdin) text += c; return text.split('\n')[0].replace(/\r$/, ''); }
+  stdout.write(question);
+  stdin.setRawMode(true); stdin.resume(); stdin.setEncoding('utf8');
+  return new Promise((resolve, reject) => {
+    let value = '';
+    const done = fn => { stdin.setRawMode(false); stdin.pause(); stdin.removeListener('data', on); stdout.write('\n'); fn(); };
+    const on = ch => {
+      for (const c of ch) {
+        if (c === '\r' || c === '\n') return done(() => resolve(value));
+        if (c === '\u0003') return done(() => reject(new Error('Cancelled')));
+        if (c === '\u007f' || c === '\b') value = value.slice(0, -1); else if (c >= ' ') value += c;
+      }
+    };
+    stdin.on('data', on);
+  });
+}
 
 const [command, ...args] = process.argv.slice(2);
 const base = process.env.KARVIO_BASE_DOMAIN || '<base domain>';
@@ -21,6 +43,7 @@ async function main() {
       if (!sub || !name) throw new Error('Usage: shop:create <shop> "<Shop name>"');
       await initControl(control);
       const r = await createShop({control, subdomain: sub.toLowerCase(), name});
+      await startSubscription(control, {subdomain: r.subdomain, plan: 'monthly'});
       console.log(`Shop created: https://${r.subdomain}.${base}  (database ${r.db_name})`);
       console.log(`Setup key (give it to the owner once; it creates the Administrator account): ${r.setupKey}`);
       break;
@@ -53,8 +76,19 @@ async function main() {
       if (!shops.length) console.log('No shops yet.');
       break;
     }
+    case 'admin:password': {
+      const name = String(args[0] || '').toLowerCase();
+      if (!name) throw new Error('Usage: admin:password <name>');
+      await initControl(control);
+      const pw = await askHidden(`Password for ${name} (at least 10 characters): `);
+      const again = process.stdin.isTTY ? await askHidden('Same password again: ') : pw;
+      if (pw !== again) throw new Error('The two passwords are different');
+      await setAdminPassword(control, name, pw);
+      console.log(`Admin "${name}" can now sign in at https://admin.${base}`);
+      break;
+    }
     default:
-      console.log('Commands: init | shop:create <shop> "<name>" | shop:list | shop:pause <shop> | shop:resume <shop> | shop:setup-key <shop> | migrate');
+      console.log('Commands: init | shop:create <shop> "<name>" | shop:list | shop:pause <shop> | shop:resume <shop> | shop:setup-key <shop> | migrate | admin:password <name>');
       process.exitCode = command ? 1 : 0;
   }
 }
